@@ -35,6 +35,11 @@ def annotate_variant_types(t: Union[hl.MatrixTable, hl.Table],
         return t.annotate(variant_type=variant_type_expr, variant_type_model=variant_type_model_expr)
     
 def trimer_from_heptamer(t: Union[hl.MatrixTable, hl.Table]) -> Union[hl.MatrixTable, hl.Table]:
+    """
+    Trim heptamer context to create trimer context.
+    :param t: Input MatrixTable or Table with context annotation.
+    :return: MatrixTable or Table with trimer context annotated.
+    """
     trimer_expr = hl.if_else(hl.len(t.context) == 7, t.context[2:5], t.context)
     return t.annotate_rows(context=trimer_expr) if isinstance(t, hl.MatrixTable) else t.annotate(context=trimer_expr)
 
