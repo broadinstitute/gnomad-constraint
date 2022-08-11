@@ -30,7 +30,7 @@ def pre_process_data(ht: hl.Table, split_context_ht_path: str,
     context_ht = context_ht.annotate(vep=context_ht.vep.drop('colocated_variants'))
     ht.annotate(**context_ht[ht.key], pass_filters=hl.len(ht.filters) == 0).write(output_ht_path, overwrite)
 
-def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
+def prepare_ht(ht: hl.Table, trimer: bool = False, annotate_coverage: bool = True):
     """
     Filter input Table and add annotations used in constraint calculations.
  
@@ -55,14 +55,10 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
         str_len = 3
         ht = trimer_from_heptamer(ht)
 
-    if isinstance(ht, hl.Table):
-        ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
-        ht = ht.filter((hl.len(ht.ref) == 1) & (hl.len(ht.alt) == 1) & ht.context.matches(f'[ATCG]{{{str_len}}}'))
-        ht = annotate_variant_types(collapse_strand(ht), not trimer)
-    else:
-        ht = ht.annotate_rows(ref=ht.alleles[0], alt=ht.alleles[1])
-        ht = ht.filter_rows((hl.len(ht.ref) == 1) & (hl.len(ht.alt) == 1) & ht.context.matches(f'[ATCG]{{{str_len}}}'))
-        ht = annotate_variant_types(collapse_strand(ht), not trimer)
+    ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
+    ht = ht.filter((hl.len(ht.ref) == 1) & (hl.len(ht.alt) == 1) & ht.context.matches(f'[ATCG]{{{str_len}}}'))
+    ht = annotate_variant_types(collapse_strand(ht), not trimer)
+    
     annotation = {
         'methylation_level': hl.case().when(
             ht.cpg & (ht.methylation.MEAN > 0.6), 2
@@ -72,5 +68,5 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
     }
     if annotate_coverage:
         annotation['exome_coverage'] = ht.coverage.exomes.median
-    return ht.annotate(**annotation) if isinstance(ht, hl.Table) else ht.annotate_rows(**annotation)
+    return ht.annotate(**annotation)
     
