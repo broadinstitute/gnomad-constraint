@@ -1,0 +1,25 @@
+[tool.pydocstyle]
+convention = "pep257"
+match = ".*\\.py"
+add_ignore = [
+  "D100", # Do not require docstrings for modules.
+  "D104", # Do not require docstrings for packages (in __init__.py).
+]
+
+[tool.pylint.messages_control]
+disable = [
+  # Ignore refactor and convention categories
+  "R",
+  "C",
+  # Allow todo/fixme comments
+  "fixme",
+  # Warnings
+  "cell-var-from-loop",
+  "dangerous-default-value",
+  "invalid-unary-operand-type",
+  "pointless-string-statement",
+  "protected-access",
+  "redefined-outer-name",
+  "unspecified-encoding",
+  "unused-variable",
+]
