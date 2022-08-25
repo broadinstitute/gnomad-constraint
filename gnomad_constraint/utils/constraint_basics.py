@@ -8,6 +8,8 @@ from gnomad.utils.constraint import (
     collapse_strand,
 )
 
+from gnomad.utils.vep import add_most_severe_consequence_to_consequence
+
 
 def add_vep_context_annotations(ht: hl.Table, split_context_ht_path: str) -> hl.Table:
     """

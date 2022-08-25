@@ -7,12 +7,15 @@ import hail as hl
 
 from gnomad.resources.grch38.reference_data import vep_context
 from gnomad_qc.v2.resources.basics import get_gnomad_public_data
-from utils.constraint_basics import (
+from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
     prepare_ht_for_constraint_calculations,
 )
 
-from resources.resource_utils import processed_genomes_ht_path, processed_exomes_ht_path
+from gnomad_constraint.resources.resource_utils import (
+    processed_genomes_ht_path,
+    processed_exomes_ht_path,
+)
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
