@@ -1,4 +1,6 @@
 # noqa: D100
+# cSpell: disable
+from typing import List, Tuple
 
 from typing import Optional, Tuple
 
@@ -15,6 +17,15 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
+
+from .generic import (
+    fast_filter_vep,
+    count_variants,
+    annotate_with_mu,
+    remove_unnecessary_variants,
+)
+
+POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 
 
 def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.Table:
