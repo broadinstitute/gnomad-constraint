@@ -274,9 +274,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite",
-        help="Whether to overwrite output files",
-        action="store_true"
+        "--overwrite", help="Whether to overwrite output files", action="store_true"
     )
     parser.add_argument(
         "--use-pop",

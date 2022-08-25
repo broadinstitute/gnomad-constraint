@@ -3,8 +3,11 @@ from typing import List, Tuple, Optional, Union, Any
 
 import hail as hl
 
+<<<<<<< HEAD
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 
+=======
+>>>>>>> eea40bf (rebase on preprocess_data)
 # cSpell: disable
 <<<<<<< HEAD
 =======
@@ -231,6 +234,7 @@ def remove_unnecessary_variants(
     exome_join = exome_ht[context_ht.key]
     freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
 
+<<<<<<< HEAD
     context_crit = (
         (context_ht.freq[freq_index].AC > 0)
         & context_ht.pass_filters
@@ -280,3 +284,13 @@ def get_all_pop_lengths(
             )
         )
     return pop_lengths
+=======
+    crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters & (ht.coverage > 0)
+    if impose_high_af_cutoff_upfront:
+        crit &= ht.freq[freq_index].AF <= af_cutoff
+
+    context_ht = context_ht.filter(hl.is_missing(exome_join) | crit)
+
+    exome_ht = exome_ht.filter(crit)
+    return context_ht, exome_ht
+>>>>>>> eea40bf (rebase on preprocess_data)
