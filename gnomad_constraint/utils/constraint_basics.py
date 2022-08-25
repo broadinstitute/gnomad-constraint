@@ -71,4 +71,25 @@ def prepare_ht_for_constraint_calculations(
     }
     if annotate_coverage:
         annotation["exome_coverage"] = ht.coverage.exomes.median
-    return ht.annotate(**annotation)
+    ht = ht.annotate(**annotation)
+    ht = add_most_severe_csq_to_tc_within_ht(ht)
+    return ht
+
+
+def add_most_severe_csq_to_tc_within_ht(t):
+    """
+    Add most_severe_consequence annotation to 'transcript_consequences' within the vep annotation.
+
+    :param t: Input Table or MatrixTable.
+    :return: Input Table or MatrixTable with most_severe_consequence annotation added.
+    """
+    annotation = t.vep.annotate(
+        transcript_consequences=t.vep.transcript_consequences.map(
+            add_most_severe_consequence_to_consequence
+        )
+    )
+    return (
+        t.annotate_rows(vep=annotation)
+        if isinstance(t, hl.MatrixTable)
+        else t.annotate(vep=annotation)
+    )
