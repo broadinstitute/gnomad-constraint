@@ -22,7 +22,6 @@ from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
     prepare_ht_for_constraint_calculations,
     create_constraint_training_dataset,
-    get_proportion_observed_by_coverage,
     build_models,
 )
 
@@ -227,12 +226,57 @@ def main(args):
     _, plateau_y_models = build_models(coverage_y_ht, trimers=trimers, weighted=True)
     logger.info("Done with building plateau models and the coverage model.")
 
+    context_ht = full_context_ht.filter(full_context_ht.locus.in_autosome_or_par())
+    genome_ht = full_genome_ht.filter(full_genome_ht.locus.in_autosome_or_par())
+    exome_ht = full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par())
+    mutation_ht = hl.read_table(mutation_rate_ht_path).select("mu_snp")
+
+    context_x_ht = hl.filter_intervals(full_context_ht, [hl.parse_locus_interval("X")])
+    context_x_ht = context_x_ht.filter(context_x_ht.locus.in_x_nonpar())
+    context_y_ht = hl.filter_intervals(full_context_ht, [hl.parse_locus_interval("Y")])
+    context_y_ht = context_y_ht.filter(context_y_ht.locus.in_y_nonpar())
+
+    exome_x_ht = hl.filter_intervals(full_exome_ht, [hl.parse_locus_interval("X")])
+    exome_x_ht = exome_x_ht.filter(exome_x_ht.locus.in_x_nonpar())
+    exome_y_ht = hl.filter_intervals(full_exome_ht, [hl.parse_locus_interval("Y")])
+    exome_y_ht = exome_y_ht.filter(exome_y_ht.locus.in_y_nonpar())
+
+    if args.create_training_set:
+        get_proportion_observed_by_coverage(
+            exome_ht,
+            context_ht,
+            mutation_ht,
+            True,
+            args.dataset,
+            not args.skip_af_filter_upfront,
+        ).write(training_ht_path, overwrite=args.overwrite)
+        hl.read_table(training_ht_path).export(training_ht_path.replace(".ht", ".txt.bgz"))
+        get_proportion_observed_by_coverage(
+            exome_x_ht,
+            context_x_ht,
+            mutation_ht,
+            True,
+            args.dataset,
+            not args.skip_af_filter_upfront,
+        ).write(training_ht_path.replace(".ht", "_x.ht"), overwrite=args.overwrite)
+        get_proportion_observed_by_coverage(
+            exome_y_ht,
+            context_y_ht,
+            mutation_ht,
+            True,
+            args.dataset,
+            not args.skip_af_filter_upfront,
+        ).write(training_ht_path.replace(".ht", "_y.ht"), overwrite=args.overwrite)
+        logger.info("Done with creating training dataset.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite", help="Whether to overwrite output files", action="store_true"
+        "--overwrite",
+        help="Whether to overwrite output files",
+        action="store_true"
     )
     parser.add_argument(
         "--use-pop",
