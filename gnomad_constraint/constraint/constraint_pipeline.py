@@ -21,6 +21,7 @@ from gnomad_constraint.resources.resource_utils import (
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
     prepare_ht_for_constraint_calculations,
+    create_constraint_training_dataset,
     get_proportion_observed_by_coverage,
 )
 
@@ -220,7 +221,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite", help="Whether to overwrite output files", action="store_true"
+        "--overwrite",
+        help="Whether to overwrite output files",
+        action="store_true"
     )
     parser.add_argument(
         "--use-pop",
@@ -251,5 +254,5 @@ if __name__ == "__main__":
     parser.add_argument(
         "--create-training-set",
         help="Count the observed variants and possible variants by exome coverage at synonymous sites.",
-        action="store_true",
+        action="store_true"
     )

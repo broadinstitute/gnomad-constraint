@@ -164,3 +164,80 @@ def create_constraint_training_dataset(
     ht = ht.join(possible_ht, "outer")
     ht = annotate_mutation_type(ht)
     return ht
+
+def get_proportion_observed_by_coverage(
+    exome_ht: hl.Table,
+    context_ht: hl.Table,
+    mutation_ht: hl.Table,
+    recompute_possible: bool = False,
+    dataset: str = "gnomad",
+    impose_high_af_cutoff_upfront: bool = True,
+) -> hl.Table:
+    """
+    Count the observed variants and possible variants by exome coverage.
+
+    :param exome_ht: Preprocessed exome Table.
+    :param context_ht: Preprocessed context Table.
+    :param mutation_ht: Preprocessed mutation rate Table.
+    :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
+    :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
+    :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles. Defaults to True.
+    :return: Table with observed variant and possible variant count.
+    """
+    exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
+    context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
+
+    context_ht = fast_filter_vep(context_ht).select(
+        "context", "ref", "alt", "methylation_level", "exome_coverage"
+    )
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+
+    exome_ht = fast_filter_vep(exome_ht).select(
+        "context",
+        "ref",
+        "alt",
+        "methylation_level",
+        "exome_coverage",
+        "freq",
+        "pass_filters",
+    )
+
+    grouping = ("exome_coverage",)
+    af_cutoff = 0.001
+
+    exome_join = exome_ht[context_ht.key]
+    freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
+
+    def keep_criteria(ht):
+        crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
+        if impose_high_af_cutoff_upfront:
+            crit &= ht.freq[freq_index].AF <= af_cutoff
+        return crit
+
+    context_ht = context_ht.filter(
+        hl.is_missing(exome_join) | keep_criteria(exome_join)
+    )
+
+    exome_ht = exome_ht.filter(keep_criteria(exome_ht))
+
+    possible_file = f"{root}/tmp/possible_coverage.ht"
+    if recompute_possible:
+        possible_ht = count_variants(
+            context_ht, additional_grouping=grouping, force_grouping=True
+        )
+        possible_ht = annotate_with_mu(possible_ht, mutation_ht)
+        possible_ht.transmute(possible_variants=possible_ht.variant_count).write(
+            possible_file, True
+        )
+
+    possible_ht = hl.read_table(possible_file)
+    ht = count_variants(
+        exome_ht,
+        additional_grouping=grouping,
+        partition_hint=100,
+        count_downsamplings=POPS,
+        impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront,
+    )
+    ht = ht.join(possible_ht, "outer")
+    ht = annotate_variant_types(ht)
+    return ht
