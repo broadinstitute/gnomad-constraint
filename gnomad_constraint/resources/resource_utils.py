@@ -36,6 +36,7 @@ annotated_context_ht = VersionedTableResource(
     },
 )
 mutation_rate_ht_path = ""
+training_ht_path = ""
 
 def get_sites_resource(
     data_type: str, version: str = CURRENT_VERSION
@@ -167,3 +168,4 @@ def get_logging_path(name: str) -> str:
     :return: Output log path.
     """
     return f"{constraint_tmp_prefix}/{name}.log"
+
