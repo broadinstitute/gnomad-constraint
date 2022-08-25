@@ -229,11 +229,21 @@ def remove_unnecessary_variants(
     exome_join = exome_ht[context_ht.key]
     freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
 
-    crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters & (ht.coverage > 0)
+    context_crit = (
+        (context_ht.freq[freq_index].AC > 0)
+        & context_ht.pass_filters
+        & (context_ht.coverage > 0)
+    )
     if impose_high_af_cutoff_upfront:
-        crit &= ht.freq[freq_index].AF <= af_cutoff
+        crit &= context_ht.freq[freq_index].AF <= af_cutoff
+    context_ht = context_ht.filter(hl.is_missing(exome_join) | context_crit)
 
-    context_ht = context_ht.filter(hl.is_missing(exome_join) | crit)
-
-    exome_ht = exome_ht.filter(crit)
+    exome_crit = (
+        (exome_ht.freq[freq_index].AC > 0)
+        & exome_ht.pass_filters
+        & (exome_ht.coverage > 0)
+    )
+    if impose_high_af_cutoff_upfront:
+        crit &= exome_ht.freq[freq_index].AF <= af_cutoff
+    exome_ht = exome_ht.filter(exome_crit)
     return context_ht, exome_ht
