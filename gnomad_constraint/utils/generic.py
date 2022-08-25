@@ -232,7 +232,7 @@ def remove_unnecessary_variants(
         & (context_ht.coverage > 0)
     )
     if impose_high_af_cutoff_upfront:
-        crit &= context_ht.freq[freq_index].AF <= af_cutoff
+        context_crit &= context_ht.freq[freq_index].AF <= af_cutoff
     context_ht = context_ht.filter(hl.is_missing(exome_join) | context_crit)
 
     exome_crit = (
@@ -241,6 +241,6 @@ def remove_unnecessary_variants(
         & (exome_ht.coverage > 0)
     )
     if impose_high_af_cutoff_upfront:
-        crit &= exome_ht.freq[freq_index].AF <= af_cutoff
+        exome_crit &= exome_ht.freq[freq_index].AF <= af_cutoff
     exome_ht = exome_ht.filter(exome_crit)
     return context_ht, exome_ht
