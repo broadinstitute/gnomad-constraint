@@ -90,7 +90,9 @@ def main(args):
             args.dataset,
             not args.skip_af_filter_upfront,
         ).write(training_ht_path, overwrite=args.overwrite)
-        hl.read_table(training_ht_path).export(training_ht_path.replace(".ht", ".txt.bgz"))
+        hl.read_table(training_ht_path).export(
+            training_ht_path.replace(".ht", ".txt.bgz")
+        )
         get_proportion_observed_by_coverage(
             exome_x_ht,
             context_x_ht,
