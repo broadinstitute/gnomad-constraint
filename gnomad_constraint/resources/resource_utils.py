@@ -35,7 +35,7 @@ annotated_context_ht = VersionedTableResource(
         ),
     },
 )
-
+mutation_rate_ht_path = ""
 
 def get_sites_resource(
     data_type: str, version: str = CURRENT_VERSION
