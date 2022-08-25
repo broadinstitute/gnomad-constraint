@@ -1,5 +1,5 @@
 # noqa: D100
-
+# cSpell: disable
 import argparse
 import logging
 
@@ -114,19 +114,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite",
-        help="Whether to overwrite output files",
-        action="store_true"
+        "--overwrite", help="Whether to overwrite output files", action="store_true"
     )
     parser.add_argument(
         "--skip_af_filter_upfront",
         help="Skip AF filter up front (to be applied later to ensure that it is not affecting population-specific constraint): not generally recommended",
-        action="store_true"
+        action="store_true",
     )
     parser.add_argument(
         "--dataset",
         help="Which dataset to use (one of gnomad, non_neuro, non_cancer, controls)",
-        default="gnomad"
+        default="gnomad",
     )
     parser.add_argument(
         "--preprocess-data",
@@ -136,5 +134,5 @@ if __name__ == "__main__":
     parser.add_argument(
         "--create-training-set",
         help="Count the observed variants and possible variants by exome coverage at synonymous site.",
-        action="store_true"
+        action="store_true",
     )
