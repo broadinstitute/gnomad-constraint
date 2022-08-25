@@ -4,4 +4,5 @@ init-hook="from pylint.config import find_pylintrc; import os, sys; sys.path.app
 disable=
   unused-wildcard-import,
   R,
-  C
+  C,
+  unused-variable
