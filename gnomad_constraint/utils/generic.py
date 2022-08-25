@@ -293,7 +293,7 @@ def get_all_pop_lengths(
 =======
 >>>>>>> 80d882b (rebase on preprocess_data)
     if impose_high_af_cutoff_upfront:
-        crit &= context_ht.freq[freq_index].AF <= af_cutoff
+        context_crit &= context_ht.freq[freq_index].AF <= af_cutoff
     context_ht = context_ht.filter(hl.is_missing(exome_join) | context_crit)
 
     exome_crit = (
@@ -302,7 +302,7 @@ def get_all_pop_lengths(
         & (exome_ht.coverage > 0)
     )
     if impose_high_af_cutoff_upfront:
-        crit &= exome_ht.freq[freq_index].AF <= af_cutoff
+        exome_crit &= exome_ht.freq[freq_index].AF <= af_cutoff
     exome_ht = exome_ht.filter(exome_crit)
     return context_ht, exome_ht
 >>>>>>> eea40bf (rebase on preprocess_data)

@@ -227,7 +227,6 @@ def main(args):
     logger.info("Done with building plateau models and the coverage model.")
 
     context_ht = full_context_ht.filter(full_context_ht.locus.in_autosome_or_par())
-    genome_ht = full_genome_ht.filter(full_genome_ht.locus.in_autosome_or_par())
     exome_ht = full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par())
     mutation_ht = hl.read_table(mutation_rate_ht_path).select("mu_snp")
 

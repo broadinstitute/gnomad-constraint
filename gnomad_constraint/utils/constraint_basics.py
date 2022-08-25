@@ -194,14 +194,14 @@ def get_proportion_observed_by_coverage(
     impose_high_af_cutoff_upfront: bool = True,
     dataset: str = "gnomad",
     af_cutoff=0.001,
-    kept_context_annotations: List[str] = [
+    kept_context_annotations: Tuple[str] = (
         "context",
         "ref",
         "alt",
         "methylation_level",
         "exome_coverage",
-    ],
-    kept_exome_annotations: List[str] = [
+    ),
+    kept_exome_annotations: Tuple[str] = (
         "context",
         "ref",
         "alt",
@@ -209,7 +209,7 @@ def get_proportion_observed_by_coverage(
         "exome_coverage",
         "freq",
         "pass_filters",
-    ],
+    ),
     pops: Tuple[str] = POPS,
     grouping: Tuple[str] = ("exome_coverage"),
 ) -> hl.Table:
