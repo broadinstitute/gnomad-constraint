@@ -193,19 +193,15 @@ def main(args):
             exome_ht,
             context_ht,
             mutation_ht,
-            possible_file_path,
             True,
             args.dataset,
             not args.skip_af_filter_upfront,
         ).write(training_ht_path, overwrite=args.overwrite)
-        hl.read_table(training_ht_path).export(
-            training_ht_path.replace(".ht", ".txt.bgz")
-        )
+        hl.read_table(training_ht_path).export(training_ht_path.replace(".ht", ".txt.bgz"))
         get_proportion_observed_by_coverage(
             exome_x_ht,
             context_x_ht,
             mutation_ht,
-            possible_file_path,
             True,
             args.dataset,
             not args.skip_af_filter_upfront,
@@ -214,7 +210,6 @@ def main(args):
             exome_y_ht,
             context_y_ht,
             mutation_ht,
-            possible_file_path,
             True,
             args.dataset,
             not args.skip_af_filter_upfront,
@@ -226,7 +221,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite", help="Whether to overwrite output files", action="store_true"
+        "--overwrite",
+        help="Whether to overwrite output files",
+        action="store_true"
     )
     parser.add_argument(
         "--use-pop",
