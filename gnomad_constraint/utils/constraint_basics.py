@@ -18,6 +18,15 @@ from gnomad.utils.vep import (
     filter_vep_transcript_csqs,
 )
 
+from .generic import (
+    fast_filter_vep,
+    count_variants,
+    annotate_with_mu,
+    remove_unnecessary_variants,
+)
+
+POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
+
 
 def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.Table:
     """
@@ -165,34 +174,24 @@ def create_constraint_training_dataset(
     ht = annotate_mutation_type(ht)
     return ht
 
+
 def get_proportion_observed_by_coverage(
     exome_ht: hl.Table,
     context_ht: hl.Table,
     mutation_ht: hl.Table,
+    possible_file_path: str,
     recompute_possible: bool = False,
-    dataset: str = "gnomad",
     impose_high_af_cutoff_upfront: bool = True,
-) -> hl.Table:
-    """
-    Count the observed variants and possible variants by exome coverage.
-
-    :param exome_ht: Preprocessed exome Table.
-    :param context_ht: Preprocessed context Table.
-    :param mutation_ht: Preprocessed mutation rate Table.
-    :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
-    :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
-    :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles. Defaults to True.
-    :return: Table with observed variant and possible variant count.
-    """
-    exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
-    context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
-
-    context_ht = fast_filter_vep(context_ht).select(
-        "context", "ref", "alt", "methylation_level", "exome_coverage"
-    )
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
-
-    exome_ht = fast_filter_vep(exome_ht).select(
+    dataset: str = "gnomad",
+    af_cutoff=0.001,
+    kept_context_annotations: List[str] = [
+        "context",
+        "ref",
+        "alt",
+        "methylation_level",
+        "exome_coverage",
+    ],
+    kept_exome_annotations: List[str] = [
         "context",
         "ref",
         "alt",
@@ -200,42 +199,50 @@ def get_proportion_observed_by_coverage(
         "exome_coverage",
         "freq",
         "pass_filters",
+    ],
+    pops: Tuple[str] = POPS,
+    grouping: Tuple[str] = ("exome_coverage"),
+) -> hl.Table:
+    """
+    Count the observed variants and possible variants by exome coverage.
+
+    :param exome_ht: Preprocessed exome Table.
+    :param context_ht: Preprocessed context Table.
+    :param mutation_ht: Preprocessed mutation rate Table.
+    :param possible_file_path: Path to save table with possible variants.
+    :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
+    :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles, defaults to True.
+    :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
+    :param af_cutoff: Variants with AF above than AF cutoff will be removed, defaults to 0.001.
+    :param kept_context_annotations: Annotations to keep in the context Table.
+    :param kept_exome_annotations: Annotations to keep in the exome Table.
+    :param pops: List of populations. Defaults to `POPS`.
+    :param grouping: Annotations other than 'context', 'ref', 'alt' to group by when counting variants, defaults to 'exome_coverage'.
+    :return: Table with observed variant and possible variant count.
+    """
+    context_ht = fast_filter_vep(context_ht).select(kept_context_annotations)
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+    exome_ht = fast_filter_vep(exome_ht).select(kept_exome_annotations)
+
+    context_ht, exome_ht = remove_unnecessary_variants(
+        context_ht, exome_ht, dataset, af_cutoff, impose_high_af_cutoff_upfront
     )
 
-    grouping = ("exome_coverage",)
-    af_cutoff = 0.001
-
-    exome_join = exome_ht[context_ht.key]
-    freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
-
-    def keep_criteria(ht):
-        crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
-        if impose_high_af_cutoff_upfront:
-            crit &= ht.freq[freq_index].AF <= af_cutoff
-        return crit
-
-    context_ht = context_ht.filter(
-        hl.is_missing(exome_join) | keep_criteria(exome_join)
-    )
-
-    exome_ht = exome_ht.filter(keep_criteria(exome_ht))
-
-    possible_file = f"{root}/tmp/possible_coverage.ht"
     if recompute_possible:
         possible_ht = count_variants(
             context_ht, additional_grouping=grouping, force_grouping=True
         )
         possible_ht = annotate_with_mu(possible_ht, mutation_ht)
         possible_ht.transmute(possible_variants=possible_ht.variant_count).write(
-            possible_file, True
+            possible_file_path, True
         )
 
-    possible_ht = hl.read_table(possible_file)
+    possible_ht = hl.read_table(possible_file_path)
     ht = count_variants(
         exome_ht,
         additional_grouping=grouping,
         partition_hint=100,
-        count_downsamplings=POPS,
+        count_downsamplings=pops,
         impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront,
     )
     ht = ht.join(possible_ht, "outer")
