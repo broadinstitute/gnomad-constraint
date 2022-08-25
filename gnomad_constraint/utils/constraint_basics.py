@@ -1,6 +1,6 @@
 # noqa: D100
 # cSpell: disable
-from typing import List, Tuple
+from typing import Tuple
 
 import hail as hl
 
