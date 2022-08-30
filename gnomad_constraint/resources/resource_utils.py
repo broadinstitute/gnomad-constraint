@@ -204,7 +204,6 @@ def training_dataset(sex_chr: str = None) -> TableResource:
             f"No file or directory found at {training_dataset_path}. Please add --create-training-set to the script and rerun the pipeline."
         )
 
-
 def get_logging_path(name: str) -> str:
     """
     Create a path for Hail log files.
