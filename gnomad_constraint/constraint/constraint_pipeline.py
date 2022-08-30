@@ -6,7 +6,7 @@ import logging
 import hail as hl
 
 from gnomad.resources.grch38.reference_data import vep_context
-from gnomad_qc.v2.resources.basics import get_gnomad_public_data
+from gnomad.resources.grch37.gnomad import public_release
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
     prepare_ht_for_constraint_calculations,
@@ -30,10 +30,10 @@ def main(args):
     trimers = args.trimers
     if args.pre_process_data:
         add_vep_context_annotations(
-            get_gnomad_public_data("genomes"), vep_context.versions["101"].path
+            public_release("genomes").ht(), vep_context.versions["101"].path
         ).write(processed_genomes_ht_path, overwrite=args.overwrite)
         add_vep_context_annotations(
-            get_gnomad_public_data("exomes"), vep_context.versions["101"].path
+            public_release("exomes").ht(), vep_context.versions["101"].path
         ).write(processed_exomes_ht_path, overwrite=args.overwrite)
         logger.info("Done with preprocessing genome and exome Table.")
 
