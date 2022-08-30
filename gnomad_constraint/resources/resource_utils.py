@@ -36,7 +36,8 @@ annotated_context_ht = VersionedTableResource(
     },
 )
 mutation_rate_ht_path = "gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht"
-training_ht_path = f"{constraint_tmp_prefix}/model/constraint_training.ht"
+training_ht_path = f"{constraint_tmp_prefix}/model/training/constraint_training.ht"
+possible_file_path = f"{constraint_tmp_prefix}/model/training/possible_coverage.ht"
 
 
 def get_sites_resource(

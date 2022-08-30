@@ -12,6 +12,7 @@ from gnomad_constraint.resources.resource_utils import (
     annotated_context_ht,
     mutation_rate_ht_path,
     training_ht_path,
+    possible_file_path,
 )
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
@@ -85,6 +86,7 @@ def main(args):
             exome_ht,
             context_ht,
             mutation_ht,
+            possible_file_path,
             True,
             args.dataset,
             not args.skip_af_filter_upfront,
@@ -96,6 +98,7 @@ def main(args):
             exome_x_ht,
             context_x_ht,
             mutation_ht,
+            possible_file_path,
             True,
             args.dataset,
             not args.skip_af_filter_upfront,
@@ -104,6 +107,7 @@ def main(args):
             exome_y_ht,
             context_y_ht,
             mutation_ht,
+            possible_file_path,
             True,
             args.dataset,
             not args.skip_af_filter_upfront,
