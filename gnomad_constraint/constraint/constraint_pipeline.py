@@ -12,10 +12,7 @@ from gnomad_constraint.utils.constraint_basics import (
     prepare_ht_for_constraint_calculations,
 )
 
-from gnomad_constraint.resources.resource_utils import (
-    processed_genomes_ht_path,
-    processed_exomes_ht_path,
-)
+from gnomad_constraint.resources.resource_utils import get_processed_ht_path
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -31,20 +28,20 @@ def main(args):
     if args.pre_process_data:
         add_vep_context_annotations(
             public_release("genomes").ht(), vep_context.versions["101"].path
-        ).write(processed_genomes_ht_path, overwrite=args.overwrite)
+        ).write(get_processed_ht_path("genomes"), overwrite=args.overwrite)
         add_vep_context_annotations(
             public_release("exomes").ht(), vep_context.versions["101"].path
-        ).write(processed_exomes_ht_path, overwrite=args.overwrite)
+        ).write(get_processed_ht_path("exomes"), overwrite=args.overwrite)
         logger.info("Done with preprocessing genome and exome Table.")
 
     full_context_ht = prepare_ht_for_constraint_calculations(
         hl.read_table(vep_context.versions["101"].path), trimers=trimers
     )
     full_genome_ht = prepare_ht_for_constraint_calculations(
-        hl.read_table(processed_genomes_ht_path), trimers=trimers
+        hl.read_table(get_processed_ht_path("genomes")), trimers=trimers
     )
     full_exome_ht = prepare_ht_for_constraint_calculations(
-        hl.read_table(processed_exomes_ht_path), trimers=trimers
+        hl.read_table(get_processed_ht_path("exomes")), trimers=trimers
     )
 
 
