@@ -47,6 +47,7 @@ mutation_rate_ht = VersionedTableResource(
     },
 )
 
+possible_file_path = f"{constraint_tmp_prefix}/model/training/possible_coverage.ht"
 
 def get_sites_resource(
     data_type: str, version: str = CURRENT_VERSION
