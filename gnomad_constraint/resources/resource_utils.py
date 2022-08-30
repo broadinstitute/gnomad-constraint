@@ -9,4 +9,4 @@ def get_processed_ht_path(data_type: str) -> str:
     :param data_type: One of "exomes" or "genomes".
     :return: Path to processed genomes or exomes Table.
     """
-    return f"{constraint_tmp_prefix}/model/genomes_processed.ht"
+    return f"{constraint_tmp_prefix}/model/{data_type}_processed.ht"
