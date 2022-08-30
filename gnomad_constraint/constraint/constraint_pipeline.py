@@ -23,6 +23,7 @@ from gnomad_constraint.utils.constraint_basics import (
     prepare_ht_for_constraint_calculations,
     create_constraint_training_dataset,
     get_proportion_observed_by_coverage,
+    build_models,
 )
 
 logging.basicConfig(
@@ -214,6 +215,15 @@ def main(args):
             not args.skip_af_filter_upfront,
         ).write(training_ht_path.replace(".ht", "_y.ht"), overwrite=args.overwrite)
         logger.info("Done with creating training dataset.")
+
+    coverage_ht = hl.read_table(training_ht_path)
+    coverage_x_ht = hl.read_table(training_ht_path.replace(".ht", "_x.ht"))
+    coverage_y_ht = hl.read_table(training_ht_path.replace(".ht", "_y.ht"))
+
+    coverage_model, plateau_models = build_models(coverage_ht, args.trimers, True)
+    _, plateau_x_models = build_models(coverage_x_ht, args.trimers, True)
+    _, plateau_y_models = build_models(coverage_y_ht, args.trimers, True)
+    logger.info("Done with building plateau models and the coverage model.")
 
 
 if __name__ == "__main__":
