@@ -35,8 +35,9 @@ annotated_context_ht = VersionedTableResource(
         ),
     },
 )
-mutation_rate_ht_path = ""
-training_ht_path = ""
+mutation_rate_ht_path = "gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht"
+training_ht_path = f"{constraint_tmp_prefix}/model/constraint_training.ht"
+
 
 def get_sites_resource(
     data_type: str, version: str = CURRENT_VERSION
@@ -158,7 +159,6 @@ def check_param_scope(
         raise ValueError(f"genomic_region must be one of: {GENOMIC_REGIONS}!")
     if data_type and data_type not in DATA_TYPES:
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
-
 
 def get_logging_path(name: str) -> str:
     """
