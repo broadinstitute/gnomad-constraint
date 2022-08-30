@@ -220,9 +220,11 @@ def main(args):
     coverage_x_ht = hl.read_table(training_ht_path.replace(".ht", "_x.ht"))
     coverage_y_ht = hl.read_table(training_ht_path.replace(".ht", "_y.ht"))
 
-    coverage_model, plateau_models = build_models(coverage_ht, args.trimers, True)
-    _, plateau_x_models = build_models(coverage_x_ht, args.trimers, True)
-    _, plateau_y_models = build_models(coverage_y_ht, args.trimers, True)
+    coverage_model, plateau_models = build_models(
+        coverage_ht, trimers=trimers, weighted=True
+    )
+    _, plateau_x_models = build_models(coverage_x_ht, trimers=trimers, weighted=True)
+    _, plateau_y_models = build_models(coverage_y_ht, trimers=trimers, weighted=True)
     logger.info("Done with building plateau models and the coverage model.")
 
 
@@ -230,9 +232,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite",
-        help="Whether to overwrite output files",
-        action="store_true"
+        "--overwrite", help="Whether to overwrite output files", action="store_true"
     )
     parser.add_argument(
         "--use-pop",
