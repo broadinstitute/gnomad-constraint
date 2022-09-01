@@ -22,15 +22,7 @@ from .generic import (
     count_variants,
     annotate_with_mu,
     remove_unnecessary_variants,
-)
-
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-
-from .generic import (
-    fast_filter_vep,
-    count_variants,
-    annotate_with_mu,
-    remove_unnecessary_variants,
+    get_all_pop_lengths,
 )
 
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
@@ -183,6 +175,7 @@ def create_constraint_training_dataset(
     ht = annotate_mutation_type(ht)
     return ht
 
+
 def get_proportion_observed_by_coverage(
     exome_ht: hl.Table,
     context_ht: hl.Table,
@@ -262,6 +255,8 @@ def build_models(
     coverage_ht: hl.Table,
     trimers: bool = False,
     weighted: bool = False,
+    pop_anal: bool = True,
+    pops: Tuple[str] = POPS,
     cov_cutoff: int = HIGH_COVERAGE_CUTOFF,
 ) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
     """
@@ -311,6 +306,8 @@ def build_models(
     :param coverage_ht: Input coverage Table.
     :param trimers: Whether the contexts were trimmed or not. Defaults to False.
     :param weighted: Whether to weight the high coverage model (a linear regression model) by 'possible_variants'. Defaults to False.
+    :param pop_anal: Whether to build models for each population. Defaults to True.
+    :param pops: List of populations. Defaults to `POPS`.
     :param cov_cutoff: A coverage cutoff. Coverage of sites above the cutoff will be used to build plateau models. Otherwise they will be used to build coverage models. defaults to `HIGH_COVERAGE_CUTOFF`.
     :return: Coverage model and plateau models.
     """
@@ -321,10 +318,11 @@ def build_models(
         "observed_variants": hl.agg.sum(all_high_coverage_ht.variant_count),
         "possible_variants": hl.agg.sum(all_high_coverage_ht.possible_variants),
     }
-    for pop in POPS:
-        agg_expr[f"observed_{pop}"] = hl.agg.array_sum(
-            all_high_coverage_ht[f"downsampling_counts_{pop}"]
-        )
+    if pop_anal:
+        for pop in pops:
+            agg_expr[f"observed_{pop}"] = hl.agg.array_sum(
+                all_high_coverage_ht[f"downsampling_counts_{pop}"]
+            )
     high_coverage_ht = all_high_coverage_ht.group_by(*keys).aggregate(**agg_expr)
 
     high_coverage_ht = annotate_variant_types(high_coverage_ht, not trimers)
@@ -359,7 +357,10 @@ def build_models(
 
 
 def build_plateau_models(
-    ht: hl.Table, weighted: bool = False
+    ht: hl.Table,
+    weighted: bool = False,
+    pop_anal: bool = True,
+    pops: Tuple[str] = POPS,
 ) -> Dict[str, Tuple[float, float]]:
     """
     Calibrate high coverage model (returns intercept and slope).
@@ -376,18 +377,21 @@ def build_plateau_models(
             - mu_snp - mutation rate
 
     :param ht: High coverage Table.
+    :param pop_anal: Whether to build models for each population. Defaults to True.
+    :param pops: List of populations. Defaults to `POPS`.
     :param weighted: Whether to generalize the model to weighted least squares using 'possible_variants'.
     :return: A Dictionary of intercepts and slopes for the full plateau models.
     """
-    pop_lengths = get_all_pop_lengths(ht)
+    pop_lengths = get_all_pop_lengths(ht, pops)
 
     plateau_models = build_plateau_models_total(ht, weighted=weighted)
 
-    arg_expr = {}
-    for length, pop in pop_lengths:
-        plateau_model = build_plateau_models_pop(ht, pop, length, weighted=weighted)
-        arg_expr[pop] = plateau_model[pop]
-    plateau_models = plateau_models.annotate(**arg_expr)
+    if pop_anal:
+        arg_expr = {}
+        for length, pop in pop_lengths:
+            plateau_model = build_plateau_models_pop(ht, pop, length, weighted=weighted)
+            arg_expr[pop] = plateau_model[pop]
+        plateau_models = plateau_models.annotate(**arg_expr)
 
     return plateau_models
 
@@ -464,54 +468,4 @@ def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
                 coverage_ht.low_coverage_obs_exp, [1, coverage_ht.log_coverage]
             )
         ).beta
-    )
-
-
-def get_all_pop_lengths(
-    ht, prefix: str = "observed_", pops: List[str] = POPS, skip_assertion: bool = False
-):
-    """
-    Get the minimum array length for specific per population annotations in `ht`.
-
-    The annotations are specified by the combination of `prefix` and each population in `pops`.
-
-    :param ht: Input Table.
-    :param prefix: Prefix of population variant count. Defaults to 'observed_'.
-    :param pops: List of populations. Defaults to `POPS`.
-    :param skip_assertion: Whether to skip raising an AssertionError if all the arrays of variant counts within a population don't have the same length. Defaults to False.
-    :return: A Dictionary with the minimum array length for each population.
-    """
-    ds_lengths = ht.aggregate(
-        [hl.agg.min(hl.len(ht[f"{prefix}{pop}"])) for pop in pops]
-    )
-    # temp_ht = ht.take(1)[0]
-    # ds_lengths = [len(temp_ht[f'{prefix}{pop}']) for pop in pops]
-    pop_lengths = list(zip(ds_lengths, pops))
-    print("Found: ", pop_lengths)
-    if not skip_assertion:
-        assert ht.all(
-            hl.all(
-                lambda f: f,
-                [hl.len(ht[f"{prefix}{pop}"]) == length for length, pop in pop_lengths],
-            )
-        )
-    return pop_lengths
-
-
-def add_most_severe_csq_to_tc_within_ht(t):
-    """
-    Add most_severe_consequence annotation to 'transcript_consequences' within the vep annotation.
-
-    :param t: Input Table or MatrixTable.
-    :return: Input Table or MatrixTable with most_severe_consequence annotation added.
-    """
-    annotation = t.vep.annotate(
-        transcript_consequences=t.vep.transcript_consequences.map(
-            add_most_severe_consequence_to_consequence
-        )
-    )
-    return (
-        t.annotate_rows(vep=annotation)
-        if isinstance(t, hl.MatrixTable)
-        else t.annotate(vep=annotation)
     )
