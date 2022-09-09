@@ -4,10 +4,10 @@ import hail as hl
 
 from gnomad.utils.constraint import (
     trimer_from_heptamer,
-    annotate_variant_types,
+    annotate_mutation_type,
     collapse_strand,
-    add_most_severe_csq_to_tc_within_ht,
 )
+from gnomad.utils.vep import add_most_severe_csq_to_tc_within_vep_root
 
 
 def add_vep_context_annotations(ht: hl.Table, split_context_ht_path: str) -> hl.Table:
@@ -28,8 +28,6 @@ def add_vep_context_annotations(ht: hl.Table, split_context_ht_path: str) -> hl.
 
     :param ht: gnomAD exomes or genomes public Hail Table.
     :param split_context_ht_path: Path to VEP context Table.
-    :param output_ht_path: Path to output Table.
-    :param overwrite: Whether to overwrite existing data. Defaults to False.
     """
     context_ht = hl.read_table(split_context_ht_path).drop("a_index", "was_split")
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
@@ -50,11 +48,10 @@ def prepare_ht_for_constraint_calculations(
         - alt
         - methylation_level
         - exome_coverage
-        - annotations added by `annotate_variant_types` and `collapse_strand`
+        - annotations added by `annotate_mutation_type` and `collapse_strand`
 
     :param ht: Input Table to be annotated.
-    :param trimers: Whether to use trimers or heptamers. Defaults to False.
-    :param annotate_coverage: Whether to annotate the coverage of exome. Defaults to True.
+    :param trimers: Whether to use trimers for context. Defaults to False (uses heptamers as context)    :param annotate_coverage: Whether to annotate the coverage of exome. Defaults to True.
     :return: Table with annotations.
     """
     if trimers:
@@ -62,7 +59,7 @@ def prepare_ht_for_constraint_calculations(
 
     ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
     ht = ht.filter(hl.is_snp(ht.ref, ht.alt))
-    ht = annotate_variant_types(collapse_strand(ht), not trimers)
+    ht = annotate_mutation_type(collapse_strand(ht), not trimers)
 
     annotation = {
         "methylation_level": hl.case()
@@ -73,5 +70,5 @@ def prepare_ht_for_constraint_calculations(
     if annotate_coverage:
         annotation["exome_coverage"] = ht.coverage.exomes.median
     ht = ht.annotate(**annotation)
-    ht = add_most_severe_csq_to_tc_within_ht(ht)
+    ht = add_most_severe_csq_to_tc_within_vep_root(ht)
     return ht
