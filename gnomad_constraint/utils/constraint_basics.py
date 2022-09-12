@@ -163,5 +163,5 @@ def get_proportion_observed_by_coverage(
         impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront,
     )
     ht = ht.join(possible_ht, "outer")
-    ht = annotate_variant_types(ht)
+    ht = add_most_severe_csq_to_tc_within_vep_root(ht)
     return ht
