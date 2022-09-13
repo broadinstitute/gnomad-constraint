@@ -58,8 +58,8 @@ def prepare_ht_for_constraint_calculations(
         ht = trimer_from_heptamer(ht)
 
     ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
-    ht = ht.filter(hl.is_snp(ht.ref, ht.alt))
-    ht = annotate_mutation_type(collapse_strand(ht), not trimers)
+    ht = ht.filter(hl.is_snp(ht.ref, ht.alt) & ht.context.matches(f"[ATCG]{3}"))
+    ht = annotate_mutation_type(collapse_strand(ht))
 
     annotation = {
         "methylation_level": hl.case()

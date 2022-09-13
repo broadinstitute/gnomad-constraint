@@ -1,6 +1,6 @@
 # noqa: D100
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
-context_ht_path = ""
+context_ht_path = "gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/context/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht"
 
 
 def get_processed_ht_path(data_type: str) -> str:
