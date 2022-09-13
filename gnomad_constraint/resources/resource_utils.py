@@ -186,6 +186,7 @@ def check_param_scope(
     if data_type and data_type not in DATA_TYPES:
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
 
+
 def get_logging_path(name: str) -> str:
     """
     Create a path for Hail log files.
@@ -194,4 +195,3 @@ def get_logging_path(name: str) -> str:
     :return: Output log path.
     """
     return f"{constraint_tmp_prefix}/{name}.log"
-
