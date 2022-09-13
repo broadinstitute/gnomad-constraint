@@ -30,6 +30,8 @@ logger.setLevel(logging.INFO)
 
 def main(args):
     """Execute the constraint pipeline."""
+    max_af = args.max_af
+
     try:
         if args.preprocess_data:
             logger.info("Adding VEP context annotations...")
@@ -100,6 +102,7 @@ def main(args):
                 True,
                 args.dataset,
                 not args.skip_af_filter_upfront,
+                max_af=max_af,
             ).write(training_ht_path, overwrite=args.overwrite)
             hl.read_table(training_ht_path).export(
                 training_ht_path.replace(".ht", ".txt.bgz")
@@ -112,6 +115,7 @@ def main(args):
                 True,
                 args.dataset,
                 not args.skip_af_filter_upfront,
+                max_af=max_af,
             ).write(training_ht_path.replace(".ht", "_x.ht"), overwrite=args.overwrite)
             get_proportion_observed_by_coverage(
                 exome_y_ht,
@@ -121,6 +125,7 @@ def main(args):
                 True,
                 args.dataset,
                 not args.skip_af_filter_upfront,
+                max_af=max_af,
             ).write(training_ht_path.replace(".ht", "_y.ht"), overwrite=args.overwrite)
             logger.info("Done with creating training dataset.")
 
@@ -146,12 +151,20 @@ if __name__ == "__main__":
         default="gnomad",
     )
     parser.add_argument(
+        "--max_af",
+        help="Maximum variant AF to keep",
+        nargs="?",
+        const=0.001,
+        type=float,
+        default=0.001,
+    )
+    parser.add_argument(
         "--preprocess-data",
         help="Whether to add necessary coverage, methylation level, and VEP annotations to genome and exome Tables.",
         action="store_true",
     )
     parser.add_argument(
         "--create-training-set",
-        help="Count the observed variants and possible variants by exome coverage at synonymous site.",
+        help="Count the observed variants and possible variants by exome coverage at synonymous sites.",
         action="store_true",
     )

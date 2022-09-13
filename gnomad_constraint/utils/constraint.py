@@ -102,7 +102,7 @@ def get_proportion_observed_by_coverage(
     recompute_possible: bool = False,
     impose_high_af_cutoff_upfront: bool = True,
     dataset: str = "gnomad",
-    af_cutoff=0.001,
+    af_cutoff: float = 0.001,
     kept_context_annotations: Tuple[str] = (
         "context",
         "ref",
