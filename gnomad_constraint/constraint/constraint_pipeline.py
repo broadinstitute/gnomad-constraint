@@ -41,13 +41,13 @@ def main(args):
             logger.info("Done with preprocessing genome and exome Table.")
 
         full_context_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(context_ht_path), trimers=trimers
+            hl.read_table(context_ht_path)
         )
         full_genome_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(get_processed_ht_path("genomes")), trimers=trimers
+            hl.read_table(get_processed_ht_path("genomes"))
         )
         full_exome_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(get_processed_ht_path("exomes")), trimers=trimers
+            hl.read_table(get_processed_ht_path("exomes"))
         )
     finally:
         logger.info("Copying log to logging bucket...")

@@ -36,9 +36,7 @@ def add_vep_context_annotations(
     return ht.annotate(**context_ht[ht.key])
 
 
-def prepare_ht_for_constraint_calculations(
-    ht: hl.Table, annotate_coverage: bool = True
-):
+def prepare_ht_for_constraint_calculations(ht: hl.Table):
     """
     Filter input Table and add annotations used in constraint calculations.
 
@@ -75,9 +73,11 @@ def prepare_ht_for_constraint_calculations(
         .default(0)
     }
     # Add annotation for the median exome coverage if requested
-    if annotate_coverage:
-        annotation["exome_coverage"] = ht.coverage.exomes.median
+    annotation["exome_coverage"] = ht.coverage.exomes.median
     ht = ht.annotate(**annotation)
     # Add most_severe_consequence annotation to 'transcript_consequences' within the vep root annotation.
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
+
+    # Filter out locus with undefined exome coverage
+    ht = ht.filter(hl.is_defined(ht.exome_coverage))
     return ht
