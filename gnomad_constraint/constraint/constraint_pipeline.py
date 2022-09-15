@@ -21,7 +21,7 @@ from gnomad_constraint.resources.resource_utils import (
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
     prepare_ht_for_constraint_calculations,
-    get_proportion_observed_by_coverage,
+    create_constraint_training_dataset,
 )
 
 logging.basicConfig(
@@ -92,37 +92,25 @@ def main(args):
         exome_y_ht = filter_y_nonpar(full_exome_ht)
 
         if args.create_training_set:
-            get_proportion_observed_by_coverage(
+            create_constraint_training_dataset(
                 exome_ht,
                 context_ht,
                 mutation_ht,
-                possible_file_path,
-                True,
-                args.dataset,
-                not args.skip_af_filter_upfront,
                 max_af=max_af,
             ).write(training_ht_path, overwrite=args.overwrite)
             hl.read_table(training_ht_path).export(
                 training_ht_path.replace(".ht", ".txt.bgz")
             )
-            get_proportion_observed_by_coverage(
+            create_constraint_training_dataset(
                 exome_x_ht,
                 context_x_ht,
                 mutation_ht,
-                possible_file_path,
-                True,
-                args.dataset,
-                not args.skip_af_filter_upfront,
                 max_af=max_af,
             ).write(training_ht_path.replace(".ht", "_x.ht"), overwrite=args.overwrite)
-            get_proportion_observed_by_coverage(
+            create_constraint_training_dataset(
                 exome_y_ht,
                 context_y_ht,
                 mutation_ht,
-                possible_file_path,
-                True,
-                args.dataset,
-                not args.skip_af_filter_upfront,
                 max_af=max_af,
             ).write(training_ht_path.replace(".ht", "_y.ht"), overwrite=args.overwrite)
             logger.info("Done with creating training dataset.")
