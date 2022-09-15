@@ -34,7 +34,6 @@ logger.setLevel(logging.INFO)
 def main(args):
     """Execute the constraint pipeline."""
     max_af = args.max_af
-    max_af = args.max_af
 
     try:
         if args.preprocess_data:
