@@ -64,7 +64,7 @@ def prepare_ht_for_constraint_calculations(
     # Add annotations for 'ref' and 'alt'
     ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
     # Filter to SNPs and context fields where the bases are either A, T, C, or G
-    ht = ht.filter(hl.is_snp(ht.ref, ht.alt) & ht.context.matches(f"[ATCG]{3}"))
+    ht = ht.filter(hl.is_snp(ht.ref, ht.alt) & ht.context.matches(f"[ATCG]{{{3}}}"))
     # Annotate mutation type (such as "CpG", "non-CpG transition", "transversion") and collapse strands to deduplicate the context
     ht = annotate_mutation_type(collapse_strand(ht))
     # Add annotation for the methylation level
