@@ -19,10 +19,8 @@ from gnomad.utils.vep import (
 )
 
 from .generic import (
-    fast_filter_vep,
     count_variants,
     annotate_with_mu,
-    remove_unnecessary_variants,
 )
 
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
