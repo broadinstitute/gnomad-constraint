@@ -8,7 +8,10 @@ from gnomad.utils.constraint import (
     collapse_strand,
     trimer_from_heptamer,
 )
-from gnomad.utils.vep import add_most_severe_csq_to_tc_within_vep_root
+from gnomad.utils.vep import (
+    add_most_severe_csq_to_tc_within_vep_root,
+    filter_vep_transcript_csqs,
+)
 
 from .generic import (
     fast_filter_vep,
@@ -94,33 +97,21 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     return ht
 
 
-def get_proportion_observed_by_coverage(
+def create_constraint_training_dataset(
     exome_ht: hl.Table,
     context_ht: hl.Table,
     mutation_ht: hl.Table,
-    possible_file_path: str,
-    recompute_possible: bool = False,
-    impose_high_af_cutoff_upfront: bool = True,
-    dataset: str = "gnomad",
-    af_cutoff: float = 0.001,
-    kept_context_annotations: Tuple[str] = (
+    max_af: float = 0.001,
+    kept_annotations: Tuple[str] = (
         "context",
         "ref",
         "alt",
         "methylation_level",
         "exome_coverage",
-    ),
-    kept_exome_annotations: Tuple[str] = (
-        "context",
-        "ref",
-        "alt",
-        "methylation_level",
-        "exome_coverage",
-        "freq",
-        "pass_filters",
     ),
     pops: Tuple[str] = POPS,
-    grouping: Tuple[str] = ("exome_coverage"),
+    grouping: Tuple[str] = ("exome_coverage",),
+    partition_hint: int = 100,
 ) -> hl.Table:
     """
     Count the observed variants and possible variants by exome coverage.
@@ -128,42 +119,40 @@ def get_proportion_observed_by_coverage(
     :param exome_ht: Preprocessed exome Table.
     :param context_ht: Preprocessed context Table.
     :param mutation_ht: Preprocessed mutation rate Table.
-    :param possible_file_path: Path to save table with possible variants.
-    :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
-    :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles, defaults to True.
-    :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
-    :param af_cutoff: Variants with AF above than AF cutoff will be removed, defaults to 0.001.
-    :param kept_context_annotations: Annotations to keep in the context Table.
-    :param kept_exome_annotations: Annotations to keep in the exome Table.
+    :param max_af: Variants with AF above than AF cutoff will be removed, defaults to 0.001.
+    :param kept_annotations: Annotations to keep in the context Table.
     :param pops: List of populations. Defaults to `POPS`.
     :param grouping: Annotations other than 'context', 'ref', 'alt' to group by when counting variants, defaults to 'exome_coverage'.
+    :param partition_hint: Target number of partitions for aggregation. Defaults to 100.
     :return: Table with observed variant and possible variant count.
     """
-    context_ht = fast_filter_vep(context_ht).select(kept_context_annotations)
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
-    exome_ht = fast_filter_vep(exome_ht).select(kept_exome_annotations)
+    freq_expr = exome_ht.freq[0]
 
-    context_ht, exome_ht = remove_unnecessary_variants(
-        context_ht, exome_ht, dataset, af_cutoff, impose_high_af_cutoff_upfront
+    keep_criteria = (
+        (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
 
-    if recompute_possible:
-        possible_ht = count_variants(
-            context_ht, additional_grouping=grouping, force_grouping=True
-        )
-        possible_ht = annotate_with_mu(possible_ht, mutation_ht)
-        possible_ht.transmute(possible_variants=possible_ht.variant_count).write(
-            possible_file_path, True
-        )
-
-    possible_ht = hl.read_table(possible_file_path)
     ht = count_variants(
-        exome_ht,
+        filter_vep_transcript_csqs(exome_ht.filter(keep_criteria)).select(
+            *list(kept_annotations) + ["freq"]
+        ),
         additional_grouping=grouping,
-        partition_hint=100,
+        partition_hint=partition_hint,
         count_downsamplings=pops,
-        impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront,
+        use_table_group_by=True,
+        max_af=max_af if not impose_high_af_cutoff_upfront else None,
     )
+    ht = ht.transmute(observed_variants=ht.variant_count)
+
+    context_ht = filter_vep_transcript_csqs(context_ht).select(*kept_annotations)
+    context_ht = context_ht.anti_join(exome_ht.filter(keep_criteria, keep=False))
+    possible_ht = count_variants(
+        context_ht, additional_grouping=grouping, use_table_group_by=True
+    )
+    possible_ht = annotate_with_mu(possible_ht, mutation_ht)
+    # TODO: add checkpoint for possible_ht if necessary
+    possible_ht = possible_ht.transmute(possible_variants=possible_ht.variant_count)
+
     ht = ht.join(possible_ht, "outer")
-    ht = add_most_severe_csq_to_tc_within_vep_root(ht)
+    ht = annotate_mutation_type(ht)
     return ht
