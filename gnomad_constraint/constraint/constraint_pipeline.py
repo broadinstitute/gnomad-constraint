@@ -26,8 +26,6 @@ logger.setLevel(logging.INFO)
 
 def main(args):
     """Execute the constraint pipeline."""
-    trimers = args.trimers
-
     try:
         if args.add_vep_annotations:
             logger.info("Adding VEP context annotations...")
@@ -59,11 +57,6 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--overwrite", help="Whether to overwrite output files", action="store_true"
-    )
-    parser.add_argument(
-        "--trimers",
-        help="Whether to use trimers instead of heptamers to define the context",
-        action="store_true",
     )
     parser.add_argument(
         "--add-vep-annotations",
