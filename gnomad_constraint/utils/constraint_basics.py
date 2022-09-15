@@ -15,10 +15,8 @@ from gnomad.utils.vep import (
 )
 
 from .generic import (
-    fast_filter_vep,
     count_variants,
     annotate_with_mu,
-    remove_unnecessary_variants,
 )
 
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
@@ -138,7 +136,7 @@ def create_constraint_training_dataset(
         partition_hint=partition_hint,
         count_downsamplings=pops,
         use_table_group_by=True,
-        max_af=max_af if not impose_high_af_cutoff_upfront else None,
+        max_af=max_af if max_af else None,
     )
     ht = ht.transmute(observed_variants=ht.variant_count)
 
