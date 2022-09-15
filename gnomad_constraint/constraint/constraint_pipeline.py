@@ -6,7 +6,6 @@ import logging
 import hail as hl
 
 from gnomad.resources.grch37.gnomad import public_release
-from gnomad.resources.grch38.reference_data import vep_context
 from gnomad_constraint.resources.resource_utils import (
     get_processed_ht_path,
     get_logging_path,
@@ -30,8 +29,9 @@ def main(args):
     trimers = args.trimers
 
     try:
-        if args.pre_process_data:
+        if args.add_vep_annotations:
             logger.info("Adding VEP context annotations...")
+            # TODO: Need to add function that annotates methylation, coverage, and gerp in the vep context table.
             add_vep_context_annotations(
                 public_release("genomes").ht(), context_ht_path
             ).write(get_processed_ht_path("genomes"), overwrite=args.overwrite)
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--pre-process-data",
+        "--add-vep-annotations",
         help="Whether to add annotations from VEP context Table to genome and exome Table.",
         action="store_true",
     )
