@@ -6,6 +6,10 @@ import logging
 import hail as hl
 
 from gnomad.resources.grch37.gnomad import public_release
+from gnomad.utils.filtering import (
+    filter_x_nonpar,
+    filter_y_nonpar,
+)
 from gnomad_constraint.resources.resource_utils import (
     preprocessed_ht,
     get_logging_path,
@@ -30,6 +34,8 @@ logger.setLevel(logging.INFO)
 
 def main(args):
     """Execute the constraint pipeline."""
+    max_af = args.max_af
+    dataset_freq_idx = 0
     max_af = args.max_af
 
     try:
@@ -79,19 +85,11 @@ def main(args):
         exome_ht = full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par())
         mutation_ht = hl.read_table(mutation_rate_ht_path).select("mu_snp")
 
-        context_x_ht = hl.filter_intervals(
-            full_context_ht, [hl.parse_locus_interval("X")]
-        )
-        context_x_ht = context_x_ht.filter(context_x_ht.locus.in_x_nonpar())
-        context_y_ht = hl.filter_intervals(
-            full_context_ht, [hl.parse_locus_interval("Y")]
-        )
-        context_y_ht = context_y_ht.filter(context_y_ht.locus.in_y_nonpar())
+        context_x_ht = filter_x_nonpar(full_context_ht)
+        context_y_ht = filter_y_nonpar(full_context_ht)
 
-        exome_x_ht = hl.filter_intervals(full_exome_ht, [hl.parse_locus_interval("X")])
-        exome_x_ht = exome_x_ht.filter(exome_x_ht.locus.in_x_nonpar())
-        exome_y_ht = hl.filter_intervals(full_exome_ht, [hl.parse_locus_interval("Y")])
-        exome_y_ht = exome_y_ht.filter(exome_y_ht.locus.in_y_nonpar())
+        exome_x_ht = filter_x_nonpar(full_exome_ht)
+        exome_y_ht = filter_y_nonpar(full_exome_ht)
 
         if args.create_training_set:
             get_proportion_observed_by_coverage(
