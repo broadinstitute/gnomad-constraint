@@ -16,7 +16,6 @@ from gnomad_constraint.resources.resource_utils import (
     annotated_context_ht,
     mutation_rate_ht_path,
     training_ht_path,
-    possible_file_path,
 )
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
@@ -35,7 +34,6 @@ logger.setLevel(logging.INFO)
 def main(args):
     """Execute the constraint pipeline."""
     max_af = args.max_af
-    dataset_freq_idx = 0
     max_af = args.max_af
 
     try:
@@ -137,16 +135,6 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--overwrite", help="Whether to overwrite output files", action="store_true"
-    )
-    parser.add_argument(
-        "--skip_af_filter_upfront",
-        help="Skip AF filter up front (to be applied later to ensure that it is not affecting population-specific constraint): not generally recommended",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--dataset",
-        help="Which dataset to use (one of gnomad, non_neuro, non_cancer, controls)",
-        default="gnomad",
     )
     parser.add_argument(
         "--max_af",
