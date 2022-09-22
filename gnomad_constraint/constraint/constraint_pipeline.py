@@ -112,6 +112,10 @@ def main(args):
             ).write(training_ht_path.replace(".ht", "_y.ht"), overwrite=args.overwrite)
             logger.info("Done with creating training dataset.")
 
+        coverage_ht = hl.read_table(po_coverage_ht_path)
+        coverage_x_ht = hl.read_table(po_coverage_ht_path.replace(".ht", "_x.ht"))
+        coverage_y_ht = hl.read_table(po_coverage_ht_path.replace(".ht", "_y.ht"))
+
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(get_logging_path("constraint_pipeline"))
