@@ -7,15 +7,12 @@ from gnomad.utils.constraint import (
     annotate_mutation_type,
     collapse_strand,
     trimer_from_heptamer,
+    annotate_with_mu,
+    count_variants_by_group,
 )
 from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
-)
-
-from .generic import (
-    count_variants,
-    annotate_with_mu,
 )
 
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
@@ -100,7 +97,7 @@ def create_constraint_training_dataset(
     context_ht: hl.Table,
     mutation_ht: hl.Table,
     max_af: float = 0.001,
-    kept_annotations: Tuple[str] = (
+    keep_annotations: Tuple[str] = (
         "context",
         "ref",
         "alt",
@@ -112,43 +109,58 @@ def create_constraint_training_dataset(
     partition_hint: int = 100,
 ) -> hl.Table:
     """
-    Count the observed variants and possible variants by exome coverage.
+    Count the observed variants and possible variants by substitution, context, methylation level, and additional `grouping`.
+
+    Variants where there was no coverage, a low-quality variant was observed, or a variant
+    above 0.1% frequency was observed  in `exome_ht` and `context_ht` was removed. For each substitution,
+    context, and methylation level, observed variants were counted using `exome_ht`, and possible variants
+    was counted using `context_ht` that anti joins `exome_ht`.
+
+    The returned Table includes following annotations:
+        - context - trinucleotide genomic context
+        - ref - the middle base of `context`
+        - alt - the alternate base
+        - methylation_level - methylation_level
+        - observed_variants - observed variant counts in `exome_ht`
+        - possible_variants - possible variant counts in `context_ht`
+        - downsampling_counts_{pop} - variant counts in downsaplings for populations in `pops`
+        - mu_snp - SNP mutation rate
+        - annotations added by `annotate_mutation_type`
 
     :param exome_ht: Preprocessed exome Table.
     :param context_ht: Preprocessed context Table.
     :param mutation_ht: Preprocessed mutation rate Table.
-    :param max_af: Variants with AF above than AF cutoff will be removed, defaults to 0.001.
-    :param kept_annotations: Annotations to keep in the context Table.
-    :param pops: List of populations. Defaults to `POPS`.
-    :param grouping: Annotations other than 'context', 'ref', 'alt' to group by when counting variants, defaults to 'exome_coverage'.
-    :param partition_hint: Target number of partitions for aggregation. Defaults to 100.
+    :param max_af: Maximum allele frequency for a variant to be included in returned counts. Default is 0.001.
+    :param keep_annotations: Annotations to keep in the context Table.
+    :param pops: List of populations for choosing downsamplings when counting variants. Default is `POPS`.
+    :param grouping: Annotations other than 'context', 'ref', 'alt' to group by when counting variants. Default is ('exome_coverage',).
+    :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :return: Table with observed variant and possible variant count.
     """
+    # It's adjusted allele frequency information for all release samples in gnomAD
     freq_expr = exome_ht.freq[0]
 
     keep_criteria = (
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
 
-    ht = count_variants(
+    ht = count_variants_by_group(
         filter_vep_transcript_csqs(exome_ht.filter(keep_criteria)).select(
-            *list(kept_annotations) + ["freq"]
+            *list(keep_annotations) + ["freq"]
         ),
         additional_grouping=grouping,
         partition_hint=partition_hint,
         count_downsamplings=pops,
         use_table_group_by=True,
-        max_af=max_af if max_af else None,
     )
     ht = ht.transmute(observed_variants=ht.variant_count)
 
-    context_ht = filter_vep_transcript_csqs(context_ht).select(*kept_annotations)
+    context_ht = filter_vep_transcript_csqs(context_ht).select(*keep_annotations)
     context_ht = context_ht.anti_join(exome_ht.filter(keep_criteria, keep=False))
-    possible_ht = count_variants(
+    possible_ht = count_variants_by_group(
         context_ht, additional_grouping=grouping, use_table_group_by=True
     )
     possible_ht = annotate_with_mu(possible_ht, mutation_ht)
-    # TODO: add checkpoint for possible_ht if necessary
     possible_ht = possible_ht.transmute(possible_variants=possible_ht.variant_count)
 
     ht = ht.join(possible_ht, "outer")
