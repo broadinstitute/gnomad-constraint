@@ -68,18 +68,8 @@ def main(args):
             )
             logger.info("Done with preprocessing genome and exome Table.")
 
-        full_context_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(context_ht_path)
-        )
-        full_genome_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(get_processed_ht_path("genomes"))
-        )
-        full_exome_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(get_processed_ht_path("exomes"))
-        )
-
-        context_ht = full_context_ht.filter(full_context_ht.locus.in_autosome_or_par())
-        exome_ht = full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par())
+        context_ht = preprocessed_ht("context").ht()
+        exome_ht = preprocessed_ht("genome").ht()
         mutation_ht = hl.read_table(mutation_rate_ht_path).select("mu_snp")
 
         context_x_ht = filter_x_nonpar(full_context_ht)
@@ -95,9 +85,6 @@ def main(args):
                 mutation_ht,
                 max_af=max_af,
             ).write(training_ht_path, overwrite=args.overwrite)
-            hl.read_table(training_ht_path).export(
-                training_ht_path.replace(".ht", ".txt.bgz")
-            )
             create_constraint_training_dataset(
                 exome_x_ht,
                 context_x_ht,
