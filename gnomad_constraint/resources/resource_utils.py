@@ -1,3 +1,5 @@
+# noqa: D100
+
 from gnomad.resources.resource_utils import (
     TableResource,
     VersionedTableResource,
@@ -5,7 +7,7 @@ from gnomad.resources.resource_utils import (
 )
 from gnomad.utils.file_utils import file_exists
 
-# noqa: D100
+
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
 # A context table annotated with VEP, coverage, and methylation information.
 annotated_context_ht = VersionedTableResource(
