@@ -78,11 +78,11 @@ def main(args):
             exome_ht = (
                 preprocessed_ht("genome").ht()._filter_partitions(range(partitions))
             )
-            mutation_ht = mutation_rate_ht.ht().select("mu_snp")
         else:
             context_ht = preprocessed_ht("context").ht()
             exome_ht = preprocessed_ht("genome").ht()
-            mutation_ht = mutation_rate_ht.ht().select("mu_snp")
+
+        mutation_ht = mutation_rate_ht.ht().select("mu_snp")
 
         context_x_ht = filter_x_nonpar(full_context_ht)
         context_y_ht = filter_y_nonpar(full_context_ht)
