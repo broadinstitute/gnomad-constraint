@@ -27,7 +27,7 @@ def preprocessed_ht(data_type: str) -> TableResource:
     The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
 
     :param data_type: One of "exomes" or "genomes".
-    :return: Path to processed genomes or exomes Table.
+    :return: TableResource of processed genomes or exomes Table.
     """
     preprocessed_ht_path = f"{constraint_tmp_prefix}/model/{data_type}_processed.ht"
     if file_exists(preprocessed_ht_path):
