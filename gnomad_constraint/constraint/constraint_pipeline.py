@@ -27,7 +27,7 @@ logger.setLevel(logging.INFO)
 def main(args):
     """Execute the constraint pipeline."""
     try:
-        if args.add_annotations:
+        if args.preprocess_data:
             logger.info("Adding VEP context annotations...")
             # Add annotations from VEP context Table to gnomAD data.
             # TODO: Need to add function that annotates methylation, coverage, and gerp in the vep context table.
@@ -71,7 +71,7 @@ if __name__ == "__main__":
         "--overwrite", help="Whether to overwrite output files", action="store_true"
     )
     parser.add_argument(
-        "--add-annotations",
+        "--preprocess-data",
         help="Whether to add necessary coverage, methylation level, and VEP annotations to genome and exome Tables.",
         action="store_true",
     )
