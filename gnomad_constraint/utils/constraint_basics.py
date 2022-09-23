@@ -16,8 +16,6 @@ from gnomad.utils.vep import (
     filter_vep_transcript_csqs,
 )
 
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-
 
 def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.Table:
     """
@@ -102,7 +100,7 @@ def create_constraint_training_dataset(
         "methylation_level",
         "exome_coverage",
     ),
-    pops: Tuple[str] = POPS,
+    pops: Tuple[str] = None,
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
 ) -> hl.Table:
@@ -130,7 +128,7 @@ def create_constraint_training_dataset(
     :param mutation_ht: Preprocessed mutation rate Table.
     :param max_af: Maximum allele frequency for a variant to be included in returned counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table.
-    :param pops: List of populations for choosing downsamplings when counting variants. Default is `POPS`.
+    :param pops: List of populations for choosing downsamplings when counting variants. Default is None.
     :param grouping: Annotations other than 'context', 'ref', 'alt' to group by when counting variants. Default is ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :return: Table with observed variant and possible variant count.
