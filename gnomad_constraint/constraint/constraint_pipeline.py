@@ -13,9 +13,10 @@ from gnomad.utils.filtering import (
 from gnomad_constraint.resources.resource_utils import (
     preprocessed_ht,
     get_logging_path,
+    training_dataset,
     annotated_context_ht,
     mutation_rate_ht,
-    training_ht_path,
+    POPS,
 )
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
@@ -34,6 +35,8 @@ logger.setLevel(logging.INFO)
 def main(args):
     """Execute the constraint pipeline."""
     max_af = args.max_af
+    partitions = args.partitions
+    use_pops = args.use_pop
 
     try:
         if args.preprocess_data:
@@ -68,9 +71,18 @@ def main(args):
             )
             logger.info("Done with preprocessing genome and exome Table.")
 
-        context_ht = preprocessed_ht("context").ht()
-        exome_ht = preprocessed_ht("genome").ht()
-        mutation_ht = mutation_rate_ht.ht().select("mu_snp")
+        if partitions:
+            context_ht = (
+                preprocessed_ht("context").ht()._filter_partitions(range(partitions))
+            )
+            exome_ht = (
+                preprocessed_ht("genome").ht()._filter_partitions(range(partitions))
+            )
+            mutation_ht = mutation_rate_ht.ht().select("mu_snp")
+        else:
+            context_ht = preprocessed_ht("context").ht()
+            exome_ht = preprocessed_ht("genome").ht()
+            mutation_ht = mutation_rate_ht.ht().select("mu_snp")
 
         context_x_ht = filter_x_nonpar(full_context_ht)
         context_y_ht = filter_y_nonpar(full_context_ht)
@@ -84,24 +96,27 @@ def main(args):
                 context_ht,
                 mutation_ht,
                 max_af=max_af,
-            ).write(training_ht_path, overwrite=args.overwrite)
+                pops=POPS if use_pops else None,
+            ).write(training_dataset().path, overwrite=args.overwrite)
             create_constraint_training_dataset(
                 exome_x_ht,
                 context_x_ht,
                 mutation_ht,
                 max_af=max_af,
-            ).write(training_ht_path.replace(".ht", "_x.ht"), overwrite=args.overwrite)
+                pops=POPS if use_pops else None,
+            ).write(training_dataset("chrx").path, overwrite=args.overwrite)
             create_constraint_training_dataset(
                 exome_y_ht,
                 context_y_ht,
                 mutation_ht,
                 max_af=max_af,
-            ).write(training_ht_path.replace(".ht", "_y.ht"), overwrite=args.overwrite)
+                pops=POPS if use_pops else None,
+            ).write(training_dataset("chry").path, overwrite=args.overwrite)
             logger.info("Done with creating training dataset.")
 
-        training_ht = hl.read_table(po_coverage_ht_path)
-        training_x_ht = hl.read_table(po_coverage_ht_path.replace(".ht", "_x.ht"))
-        training_y_ht = hl.read_table(po_coverage_ht_path.replace(".ht", "_y.ht"))
+        training_ht = training_dataset().ht()
+        training_x_ht = training_dataset("chrx").ht()
+        training_y_ht = training_dataset("chry").ht()
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -115,12 +130,25 @@ if __name__ == "__main__":
         "--overwrite", help="Whether to overwrite output files", action="store_true"
     )
     parser.add_argument(
-        "--max_af",
-        help="Maximum variant AF to keep",
+        "--use-pop",
+        help="Whether to apply models on each population.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--max-af",
+        help="Maximum variant allele frequency to keep.",
         nargs="?",
         const=0.001,
         type=float,
         default=0.001,
+    )
+    parser.add_argument(
+        "--partitions",
+        help="Whether to filters the exome Table and the context Table to only a few partitions.",
+        nargs="?",
+        const=10,
+        type=int,
+        default=10,
     )
     parser.add_argument(
         "--preprocess-data",
