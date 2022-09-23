@@ -18,13 +18,6 @@ from gnomad.utils.vep import (
     filter_vep_transcript_csqs,
 )
 
-from .generic import (
-    count_variants,
-    annotate_with_mu,
-)
-
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-
 
 def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.Table:
     """
