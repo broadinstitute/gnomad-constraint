@@ -1,4 +1,9 @@
-from gnomad.resources.resource_utils import TableResource, VersionedTableResource
+from gnomad.resources.resource_utils import (
+    TableResource,
+    VersionedTableResource,
+    DataException,
+)
+from gnomad.utils.file_utils import file_exists
 
 # noqa: D100
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
@@ -24,7 +29,13 @@ def preprocessed_ht(data_type: str) -> TableResource:
     :param data_type: One of "exomes" or "genomes".
     :return: Path to processed genomes or exomes Table.
     """
-    return TableResource(f"{constraint_tmp_prefix}/model/{data_type}_processed.ht")
+    preprocessed_ht_path = f"{constraint_tmp_prefix}/model/{data_type}_processed.ht"
+    if file_exists(preprocessed_ht_path):
+        return TableResource(preprocessed_ht_path)
+    else:
+        raise DataException(
+            f"No file or directory found at {preprocessed_ht_path}. Please add --add-annotations to the script and rerun the pipeline."
+        )
 
 
 def get_logging_path(name: str) -> str:
