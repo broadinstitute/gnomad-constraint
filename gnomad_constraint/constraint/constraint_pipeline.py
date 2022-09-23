@@ -1,5 +1,5 @@
 # noqa: D100
-# cSpell: disable
+
 import argparse
 import logging
 
@@ -14,7 +14,7 @@ from gnomad_constraint.resources.resource_utils import (
     preprocessed_ht,
     get_logging_path,
     annotated_context_ht,
-    mutation_rate_ht_path,
+    mutation_rate_ht,
     training_ht_path,
 )
 from gnomad_constraint.utils.constraint_basics import (
@@ -68,6 +68,7 @@ def main(args):
             )
             logger.info("Done with preprocessing genome and exome Table.")
 
+<<<<<<< HEAD
         full_context_ht = prepare_ht_for_constraint_calculations(
             hl.read_table(context_ht_path)
         )
@@ -81,6 +82,11 @@ def main(args):
         context_ht = full_context_ht.filter(full_context_ht.locus.in_autosome_or_par())
         exome_ht = full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par())
         mutation_ht = hl.read_table(mutation_rate_ht_path).select("mu_snp")
+=======
+        context_ht = preprocessed_ht("context").ht()
+        exome_ht = preprocessed_ht("genome").ht()
+        mutation_ht = mutation_rate_ht.ht().select("mu_snp")
+>>>>>>> 98a3079 (add training_dataset)
 
         context_x_ht = filter_x_nonpar(full_context_ht)
         context_y_ht = filter_y_nonpar(full_context_ht)
