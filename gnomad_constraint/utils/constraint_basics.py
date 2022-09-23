@@ -26,7 +26,6 @@ from .generic import (
 )
 
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-HIGH_COVERAGE_CUTOFF = 40
 
 from .generic import (
     fast_filter_vep,
