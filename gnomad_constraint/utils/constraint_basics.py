@@ -10,9 +10,7 @@ from gnomad.utils.constraint import (
 from gnomad.utils.vep import add_most_severe_csq_to_tc_within_vep_root
 
 
-def add_vep_context_annotations(
-    ht: hl.Table, annotated_context_ht_path: str
-) -> hl.Table:
+def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.Table:
     """
     Add annotations from VEP context Table to gnomAD data.
 
@@ -29,9 +27,9 @@ def add_vep_context_annotations(
         Function expects that multiallelic variants in the VEP context Table have been split.
 
     :param ht: gnomAD exomes or genomes public Hail Table.
-    :param annotated_context_ht_path: Path to VEP context Table.
+    :param annotated_context_ht: VEP context Table.
     """
-    context_ht = hl.read_table(annotated_context_ht_path).drop("a_index", "was_split")
+    context_ht = annotated_context_ht.drop("a_index", "was_split")
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
     return ht.annotate(**context_ht[ht.key])
 

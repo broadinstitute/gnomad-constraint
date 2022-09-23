@@ -7,9 +7,9 @@ import hail as hl
 
 from gnomad.resources.grch37.gnomad import public_release
 from gnomad_constraint.resources.resource_utils import (
-    get_processed_ht_path,
+    preprocessed_ht,
     get_logging_path,
-    context_ht_path,
+    annotated_context_ht,
 )
 from gnomad_constraint.utils.constraint_basics import (
     add_vep_context_annotations,
@@ -27,26 +27,38 @@ logger.setLevel(logging.INFO)
 def main(args):
     """Execute the constraint pipeline."""
     try:
-        if args.add_vep_annotations:
+        if args.add_annotations:
             logger.info("Adding VEP context annotations...")
+            # Add annotations from VEP context Table to gnomAD data.
             # TODO: Need to add function that annotates methylation, coverage, and gerp in the vep context table.
-            add_vep_context_annotations(
-                public_release("genomes").ht(), context_ht_path
-            ).write(get_processed_ht_path("genomes"), overwrite=args.overwrite)
-            add_vep_context_annotations(
-                public_release("exomes").ht(), context_ht_path
-            ).write(get_processed_ht_path("exomes"), overwrite=args.overwrite)
+            preprocessed_genome_ht = add_vep_context_annotations(
+                public_release("genomes").ht(), annotated_context_ht.ht()
+            )
+            preprocessed_exome_ht = add_vep_context_annotations(
+                public_release("exomes").ht(), annotated_context_ht.ht()
+            )
+            # Filter input Table and add annotations used in constraint calculations.
+            full_context_ht = prepare_ht_for_constraint_calculations(
+                annotated_context_ht.ht()
+            )
+            full_genome_ht = prepare_ht_for_constraint_calculations(
+                preprocessed_genome_ht
+            )
+            full_exome_ht = prepare_ht_for_constraint_calculations(
+                preprocessed_exome_ht
+            )
+            # Filter to locus that is on an autosome or a pseudoautosomal region in context Table, exome Table, and genome Table
+            full_context_ht.filter(full_context_ht.locus.in_autosome_or_par()).write(
+                preprocessed_ht("context").path, overwrite=args.overwrite
+            )
+            full_genome_ht.filter(full_genome_ht.locus.in_autosome_or_par()).write(
+                preprocessed_ht("genome").path, overwrite=args.overwrite
+            )
+            full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par()).write(
+                preprocessed_ht("exome").path, overwrite=args.overwrite
+            )
             logger.info("Done with preprocessing genome and exome Table.")
 
-        full_context_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(context_ht_path)
-        )
-        full_genome_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(get_processed_ht_path("genomes"))
-        )
-        full_exome_ht = prepare_ht_for_constraint_calculations(
-            hl.read_table(get_processed_ht_path("exomes"))
-        )
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(get_logging_path("constraint_pipeline"))
@@ -59,7 +71,7 @@ if __name__ == "__main__":
         "--overwrite", help="Whether to overwrite output files", action="store_true"
     )
     parser.add_argument(
-        "--add-vep-annotations",
-        help="Whether to add annotations from VEP context Table to genome and exome Table.",
+        "--add-annotations",
+        help="Whether to add necessary coverage, methylation level, and VEP annotations to genome and exome Tables.",
         action="store_true",
     )
