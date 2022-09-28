@@ -10,7 +10,9 @@ from gnomad.utils.constraint import (
 from gnomad.utils.vep import add_most_severe_csq_to_tc_within_vep_root
 
 
-def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.Table:
+def add_vep_context_annotations(
+    ht: hl.Table, annotated_context_ht: hl.Table
+) -> hl.Table:
     """
     Add annotations from VEP context Table to gnomAD data.
 
@@ -19,7 +21,6 @@ def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.T
         - methylation
         - coverage
         - gerp
-        - pass_filters
 
     Function drops `a_index`, `was_split`, and`colocated_variants` annotations from gnomAD data.
 
@@ -28,13 +29,14 @@ def add_vep_context_annotations(ht: hl.Table, annotated_context_ht: str) -> hl.T
 
     :param ht: gnomAD exomes or genomes public Hail Table.
     :param annotated_context_ht: VEP context Table.
+    :return: Table with annotations.
     """
     context_ht = annotated_context_ht.drop("a_index", "was_split")
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
     return ht.annotate(**context_ht[ht.key])
 
 
-def prepare_ht_for_constraint_calculations(ht: hl.Table):
+def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     """
     Filter input Table and add annotations used in constraint calculations.
 
@@ -45,11 +47,11 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table):
         - ref
         - alt
         - methylation_level
+        - exome_coverage
+        - pass_filters - Whether the variant passed all variant filters
         - annotations added by `annotate_mutation_type()`, `collapse_strand()`, and `add_most_severe_csq_to_tc_within_vep_root()`
-        - exome_coverage (optionally added)
 
     :param ht: Input Table to be annotated.
-    :param annotate_coverage: Whether to annotate the coverage of exome. Defaults to True.
     :return: Table with annotations.
     """
     ht = trimer_from_heptamer(ht)
@@ -70,9 +72,10 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table):
         .when(ht.cpg & (ht.methylation.MEAN > 0.2), 1)
         .default(0)
     }
-    # Add annotation for the median exome coverage if requested
+    # Add annotation for the median exome coverage
     annotation["exome_coverage"] = ht.coverage.exomes.median
     ht = ht.annotate(**annotation)
+
     # Add most_severe_consequence annotation to 'transcript_consequences' within the vep root annotation.
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
 

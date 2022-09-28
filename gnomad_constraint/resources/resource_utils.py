@@ -9,6 +9,7 @@ from gnomad.utils.file_utils import file_exists
 
 
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
+
 # A context table annotated with VEP, coverage, and methylation information.
 annotated_context_ht = VersionedTableResource(
     default_version="85",
@@ -20,7 +21,7 @@ annotated_context_ht = VersionedTableResource(
 )
 
 
-def preprocessed_ht(data_type: str) -> TableResource:
+def get_preprocessed_ht(data_type: str, sex_chr: str = None) -> TableResource:
     """
     Return TableResource of preprocessed genome, exomes, and context Table.
 
@@ -29,9 +30,12 @@ def preprocessed_ht(data_type: str) -> TableResource:
     The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
 
     :param data_type: One of "exomes" or "genomes".
+    :param sex_chr: Which sex chromosome the dataset has, defaults to None.
     :return: TableResource of processed genomes or exomes Table.
     """
-    preprocessed_ht_path = f"{constraint_tmp_prefix}/model/{data_type}_processed.ht"
+    if sex_chr and sex_chr not in ("chrx", "chry"):
+        raise ValueError("sex_chr must be one of: 'chrx' or 'chry'!")
+    preprocessed_ht_path = f"{constraint_tmp_prefix}/model/{data_type}_processed{'' if sex_chr is None else f'_{sex_chr}'}.ht"
     if file_exists(preprocessed_ht_path):
         return TableResource(preprocessed_ht_path)
     else:

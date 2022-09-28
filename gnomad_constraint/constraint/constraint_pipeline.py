@@ -6,8 +6,12 @@ import logging
 import hail as hl
 
 from gnomad.resources.grch37.gnomad import public_release
+from gnomad.utils.filtering import (
+    filter_x_nonpar,
+    filter_y_nonpar,
+)
 from gnomad_constraint.resources.resource_utils import (
-    preprocessed_ht,
+    get_preprocessed_ht,
     get_logging_path,
     annotated_context_ht,
 )
@@ -47,15 +51,28 @@ def main(args):
             full_exome_ht = prepare_ht_for_constraint_calculations(
                 preprocessed_exome_ht
             )
-            # Filter to locus that is on an autosome or a pseudoautosomal region in context Table, exome Table, and genome Table
-            full_context_ht.filter(full_context_ht.locus.in_autosome_or_par()).write(
-                preprocessed_ht("context").path, overwrite=args.overwrite
+            # Filter to locus that is on an autosome or a pseudoautosomal region in context Table, exome Table, and genome Table.
+            context_ht = full_context_ht.filter(
+                full_context_ht.locus.in_autosome_or_par()
+            ).write(get_preprocessed_ht("context").path, overwrite=args.overwrite)
+            genome_ht = full_genome_ht.filter(
+                full_genome_ht.locus.in_autosome_or_par()
+            ).write(get_preprocessed_ht("genome").path, overwrite=args.overwrite)
+            exome_ht = full_exome_ht.filter(
+                full_exome_ht.locus.in_autosome_or_par()
+            ).write(get_preprocessed_ht("exome").path, overwrite=args.overwrite)
+            # Sex chromosomes are analyzed separately, since they are biologically different from the autosomes.
+            context_x_ht = filter_x_nonpar(full_context_ht).write(
+                get_preprocessed_ht("context", "chrx").path, overwrite=args.overwrite
             )
-            full_genome_ht.filter(full_genome_ht.locus.in_autosome_or_par()).write(
-                preprocessed_ht("genome").path, overwrite=args.overwrite
+            context_y_ht = filter_y_nonpar(full_context_ht).write(
+                get_preprocessed_ht("context", "chry").path, overwrite=args.overwrite
             )
-            full_exome_ht.filter(full_exome_ht.locus.in_autosome_or_par()).write(
-                preprocessed_ht("exome").path, overwrite=args.overwrite
+            exome_x_ht = filter_x_nonpar(full_exome_ht).write(
+                get_preprocessed_ht("exome", "chrx").path, overwrite=args.overwrite
+            )
+            exome_y_ht = filter_y_nonpar(full_exome_ht).write(
+                get_preprocessed_ht("exome", "chrx").path, overwrite=args.overwrite
             )
             logger.info("Done with preprocessing genome and exome Table.")
 
@@ -72,6 +89,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--preprocess-data",
-        help="Whether to add necessary coverage, methylation level, and VEP annotations to genome and exome Tables.",
+        help="Whether to prepare the exome, genome, and context Table for constraint calculations by adding necessary coverage, methylation level, and VEP annotations.",
         action="store_true",
     )
