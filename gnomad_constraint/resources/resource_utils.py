@@ -7,21 +7,27 @@ from gnomad.resources.resource_utils import (
 )
 from gnomad.utils.file_utils import file_exists
 
-
+VERSIONS = ["2.0", "4.0"]
+CURRENT_VERSION = "2.0"
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
 
 # A context table annotated with VEP, coverage, and methylation information.
 annotated_context_ht = VersionedTableResource(
-    default_version="85",
+    CURRENT_VERSION,
     versions={
-        "85": TableResource(
+        "2.0": TableResource(
             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/context/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht",
+        ),
+        "4.0": TableResource(
+            path="",
         ),
     },
 )
 
 
-def get_preprocessed_ht(data_type: str, sex_chr: str = None) -> TableResource:
+def get_preprocessed_ht(
+    data_type: str, sex_chr: str = None, version: str = CURRENT_VERSION
+) -> TableResource:
     """
     Return TableResource of preprocessed genome, exomes, and context Table.
 
@@ -30,12 +36,14 @@ def get_preprocessed_ht(data_type: str, sex_chr: str = None) -> TableResource:
     The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
 
     :param data_type: One of "exomes" or "genomes".
-    :param sex_chr: Which sex chromosome the dataset has, defaults to None.
+    :param sex_chr: Which sex chromosome the dataset has. It will only be used in the file name. Defaults to None.
     :return: TableResource of processed genomes or exomes Table.
     """
     if sex_chr and sex_chr not in ("chrx", "chry"):
         raise ValueError("sex_chr must be one of: 'chrx' or 'chry'!")
-    preprocessed_ht_path = f"{constraint_tmp_prefix}/model/{data_type}_processed{'' if sex_chr is None else f'_{sex_chr}'}.ht"
+    if version not in VERSIONS:
+        raise ValueError("The requested version doesn't exist!")
+    preprocessed_ht_path = f"{constraint_tmp_prefix}/{version}/model/{data_type}_processed{'' if sex_chr is None else f'_{sex_chr}'}.ht"
     if file_exists(preprocessed_ht_path):
         return TableResource(preprocessed_ht_path)
     else:
