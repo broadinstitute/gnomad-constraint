@@ -9,6 +9,7 @@ from gnomad.utils.filtering import (
     filter_x_nonpar,
     filter_y_nonpar,
 )
+from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_constraint.resources.resource_utils import (
     get_sites_resource,
     get_preprocessed_ht,
@@ -23,7 +24,6 @@ from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
     prepare_ht_for_constraint_calculations,
 )
-from gnomad.utils.reference_genome import get_reference_genome
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -61,7 +61,7 @@ def main(args):
 
                 # Filtering the Table to chr20, chrX, and chrY for testing if applicable
                 if test:
-                    rg = get_reference_genome(ht.locus)
+                    rg = get_reference_genome(context_ht.locus)
                     contigs_keep = [
                         hl.parse_locus_interval(c, reference_genome=rg)
                         for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
