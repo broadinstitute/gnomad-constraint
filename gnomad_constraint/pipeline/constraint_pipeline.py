@@ -18,7 +18,6 @@ from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     VERSIONS,
     DATA_TYPES,
-    GENOMIC_REGIONS,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,

@@ -35,7 +35,7 @@ annotated_context_ht = VersionedTableResource(
 
 def get_sites_resource(data_type: str, version: str = CURRENT_VERSION):
     """
-    Return genome or exomes Table.
+    Return genomes or exomes sites Table.
 
     :param data_type: One of "exomes" or "genomes".
     :param version: The version of the Table, defaults to CURRENT_VERSION
@@ -72,7 +72,8 @@ def get_preprocessed_ht(
     preprocessed_ht_path = f"{constraint_tmp_prefix}/{version}/model/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
     if not file_exists(preprocessed_ht_path):
         logger.info(
-            f"{preprocessed_ht_path} doesn't exist, please ensure --preprocess-data is included on command line"
+            "No file or directory found at %s. Please ensure --preprocess-data is included on command line",
+            preprocessed_ht_path,
         )
     return TableResource(preprocessed_ht_path)
 
