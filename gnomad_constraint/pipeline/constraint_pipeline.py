@@ -130,3 +130,6 @@ if __name__ == "__main__":
         help="Whether to prepare the exome, genome, and context Table for constraint calculations by adding necessary coverage, methylation level, and VEP annotations.",
         action="store_true",
     )
+
+    args = parser.parse_args()
+    main(args)
