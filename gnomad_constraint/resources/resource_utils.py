@@ -40,7 +40,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION):
 
     :param data_type: One of "exomes" or "genomes".
     :param version: The version of the Table, defaults to CURRENT_VERSION
-    :return: Genome or exomes Table.
+    :return: Genome or exomes sites Table.
     """
     if version == "2.1.1":
         return public_release_grch37(data_type).versions[version]
@@ -61,9 +61,9 @@ def get_preprocessed_ht(
     The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
 
     :param data_type: One of "exomes", "genomes" or "context.
-    :param version:
+    :param version: One of the release versions (`VERSIONS`). Defaults to `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Defaults to "autosome_par".
-    :param test:
+    :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Defaults to False.
     :return: TableResource of processed genomes, exomes, or context Table.
     """
     if genomic_region not in GENOMIC_REGIONS:
