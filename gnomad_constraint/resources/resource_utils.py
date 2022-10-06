@@ -39,7 +39,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION):
     Return genomes or exomes sites Table.
 
     :param data_type: One of "exomes" or "genomes".
-    :param version: The version of the Table, defaults to CURRENT_VERSION
+    :param version: The version of the Table. Defaults to CURRENT_VERSION.
     :return: Genome or exomes sites Table.
     """
     if version == "2.1.1":
