@@ -9,18 +9,19 @@ from gnomad.resources.resource_utils import (
 )
 from gnomad.utils.file_utils import file_exists
 
-VERSIONS = ["2.1.1"]
-CURRENT_VERSION = "2.1.1"
-DATA_TYPES = ["context", "exomes", "genomes"]
-GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
-constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
-
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
 )
 logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
+
+VERSIONS = ["2.1.1"]
+CURRENT_VERSION = "2.1.1"
+DATA_TYPES = ["context", "exomes", "genomes"]
+GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
+
+constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
 
 # Context table annotated with VEP, coverage, and methylation information.
 annotated_context_ht = VersionedTableResource(
