@@ -100,28 +100,28 @@ def create_constraint_training_dataset(
         "ref",
         "alt",
         "methylation_level",
-        "exome_coverage",
     ),
-    pops: Optional[Tuple[str]] = (),
+    pops: Tuple[str] = (),
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
 ) -> hl.Table:
     """
     Count the observed variants and possible variants by substitution, context, methylation level, and additional `grouping`.
 
-    Variants where there was no coverage, a low-quality variant was observed, or a variant
-    above 0.1% frequency was observed  in `exome_ht` and `context_ht` was removed. For each substitution,
-    context, and methylation level, observed variants were counted using `exome_ht`, and possible variants
-    was counted using `context_ht` that anti joins `exome_ht`.
+    Variants where there are no coverage, a low-quality variant was observed, or a variant whose allele frequency is
+    above `max_af` cutoff is observed in `exome_ht` and `context_ht` will be removed. For each substitution,
+    context, methylation level, and exome coverage, observed variants are counted using `exome_ht`, and possible variants
+    are counted using `context_ht`. The table with possible variant counts and observed variant counts will be outer joined to
+    create the final training dataset.
 
-    The returned Table includes following annotations:
+    The returned Table includes the following annotations:
         - context - trinucleotide genomic context
-        - ref - the middle base of `context`
+        - ref - the reference allele
         - alt - the alternate base
         - methylation_level - methylation_level
         - observed_variants - observed variant counts in `exome_ht`
         - possible_variants - possible variant counts in `context_ht`
-        - downsampling_counts_{pop} - variant counts in downsaplings for populations in `pops`
+        - downsampling_counts_{pop} - variant counts in downsamplings for populations in `pops`
         - mu_snp - SNP mutation rate
         - annotations added by `annotate_mutation_type`
 
@@ -130,21 +130,26 @@ def create_constraint_training_dataset(
     :param mutation_ht: Preprocessed mutation rate Table.
     :param max_af: Maximum allele frequency for a variant to be included in returned counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table.
-    :param pops: List of populations for choosing downsamplings when counting variants. Default is ().
-    :param grouping: Annotations other than 'context', 'ref', 'alt' to group by when counting variants. Default is ('exome_coverage',).
+    :param pops: List of populations to use for downsampling counts. Default is ().
+    :param grouping: Annotations other than 'context', 'ref', 'alt', and `methylation_level` to group by when counting variants. Default is ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :return: Table with observed variant and possible variant count.
     """
-    # It's adjusted allele frequency information for all release samples in gnomAD
+    # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and AB >= 0.2 for het calls) in all release samples in gnomAD
     freq_expr = exome_ht.freq[0]
 
+    # Set up the criteria that variants where there was no coverage, a low-quality variant was observed,
+    # or a variant above 0.1% frequency was observed in `exome_ht` and `context_ht` was removed.
     keep_criteria = (
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
+    keep_annotations += grouping
 
+    # Keep variants that are synonymous, canonical and satisfied criteria above
+    # Count the observed variants in the entire Table and in each downsampling grouped by `keep_annotations`
     ht = count_variants_by_group(
         filter_vep_transcript_csqs(exome_ht.filter(keep_criteria)).select(
-            *list(keep_annotations) + ["freq"]
+            *list(keep_annotations) + ["freq", "pass_filters"]
         ),
         additional_grouping=grouping,
         partition_hint=partition_hint,
@@ -153,14 +158,25 @@ def create_constraint_training_dataset(
     )
     ht = ht.transmute(observed_variants=ht.variant_count)
 
+    # Keep variants that are synonymous and canonical
     context_ht = filter_vep_transcript_csqs(context_ht).select(*keep_annotations)
+    # Filter the `exome_ht` to rows that don’t match the keep_criteria
+    # Anti join the `context_ht` with filtered `exome_ht`, so that `context_ht` only has rows
+    # that match the keep_criteria in the `exome_ht` or are never in the `exome_ht`.
     context_ht = context_ht.anti_join(exome_ht.filter(keep_criteria, keep=False))
+
+    # Count the possible variants in the context Table grouped by `keep_annotations`
     possible_ht = count_variants_by_group(
-        context_ht, additional_grouping=grouping, use_table_group_by=True
+        context_ht,
+        additional_grouping=grouping,
+        partition_hint=partition_hint,
+        use_table_group_by=True,
     )
     possible_ht = annotate_with_mu(possible_ht, mutation_ht)
     possible_ht = possible_ht.transmute(possible_variants=possible_ht.variant_count)
 
+    # Outer join the Tables with possible variant counts and observed variant counts
     ht = ht.join(possible_ht, "outer")
+    # Annotate the Table with cpg site and mutation_type (one of "CpG", "non-CpG transition", or "transversion")
     ht = annotate_mutation_type(ht)
     return ht

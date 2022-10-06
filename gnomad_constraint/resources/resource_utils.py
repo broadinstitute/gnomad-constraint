@@ -12,14 +12,6 @@ from gnomad.resources.resource_utils import (
 )
 from gnomad.utils.file_utils import check_file_exists_raise_error
 
-VERSIONS = ["2.1.1"]
-CURRENT_VERSION = "2.1.1"
-DATA_TYPES = ["context", "exomes", "genomes"]
-GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-
-constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
-
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
@@ -31,6 +23,7 @@ VERSIONS = ["2.1.1"]
 CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
+POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
 
