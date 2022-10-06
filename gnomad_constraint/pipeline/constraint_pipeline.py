@@ -31,6 +31,7 @@ from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_constraint.resources.resource_utils import (
     get_sites_resource,
     get_preprocessed_ht,
+    get_training_dataset,
     get_logging_path,
     annotated_context_ht,
     mutation_rate_ht,

@@ -36,10 +36,11 @@ annotated_context_ht = VersionedTableResource(
         ),
     },
 )
+# Mutation rate Table that include the baseline mutation rate for each substitution and context
 mutation_rate_ht = VersionedTableResource(
-    default_version="v2",
+    CURRENT_VERSION,
     versions={
-        "v2": TableResource(
+        "2.1.1": TableResource(
             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht",
         ),
     },
@@ -168,22 +169,30 @@ def check_param_scope(
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
 
 
-def training_dataset(sex_chr: str = None) -> TableResource:
+def get_training_dataset(
+    version: str = CURRENT_VERSION,
+    genomic_region: str = "autosome_par",
+    test: bool = False,
+) -> TableResource:
     """
     Return TableResource of training dataset with observed and possible variant count.
 
-    :param sex_chr: Which sex chromosome the dataset has, defaults to None.
+    :param version: One of the release versions (`VERSIONS`). Defaults to `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Defaults to "autosome_par".
+    :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Defaults to False.
     :return: TableResource of training dataset.
     """
-    if sex_chr not in {"chrx" or "chry"}:
-        raise ValueError("sex_chr must be one of: 'chrx or 'chry'!")
-    training_dataset_path = f"{constraint_tmp_prefix}/model/training/constraint_training{'' if sex_chr is None else f'_{sex_chr}'}.ht"
-    if file_exists(training_dataset_path):
-        return TableResource(training_dataset_path)
-    else:
-        raise DataException(
-            f"No file or directory found at {training_dataset_path}. Please add --create-training-set to the script and rerun the pipeline."
+    if genomic_region not in GENOMIC_REGIONS:
+        raise ValueError(f"genomic_region must be one of: {GENOMIC_REGIONS}!")
+    if version not in VERSIONS:
+        raise ValueError("The requested version doesn't exist!")
+    training_dataset_path = f"{constraint_tmp_prefix}/model/training/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
+    if not file_exists(training_dataset_path):
+        logger.info(
+            "No file or directory found at %s. Please ensure --create-training-set is included on command line",
+            training_dataset_path,
         )
+    return TableResource(training_dataset_path)
 
 
 def get_logging_path(name: str) -> str:
