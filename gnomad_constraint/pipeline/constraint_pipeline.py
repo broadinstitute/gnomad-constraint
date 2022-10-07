@@ -175,6 +175,35 @@ def main(args):
                 ).write(training_resources[region].path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
+        if args.build_and_apply_models:
+            for region in GENOMIC_REGIONS:
+                training_ht = get_training_dataset(version, region, test).ht()
+
+                # Build models for sites on an autosome or a pseudoautosomal region, chromosome X, and chromosome Y
+                region_coverage_model, plateau_models = build_models(
+                    training_ht, weighted=use_weights, pops=POPS if use_pops else ()
+                )
+
+                # Coverage model will be set for all genomic regions because "autosome_par" is first in GENOMIC_REGIONS
+                if region == "autosome_par":
+                    coverage_model = region_coverage_model
+                    logger.info(
+                        "Done building autosome_par plateau and coverage models."
+                    )
+                else:
+                    logger.info("Done building %s plateau %s models.", region)
+
+                get_proportion_observed(
+                    get_preprocessed_ht("exomes", version, region, test).ht(),
+                    get_preprocessed_ht("context", version, region, test).ht(),
+                    mutation_ht,
+                    plateau_models,
+                    coverage_model,
+                ).write(
+                    whatever_you_call_resource(version, region, test),
+                    overwrite=overwrite,
+                )
+
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(get_logging_path("constraint_pipeline"))
