@@ -1,5 +1,24 @@
-# noqa: D100
-# cSpell: disable
+"""
+This script builds a constraint pipeline that calculates constraint metrics.
+
+The constraint metrics pipeline will compute for LoF variants, missense variants, and synonymous variants:
+    - The number of observed variants
+    - The number of expected variants
+    - The observed: expected ratio
+    - The confidence interval around the observed: expected ratio
+    - pLI score (Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes)
+    - pNull (Probability that transcript falls into distribution of unconstrained genes)
+    - pRec (Probability that transcript falls into distribution of recessive genes)
+    - z-scores (Measure how constrained or intolerant a gene or transcript is to missense variants and synonymous variants)
+
+The constraint pipeline consists of the following parts:
+    - preprocess data
+    - create training set
+    - build models
+    - apply models
+    - calculate metrics
+"""
+
 import argparse
 import logging
 
@@ -40,7 +59,8 @@ def main(args):
     if version not in VERSIONS:
         version = CURRENT_VERSION
         logger.warning(
-            "The requested version of resource Tables are not exist, will use v2 as default."
+            "The requested version of resource Tables are not exist, will use gnomAD"
+            " v2.1.1 as default."
         )
 
     try:
@@ -69,30 +89,26 @@ def main(args):
                     ht = hl.filter_intervals(ht, contigs_keep)
 
                 # Add annotations from VEP context Table to genome and exome Tables.
-                ht = (
-                    add_vep_context_annotations(ht, context_ht)
-                    if data_type != "context"
-                    else ht
-                )
+                if data_type != "context":
+                    ht = add_vep_context_annotations(ht, context_ht)
 
                 # Filter input Table and add annotations used in constraint calculations.
-                full_ht = prepare_ht_for_constraint_calculations(ht)
+                ht = prepare_ht_for_constraint_calculations(ht)
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
-                ht = full_ht.filter(full_ht.locus.in_autosome_or_par())
-                ht.write(
+                ht.filter(ht.locus.in_autosome_or_par()).write(
                     get_preprocessed_ht(data_type, version, "autosome_par", test).path,
                     overwrite=overwrite,
                 )
 
                 # Sex chromosomes are analyzed separately, since they are biologically different from the autosomes.
                 if data_type != "genomes":
-                    filter_x_nonpar(full_ht).write(
+                    filter_x_nonpar(ht).write(
                         get_preprocessed_ht(
                             data_type, version, "chrx_nonpar", test
                         ).path,
                         overwrite=overwrite,
                     )
-                    filter_y_nonpar(full_ht).write(
+                    filter_y_nonpar(ht).write(
                         get_preprocessed_ht(
                             data_type, version, "chry_nonpar", test
                         ).path,
@@ -109,22 +125,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite", help="Whether to overwrite output files", action="store_true"
+        "--overwrite", help="Whether to overwrite output files.", action="store_true"
     )
     parser.add_argument(
         "--version",
-        help=f"Which version of the resource Tables will be used. Default is {CURRENT_VERSION}.",
+        help=(
+            "Which version of the resource Tables will be used. Default is"
+            f" {CURRENT_VERSION}."
+        ),
         type=str,
         default=CURRENT_VERSION,
     )
     parser.add_argument(
         "--test",
-        help="Whether to filter the exome Table, genome Table and the context Table to only chromosome 20, chromosome X, and chromosome Y for testing.",
+        help=(
+            "Whether to filter the exome Table, genome Table and the context Table to"
+            " only chromosome 20, chromosome X, and chromosome Y for testing."
+        ),
         action="store_true",
     )
     parser.add_argument(
         "--preprocess-data",
-        help="Whether to prepare the exome, genome, and context Table for constraint calculations by adding necessary coverage, methylation level, and VEP annotations.",
+        help=(
+            "Whether to prepare the exome, genome, and context Table for constraint"
+            " calculations by adding necessary coverage, methylation level, and VEP"
+            " annotations."
+        ),
         action="store_true",
     )
 

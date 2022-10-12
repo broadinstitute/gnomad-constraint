@@ -1,4 +1,4 @@
-# noqa: D100
+"""Scripts containing utility functions used in the constraint pipeline."""
 
 import hail as hl
 from gnomad.utils.constraint import (

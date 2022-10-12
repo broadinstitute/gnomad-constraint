@@ -11,4 +11,3 @@ disable=
   unused-wildcard-import,
   R,
   C,
-  unused-variable
