@@ -5,10 +5,10 @@ from typing import Optional, Tuple
 import hail as hl
 from gnomad.utils.constraint import (
     annotate_mutation_type,
-    trimer_from_heptamer,
     annotate_with_mu,
     collapse_strand,
     count_variants_by_group,
+    trimer_from_heptamer,
 )
 from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
