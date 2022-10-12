@@ -5,9 +5,9 @@ from typing import Optional, Tuple
 import hail as hl
 from gnomad.utils.constraint import (
     annotate_mutation_type,
-    collapse_strand,
     trimer_from_heptamer,
     annotate_with_mu,
+    collapse_strand,
     count_variants_by_group,
 )
 from gnomad.utils.vep import (

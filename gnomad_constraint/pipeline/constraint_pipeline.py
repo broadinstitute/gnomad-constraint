@@ -29,12 +29,6 @@ from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 
 from gnomad_constraint.resources.resource_utils import (
-    get_sites_resource,
-    get_preprocessed_ht,
-    get_training_dataset,
-    get_logging_path,
-    annotated_context_ht,
-    mutation_rate_ht,
     CURRENT_VERSION,
     DATA_TYPES,
     GENOMIC_REGIONS,
@@ -43,11 +37,18 @@ from gnomad_constraint.resources.resource_utils import (
     check_resource_existence,
     get_training_dataset,
     POPS,
+    VERSIONS,
+    annotated_context_ht,
+    get_logging_path,
+    get_preprocessed_ht,
+    get_sites_resource,
+    get_training_dataset,
+    mutation_rate_ht,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
-    prepare_ht_for_constraint_calculations,
     create_constraint_training_dataset,
+    prepare_ht_for_constraint_calculations,
 )
 
 logging.basicConfig(
