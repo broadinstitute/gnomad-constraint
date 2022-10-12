@@ -1,6 +1,6 @@
 """Script containing utility functions used in the constraint pipeline."""
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 import hail as hl
 from gnomad.utils.constraint import (
