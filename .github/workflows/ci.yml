@@ -34,4 +34,4 @@ jobs:
       - name: Check docstrings
         run: pydocstyle
       - name: Run Pylint
-        run: PYTHONPATH=$(pwd):$PYTHONPATH pylint gnomad_constraint
+        run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint
