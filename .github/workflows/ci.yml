@@ -29,6 +29,8 @@ jobs:
           pip install hail
       - name: Check formatting
         run: black --check .
+      - name: Check imports
+        run: isort --check-only gnomad tests
       - name: Check docstrings
         run: pydocstyle
       - name: Run Pylint

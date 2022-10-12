@@ -23,3 +23,6 @@ disable = [
   "unspecified-encoding",
   "unused-variable",
 ]
+
+[tool.isort]
+profile = "black"
