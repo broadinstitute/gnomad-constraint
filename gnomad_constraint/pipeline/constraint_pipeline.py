@@ -69,14 +69,14 @@ def main(args):
                     ht = hl.filter_intervals(ht, contigs_keep)
 
                 # Add annotations from VEP context Table to genome and exome Tables.
-                preprocessed_ht = (
+                ht = (
                     add_vep_context_annotations(ht, context_ht)
                     if data_type != "context"
                     else ht
                 )
 
                 # Filter input Table and add annotations used in constraint calculations.
-                full_ht = prepare_ht_for_constraint_calculations(preprocessed_ht)
+                full_ht = prepare_ht_for_constraint_calculations(ht)
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht = full_ht.filter(full_ht.locus.in_autosome_or_par())
                 ht.write(

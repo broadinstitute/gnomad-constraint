@@ -3,8 +3,11 @@ import logging
 
 from gnomad.resources.grch37.gnomad import public_release as public_release_grch37
 from gnomad.resources.grch38.gnomad import public_release as public_release_grch38
-from gnomad.resources.resource_utils import TableResource, VersionedTableResource
-from gnomad.utils.file_utils import file_exists
+from gnomad.resources.resource_utils import (
+    GnomadPublicTableResource,
+    TableResource,
+    VersionedTableResource,
+)
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -31,12 +34,14 @@ annotated_context_ht = VersionedTableResource(
 )
 
 
-def get_sites_resource(data_type: str, version: str = CURRENT_VERSION):
+def get_sites_resource(
+    data_type: str, version: str = CURRENT_VERSION
+) -> GnomadPublicTableResource:
     """
     Return genomes or exomes sites Table.
 
     :param data_type: One of "exomes" or "genomes".
-    :param version: The version of the Table. Defaults to CURRENT_VERSION.
+    :param version: The version of the Table. Default is CURRENT_VERSION.
     :return: Genome or exomes sites Table.
     """
     if version == "2.1.1":
@@ -58,7 +63,7 @@ def get_preprocessed_ht(
     The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
 
     :param data_type: One of "exomes", "genomes" or "context.
-    :param version: One of the release versions (`VERSIONS`). Defaults to `CURRENT_VERSION`.
+    :param version: One of the release versions (`VERSIONS`). Default is `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Defaults to "autosome_par".
     :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Defaults to False.
     :return: TableResource of processed genomes, exomes, or context Table.
@@ -68,11 +73,6 @@ def get_preprocessed_ht(
     if version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
     preprocessed_ht_path = f"{constraint_tmp_prefix}/{version}/model/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
-    if not file_exists(preprocessed_ht_path):
-        logger.info(
-            "No file or directory found at %s. Please ensure --preprocess-data is included on command line",
-            preprocessed_ht_path,
-        )
     return TableResource(preprocessed_ht_path)
 
 
