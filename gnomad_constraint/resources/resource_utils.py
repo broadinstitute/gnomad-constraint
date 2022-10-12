@@ -3,10 +3,7 @@ import logging
 
 from gnomad.resources.grch37.gnomad import public_release as public_release_grch37
 from gnomad.resources.grch38.gnomad import public_release as public_release_grch38
-from gnomad.resources.resource_utils import (
-    TableResource,
-    VersionedTableResource,
-)
+from gnomad.resources.resource_utils import TableResource, VersionedTableResource
 from gnomad.utils.file_utils import file_exists
 
 logging.basicConfig(

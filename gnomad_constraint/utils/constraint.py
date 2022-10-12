@@ -1,11 +1,10 @@
 # noqa: D100
 
 import hail as hl
-
 from gnomad.utils.constraint import (
-    trimer_from_heptamer,
     annotate_mutation_type,
     collapse_strand,
+    trimer_from_heptamer,
 )
 from gnomad.utils.vep import add_most_severe_csq_to_tc_within_vep_root
 

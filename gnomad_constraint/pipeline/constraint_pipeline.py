@@ -4,20 +4,17 @@ import argparse
 import logging
 
 import hail as hl
-
-from gnomad.utils.filtering import (
-    filter_x_nonpar,
-    filter_y_nonpar,
-)
+from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
+
 from gnomad_constraint.resources.resource_utils import (
-    get_sites_resource,
-    get_preprocessed_ht,
-    get_logging_path,
-    annotated_context_ht,
     CURRENT_VERSION,
-    VERSIONS,
     DATA_TYPES,
+    VERSIONS,
+    annotated_context_ht,
+    get_logging_path,
+    get_preprocessed_ht,
+    get_sites_resource,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
