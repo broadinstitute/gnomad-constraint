@@ -30,7 +30,7 @@ jobs:
       - name: Check formatting
         run: black --check .
       - name: Check imports
-        run: isort --check-only gnomad tests
+        run: isort --check-only gnomad_constraint tests
       - name: Check docstrings
         run: pydocstyle
       - name: Run Pylint
