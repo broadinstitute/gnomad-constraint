@@ -28,9 +28,9 @@ jobs:
           pip install -r requirements-dev.txt
           pip install hail
       - name: Check formatting
-        run: black --check .
+        run: black --check gnomad_constraint
       - name: Check imports
-        run: isort --check-only gnomad_constraint tests
+        run: isort --check-only gnomad_constraint
       - name: Check docstrings
         run: pydocstyle
       - name: Run Pylint
