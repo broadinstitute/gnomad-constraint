@@ -9,7 +9,7 @@ git+https://github.com/broadinstitute/gnomad_methods@main
 #
 astroid==2.11.7
     # via pylint
-black==22.3.0
+black==22.6.0
     # via -r requirements-dev.in
 build==0.8.0
     # via pip-tools
