@@ -74,10 +74,9 @@ def get_preprocessed_ht(
         raise ValueError(f"genomic_region must be one of: {GENOMIC_REGIONS}!")
     if version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
-    preprocessed_ht_path = (
+    return TableResource(
         f"{constraint_tmp_prefix}/{version}/model/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
     )
-    return TableResource(preprocessed_ht_path)
 
 
 def get_logging_path(name: str) -> str:
