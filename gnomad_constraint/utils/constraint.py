@@ -1,4 +1,4 @@
-"""Scripts containing utility functions used in the constraint pipeline."""
+"""Script containing utility functions used in the constraint pipeline."""
 
 import hail as hl
 from gnomad.utils.constraint import (

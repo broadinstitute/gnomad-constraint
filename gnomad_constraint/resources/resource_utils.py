@@ -69,7 +69,7 @@ def get_preprocessed_ht(
     :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Default is False.
     :return: TableResource of processed genomes, exomes, or context Table.
     """
-    check_param_scope(data_type, version, genomic_region)
+    check_param_scope(version, genomic_region, data_type)
     return TableResource(
         f"{constraint_tmp_prefix}/{version}/model/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
     )
@@ -79,13 +79,13 @@ def check_param_scope(
     version: Optional[str] = None,
     genomic_region: Optional[str] = None,
     data_type: Optional[str] = None,
-):
+) -> None:
     """
     Check if the specified data type, version, and genomic region are in the scope of the constraint pipeline.
 
-    :param data_type: One of "exomes", "genomes" or "context. Default is None.
     :param version: One of the release versions (`VERSIONS`). Default is None.
     :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Default is None.
+    :param data_type: One of "exomes", "genomes" or "context. Default is None.
     """
     if data_type and data_type not in DATA_TYPES:
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
