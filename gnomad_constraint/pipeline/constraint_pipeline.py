@@ -32,11 +32,14 @@ from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     DATA_TYPES,
+    GENOMIC_REGIONS,
     VERSIONS,
     annotated_context_ht,
+    check_resource_existence,
     get_logging_path,
     get_preprocessed_ht,
     get_sites_resource,
+    get_training_dataset,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
@@ -65,6 +68,7 @@ def main(args):
             "The requested version of resource Tables are not exist, will use gnomAD"
             " v2.1.1 as default."
         )
+    # Construct resources with paths for intermediate Tables generated in the pipeline.
     preprocess_resources = {}
     training_resources = {}
     for region in GENOMIC_REGIONS:
@@ -74,6 +78,7 @@ def main(args):
                     data_type, version, region, test
                 )
         training_resources[region] = get_training_dataset(version, region, test)
+
     try:
         if args.preprocess_data:
             logger.info("Adding VEP context annotations...")
