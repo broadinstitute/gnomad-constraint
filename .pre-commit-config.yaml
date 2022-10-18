@@ -16,6 +16,7 @@ repos:
     rev: 6.1.1 # This should be kept in sync with the version in requirements-dev.in
     hooks:
       - id: pydocstyle
+        args: ["--convention=pep257"]
         additional_dependencies: ["toml"]
   - repo: https://github.com/pycqa/isort
     rev: 5.10.1 # This should be kept in sync with the version in requirements-dev.in
@@ -23,3 +24,8 @@ repos:
       - id: isort
         args: ["--profile", "black", "--filter-files"]
         files: gnomad_constraint
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.5.0
+    hooks:
+      - id: docformatter
+        args: ["--in-place", "--wrap-summaries 88", "--wrap-descriptions 88"]
