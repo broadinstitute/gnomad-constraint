@@ -105,6 +105,8 @@ def check_resource_existence(
     """
     Check whether all the input files exist and the overwrite parameter is set to True when writing the output files.
 
+    If no parameters are passed to the function, nothing is done.
+
     :param input_pipeline_step: The pipeline step that generates input files. Default is None.
     :param output_pipeline_step: The pipeline step that generates output files. Default is None.
     :param input_resources: Paths of the input files to check the existence of. Default is None.
@@ -118,19 +120,20 @@ def check_resource_existence(
             error_if_not_exists=True,
             error_if_not_exists_msg=(
                 f"Not all input resources exist. Please add {input_pipeline_step} to "
-                "the command line. The following files are missing: ",
+                "the command line. The following files are missing: "
             ),
         )
 
-    # Check if the output resources exist if overwrite is False
+    # Check if the output resources exist when `overwrite` is False
     if not overwrite and output_pipeline_step and output_resources:
         check_file_exists_raise_error(
             [r.path for r in output_resources],
             error_if_exists=True,
             error_if_exists_msg=(
-                "Some of the output resources already exist and the --overwrite "
-                "argument was not set. Please rerun the command with --overwrite. The "
-                "following files already exist: ",
+                "Some of the output resources that will be created by "
+                f"{output_pipeline_step} already exist and the --overwrite argument "
+                f"was not set. Please rerun {output_pipeline_step} with --overwrite. "
+                "The following files already exist: "
             ),
         )
 
