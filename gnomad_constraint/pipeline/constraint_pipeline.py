@@ -32,13 +32,10 @@ from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     DATA_TYPES,
     GENOMIC_REGIONS,
-    VERSIONS,
-    annotated_context_ht,
-    check_resource_existence,
-    get_training_dataset,
     POPS,
     VERSIONS,
     annotated_context_ht,
+    check_resource_existence,
     get_logging_path,
     get_preprocessed_ht,
     get_sites_resource,
@@ -180,10 +177,6 @@ def main(args):
             ).write(training_dataset("chry").path, overwrite=args.overwrite)
             logger.info("Done with creating training dataset.")
 
-        training_ht = training_dataset().ht()
-        training_x_ht = training_dataset("chrx").ht()
-        training_y_ht = training_dataset("chry").ht()
-
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(get_logging_path("constraint_pipeline"))
@@ -227,7 +220,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--partitions",
-        help="Whether to filters the exome Table and the context Table to only a few partitions.",
+        help=(
+            "Whether to filters the exome Table and the context Table to only a few"
+            " partitions."
+        ),
         nargs="?",
         const=10,
         type=int,
@@ -244,7 +240,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--create-training-set",
-        help="Count the observed variants and possible variants by exome coverage at synonymous sites.",
+        help=(
+            "Count the observed variants and possible variants by exome coverage at"
+            " synonymous sites."
+        ),
         action="store_true",
     )
 
