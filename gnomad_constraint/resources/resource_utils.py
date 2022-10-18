@@ -170,35 +170,6 @@ def check_param_scope(
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
 
 
-def get_training_dataset(
-    version: str = CURRENT_VERSION,
-    genomic_region: str = "autosome_par",
-    test: bool = False,
-) -> TableResource:
-    """
-    Return TableResource of training dataset with observed and possible variant count.
-
-    :param version: One of the release versions (`VERSIONS`). Defaults to `CURRENT_VERSION`.
-    :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Defaults to "autosome_par".
-    :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Defaults to False.
-    :return: TableResource of training dataset.
-    """
-    if genomic_region not in GENOMIC_REGIONS:
-        raise ValueError(f"genomic_region must be one of: {GENOMIC_REGIONS}!")
-    if version not in VERSIONS:
-        raise ValueError("The requested version doesn't exist!")
-    training_dataset_path = (
-        f"{constraint_tmp_prefix}/model/training/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
-    )
-    if not file_exists(training_dataset_path):
-        logger.info(
-            "No file or directory found at %s. Please ensure --create-training-set is"
-            " included on command line",
-            training_dataset_path,
-        )
-    return TableResource(training_dataset_path)
-
-
 def get_logging_path(name: str) -> str:
     """
     Create a path for Hail log files.

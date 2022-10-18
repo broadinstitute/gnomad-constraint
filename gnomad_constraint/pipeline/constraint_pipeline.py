@@ -144,7 +144,7 @@ def main(args):
                     )
             logger.info("Done with preprocessing genome and exome Table.")
 
-        mutation_ht = mutation_rate_ht.ht().select("mu_snp")
+        mutation_ht = mutation_rate_ht.versions[version].ht().select("mu_snp")
 
         # Create training dataset that includes possible and observed variant counts
         # for building models.
