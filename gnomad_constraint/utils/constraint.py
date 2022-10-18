@@ -144,6 +144,7 @@ def create_constraint_training_dataset(
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
+    freq_expr = exome_ht.freq[0]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, and variants with allele frequency above the `max_af` cutoff.
