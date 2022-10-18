@@ -63,9 +63,8 @@ def main(args):
     test = args.test
     overwrite = args.overwrite
     max_af = args.max_af
-    partitions = args.partitions
-    use_pops = args.use_pop
-    weighted = args.use_weights
+    partition_hint = args.partition_hint
+    use_pops = args.use_pops
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
     if version not in VERSIONS:
@@ -147,34 +146,31 @@ def main(args):
 
         mutation_ht = mutation_rate_ht.ht().select("mu_snp")
 
-        context_x_ht = filter_x_nonpar(full_context_ht)
-        context_y_ht = filter_y_nonpar(full_context_ht)
-
-        exome_x_ht = filter_x_nonpar(full_exome_ht)
-        exome_y_ht = filter_y_nonpar(full_exome_ht)
-
+        # Create training dataset that includes possible and observed variant counts for building models.
         if args.create_training_set:
-            create_constraint_training_dataset(
-                exome_ht,
-                context_ht,
-                mutation_ht,
-                max_af=max_af,
-                pops=POPS if use_pops else None,
-            ).write(training_dataset().path, overwrite=args.overwrite)
-            create_constraint_training_dataset(
-                exome_x_ht,
-                context_x_ht,
-                mutation_ht,
-                max_af=max_af,
-                pops=POPS if use_pops else None,
-            ).write(training_dataset("chrx").path, overwrite=args.overwrite)
-            create_constraint_training_dataset(
-                exome_y_ht,
-                context_y_ht,
-                mutation_ht,
-                max_af=max_af,
-                pops=POPS if use_pops else None,
-            ).write(training_dataset("chry").path, overwrite=args.overwrite)
+            logger.info("Counting possible and observed variant counts...")
+
+            # Create training dataset for sites on autosomes/pseudoautosomal regions, chromosome X, and chromosome Y.
+            for region in GENOMIC_REGIONS:
+                exome_ht = get_preprocessed_ht("exome", version, region, test)
+                context_ht = get_preprocessed_ht("context", version, region, test)
+                training_ht = get_training_dataset(version, region, test)
+                # Check if the input/output resources exist
+                check_resource_existence(
+                    "--preprocess-data",
+                    "--create-training-set",
+                    [exome_ht, context_ht],
+                    [training_ht],
+                    overwrite,
+                )
+                create_constraint_training_dataset(
+                    exome_ht.ht(),
+                    context_ht.ht(),
+                    mutation_ht,
+                    max_af=max_af,
+                    pops=POPS if use_pops else (),
+                    partition_hint=partition_hint,
+                ).write(training_ht.path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
     finally:
@@ -206,28 +202,21 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--use-pop",
+        "--use-pops",
         help="Whether to apply models on each population.",
         action="store_true",
     )
     parser.add_argument(
         "--max-af",
         help="Maximum variant allele frequency to keep.",
-        nargs="?",
-        const=0.001,
         type=float,
         default=0.001,
     )
     parser.add_argument(
-        "--partitions",
-        help=(
-            "Whether to filters the exome Table and the context Table to only a few"
-            " partitions."
-        ),
-        nargs="?",
-        const=10,
+        "--partition_hint",
+        help="Target number of partitions for aggregation when counting variants",
         type=int,
-        default=10,
+        default=100,
     )
     parser.add_argument(
         "--preprocess-data",
