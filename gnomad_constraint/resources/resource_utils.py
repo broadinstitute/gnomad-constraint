@@ -36,7 +36,8 @@ annotated_context_ht = VersionedTableResource(
         ),
     },
 )
-# Mutation rate Table that include the baseline mutation rate for each substitution and context
+# Mutation rate Table that include the baseline mutation rate for each substitution
+# and context
 mutation_rate_ht = VersionedTableResource(
     CURRENT_VERSION,
     versions={
@@ -186,10 +187,13 @@ def get_training_dataset(
         raise ValueError(f"genomic_region must be one of: {GENOMIC_REGIONS}!")
     if version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
-    training_dataset_path = f"{constraint_tmp_prefix}/model/training/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
+    training_dataset_path = (
+        f"{constraint_tmp_prefix}/model/training/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
+    )
     if not file_exists(training_dataset_path):
         logger.info(
-            "No file or directory found at %s. Please ensure --create-training-set is included on command line",
+            "No file or directory found at %s. Please ensure --create-training-set is"
+            " included on command line",
             training_dataset_path,
         )
     return TableResource(training_dataset_path)

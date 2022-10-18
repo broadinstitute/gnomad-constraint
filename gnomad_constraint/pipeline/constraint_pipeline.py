@@ -146,31 +146,30 @@ def main(args):
 
         mutation_ht = mutation_rate_ht.ht().select("mu_snp")
 
-        # Create training dataset that includes possible and observed variant counts for building models.
+        # Create training dataset that includes possible and observed variant counts
+        # for building models.
         if args.create_training_set:
             logger.info("Counting possible and observed variant counts...")
 
-            # Create training dataset for sites on autosomes/pseudoautosomal regions, chromosome X, and chromosome Y.
+            # Check if the input/output resources exist.
+            check_resource_existence(
+                "--preprocess-data",
+                "--create-training-set",
+                preprocess_resources.values(),
+                training_resources.values(),
+                overwrite,
+            )
+            # Create training dataset for sites on autosomes/pseudoautosomal regions,
+            # chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
-                exome_ht = get_preprocessed_ht("exome", version, region, test)
-                context_ht = get_preprocessed_ht("context", version, region, test)
-                training_ht = get_training_dataset(version, region, test)
-                # Check if the input/output resources exist
-                check_resource_existence(
-                    "--preprocess-data",
-                    "--create-training-set",
-                    [exome_ht, context_ht],
-                    [training_ht],
-                    overwrite,
-                )
                 create_constraint_training_dataset(
-                    exome_ht.ht(),
-                    context_ht.ht(),
+                    preprocess_resources[(region, "exomes")].ht(),
+                    preprocess_resources[(region, "context")].ht(),
                     mutation_ht,
                     max_af=max_af,
                     pops=POPS if use_pops else (),
                     partition_hint=partition_hint,
-                ).write(training_ht.path, overwrite=overwrite)
+                ).write(training_resources[region].path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
     finally:
@@ -213,8 +212,8 @@ if __name__ == "__main__":
         default=0.001,
     )
     parser.add_argument(
-        "--partition_hint",
-        help="Target number of partitions for aggregation when counting variants",
+        "--partition-hint",
+        help="Target number of partitions for aggregation when counting variants.",
         type=int,
         default=100,
     )
