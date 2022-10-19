@@ -23,6 +23,7 @@ VERSIONS = ["2.1.1"]
 CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
+POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
 
@@ -32,6 +33,16 @@ annotated_context_ht = VersionedTableResource(
     versions={
         "2.1.1": TableResource(
             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/context/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht",
+        ),
+    },
+)
+# Mutation rate Table that include the baseline mutation rate for each substitution
+# and context
+mutation_rate_ht = VersionedTableResource(
+    CURRENT_VERSION,
+    versions={
+        "2.1.1": TableResource(
+            path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht",
         ),
     },
 )
@@ -62,13 +73,19 @@ def get_preprocessed_ht(
     """
     Return TableResource of preprocessed genome, exomes, and context Table.
 
-    The exome and genome Table will have annotations added by `prepare_ht_for_constraint_calculations` and VEP annotation from context Table.
-    The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
+    The exome and genome Table will have annotations added by
+    `prepare_ht_for_constraint_calculations()` and VEP annotation from context Table.
+
+    The context Table will have annotations added by
+    `prepare_ht_for_constraint_calculations()`.
 
     :param data_type: One of "exomes", "genomes" or "context.
-    :param version: One of the release versions (`VERSIONS`). Default is `CURRENT_VERSION`.
-    :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Default is "autosome_par".
-    :param test: Whether the Table is for testing purposes and only contains sites in chr20, chrX, and chrY. Default is False.
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_non_par", or "chry_non_par". Default is "autosome_par".
+    :param test: Whether the Table is for testing purposes and only contains sites in
+        chr20, chrX, and chrY. Default is False.
     :return: TableResource of processed genomes, exomes, or context Table.
     """
     check_param_scope(version, genomic_region, data_type)
@@ -85,9 +102,12 @@ def get_training_dataset(
     """
     Return TableResource of training dataset with observed and possible variant count.
 
-    :param version: One of the release versions (`VERSIONS`). Default is `CURRENT_VERSION`.
-    :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Default is "autosome_par".
-    :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Default is False.
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_non_par", or "chry_non_par". Default is "autosome_par".
+    :param test: Whether the Table is for testing purpose and only contains sites in
+        chr20, chrX, and chrY. Default is False.
     :return: TableResource of training dataset.
     """
     check_param_scope(version, genomic_region)
@@ -108,11 +128,17 @@ def check_resource_existence(
 
     If no parameters are passed to the function, nothing is done.
 
-    :param input_pipeline_step: The pipeline step that generates input files. Default is None.
-    :param output_pipeline_step: The pipeline step that generates output files. Default is None.
-    :param input_resources: Paths of the input files to check the existence of. Default is None.
-    :param output_resources: Paths of the output files to check the existence of. Default is None.
-    :param overwrite: The overwrite parameter used when writing the output files. Default is None.
+    :param input_pipeline_step: The pipeline step that generates input files. Default
+        is None.
+    :param output_pipeline_step: The pipeline step that generates output files. Default
+        is None.
+    :param input_resources: Paths of the input files to check the existence of. Default
+        is None.
+    :param output_resources: Paths of the output files to check the existence of.
+        Default is None.
+    :param overwrite: The overwrite parameter used when writing the output files.
+        Default is None.
+    :return: None.
     """
     # Check if the input resources exist
     if input_pipeline_step and input_resources:
@@ -148,7 +174,8 @@ def check_param_scope(
     Check if the specified version, genomic region, and data type are in the scope of the constraint pipeline.
 
     :param version: One of the release versions (`VERSIONS`). Default is None.
-    :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Default is None.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_non_par", or "chry_non_par". Default is None.
     :param data_type: One of "exomes", "genomes" or "context". Default is None.
     """
     if version and version not in VERSIONS:

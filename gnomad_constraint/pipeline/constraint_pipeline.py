@@ -32,6 +32,7 @@ from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     DATA_TYPES,
     GENOMIC_REGIONS,
+    POPS,
     VERSIONS,
     annotated_context_ht,
     check_resource_existence,
@@ -39,9 +40,11 @@ from gnomad_constraint.resources.resource_utils import (
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
+    mutation_rate_ht,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
+    create_constraint_training_dataset,
     prepare_ht_for_constraint_calculations,
 )
 
@@ -59,6 +62,9 @@ def main(args):
 
     test = args.test
     overwrite = args.overwrite
+    max_af = args.max_af
+    partition_hint = args.partition_hint
+    use_pops = args.use_pops
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
     if version not in VERSIONS:
@@ -87,7 +93,8 @@ def main(args):
             # TODO: Need to add function that annotates methylation, coverage, and
             #  gerp in the vep context table.
             context_ht = annotated_context_ht.versions[version].ht()
-            # Raise error if any of the output resources exist and --overwrite is not used.
+            # Raise error if any of the output resources exist and --overwrite is not
+            # used.
             check_resource_existence(
                 output_pipeline_step="--preprocess-data",
                 output_resources=preprocess_resources.values(),
@@ -100,7 +107,8 @@ def main(args):
                 else:
                     ht = context_ht
 
-                # Filtering the Table to chr20, chrX, and chrY for testing if applicable.
+                # Filtering the Table to chr20, chrX, and chrY for testing if
+                # applicable.
                 if test:
                     rg = get_reference_genome(context_ht.locus)
                     contigs_keep = [
@@ -117,7 +125,8 @@ def main(args):
                 if data_type != "context":
                     ht = add_vep_context_annotations(ht, context_ht)
 
-                # Filter input Table and add annotations used in constraint calculations.
+                # Filter input Table and add annotations used in constraint
+                # calculations.
                 ht = prepare_ht_for_constraint_calculations(ht)
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
@@ -137,6 +146,34 @@ def main(args):
                         overwrite=overwrite,
                     )
             logger.info("Done with preprocessing genome and exome Table.")
+
+        mutation_ht = mutation_rate_ht.versions[version].ht().select("mu_snp")
+
+        # Create training dataset that includes possible and observed variant counts
+        # for building models.
+        if args.create_training_set:
+            logger.info("Counting possible and observed variant counts...")
+
+            # Check if the input/output resources exist.
+            check_resource_existence(
+                "--preprocess-data",
+                "--create-training-set",
+                preprocess_resources.values(),
+                training_resources.values(),
+                overwrite,
+            )
+            # Create training dataset for sites on autosomes/pseudoautosomal regions,
+            # chromosome X, and chromosome Y.
+            for region in GENOMIC_REGIONS:
+                create_constraint_training_dataset(
+                    preprocess_resources[(region, "exomes")].ht(),
+                    preprocess_resources[(region, "context")].ht(),
+                    mutation_ht,
+                    max_af=max_af,
+                    pops=POPS if use_pops else (),
+                    partition_hint=partition_hint,
+                ).write(training_resources[region].path, overwrite=overwrite)
+            logger.info("Done with creating training dataset.")
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -167,11 +204,36 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--use-pops",
+        help="Whether to apply models on each population.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--max-af",
+        help="Maximum variant allele frequency to keep.",
+        type=float,
+        default=0.001,
+    )
+    parser.add_argument(
+        "--partition-hint",
+        help="Target number of partitions for aggregation when counting variants.",
+        type=int,
+        default=100,
+    )
+    parser.add_argument(
         "--preprocess-data",
         help=(
             "Whether to prepare the exome, genome, and context Table for constraint"
             " calculations by adding necessary coverage, methylation level, and VEP"
             " annotations."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--create-training-set",
+        help=(
+            "Count the observed variants and possible variants by exome coverage at"
+            " synonymous sites."
         ),
         action="store_true",
     )
