@@ -204,4 +204,3 @@ def create_constraint_training_dataset(
         training_dataset_params=hl.struct(max_af=max_af, pops=pops)
     )
     return ht
-
