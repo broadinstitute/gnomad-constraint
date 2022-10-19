@@ -32,6 +32,7 @@ from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     DATA_TYPES,
     GENOMIC_REGIONS,
+
     POPS,
     VERSIONS,
     annotated_context_ht,
