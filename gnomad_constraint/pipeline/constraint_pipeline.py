@@ -1,5 +1,4 @@
-"""
-This script builds a constraint pipeline that calculates constraint metrics.
+"""This script builds a constraint pipeline that calculates constraint metrics.
 
 The constraint metrics pipeline will compute for LoF variants, missense variants, and
 synonymous variants:
@@ -75,13 +74,16 @@ def main(args):
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
-                    version, region, data_type,  test
+                    data_type, version, region, test
                 )
         training_resources[region] = get_training_dataset(version, region, test)
 
     try:
         if args.preprocess_data:
-            logger.info("Adding VEP context annotations and preparing tables for constraint calculations...")
+            logger.info(
+                "Adding VEP context annotations and preparing tables for constraint"
+                " calculations..."
+            )
             # TODO: Need to add function that annotates methylation, coverage, and
             #  gerp in the vep context table.
             context_ht = annotated_context_ht.versions[version].ht()

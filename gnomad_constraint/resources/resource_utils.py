@@ -54,9 +54,9 @@ def get_sites_resource(
 
 
 def get_preprocessed_ht(
+    data_type: str,
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
-    data_type: str,
     test: bool = False,
 ) -> TableResource:
     """
@@ -65,9 +65,9 @@ def get_preprocessed_ht(
     The exome and genome Table will have annotations added by `prepare_ht_for_constraint_calculations` and VEP annotation from context Table.
     The context Table will have annotations added by `prepare_ht_for_constraint_calculations`.
 
+    :param data_type: One of "exomes", "genomes" or "context.
     :param version: One of the release versions (`VERSIONS`). Default is `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Default is "autosome_par".
-    :param data_type: One of "exomes", "genomes" or "context.
     :param test: Whether the Table is for testing purposes and only contains sites in chr20, chrX, and chrY. Default is False.
     :return: TableResource of processed genomes, exomes, or context Table.
     """
