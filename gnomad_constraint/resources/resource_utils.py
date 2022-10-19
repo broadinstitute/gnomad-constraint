@@ -68,7 +68,7 @@ def get_preprocessed_ht(
     :param version: One of the release versions (`VERSIONS`). Default is `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par", "chrx_non_par", or "chry_non_par". Default is "autosome_par".
     :param data_type: One of "exomes", "genomes" or "context.
-    :param test: Whether the Table is for testing purpose and only contains sites in chr20, chrX, and chrY. Default is False.
+    :param test: Whether the Table is for testing purposes and only contains sites in chr20, chrX, and chrY. Default is False.
     :return: TableResource of processed genomes, exomes, or context Table.
     """
     check_param_scope(version, genomic_region, data_type)
