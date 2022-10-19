@@ -58,7 +58,7 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
         - exome_coverage
         - pass_filters - Whether the variant passed all variant filters
         - annotations added by `annotate_mutation_type()`, `collapse_strand()`, and
-        `add_most_severe_csq_to_tc_within_vep_root()`
+          `add_most_severe_csq_to_tc_within_vep_root()`
 
     :param ht: Input Table to be annotated.
     :return: Table with annotations.
@@ -117,7 +117,7 @@ def create_constraint_training_dataset(
         - Variants not observed by any samples in the dataset: `(freq_expr.AC > 0)`
         - Low-quality variants: `exome_ht.pass_filters`
         - Variants with allele frequency above `max_af` cutoff: `(freq_expr.AF <=
-        max_af)`
+          max_af)`
         - Variants that are not synonymous or in the canonical transcript
 
     For each substitution, context, methylation level, and exome coverage, the rest of
@@ -142,12 +142,12 @@ def create_constraint_training_dataset(
     :param context_ht: Preprocessed context Table.
     :param mutation_ht: Preprocessed mutation rate Table.
     :param max_af: Maximum allele frequency for a variant to be included in returned
-    counts. Default is 0.001.
+        counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
     :param grouping: Annotations other than 'context', 'ref', 'alt', and
-    `methylation_level` to group by when counting variants. Default is
-    ('exome_coverage',).
+        `methylation_level` to group by when counting variants. Default is
+        ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :return: Table with observed variant and possible variant count.
     """
