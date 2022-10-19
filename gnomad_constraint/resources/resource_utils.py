@@ -74,10 +74,10 @@ def get_preprocessed_ht(
     Return TableResource of preprocessed genome, exomes, and context Table.
 
     The exome and genome Table will have annotations added by
-    `prepare_ht_for_constraint_calculations` and VEP annotation from context Table.
+    `prepare_ht_for_constraint_calculations()` and VEP annotation from context Table.
 
     The context Table will have annotations added by
-    `prepare_ht_for_constraint_calculations`.
+    `prepare_ht_for_constraint_calculations()`.
 
     :param data_type: One of "exomes", "genomes" or "context.
     :param version: One of the release versions (`VERSIONS`). Default is
