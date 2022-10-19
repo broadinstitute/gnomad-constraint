@@ -28,10 +28,12 @@ def add_vep_context_annotations(
         - coverage
         - gerp
 
-    Function drops `a_index`, `was_split`, and`colocated_variants` annotations from gnomAD data.
+    Function drops `a_index`, `was_split`, and`colocated_variants` annotations from
+    gnomAD data.
 
     .. note::
-        Function expects that multiallelic variants in the VEP context Table have been split.
+        Function expects that multiallelic variants in the VEP context Table have been
+        split.
 
     :param ht: gnomAD exomes or genomes public Hail Table.
     :param annotated_context_ht: VEP context Table.
@@ -55,7 +57,8 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
         - methylation_level
         - exome_coverage
         - pass_filters - Whether the variant passed all variant filters
-        - annotations added by `annotate_mutation_type()`, `collapse_strand()`, and `add_most_severe_csq_to_tc_within_vep_root()`
+        - annotations added by `annotate_mutation_type()`, `collapse_strand()`, and
+        `add_most_severe_csq_to_tc_within_vep_root()`
 
     :param ht: Input Table to be annotated.
     :return: Table with annotations.
@@ -69,7 +72,8 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
     # Filter to SNPs and context fields where the bases are either A, T, C, or G
     ht = ht.filter(hl.is_snp(ht.ref, ht.alt) & ht.context.matches(f"[ATCG]{{{3}}}"))
-    # Annotate mutation type (such as "CpG", "non-CpG transition", "transversion") and collapse strands to deduplicate the context
+    # Annotate mutation type (such as "CpG", "non-CpG transition", "transversion") and
+    # collapse strands to deduplicate the context
     ht = annotate_mutation_type(collapse_strand(ht))
     # Add annotation for the methylation level
     annotation = {
@@ -82,7 +86,8 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     annotation["exome_coverage"] = ht.coverage.exomes.median
     ht = ht.annotate(**annotation)
 
-    # Add most_severe_consequence annotation to 'transcript_consequences' within the vep root annotation.
+    # Add most_severe_consequence annotation to 'transcript_consequences' within the
+    # vep root annotation.
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
 
     # Filter out locus with undefined exome coverage
@@ -111,7 +116,8 @@ def create_constraint_training_dataset(
     Prior to computing variant counts the following variants are removed:
         - Variants not observed by any samples in the dataset: `(freq_expr.AC > 0)`
         - Low-quality variants: `exome_ht.pass_filters`
-        - Variants with allele frequency above `max_af` cutoff: `(freq_expr.AF <= max_af)`
+        - Variants with allele frequency above `max_af` cutoff: `(freq_expr.AF <=
+        max_af)`
         - Variants that are not synonymous or in the canonical transcript
 
     For each substitution, context, methylation level, and exome coverage, the rest of
@@ -135,10 +141,13 @@ def create_constraint_training_dataset(
     :param exome_ht: Preprocessed exome Table.
     :param context_ht: Preprocessed context Table.
     :param mutation_ht: Preprocessed mutation rate Table.
-    :param max_af: Maximum allele frequency for a variant to be included in returned counts. Default is 0.001.
+    :param max_af: Maximum allele frequency for a variant to be included in returned
+    counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
-    :param grouping: Annotations other than 'context', 'ref', 'alt', and `methylation_level` to group by when counting variants. Default is ('exome_coverage',).
+    :param grouping: Annotations other than 'context', 'ref', 'alt', and
+    `methylation_level` to group by when counting variants. Default is
+    ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :return: Table with observed variant and possible variant count.
     """

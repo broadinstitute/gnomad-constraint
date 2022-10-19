@@ -93,7 +93,8 @@ def main(args):
             # TODO: Need to add function that annotates methylation, coverage, and
             #  gerp in the vep context table.
             context_ht = annotated_context_ht.versions[version].ht()
-            # Raise error if any of the output resources exist and --overwrite is not used.
+            # Raise error if any of the output resources exist and --overwrite is not
+            # used.
             check_resource_existence(
                 output_pipeline_step="--preprocess-data",
                 output_resources=preprocess_resources.values(),
@@ -106,7 +107,8 @@ def main(args):
                 else:
                     ht = context_ht
 
-                # Filtering the Table to chr20, chrX, and chrY for testing if applicable.
+                # Filtering the Table to chr20, chrX, and chrY for testing if
+                # applicable.
                 if test:
                     rg = get_reference_genome(context_ht.locus)
                     contigs_keep = [
@@ -123,7 +125,8 @@ def main(args):
                 if data_type != "context":
                     ht = add_vep_context_annotations(ht, context_ht)
 
-                # Filter input Table and add annotations used in constraint calculations.
+                # Filter input Table and add annotations used in constraint
+                # calculations.
                 ht = prepare_ht_for_constraint_calculations(ht)
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
