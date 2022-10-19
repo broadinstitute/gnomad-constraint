@@ -75,13 +75,13 @@ def main(args):
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
-                    data_type, version, region, test
+                    version, region, data_type,  test
                 )
         training_resources[region] = get_training_dataset(version, region, test)
 
     try:
         if args.preprocess_data:
-            logger.info("Adding VEP context annotations...")
+            logger.info("Adding VEP context annotations and preparing tables for constraint calculations...")
             # TODO: Need to add function that annotates methylation, coverage, and
             #  gerp in the vep context table.
             context_ht = annotated_context_ht.versions[version].ht()
@@ -124,7 +124,7 @@ def main(args):
                 )
 
                 # Sex chromosomes are analyzed separately, since they are biologically
-                # different from the autosomes.```
+                # different from the autosomes.
                 if data_type != "genomes":
                     filter_x_nonpar(ht).write(
                         preprocess_resources[("chrx_nonpar", data_type)].path,
