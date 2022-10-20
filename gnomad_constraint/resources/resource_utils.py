@@ -24,6 +24,10 @@ CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
+"""
+Stands for global, African-American/African, Latino, East Asian, Non-Finnish European,
+and South Asian population. Labels are from gnomAD.
+"""
 
 constraint_tmp_prefix = "gs://gnomad-tmp/constraint"
 
