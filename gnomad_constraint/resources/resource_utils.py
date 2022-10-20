@@ -49,6 +49,7 @@ mutation_rate_ht = VersionedTableResource(
 
 possible_file_path = f"{constraint_tmp_prefix}/model/training/possible_coverage.ht"
 
+
 def get_sites_resource(
     data_type: str, version: str = CURRENT_VERSION
 ) -> GnomadPublicTableResource:
@@ -185,24 +186,6 @@ def check_param_scope(
         raise ValueError(f"genomic_region must be one of: {GENOMIC_REGIONS}!")
     if data_type and data_type not in DATA_TYPES:
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
-
-
-def training_dataset(sex_chr: str = None) -> TableResource:
-    """
-    Return TableResource of training dataset with observed and possible variant count.
-
-    :param sex_chr: Which sex chromosome the dataset has, defaults to None.
-    :return: TableResource of training dataset.
-    """
-    if sex_chr not in {"chrx" or "chry"}:
-        raise ValueError("sex_chr must be one of: 'chrx or 'chry'!")
-    training_dataset_path = f"{constraint_tmp_prefix}/model/training/constraint_training{'' if sex_chr is None else f'_{sex_chr}'}.ht"
-    if file_exists(training_dataset_path):
-        return TableResource(training_dataset_path)
-    else:
-        raise DataException(
-            f"No file or directory found at {training_dataset_path}. Please add --create-training-set to the script and rerun the pipeline."
-        )
 
 
 def get_logging_path(name: str) -> str:
