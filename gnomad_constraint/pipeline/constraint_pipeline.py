@@ -198,7 +198,7 @@ def main(args):
                 pops=POPS if use_pops else (),
             )
 
-            logger.info("Done building %s plateau %s models.", region)
+            logger.info("Done building %s plateau %s models.", region, region)
 
     finally:
         logger.info("Copying log to logging bucket...")
