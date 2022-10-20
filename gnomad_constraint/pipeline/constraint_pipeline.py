@@ -25,6 +25,7 @@ import argparse
 import logging
 
 import hail as hl
+from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 
@@ -65,6 +66,7 @@ def main(args):
     max_af = args.max_af
     partition_hint = args.partition_hint
     use_pops = args.use_pops
+    use_weights = args.use_weights
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
     if version not in VERSIONS:
@@ -175,34 +177,28 @@ def main(args):
                 ).write(training_resources[region].path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
-        if args.build_and_apply_models:
-            for region in GENOMIC_REGIONS:
-                training_ht = get_training_dataset(version, region, test).ht()
+        # Build plateau and coverage models for autosomes/pseudoautosomal regions,
+        # chromosome X, and chromosome Y
+        plateau_models = {}
+        coverage_model = {}
+        for region in GENOMIC_REGIONS:
+            logger.info("Building plateau and coverage models...")
 
-                # Build models for sites on an autosome or a pseudoautosomal region, chromosome X, and chromosome Y
-                region_coverage_model, plateau_models = build_models(
-                    training_ht, weighted=use_weights, pops=POPS if use_pops else ()
-                )
+            # Check if the training dataset exist.
+            check_resource_existence(
+                input_pipeline_step="--create-training-set",
+                input_resources=training_resources.values(),
+                overwrite=overwrite,
+            )
 
-                # Coverage model will be set for all genomic regions because "autosome_par" is first in GENOMIC_REGIONS
-                if region == "autosome_par":
-                    coverage_model = region_coverage_model
-                    logger.info(
-                        "Done building autosome_par plateau and coverage models."
-                    )
-                else:
-                    logger.info("Done building %s plateau %s models.", region)
+            # Build plateau and coverage models
+            coverage_model[region], plateau_models[region] = build_models(
+                training_resources[region].ht(),
+                weighted=use_weights,
+                pops=POPS if use_pops else (),
+            )
 
-                get_proportion_observed(
-                    get_preprocessed_ht("exomes", version, region, test).ht(),
-                    get_preprocessed_ht("context", version, region, test).ht(),
-                    mutation_ht,
-                    plateau_models,
-                    coverage_model,
-                ).write(
-                    whatever_you_call_resource(version, region, test),
-                    overwrite=overwrite,
-                )
+            logger.info("Done building %s plateau %s models.", region)
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -235,6 +231,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-pops",
         help="Whether to apply models on each population.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--use-weights",
+        help=(
+            "Whether to generalize the models to weighted least squares using"
+            "'possible_variants'."
+        ),
         action="store_true",
     )
     parser.add_argument(
