@@ -1,4 +1,4 @@
-"""This script builds a constraint pipeline that calculates constraint metrics.
+"""This script builds a constraint pipeline that calculates genic constraint metrics.
 
 The constraint metrics pipeline will compute for LoF variants, missense variants, and
 synonymous variants:
@@ -179,26 +179,25 @@ def main(args):
 
         # Build plateau and coverage models for autosomes/pseudoautosomal regions,
         # chromosome X, and chromosome Y
-        plateau_models = {}
-        coverage_model = {}
-        for region in GENOMIC_REGIONS:
-            logger.info("Building plateau and coverage models...")
-
+        if args.build_models:
+            plateau_models = {}
+            coverage_model = {}
             # Check if the training dataset exist.
             check_resource_existence(
                 input_pipeline_step="--create-training-set",
                 input_resources=training_resources.values(),
                 overwrite=overwrite,
             )
+            # Build plateau and coverage models.
+            for region in GENOMIC_REGIONS:
+                logger.info("Building %s plateau and coverage models...", region)
 
-            # Build plateau and coverage models
-            coverage_model[region], plateau_models[region] = build_models(
-                training_resources[region].ht(),
-                weighted=use_weights,
-                pops=POPS if use_pops else (),
-            )
-
-            logger.info("Done building %s plateau %s models.", region, region)
+                coverage_model[region], plateau_models[region] = build_models(
+                    training_resources[region].ht(),
+                    weighted=use_weights,
+                    pops=POPS if use_pops else (),
+                )
+                logger.info("Done building %s plateau and coverage models.", region)
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -234,14 +233,6 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--use-weights",
-        help=(
-            "Whether to generalize the models to weighted least squares using"
-            "'possible_variants'."
-        ),
-        action="store_true",
-    )
-    parser.add_argument(
         "--max-af",
         help="Maximum variant allele frequency to keep.",
         type=float,
@@ -267,6 +258,19 @@ if __name__ == "__main__":
         help=(
             "Count the observed variants and possible variants by exome coverage at"
             " synonymous sites."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--build-models",
+        help="Build plateau and coverage models.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--use-weights",
+        help=(
+            "Whether to generalize the models to weighted least squares using"
+            "'possible_variants'."
         ),
         action="store_true",
     )
