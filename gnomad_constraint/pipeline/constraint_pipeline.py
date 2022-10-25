@@ -181,7 +181,6 @@ def main(args):
         # chromosome X, and chromosome Y
         if args.build_models:
             plateau_models = {}
-            coverage_model = {}
             # Check if the training dataset exist.
             check_resource_existence(
                 input_pipeline_step="--create-training-set",
@@ -190,14 +189,23 @@ def main(args):
             )
             # Build plateau and coverage models.
             for region in GENOMIC_REGIONS:
-                logger.info("Building %s plateau and coverage models...", region)
-
-                coverage_model[region], plateau_models[region] = build_models(
-                    training_resources[region].ht(),
-                    weighted=use_weights,
-                    pops=POPS if use_pops else (),
-                )
-                logger.info("Done building %s plateau and coverage models.", region)
+                if region == "autosome_par":
+                    logger.info("Building %s plateau and coverage models...", region)
+                    coverage_model, plateau_models[region] = build_models(
+                        training_resources[region].ht(),
+                        weighted=use_weights,
+                        pops=POPS if use_pops else (),
+                        build_coverage_model=True,
+                    )
+                    logger.info("Done building %s plateau and coverage models.", region)
+                else:
+                    logger.info("Building %s plateau models...", region)
+                    _, plateau_models[region] = build_models(
+                        training_resources[region].ht(),
+                        weighted=use_weights,
+                        pops=POPS if use_pops else (),
+                    )
+                    logger.info("Done building %s plateau models.", region)
 
     finally:
         logger.info("Copying log to logging bucket...")
