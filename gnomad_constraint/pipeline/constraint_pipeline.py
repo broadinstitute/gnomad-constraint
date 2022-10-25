@@ -181,7 +181,7 @@ def main(args):
         # chromosome X, and chromosome Y
         if args.build_models:
             plateau_models = {}
-            # Check if the training dataset exist.
+            # Check if the training datasets exist.
             check_resource_existence(
                 input_pipeline_step="--create-training-set",
                 input_resources=training_resources.values(),
