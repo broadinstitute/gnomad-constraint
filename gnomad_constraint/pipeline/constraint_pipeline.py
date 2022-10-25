@@ -151,7 +151,7 @@ def main(args):
 
         mutation_ht = mutation_rate_ht.versions[version].ht().select("mu_snp")
 
-        # Create training dataset that includes possible and observed variant counts
+        # Create training datasets that includes possible and observed variant counts
         # for building models.
         if args.create_training_set:
             logger.info("Counting possible and observed variant counts...")
@@ -164,7 +164,7 @@ def main(args):
                 training_resources.values(),
                 overwrite,
             )
-            # Create training dataset for sites on autosomes/pseudoautosomal regions,
+            # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
                 create_constraint_training_dataset(
