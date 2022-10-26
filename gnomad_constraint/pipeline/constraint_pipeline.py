@@ -151,7 +151,7 @@ def main(args):
 
         mutation_ht = mutation_rate_ht.versions[version].ht().select("mu_snp")
 
-        # Create training datasets that includes possible and observed variant counts
+        # Create training datasets that include possible and observed variant counts
         # for building models.
         if args.create_training_set:
             logger.info("Counting possible and observed variant counts...")
@@ -179,8 +179,9 @@ def main(args):
 
         # Build plateau and coverage models for autosomes/pseudoautosomal regions,
         # chromosome X, and chromosome Y
-        if args.build_models:
+        if args.build_and_apply_models:
             plateau_models = {}
+            coverage_model = {}
             # Check if the training datasets exist.
             check_resource_existence(
                 input_pipeline_step="--create-training-set",
@@ -189,23 +190,15 @@ def main(args):
             )
             # Build plateau and coverage models.
             for region in GENOMIC_REGIONS:
-                if region == "autosome_par":
-                    logger.info("Building %s plateau and coverage models...", region)
-                    coverage_model, plateau_models[region] = build_models(
-                        training_resources[region].ht(),
-                        weighted=use_weights,
-                        pops=POPS if use_pops else (),
-                        build_coverage_model=True,
-                    )
-                    logger.info("Done building %s plateau and coverage models.", region)
-                else:
-                    logger.info("Building %s plateau models...", region)
-                    _, plateau_models[region] = build_models(
-                        training_resources[region].ht(),
-                        weighted=use_weights,
-                        pops=POPS if use_pops else (),
-                    )
-                    logger.info("Done building %s plateau models.", region)
+                logger.info("Building %s plateau and coverage models...", region)
+
+                coverage_model[region], plateau_models[region] = build_models(
+                    training_resources[region].ht(),
+                    weighted=use_weights,
+                    pops=POPS if use_pops else (),
+                    build_coverage_model=True,
+                )
+                logger.info("Done building %s plateau and coverage models.", region)
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -270,7 +263,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--build-models",
+        "--build-and-apply-models",
         help="Build plateau and coverage models.",
         action="store_true",
     )
