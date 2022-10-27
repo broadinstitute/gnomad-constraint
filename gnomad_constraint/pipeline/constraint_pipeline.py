@@ -33,11 +33,13 @@ from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     DATA_TYPES,
     GENOMIC_REGIONS,
+    MODEL_TYPES,
     POPS,
     VERSIONS,
     annotated_context_ht,
     check_resource_existence,
     get_logging_path,
+    get_models,
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
@@ -78,13 +80,20 @@ def main(args):
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     preprocess_resources = {}
     training_resources = {}
+    models = {}
     for region in GENOMIC_REGIONS:
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
+                # Save a TableResource with a path to `preprocess_resources`
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
                     data_type, version, region, test
                 )
+        # Save a TableResource with a path to `training_resources`
         training_resources[region] = get_training_dataset(version, region, test)
+
+        for model_type in MODEL_TYPES:
+            # Save a path to `models`
+            models[(region, model_type)] = get_models(model_type, version, region, test)
 
     try:
         if args.preprocess_data:
@@ -179,24 +188,30 @@ def main(args):
 
         # Build plateau and coverage models for autosomes/pseudoautosomal regions,
         # chromosome X, and chromosome Y
-        if args.build_and_apply_models:
-            plateau_models = {}
-            coverage_model = {}
+        if args.build_models:
             # Check if the training datasets exist.
             check_resource_existence(
-                input_pipeline_step="--create-training-set",
-                input_resources=training_resources.values(),
+                "--create-training-set",
+                "--build_models",
+                training_resources.values(),
+                models.values(),
                 overwrite=overwrite,
             )
             # Build plateau and coverage models.
             for region in GENOMIC_REGIONS:
                 logger.info("Building %s plateau and coverage models...", region)
 
-                coverage_model[region], plateau_models[region] = build_models(
+                coverage_model, plateau_models = build_models(
                     training_resources[region].ht(),
                     weighted=use_weights,
                     pops=POPS if use_pops else (),
                     build_coverage_model=True,
+                )
+                hl.experimental.write_expression(
+                    plateau_models, models[(region, "plateau_models")]
+                )
+                hl.experimental.write_expression(
+                    coverage_model, models[(region, "coverage_model")]
                 )
                 logger.info("Done building %s plateau and coverage models.", region)
 
@@ -263,7 +278,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--build-and-apply-models",
+        "--build-models",
         help="Build plateau and coverage models.",
         action="store_true",
     )
