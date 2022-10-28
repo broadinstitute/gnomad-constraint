@@ -226,7 +226,11 @@ def main(args):
         # Apply coverage and plateau models to compute expected variant counts and
         # observed:expected ratio
         if args.apply_models:
-            logger.info("Counting possible and observed variant counts...")
+            logger.info(
+                "Applying %s plateau and coverage models and compute expected variant"
+                " count and observed:expected ratio...",
+                region,
+            )
 
             # Check if the input/output resources exist.
             check_resource_existence(
@@ -250,7 +254,9 @@ def main(args):
                     partition_hint=partition_hint * 20,
                     custom_model=custom_model,
                 ).write(testing_resources[region].path, overwrite=overwrite)
-            logger.info("Done with creating training dataset.")
+            logger.info(
+                "Done with compute expected variant count and observed:expected ratio"
+            )
 
     finally:
         logger.info("Copying log to logging bucket...")
