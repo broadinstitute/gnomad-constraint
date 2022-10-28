@@ -22,7 +22,7 @@ logger.setLevel(logging.INFO)
 VERSIONS = ["2.1.1"]
 CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
-MODEL_TYPES = ["plateau_models", "coverage_model"]
+MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 """
@@ -132,7 +132,8 @@ def get_models(
     """
     Return path to a pickle file that saves the expression of model.
 
-    :param model_type: The type of model. One of "plateau_models", "coverage_model". Default is None.
+    :param model_type: The type of model. One of "plateau_models", "coverage_model".
+        Default is None.
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
@@ -141,7 +142,9 @@ def get_models(
         chr20, chrX, and chrY. Default is False.
     :return: Path of the model.
     """
-    check_param_scope(version, genomic_region, model_type)
+    check_param_scope(
+        version=version, genomic_region=genomic_region, model_type=model_type
+    )
     return (
         f"{constraint_tmp_prefix}/{version}/model/build_models/{model_type}.{genomic_region}{'.test' if test else ''}.he"
     )
@@ -173,8 +176,10 @@ def check_resource_existence(
     """
     # Check if the input resources exist.
     if input_pipeline_step and input_resources:
+        if not isinstance(input_resources[0], str):
+            input_resources = [r.path for r in input_resources]
         check_file_exists_raise_error(
-            [r.path for r in input_resources],
+            input_resources,
             error_if_not_exists=True,
             error_if_not_exists_msg=(
                 f"Not all input resources exist. Please add {input_pipeline_step} to "
@@ -218,7 +223,7 @@ def check_param_scope(
     if data_type and data_type not in DATA_TYPES:
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
     if model_type and model_type not in MODEL_TYPES:
-        raise ValueError(f"data_type must be one of: {MODEL_TYPES}!")
+        raise ValueError(f"model_type must be one of: {MODEL_TYPES}!")
 
 
 def get_logging_path(name: str) -> str:

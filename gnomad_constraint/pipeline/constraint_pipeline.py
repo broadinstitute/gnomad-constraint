@@ -208,10 +208,10 @@ def main(args):
                     build_coverage_model=True,
                 )
                 hl.experimental.write_expression(
-                    plateau_models, models[(region, "plateau_models")]
+                    plateau_models, models[(region, "plateau")]
                 )
                 hl.experimental.write_expression(
-                    coverage_model, models[(region, "coverage_model")]
+                    coverage_model, models[(region, "coverage")]
                 )
                 logger.info("Done building %s plateau and coverage models.", region)
 
