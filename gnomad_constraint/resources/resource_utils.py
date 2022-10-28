@@ -130,10 +130,9 @@ def get_models(
     test: bool = False,
 ) -> str:
     """
-    Return path to a pickle file that saves the expression of model.
+    Return path to a HailExpression that contains desired model type.
 
-    :param model_type: The type of model. One of "plateau_models", "coverage_model".
-        Default is None.
+    :param model_type: The type of model. One of "plateau", "coverage". Default is None.
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
@@ -214,7 +213,7 @@ def check_param_scope(
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
         "chrx_non_par", or "chry_non_par". Default is None.
     :param data_type: One of "exomes", "genomes" or "context". Default is None.
-    :param model_type: One of "plateau_models", "coverage_model". Default is None.
+    :param model_type: One of "plateau", "coverage". Default is None.
     """
     if version and version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
