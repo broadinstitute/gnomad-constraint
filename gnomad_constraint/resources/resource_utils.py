@@ -25,6 +25,7 @@ DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
+COVERAGE_CUTOFF = 40
 """
 Population labels from gnomAD.
 
