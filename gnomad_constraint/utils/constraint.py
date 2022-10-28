@@ -16,7 +16,7 @@ from gnomad.utils.vep import (
     filter_vep_transcript_csqs,
 )
 
-from gnomad_constraint.resources.resource_utils import HIGH_COVERAGE_CUTOFF
+from gnomad_constraint.resources.resource_utils import COVERAGE_CUTOFF
 
 
 def add_vep_context_annotations(
@@ -230,10 +230,12 @@ def apply_models(
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
 
-    This function sums the number of possible variants times the mutation rate for all variants, and applies the calibration
-    model separately for CpG transitions and other sites. For sites with coverage lower than the coverage cutoff, the value obtained
-    from the previous step is multiplied by the coverage correction factor. These values are summed across the set of variants
-    of interest to obtain the expected number of variants.
+    This function sums the number of possible variants times the mutation rate for all
+    variants, and applies the calibration model separately for CpG transitions and
+    other sites. For sites with coverage lower than the coverage cutoff, the value
+    obtained from the previous step is multiplied by the coverage correction factor.
+    These values are summed across the set of variants of interest to obtain the
+    expected number of variants.
 
     A brief view of how to get the expected number of variants:
         mu_agg = the number of possible variants * the mutation rate (all variants)
@@ -243,33 +245,46 @@ def apply_models(
             expected_variants = sum(predicted_proportion_observed * coverage_correction)
         else:
             expected_variants = sum(predicted_proportion_observed)
-        The expected_variants are summed across the set of variants of interest to obtain the final expected number of variants.
+        The expected_variants are summed across the set of variants of interest to
+        obtain the final expected number of variants.
 
     Function adds the following annotations:
-        - observed_variants - observed variant counts annotated by `count_variants` function grouped by groupings (output of `annotate_constraint_groupings`)
-        - predicted_proportion_observed (including those for each population) - the sum of mutation rate adjusted by plateau models and possible variant counts grouped by groupings
-        - possible_variants (including those for each population) - the sum of possible variant counts derived from the context Table grouped by groupings
-        - expected_variants (including those for each population) - the sum of expected variant counts grouped by groupings
+        - observed_variants - observed variant counts annotated by `count_variants`
+          function grouped by groupings (output of `annotate_constraint_groupings`)
+        - predicted_proportion_observed (including those for each population) - the sum
+          of mutation rate adjusted by plateau models and possible variant counts
+          grouped by groupings
+        - possible_variants (including those for each population if `pops` is
+          specified) - the sum of possible variant counts derived from the context
+          Table grouped by groupings
+        - expected_variants (including those for each population if `pops` is
+          specified) - the sum of expected variant counts grouped by groupings
         - mu - sum(mu_snp * possible_variant * coverage_correction) grouped by groupings
         - obs_exp - observed:expected ratio
-        - annotations annotated by `annotate_constraint_groupings`
+        - annotations annotated by `annotate_constraint_groupings()`
 
-    :param exome_ht: Exome site Table (output of `prepare_ht_for_constraint_calculations()`) filtered to autosomes
-      and pseudoautosomal regions.
-    :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations()`) filtered to autosomes and
-      pseudoautosomal regions.
+    :param exome_ht: Exome site Table (output of `prepare_ht_for_constraint_calculations
+      ()`) filtered to autosomes and pseudoautosomal regions.
+    :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations
+      ()`) filtered to autosomes and pseudoautosomal regions.
     :param mutation_ht: Mutation rate Table with 'mu_snp' field.
-    :param plateau_models: Linear models (output of `build_models() in gnomad_methods`), with
-      the values of the dictionary formatted as a StrucExpression of intercept and slope, that calibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
-    :param coverage_model: A linear model (output of `build_models()` in gnomad_methods), formatted
-      as a Tuple of intercept and slope, that calibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
+    :param plateau_models: Linear models (output of `build_models()` in
+      gnomad_methods`), with the values of the dictionary formatted as a
+      StrucExpression of intercept and slope, that calibrates mutation rate to
+      proportion observed for high coverage exome. It includes models for CpG site,
+      non-CpG site, and each population in `POPS`.
+    :param coverage_model: A linear model (output of `build_models()` in
+      gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
+      given coverage level to observed:expected ratio. It's a correction factor for low
+      coverage sites.
     :param max_af: Maximum allele frequency for a variant to be included in returned
       counts. Default is 0.001.
-    :param keep_annotations: Annotations to keep in the context Table.
+    :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
-    :param partition_hint: Target number of partitions for aggregation. Default is 100.
-    :param custom_model: The customized model (one of "standard" or "worst_csq" for
-      now), defaults to None.
+    :param partition_hint: Target number of partitions for aggregation when counting
+      variants. Default is 2000.
+    :param custom_model: The customized model (one of "standard" or "worst_csq"),
+      defaults to None.
     :param cov_cutoff: Median coverage cutoff. Sites with coverage above this cutoff
       are considered well covered and will be used to build plateau models. Sites below
       this cutoff have low coverage and will be used to build coverage models. Defaults
