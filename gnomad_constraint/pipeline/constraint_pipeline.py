@@ -42,11 +42,13 @@ from gnomad_constraint.resources.resource_utils import (
     get_models,
     get_preprocessed_ht,
     get_sites_resource,
+    get_testing_dataset,
     get_training_dataset,
     mutation_rate_ht,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
+    apply_models,
     create_constraint_training_dataset,
     prepare_ht_for_constraint_calculations,
 )
@@ -69,6 +71,7 @@ def main(args):
     partition_hint = args.partition_hint
     use_pops = args.use_pops
     use_weights = args.use_weights
+    custom_model = args.custom_model
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
     if version not in VERSIONS:
@@ -81,6 +84,7 @@ def main(args):
     preprocess_resources = {}
     training_resources = {}
     models = {}
+    testing_resources = {}
     for region in GENOMIC_REGIONS:
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
@@ -94,6 +98,11 @@ def main(args):
         for model_type in MODEL_TYPES:
             # Save a path to `models`
             models[(region, model_type)] = get_models(model_type, version, region, test)
+
+        # Save a TableResource with a path to `testing_resources`
+        testing_resources[region] = get_testing_dataset(
+            custom_model, version, region, test
+        )
 
     try:
         if args.preprocess_data:
@@ -214,6 +223,35 @@ def main(args):
                 )
                 logger.info("Done building %s plateau and coverage models.", region)
 
+        # Apply coverage and plateau models to compute expected variant counts and
+        # observed:expected ratio
+        if args.apply_models:
+            logger.info("Counting possible and observed variant counts...")
+
+            # Check if the input/output resources exist.
+            check_resource_existence(
+                "--build_models",
+                "--apply_models",
+                models.values(),
+                testing_resources.values(),
+                overwrite,
+            )
+            # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
+            # regions, chromosome X, and chromosome Y.
+            for region in GENOMIC_REGIONS:
+                apply_models(
+                    preprocess_resources[(region, "exomes")].ht(),
+                    preprocess_resources[(region, "context")].ht(),
+                    mutation_ht,
+                    hl.experimental.read_expression(models[(region, "plateau")]),
+                    hl.experimental.read_expression(models[(region, "coverage")]),
+                    max_af=max_af,
+                    pops=POPS if use_pops else (),
+                    partition_hint=partition_hint * 20,
+                    custom_model=custom_model,
+                ).write(testing_resources[region].path, overwrite=overwrite)
+            logger.info("Done with creating training dataset.")
+
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(get_logging_path("constraint_pipeline"))
@@ -288,6 +326,17 @@ if __name__ == "__main__":
             "'possible_variants'."
         ),
         action="store_true",
+    )
+    parser.add_argument(
+        "--apply-models",
+        help="Apply plateau and coverage models.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--custom-model",
+        help='Which model to apply (one of "standard" or "worst_csq")',
+        type=str,
+        default="standard",
     )
 
     args = parser.parse_args()

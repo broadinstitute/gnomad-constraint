@@ -1,5 +1,5 @@
 """Script containing utility functions used in the constraint pipeline."""
-# cSpell: disable
+
 from typing import Tuple
 
 import hail as hl
@@ -264,33 +264,33 @@ def apply_models(
         - annotations annotated by `annotate_constraint_groupings()`
 
     :param exome_ht: Exome site Table (output of `prepare_ht_for_constraint_calculations
-      ()`) filtered to autosomes and pseudoautosomal regions.
+        ()`) filtered to autosomes and pseudoautosomal regions.
     :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations
-      ()`) filtered to autosomes and pseudoautosomal regions.
+        ()`) filtered to autosomes and pseudoautosomal regions.
     :param mutation_ht: Mutation rate Table with 'mu_snp' field.
     :param plateau_models: Linear models (output of `build_models()` in
-      gnomad_methods`), with the values of the dictionary formatted as a
-      StrucExpression of intercept and slope, that calibrates mutation rate to
-      proportion observed for high coverage exome. It includes models for CpG site,
-      non-CpG site, and each population in `POPS`.
+        gnomad_methods`), with the values of the dictionary formatted as a
+        StrucExpression of intercept and slope, that calibrates mutation rate to
+        proportion observed for high coverage exome. It includes models for CpG site,
+        non-CpG site, and each population in `POPS`.
     :param coverage_model: A linear model (output of `build_models()` in
-      gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
-      given coverage level to observed:expected ratio. It's a correction factor for low
-      coverage sites.
+        gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
+        given coverage level to observed:expected ratio. It's a correction factor for
+        low coverage sites.
     :param max_af: Maximum allele frequency for a variant to be included in returned
-      counts. Default is 0.001.
+        counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
     :param partition_hint: Target number of partitions for aggregation when counting
-      variants. Default is 2000.
+        variants. Default is 2000.
     :param custom_model: The customized model (one of "standard" or "worst_csq"),
-      defaults to None.
+        Default is None.
     :param cov_cutoff: Median coverage cutoff. Sites with coverage above this cutoff
-      are considered well covered and will be used to build plateau models. Sites below
-      this cutoff have low coverage and will be used to build coverage models. Defaults
-      to `COVERAGE_CUTOFF`.
+        are considered well covered and will be used to build plateau models. Sites
+        below this cutoff have low coverage and will be used to build coverage models.
+        Default is `COVERAGE_CUTOFF`.
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
-      (observed:expected ratio) annotations.
+        (observed:expected ratio) annotations.
     """
     # Add necessary constraint annotations for grouping
     if custom_model == "worst_csq":
@@ -421,7 +421,7 @@ def apply_models(
         agg_expr[f"downsampling_counts_{pop}"] = hl.agg.array_sum(
             ht[f"downsampling_counts_{pop}"]
         )
-    # Aggregate the sum aggregaters grouped by `grouping`
+    # Aggregate the sum aggregators grouped by `grouping`
     ht = ht.group_by(*grouping).partition_hint(1000).aggregate(**agg_expr)
 
     # Annotate global annotations.

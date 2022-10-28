@@ -24,6 +24,7 @@ CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
+CUSTOM_MODEL = ["standard", "worst_csq"]
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 COVERAGE_CUTOFF = 40
 """
@@ -150,6 +151,34 @@ def get_models(
     )
 
 
+def get_testing_dataset(
+    custom_model: str,
+    version: str = CURRENT_VERSION,
+    genomic_region: str = "autosome_par",
+    test: bool = False,
+) -> str:
+    """
+    Return TableResource of testing dataset with expected variant count and observed:expected ratio.
+
+    :param custom_model: The customized model (one of "standard" or "worst_csq").
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_non_par", or "chry_non_par". Default is "autosome_par".
+    :param test: Whether the Table is for testing purpose and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :return: Path of the model.
+    """
+    check_param_scope(
+        version=version,
+        genomic_region=genomic_region,
+        custom_model=custom_model,
+    )
+    return TableResource(
+        f"{constraint_tmp_prefix}/{version}/model/applying/{custom_model}/constraint_applying.{genomic_region}{'.test' if test else ''}.ht"
+    )
+
+
 def check_resource_existence(
     input_pipeline_step: Optional[str] = None,
     output_pipeline_step: Optional[str] = None,
@@ -206,6 +235,7 @@ def check_param_scope(
     genomic_region: Optional[str] = None,
     data_type: Optional[str] = None,
     model_type: Optional[str] = None,
+    custom_model: Optional[str] = None,
 ) -> None:
     """
     Check if the specified version, genomic region, and data type are in the scope of the constraint pipeline.
@@ -215,6 +245,8 @@ def check_param_scope(
         "chrx_non_par", or "chry_non_par". Default is None.
     :param data_type: One of "exomes", "genomes" or "context". Default is None.
     :param model_type: One of "plateau", "coverage". Default is None.
+    :param custom_model: The customized model (one of "standard" or "worst_csq").
+        Default is None.
     """
     if version and version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
@@ -224,6 +256,8 @@ def check_param_scope(
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
     if model_type and model_type not in MODEL_TYPES:
         raise ValueError(f"model_type must be one of: {MODEL_TYPES}!")
+    if custom_model and custom_model not in CUSTOM_MODEL:
+        raise ValueError(f"custom_model must be one of: {MODEL_TYPES}!")
 
 
 def get_logging_path(name: str) -> str:
