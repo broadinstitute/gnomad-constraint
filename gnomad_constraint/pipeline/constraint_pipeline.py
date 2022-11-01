@@ -207,10 +207,10 @@ def main(args):
                     pops=POPS if use_pops else (),
                 )
                 hl.experimental.write_expression(
-                    plateau_models, models[(region, "plateau")]
+                    plateau_models, models[(region, "plateau")], overwrite
                 )
                 hl.experimental.write_expression(
-                    coverage_model, models[(region, "coverage")]
+                    coverage_model, models[(region, "coverage")], overwrite
                 )
                 logger.info("Done building %s plateau and coverage models.", region)
 
