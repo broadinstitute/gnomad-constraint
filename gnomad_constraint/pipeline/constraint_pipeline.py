@@ -116,8 +116,10 @@ def main(args):
             # Raise error if any of the output resources exist and --overwrite is not
             # used.
             check_resource_existence(
-                output_pipeline_step="--preprocess-data",
-                output_resources=preprocess_resources.values(),
+                output_step_resources={
+                    "--preprocess-data",
+                    preprocess_resources.values(),
+                },
                 overwrite=overwrite,
             )
             # Add annotations used in constraint calculations.
@@ -176,10 +178,8 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                "--preprocess-data",
-                "--create-training-set",
-                preprocess_resources.values(),
-                training_resources.values(),
+                {"--preprocess-data": preprocess_resources.values()},
+                {"--create-training-set", training_resources.values()},
                 overwrite,
             )
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
@@ -200,11 +200,9 @@ def main(args):
         if args.build_models:
             # Check if the training datasets exist.
             check_resource_existence(
-                "--create-training-set",
-                "--build_models",
-                training_resources.values(),
-                models.values(),
-                overwrite=overwrite,
+                {"--create-training-set": training_resources.values()},
+                {"--build_models": models.values()},
+                overwrite,
             )
             # Build plateau and coverage models.
             for region in GENOMIC_REGIONS:
