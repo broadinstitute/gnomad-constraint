@@ -205,7 +205,6 @@ def main(args):
                     training_resources[region].ht(),
                     weighted=use_weights,
                     pops=POPS if use_pops else (),
-                    build_coverage_model=True,
                 )
                 hl.experimental.write_expression(
                     plateau_models, models[(region, "plateau")]
