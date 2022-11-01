@@ -234,10 +234,11 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                "--build_models",
-                "--apply_models",
-                models.values(),
-                testing_resources.values(),
+                {
+                    "--create-training-set": training_resources.values(),
+                    "--build_models": models.values(),
+                },
+                {"--apply_models": testing_resources.values()},
                 overwrite,
             )
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal

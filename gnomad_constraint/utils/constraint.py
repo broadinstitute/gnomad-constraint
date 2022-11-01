@@ -199,7 +199,7 @@ def create_constraint_training_dataset(
 
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = ht.join(possible_ht, "outer")
-    # Annotate the Table with cpg site and mutation_type (one of "CpG", "non-CpG
+    # Annotate the Table with cpg sites and mutation_type (one of "CpG", "non-CpG
     # transition", or "transversion").
     ht = annotate_mutation_type(ht)
     # Annotate parameters used in the function as global annotations.
@@ -263,7 +263,7 @@ def apply_models(
         - obs_exp - observed:expected ratio
         - annotations annotated by `annotate_constraint_groupings()`
 
-    :param exome_ht: Exome site Table (output of `prepare_ht_for_constraint_calculations
+    :param exome_ht: Exome sites Table (output of `prepare_ht_for_constraint_calculations
         ()`) filtered to autosomes and pseudoautosomal regions.
     :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations
         ()`) filtered to autosomes and pseudoautosomal regions.
@@ -271,8 +271,8 @@ def apply_models(
     :param plateau_models: Linear models (output of `build_models()` in
         gnomad_methods`), with the values of the dictionary formatted as a
         StrucExpression of intercept and slope, that calibrates mutation rate to
-        proportion observed for high coverage exome. It includes models for CpG site,
-        non-CpG site, and each population in `POPS`.
+        proportion observed for high coverage exome. It includes models for CpG s,
+        non-CpG sites, and each population in `POPS`.
     :param coverage_model: A linear model (output of `build_models()` in
         gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
         given coverage level to observed:expected ratio. It's a correction factor for
@@ -358,7 +358,7 @@ def apply_models(
     possible_ht = annotate_mutation_type(
         possible_ht.annotate(mu_agg=possible_ht.mu_snp * possible_ht.possible_variants)
     )
-    # Apply plateau and coverage models on the entire dataset.
+    # Apply plateau and coverage models for all sites.
     total_plateau_model = hl.literal(plateau_models.total)[possible_ht.cpg]
     ann_expr = {
         "predicted_proportion_observed": possible_ht.mu_agg * total_plateau_model[1]
@@ -379,7 +379,7 @@ def apply_models(
             possible_ht.mu_agg * slopes + intercepts
         )
     possible_ht = possible_ht.annotate(**ann_expr)
-    # Compute expected variant counts on the entire dataset.
+    # Compute expected variant counts for all sites.
     ann_expr = {
         "expected_variants": possible_ht.predicted_proportion_observed
         * possible_ht.coverage_correction,
