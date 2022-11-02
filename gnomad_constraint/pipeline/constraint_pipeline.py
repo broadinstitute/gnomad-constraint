@@ -1,4 +1,4 @@
-"""This script builds a constraint pipeline that calculates constraint metrics.
+"""This script builds a constraint pipeline that calculates genic constraint metrics.
 
 The constraint metrics pipeline will compute for LoF variants, missense variants, and
 synonymous variants:
@@ -25,6 +25,7 @@ import argparse
 import logging
 
 import hail as hl
+from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 
@@ -32,11 +33,13 @@ from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
     DATA_TYPES,
     GENOMIC_REGIONS,
+    MODEL_TYPES,
     POPS,
     VERSIONS,
     annotated_context_ht,
     check_resource_existence,
     get_logging_path,
+    get_models,
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
@@ -65,6 +68,7 @@ def main(args):
     max_af = args.max_af
     partition_hint = args.partition_hint
     use_pops = args.use_pops
+    use_weights = args.use_weights
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
     if version not in VERSIONS:
@@ -76,13 +80,20 @@ def main(args):
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     preprocess_resources = {}
     training_resources = {}
+    models = {}
     for region in GENOMIC_REGIONS:
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
+                # Save a TableResource with a path to `preprocess_resources`
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
                     data_type, version, region, test
                 )
+        # Save a TableResource with a path to `training_resources`
         training_resources[region] = get_training_dataset(version, region, test)
+
+        for model_type in MODEL_TYPES:
+            # Save a path to `models`
+            models[(region, model_type)] = get_models(model_type, version, region, test)
 
     try:
         if args.preprocess_data:
@@ -149,7 +160,7 @@ def main(args):
 
         mutation_ht = mutation_rate_ht.versions[version].ht().select("mu_snp")
 
-        # Create training dataset that includes possible and observed variant counts
+        # Create training datasets that include possible and observed variant counts
         # for building models.
         if args.create_training_set:
             logger.info("Counting possible and observed variant counts...")
@@ -162,7 +173,7 @@ def main(args):
                 training_resources.values(),
                 overwrite,
             )
-            # Create training dataset for sites on autosomes/pseudoautosomal regions,
+            # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
                 create_constraint_training_dataset(
@@ -174,6 +185,34 @@ def main(args):
                     partition_hint=partition_hint,
                 ).write(training_resources[region].path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
+
+        # Build plateau and coverage models for autosomes/pseudoautosomal regions,
+        # chromosome X, and chromosome Y
+        if args.build_models:
+            # Check if the training datasets exist.
+            check_resource_existence(
+                "--create-training-set",
+                "--build_models",
+                training_resources.values(),
+                models.values(),
+                overwrite=overwrite,
+            )
+            # Build plateau and coverage models.
+            for region in GENOMIC_REGIONS:
+                logger.info("Building %s plateau and coverage models...", region)
+
+                coverage_model, plateau_models = build_models(
+                    training_resources[region].ht(),
+                    weighted=use_weights,
+                    pops=POPS if use_pops else (),
+                )
+                hl.experimental.write_expression(
+                    plateau_models, models[(region, "plateau")], overwrite
+                )
+                hl.experimental.write_expression(
+                    coverage_model, models[(region, "coverage")], overwrite
+                )
+                logger.info("Done building %s plateau and coverage models.", region)
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -234,6 +273,19 @@ if __name__ == "__main__":
         help=(
             "Count the observed variants and possible variants by exome coverage at"
             " synonymous sites."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--build-models",
+        help="Build plateau and coverage models.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--use-weights",
+        help=(
+            "Whether to generalize the models to weighted least squares using"
+            "'possible_variants'."
         ),
         action="store_true",
     )
