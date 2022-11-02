@@ -72,6 +72,7 @@ def main(args):
     use_pops = args.use_pops
     use_weights = args.use_weights
     custom_model = args.custom_model
+
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
     if version not in VERSIONS:
@@ -85,6 +86,7 @@ def main(args):
     training_resources = {}
     models = {}
     testing_resources = {}
+
     for region in GENOMIC_REGIONS:
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
