@@ -139,7 +139,7 @@ def get_models(
         "chrx_non_par", or "chry_non_par". Default is "autosome_par".
     :param test: Whether the Table is for testing purpose and only contains sites in
         chr20, chrX, and chrY. Default is False.
-    :return: Path of the model.
+    :return: Path to the specified model.
     """
     check_param_scope(
         version=version, genomic_region=genomic_region, model_type=model_type
