@@ -34,6 +34,6 @@ jobs:
       - name: Check docstrings
         run: pydocstyle
       - name: Check comment formatting
-        run: autopep8 --exit-code --diff gnomad
+        run: autopep8 --exit-code --diff gnomad_constraint
       - name: Run Pylint
         run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint

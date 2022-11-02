@@ -17,7 +17,7 @@ repos:
     hooks:
       - id: autopep8
         args: ["--exit-code", "--in-place"]
-        files: gnomad
+        files: gnomad_constraint
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.1.1 # This should be kept in sync with the version in requirements-dev.in
     hooks:
