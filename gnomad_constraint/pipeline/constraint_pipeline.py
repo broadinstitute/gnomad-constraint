@@ -233,7 +233,7 @@ def main(args):
             # Check if the input/output resources exist.
             check_resource_existence(
                 {
-                    "--create-training-set": training_resources.values(),
+                    "--preprocess-data": preprocess_resources.values(),
                     "--build_models": models.values(),
                 },
                 {"--apply_models": testing_resources.values()},

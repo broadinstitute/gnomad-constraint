@@ -99,7 +99,7 @@ def get_preprocessed_ht(
     """
     check_param_scope(version, genomic_region, data_type)
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/model/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
+        f"{constraint_tmp_prefix}/{version}/model/preprocessing/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
     )
 
 
