@@ -1,15 +1,18 @@
 """Script containing utility functions used in the constraint pipeline."""
 
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Set, Tuple, Union
 
 import hail as hl
 from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
+    calculate_all_z_scores,
+    collapse_lof_ht,
     collapse_strand,
     compute_expected_variants,
     count_variants_by_group,
+    oe_confidence_interval,
     trimer_from_heptamer,
 )
 from gnomad.utils.vep import (
@@ -391,6 +394,8 @@ def finalize_dataset(
     po_ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
     n_partitions: int = 1000,
+    classic_lof_annotations: Tuple[str] = (),
+    pops: Tuple[str] = (),
 ) -> hl.Table:
     """
     Compute the pLI scores, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -453,7 +458,7 @@ def finalize_dataset(
         "mu_mis": hl.agg.sum(mis_ht.mu),
         "possible_mis": hl.agg.sum(mis_ht.possible_variants),
     }
-    for pop in POPS:
+    for pop in pops:
         agg_expr[f"exp_mis_{pop}"] = hl.agg.array_sum(
             mis_ht[f"expected_variants_{pop}"]
         )
@@ -479,7 +484,7 @@ def finalize_dataset(
         "mu_syn": hl.agg.sum(syn_ht.mu),
         "possible_syn": hl.agg.sum(syn_ht.possible_variants),
     }
-    for pop in POPS:
+    for pop in pops:
         agg_expr[f"exp_syn_{pop}"] = hl.agg.array_sum(
             syn_ht[f"expected_variants_{pop}"]
         )
