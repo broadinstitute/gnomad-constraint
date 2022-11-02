@@ -396,6 +396,7 @@ def apply_models(
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
 
+    grouping = list(grouping)
     grouping.remove("coverage")
 
     # Generate sum aggregators for 'observed_variants',
