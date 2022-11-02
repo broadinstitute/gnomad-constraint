@@ -406,10 +406,14 @@ def finalize_dataset(
             - expected_variants_{pop} (pop defaults to `POPS`)
             - downsampling_counts_{pop} (pop defaults to `POPS`)
 
-    :param po_ht: Input Table with the number of expected variants (output of `get_proportion_observed`).
-    :param keys: The keys of the output Table, defaults to ('gene', 'transcript', 'canonical').
-    :param n_partitions: Desired number of partitions for `Table.repartition()`, defaults to 1000.
-    :return: Table with pLI scores, confidence interval of the observed:expected ratio, and z scores.
+    :param po_ht: Input Table with the number of expected variants (output of
+        `get_proportion_observed()`).
+    :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
+        'canonical').
+    :param n_partitions: Desired number of partitions for `Table.repartition()`,
+        defaults to 1000.
+    :return: Table with pLI scores, confidence interval of the observed:expected ratio,
+        and z scores.
     """
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
     po_ht = po_ht.repartition(n_partitions).persist()
