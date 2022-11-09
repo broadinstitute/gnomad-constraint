@@ -8,9 +8,10 @@ from gnomad.utils.constraint import (
     annotate_mutation_type,
     annotate_with_mu,
     calculate_all_z_scores,
-    collapse_lof_ht,
     collapse_strand,
     compute_expected_variants,
+    compute_all_pLI_scores,
+    compute_oe_per_transcript,
     count_variants_by_group,
     oe_confidence_interval,
     trimer_from_heptamer,
@@ -390,120 +391,98 @@ def apply_models(
     return ht.annotate(obs_exp=ht.observed_variants / ht.expected_variants)
 
 
-def finalize_dataset(
-    po_ht: hl.Table,
+def compute_constraint_metrics(
+    ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
     n_partitions: int = 1000,
-    classic_lof_annotations: Tuple[str] = (),
+    classic_lof_annotations: Set[str] = {
+        "stop_gained",
+        "splice_donor_variant",
+        "splice_acceptor_variant",
+    },
     pops: Tuple[str] = (),
 ) -> hl.Table:
     """
-    Compute the pLI scores, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+    Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
 
     .. note::
-        The following annotations should be present in `po_ht`:
+        The following annotations should be present in `ht`:
             - modifier
             - annotation
             - variant_count
             - mu
             - possible_variants
             - expected_variants
-            - expected_variants_{pop} (pop defaults to `POPS`)
-            - downsampling_counts_{pop} (pop defaults to `POPS`)
+            - expected_variants_{pop} (if `pops` is specified)
+            - downsampling_counts_{pop} (if `pops` is specified)
 
-    :param po_ht: Input Table with the number of expected variants (output of
+    :param ht: Input Table with the number of expected variants (output of
         `get_proportion_observed()`).
     :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
         'canonical').
     :param n_partitions: Desired number of partitions for `Table.repartition()`,
         defaults to 1000.
-    :return: Table with pLI scores, confidence interval of the observed:expected ratio,
-        and z scores.
+    :param classic_lof_annotations: Classic LoF Annotations used to filter Input Table. Default is {}.
+    :param pops: List of populations used to compute constraint metrics. Default is ().
+    :return: Table with pLI scores, observed:expected ratio, confidence interval of the
+        observed:expected ratio, and z scores.
     """
-    # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
-    po_ht = po_ht.repartition(n_partitions).persist()
+    # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
+    ht = ht.repartition(n_partitions).persist()
+    ht_annotations = ["lof_hc_lc", "lof_hc_os", "lof", "mis", "mis_pphen", "syn"]
 
-    # Getting classic LoF annotations (no LOFTEE)
-    classic_lof_annotations = hl.literal(
-        {"stop_gained", "splice_donor_variant", "splice_acceptor_variant"}
-    )
-    lof_ht_classic = po_ht.filter(
-        classic_lof_annotations.contains(po_ht.annotation)
-        & ((po_ht.modifier == "HC") | (po_ht.modifier == "LC"))
-    )
-    lof_ht_classic = collapse_lof_ht(lof_ht_classic, keys, False)
-    lof_ht_classic = lof_ht_classic.rename(
-        {x: f"{x}_classic" for x in list(lof_ht_classic.row_value)}
-    )
+    all_ht = None
+    for annotation_name in ht_annotations:
+        if annotation_name == "lof_hc_lc":
+            # Filter to classic LoF annotations (no LOFTEE).
+            classic_lof_annotations = hl.literal(classic_lof_annotations)
+            ht = ht.filter(
+                classic_lof_annotations.contains(ht.annotation)
+                & ((ht.modifier == "HC") | (ht.modifier == "LC"))
+            )
+        elif annotation_name == "lof_hc_os":
+            # Filter to all LoF annotations (LOFTEE HC + OS).
+            ht = ht.filter((ht.modifier == "HC") | (ht.modifier == "OS"))
+        elif annotation_name == "lof":
+            # Filter to all LoF annotations (LOFTEE HC).
+            ht = ht.filter(ht.modifier == "HC")
+        elif annotation_name == "mis":
+            # Filter to missense variants.
+            ht = ht.filter(ht.annotation == "missense_variant")
+        elif annotation_name == "mis_pphen":
+            # Filter to probably damaging missense variants predicted by PolyPen-2.
+            ht = ht.filter(ht.modifier == "probably_damaging")
+        elif annotation_name == "syn":
+            # Filter to synonymous variants.
+            ht = ht.filter(ht.annotation == "synonymous_variant").key_by(*keys)
+        else:
+            raise ValueError(f"Unknown mutation_type: {annotation_name}")
 
-    # Getting all LoF annotations (LOFTEE HC + OS)
-    lof_ht_classic_hc = po_ht.filter(
-        (po_ht.modifier == "HC") | (po_ht.modifier == "OS")
-    )
-    lof_ht_classic_hc = collapse_lof_ht(lof_ht_classic_hc, keys, False)
-    lof_ht_classic_hc = lof_ht_classic_hc.rename(
-        {x: f"{x}_with_os" for x in list(lof_ht_classic_hc.row_value)}
-    )
+        # Compute the observed: expected ratio.
+        if annotation_name != "mis_pphen":
+            ht = compute_oe_per_transcript(ht, keys, annotation_name, pops)
+        else:
+            ht = compute_oe_per_transcript(ht, keys, annotation_name)
 
-    # Getting all LoF annotations (LOFTEE HC)
-    lof_ht = po_ht.filter(po_ht.modifier == "HC")
-    lof_ht = collapse_lof_ht(lof_ht, keys, False)
+        # Compute the pLI scores for LoF variants.
+        if "lof" in annotation_name:
+            ht = compute_all_pLI_scores(ht, keys, annotation_name)
 
-    mis_ht = po_ht.filter(po_ht.annotation == "missense_variant")
-    agg_expr = {
-        "obs_mis": hl.agg.sum(mis_ht.variant_count),
-        "exp_mis": hl.agg.sum(mis_ht.expected_variants),
-        "oe_mis": hl.agg.sum(mis_ht.variant_count)
-        / hl.agg.sum(mis_ht.expected_variants),
-        "mu_mis": hl.agg.sum(mis_ht.mu),
-        "possible_mis": hl.agg.sum(mis_ht.possible_variants),
-    }
-    for pop in pops:
-        agg_expr[f"exp_mis_{pop}"] = hl.agg.array_sum(
-            mis_ht[f"expected_variants_{pop}"]
-        )
-        agg_expr[f"obs_mis_{pop}"] = hl.agg.array_sum(
-            mis_ht[f"downsampling_counts_{pop}"]
-        )
-    mis_ht = mis_ht.group_by(*keys).aggregate(**agg_expr)
+        # Compute the 90% confidence interval around the observed:expected ratio.
+        if annotation_name in ["lof", "mis", "syn"]:
+            oe_ci = oe_confidence_interval(
+                ht,
+                ht[f"obs_{annotation_name}"],
+                ht[f"exp_{annotation_name}"],
+                prefix=f"oe_{annotation_name}",
+            )
+            ht = ht.annotate(**oe_ci[ht.key])
+            ht = calculate_all_z_scores(ht)
 
-    pphen_mis_ht = po_ht.filter(po_ht.modifier == "probably_damaging")
-    pphen_mis_ht = pphen_mis_ht.group_by(*keys).aggregate(
-        obs_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count),
-        exp_mis_pphen=hl.agg.sum(pphen_mis_ht.expected_variants),
-        oe_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count)
-        / hl.agg.sum(pphen_mis_ht.expected_variants),
-        possible_mis_pphen=hl.agg.sum(pphen_mis_ht.possible_variants),
-    )
-    syn_ht = po_ht.filter(po_ht.annotation == "synonymous_variant").key_by(*keys)
-    agg_expr = {
-        "obs_syn": hl.agg.sum(syn_ht.variant_count),
-        "exp_syn": hl.agg.sum(syn_ht.expected_variants),
-        "oe_syn": hl.agg.sum(syn_ht.variant_count)
-        / hl.agg.sum(syn_ht.expected_variants),
-        "mu_syn": hl.agg.sum(syn_ht.mu),
-        "possible_syn": hl.agg.sum(syn_ht.possible_variants),
-    }
-    for pop in pops:
-        agg_expr[f"exp_syn_{pop}"] = hl.agg.array_sum(
-            syn_ht[f"expected_variants_{pop}"]
-        )
-        agg_expr[f"obs_syn_{pop}"] = hl.agg.array_sum(
-            syn_ht[f"downsampling_counts_{pop}"]
-        )
-    syn_ht = syn_ht.group_by(*keys).aggregate(**agg_expr)
+        # Combine all the metrics annotations.
+        if not all_ht:
+            all_ht = ht
+        else:
+            all_ht = all_ht.annotate(**ht[all_ht.key])
 
-    ht = lof_ht_classic.annotate(
-        **mis_ht[lof_ht_classic.key],
-        **pphen_mis_ht[lof_ht_classic.key],
-        **syn_ht[lof_ht_classic.key],
-        **lof_ht[lof_ht_classic.key],
-        **lof_ht_classic_hc[lof_ht_classic.key],
-    )
-    syn_cis = oe_confidence_interval(ht, ht.obs_syn, ht.exp_syn, prefix="oe_syn")
-    mis_cis = oe_confidence_interval(ht, ht.obs_mis, ht.exp_mis, prefix="oe_mis")
-    lof_cis = oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof, prefix="oe_lof")
-    ht = ht.annotate(**syn_cis[ht.key], **mis_cis[ht.key], **lof_cis[ht.key])
-    return calculate_all_z_scores(
-        ht
-    )  # .annotate(**oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof)[ht.key])
+    return all_ht

@@ -198,6 +198,30 @@ def get_predicted_proportion_observed_dataset(
     )
 
 
+def get_constraint_metrics_dataset(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> str:
+    """
+    Return TableResource of testing dataset with expected variant count and observed:expected ratio.
+
+    :param custom_model: The customized model (one of "standard" or "worst_csq").
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_non_par", or "chry_non_par". Default is "autosome_par".
+    :param test: Whether the Table is for testing purpose and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :return: Path of the model.
+    """
+    check_param_scope(
+        version=version,
+    )
+    return TableResource(
+        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics.{'.test' if test else ''}.ht"
+    )
+
+
 def check_resource_existence(
     input_step_resources: Optional[Dict[str, Tuple]] = None,
     output_step_resources: Optional[Dict[str, Tuple]] = None,
