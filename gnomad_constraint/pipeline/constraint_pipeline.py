@@ -40,16 +40,16 @@ from gnomad_constraint.resources.resource_utils import (
     check_resource_existence,
     get_logging_path,
     get_models,
+    get_predicted_proportion_observed_dataset,
     get_preprocessed_ht,
     get_sites_resource,
-    get_testing_dataset,
     get_training_dataset,
     mutation_rate_ht,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
     apply_models,
-    create_constraint_training_dataset,
+    create_observed_and_possible_ht,
     prepare_ht_for_constraint_calculations,
 )
 
@@ -68,10 +68,14 @@ def main(args):
     test = args.test
     overwrite = args.overwrite
     max_af = args.max_af
-    partition_hint = args.partition_hint
+    partition_hint_when_creating_training_set = (
+        args.partition_hint_when_creating_training_set
+    )
+    partition_hint_when_counting_variants = args.partition_hint_when_counting_variants
+    partition_hint_for_sum_aggregators = args.partition_hint_for_sum_aggregators
     use_pops = args.use_pops
     use_weights = args.use_weights
-    custom_model = args.custom_model
+    custom_vep_annotation = args.custom_vep_annotation
 
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
@@ -102,8 +106,8 @@ def main(args):
             models[(region, model_type)] = get_models(model_type, version, region, test)
 
         # Save a TableResource with a path to `testing_resources`
-        testing_resources[region] = get_testing_dataset(
-            custom_model, version, region, test
+        testing_resources[region] = get_predicted_proportion_observed_dataset(
+            custom_vep_annotation, version, region, test
         )
 
     try:
@@ -119,8 +123,7 @@ def main(args):
             # used.
             check_resource_existence(
                 output_step_resources={
-                    "--preprocess-data",
-                    preprocess_resources.values(),
+                    "--preprocess-data": preprocess_resources.values(),
                 },
                 overwrite=overwrite,
             )
@@ -181,19 +184,21 @@ def main(args):
             # Check if the input/output resources exist.
             check_resource_existence(
                 {"--preprocess-data": preprocess_resources.values()},
-                {"--create-training-set", training_resources.values()},
+                {"--create-training-set": training_resources.values()},
                 overwrite,
             )
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
-                create_constraint_training_dataset(
+                create_observed_and_possible_ht(
                     preprocess_resources[(region, "exomes")].ht(),
                     preprocess_resources[(region, "context")].ht(),
                     mutation_ht,
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint=partition_hint,
+                    partition_hint=partition_hint_when_creating_training_set,
+                    filter_to_canonical_synonymous=True,
+                    global_annotation="training_dataset_params",
                 ).write(training_resources[region].path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
@@ -216,22 +221,20 @@ def main(args):
                     pops=POPS if use_pops else (),
                 )
                 hl.experimental.write_expression(
-                    plateau_models, models[(region, "plateau")], overwrite
+                    plateau_models,
+                    models[(region, "plateau")].path,
+                    overwrite=overwrite,
                 )
                 hl.experimental.write_expression(
-                    coverage_model, models[(region, "coverage")], overwrite
+                    coverage_model,
+                    models[(region, "coverage")].path,
+                    overwrite=overwrite,
                 )
                 logger.info("Done building %s plateau and coverage models.", region)
 
         # Apply coverage and plateau models to compute expected variant counts and
         # observed:expected ratio
         if args.apply_models:
-            logger.info(
-                "Applying %s plateau and coverage models and compute expected variant"
-                " count and observed:expected ratio...",
-                region,
-            )
-
             # Check if the input/output resources exist.
             check_resource_existence(
                 {
@@ -244,19 +247,25 @@ def main(args):
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
+                logger.info(
+                    "Applying %s plateau and coverage models and computing expected"
+                    " variant count and observed:expected ratio...",
+                    region,
+                )
                 apply_models(
                     preprocess_resources[(region, "exomes")].ht(),
                     preprocess_resources[(region, "context")].ht(),
                     mutation_ht,
-                    hl.experimental.read_expression(models[(region, "plateau")]),
-                    hl.experimental.read_expression(models[(region, "coverage")]),
+                    models[(region, "plateau")].he(),
+                    models[(region, "coverage")].he(),
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint=partition_hint * 20,
-                    custom_model=custom_model,
+                    partition_hint_for_counting_variants=partition_hint_when_counting_variants,
+                    partition_hint_for_aggregation=partition_hint_for_sum_aggregators,
+                    custom_vep_annotation=custom_vep_annotation,
                 ).write(testing_resources[region].path, overwrite=overwrite)
             logger.info(
-                "Done with compute expected variant count and observed:expected ratio"
+                "Done computing expected variant count and observed:expected ratio."
             )
 
     finally:
@@ -299,12 +308,6 @@ if __name__ == "__main__":
         default=0.001,
     )
     parser.add_argument(
-        "--partition-hint",
-        help="Target number of partitions for aggregation when counting variants.",
-        type=int,
-        default=100,
-    )
-    parser.add_argument(
         "--preprocess-data",
         help=(
             "Whether to prepare the exome, genome, and context Table for constraint"
@@ -322,6 +325,15 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--partition-hint-when-creating-training-set",
+        help=(
+            "Target number of partitions for aggregation when counting variants for"
+            " training datasets."
+        ),
+        type=int,
+        default=100,
+    )
+    parser.add_argument(
         "--build-models",
         help="Build plateau and coverage models.",
         action="store_true",
@@ -336,14 +348,33 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--apply-models",
-        help="Apply plateau and coverage models.",
+        help="Apply plateau and coverage models to compute expected variant counts.",
         action="store_true",
     )
     parser.add_argument(
-        "--custom-model",
-        help='Which model to apply (one of "standard" or "worst_csq")',
+        "--partition-hint-when-counting-variants",
+        help=(
+            "Target number of partitions for aggregation when counting variants and"
+            " applying models."
+        ),
+        type=int,
+        default=2000,
+    )
+    parser.add_argument(
+        "--partition-hint-for-sum-aggregators",
+        help="Target number of partitions for sum aggregators after applying models.",
+        type=int,
+        default=1000,
+    )
+    parser.add_argument(
+        "--custom-vep-annotation",
+        help=(
+            "Custom which VEP annotation to be used to annotate transcript when"
+            ' applying models (one of "transcript_consequences" or "worst_csq_by_gene")'
+        ),
         type=str,
-        default="standard",
+        default="transcript_consequences",
+        choices=["transcript_consequences", "worst_csq_by_gene"],
     )
 
     args = parser.parse_args()

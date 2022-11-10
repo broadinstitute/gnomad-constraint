@@ -6,6 +6,7 @@ from typing import Dict, Optional, Tuple
 from gnomad.resources.grch37.gnomad import public_release as public_release_grch37
 from gnomad.resources.grch38.gnomad import public_release as public_release_grch38
 from gnomad.resources.resource_utils import (
+    ExpressionResource,
     GnomadPublicTableResource,
     TableResource,
     VersionedTableResource,
@@ -24,7 +25,16 @@ CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
-CUSTOM_MODEL = ["standard", "worst_csq"]
+
+CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
+"""
+VEP annotations used when applying models.
+
+"transcript_consequences" option will annotate the Table with 'annotation', 'gene', 'coverage', 'transcript', and 'canonical' annotations using 'transcript_consequences' VEP annotation.
+
+"worst_csq_by_gene" option will annotate the Table with 'annotation', 'gene', and 'coverage' annotations using 'worst_csq_by_gene' VEP annotation.
+"""
+
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 """
 Population labels from gnomAD.
@@ -35,6 +45,7 @@ Abbreviations stand for: global (all populations), African-American/African, Lat
 COVERAGE_CUTOFF = 40
 """
 Minimum median exome coverage differentiating high coverage sites from low coverage sites.
+
 Low coverage sites require an extra calibration when computing the proportion of expected variation.
 """
 
@@ -104,7 +115,7 @@ def get_preprocessed_ht(
     """
     check_param_scope(version, genomic_region, data_type)
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/model/preprocessing/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
+        f"{constraint_tmp_prefix}/{version}/preprocessed_data/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
     )
 
 
@@ -126,7 +137,7 @@ def get_training_dataset(
     """
     check_param_scope(version, genomic_region)
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/model/training/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
+        f"{constraint_tmp_prefix}/{version}/training_data/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
     )
 
 
@@ -135,7 +146,7 @@ def get_models(
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
     test: bool = False,
-) -> str:
+) -> ExpressionResource:
     """
     Return path to a HailExpression that contains desired model type.
 
@@ -151,21 +162,21 @@ def get_models(
     check_param_scope(
         version=version, genomic_region=genomic_region, model_type=model_type
     )
-    return (
-        f"{constraint_tmp_prefix}/{version}/model/build_models/{model_type}.{genomic_region}{'.test' if test else ''}.he"
+    return ExpressionResource(
+        f"{constraint_tmp_prefix}/{version}/models/{model_type}.{genomic_region}{'.test' if test else ''}.he"
     )
 
 
-def get_testing_dataset(
-    custom_model: str,
+def get_predicted_proportion_observed_dataset(
+    custom_vep_annotation: str,
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
     test: bool = False,
 ) -> str:
     """
-    Return TableResource of testing dataset with expected variant count and observed:expected ratio.
+    Return TableResource containing the expected variant counts and observed:expected ratio.
 
-    :param custom_model: The customized model (one of "standard" or "worst_csq").
+    :param custom_vep_annotation: The customized model (one of "transcript_consequences" or "worst_csq_by_gene").
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
@@ -177,10 +188,10 @@ def get_testing_dataset(
     check_param_scope(
         version=version,
         genomic_region=genomic_region,
-        custom_model=custom_model,
+        custom_vep_annotation=custom_vep_annotation,
     )
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/model/applying/{custom_model}/constraint_applying.{genomic_region}{'.test' if test else ''}.ht"
+        f"{constraint_tmp_prefix}/{version}/predicted_proportion_observed/{custom_vep_annotation}/predicted_proportion_observed.{genomic_region}{'.test' if test else ''}.ht"
     )
 
 
@@ -197,8 +208,8 @@ def check_resource_existence(
     :param input_step_resources: A dictionary with keys as pipeline steps that generate
         input files and the value as the input files to check the existence of. Default
         is None.
-    :param output_step_resources: A dictionary with keys as pipeline step that generate
-        output files and the value as the input files to check the existence of.
+    :param output_step_resources: A dictionary with keys as pipeline step that generates
+        output files and the value as the output files to check the existence of.
         Default is None.
     :param overwrite: The overwrite parameter used when writing the output files.
         Default is None.
@@ -207,12 +218,8 @@ def check_resource_existence(
     # Check if the input resources exist.
     if input_step_resources:
         for step, input_resources in input_step_resources.items():
-            if not isinstance(list(input_resources)[0], str):
-                resources = [r.path for r in input_resources]
-            else:
-                resources = input_resources
             check_file_exists_raise_error(
-                resources,
+                input_resources,
                 error_if_not_exists=True,
                 error_if_not_exists_msg=(
                     f"Not all input resources exist. Please add {step} to "
@@ -223,12 +230,8 @@ def check_resource_existence(
     # Check if the output resources exist when `overwrite` is False.
     if not overwrite and output_step_resources:
         for step, output_resources in output_step_resources.items():
-            if not isinstance(list(output_resources)[0], str):
-                resources = [r.path for r in output_resources]
-            else:
-                resources = output_resources
             check_file_exists_raise_error(
-                resources,
+                output_resources,
                 error_if_exists=True,
                 error_if_exists_msg=(
                     "Some of the output resources that will be created by "
@@ -244,7 +247,7 @@ def check_param_scope(
     genomic_region: Optional[str] = None,
     data_type: Optional[str] = None,
     model_type: Optional[str] = None,
-    custom_model: Optional[str] = None,
+    custom_vep_annotation: Optional[str] = None,
 ) -> None:
     """
     Check if the specified version, genomic region, and data type are in the scope of the constraint pipeline.
@@ -254,7 +257,7 @@ def check_param_scope(
         "chrx_non_par", or "chry_non_par". Default is None.
     :param data_type: One of "exomes", "genomes" or "context". Default is None.
     :param model_type: One of "plateau", "coverage". Default is None.
-    :param custom_model: The customized model (one of "standard" or "worst_csq").
+    :param custom_vep_annotation: The customized model (one of "transcript_consequences" or "worst_csq_by_gene").
         Default is None.
     """
     if version and version not in VERSIONS:
@@ -265,8 +268,10 @@ def check_param_scope(
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
     if model_type and model_type not in MODEL_TYPES:
         raise ValueError(f"model_type must be one of: {MODEL_TYPES}!")
-    if custom_model and custom_model not in CUSTOM_MODEL:
-        raise ValueError(f"custom_model must be one of: {MODEL_TYPES}!")
+    if custom_vep_annotation and custom_vep_annotation not in CUSTOM_VEP_ANNOTATIONS:
+        raise ValueError(
+            f"custom_vep_annotation must be one of: {CUSTOM_VEP_ANNOTATIONS}!"
+        )
 
 
 def get_logging_path(name: str) -> str:

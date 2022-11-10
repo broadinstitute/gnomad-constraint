@@ -1,10 +1,10 @@
 """Script containing utility functions used in the constraint pipeline."""
 
-from typing import Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import hail as hl
 from gnomad.utils.constraint import (
-    annotate_constraint_groupings,
+    annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
     collapse_strand,
@@ -98,7 +98,7 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     return ht
 
 
-def create_constraint_training_dataset(
+def create_observed_and_possible_ht(
     exome_ht: hl.Table,
     context_ht: hl.Table,
     mutation_ht: hl.Table,
@@ -112,6 +112,9 @@ def create_constraint_training_dataset(
     pops: Tuple[str] = (),
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
+    filter_coverage_over_0: bool = False,
+    filter_to_canonical_synonymous: bool = False,
+    global_annotation: Optional[str] = None,
 ) -> hl.Table:
     """
     Count the observed variants and possible variants by substitution, context, methylation level, and additional `grouping`.
@@ -152,6 +155,12 @@ def create_constraint_training_dataset(
         `methylation_level` to group by when counting variants. Default is
         ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
+    :param filter_coverage_over_0: Whether to filter the exome Table and context Table
+        to variants with coverage larger then 0. Default is False.
+    :param filter_to_canonical_synonymous: Whether to keep only canonical synonymous
+        variants in exome Table. Default is False.
+    :param global_annotation: The annotation name of the StructExpression that contains
+        input parameters. Default is None.
     :return: Table with observed variant and possible variant count.
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
@@ -163,172 +172,22 @@ def create_constraint_training_dataset(
     keep_criteria = (
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
-    keep_annotations += grouping
+    if filter_coverage_over_0:
+        keep_criteria &= exome_ht.coverage > 0
 
-    # Keep variants that are synonymous, canonical, and satisfy the criteria above.
-    # Count the observed variants in the entire Table and in each downsampling grouped
-    # by `keep_annotations`.
-    ht = count_variants_by_group(
-        filter_vep_transcript_csqs(exome_ht.filter(keep_criteria)).select(
-            *list(keep_annotations) + ["freq"]
-        ),
-        additional_grouping=grouping,
-        partition_hint=partition_hint,
-        count_downsamplings=pops,
-        use_table_group_by=True,
-    )
-    ht = ht.transmute(observed_variants=ht.variant_count)
-
-    # Keep variants that are synonymous and canonical in `context_ht`.
-    context_ht = filter_vep_transcript_csqs(context_ht).select(*keep_annotations)
-    # Filter the `exome_ht` to rows that don’t match the criteria above
-    # Anti join the `context_ht` with filtered `exome_ht`, so that `context_ht` only
-    # has rows that match the criteria above in the `exome_ht` or are never in
-    # the `exome_ht`.
-    context_ht = context_ht.anti_join(exome_ht.filter(keep_criteria, keep=False))
-
-    # Count the possible variants in the context Table grouped by `keep_annotations`.
-    possible_ht = count_variants_by_group(
-        context_ht,
-        additional_grouping=grouping,
-        partition_hint=partition_hint,
-        use_table_group_by=True,
-    )
-    possible_ht = annotate_with_mu(possible_ht, mutation_ht)
-    possible_ht = possible_ht.transmute(possible_variants=possible_ht.variant_count)
-
-    # Outer join the Tables with possible variant counts and observed variant counts.
-    ht = ht.join(possible_ht, "outer")
-    # Annotate the Table with cpg sites and mutation_type (one of "CpG", "non-CpG
-    # transition", or "transversion").
-    ht = annotate_mutation_type(ht)
-    # Annotate parameters used in the function as global annotations.
-    ht = ht.annotate_globals(
-        training_dataset_params=hl.struct(max_af=max_af, pops=pops)
-    )
-    return ht
-
-
-def apply_models(
-    exome_ht: hl.Table,
-    context_ht: hl.Table,
-    mutation_ht: hl.Table,
-    plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
-    max_af: float = 0.001,
-    keep_annotations: Tuple[str] = (
-        "context",
-        "ref",
-        "alt",
-        "methylation_level",
-    ),
-    pops: Tuple[str] = (),
-    partition_hint: int = 2000,
-    custom_model: str = None,
-    cov_cutoff: int = COVERAGE_CUTOFF,
-) -> hl.Table:
-    """
-    Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
-
-    This function sums the number of possible variants times the mutation rate for all
-    variants, and applies the calibration model separately for CpG transitions and
-    other sites. For sites with coverage lower than the coverage cutoff, the value
-    obtained from the previous step is multiplied by the coverage correction factor.
-    These values are summed across the set of variants of interest to obtain the
-    expected number of variants.
-
-    A brief view of how to get the expected number of variants:
-        mu_agg = the number of possible variants * the mutation rate (all variants)
-        predicted_proportion_observed = sum(plateau model slop * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
-        if 0 < coverage < coverage cutoff:
-            coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
-            expected_variants = sum(predicted_proportion_observed * coverage_correction)
-        else:
-            expected_variants = sum(predicted_proportion_observed)
-        The expected_variants are summed across the set of variants of interest to
-        obtain the final expected number of variants.
-
-    Function adds the following annotations:
-        - observed_variants - observed variant counts annotated by `count_variants`
-          function grouped by groupings (output of `annotate_constraint_groupings`)
-        - predicted_proportion_observed (including those for each population) - the sum
-          of mutation rate adjusted by plateau models and possible variant counts
-          grouped by groupings
-        - possible_variants (including those for each population if `pops` is
-          specified) - the sum of possible variant counts derived from the context
-          Table grouped by groupings
-        - expected_variants (including those for each population if `pops` is
-          specified) - the sum of expected variant counts grouped by groupings
-        - mu - sum(mu_snp * possible_variant * coverage_correction) grouped by groupings
-        - obs_exp - observed:expected ratio
-        - annotations annotated by `annotate_constraint_groupings()`
-
-    :param exome_ht: Exome sites Table (output of `prepare_ht_for_constraint_calculations
-        ()`) filtered to autosomes and pseudoautosomal regions.
-    :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations
-        ()`) filtered to autosomes and pseudoautosomal regions.
-    :param mutation_ht: Mutation rate Table with 'mu_snp' field.
-    :param plateau_models: Linear models (output of `build_models()` in
-        gnomad_methods`), with the values of the dictionary formatted as a
-        StrucExpression of intercept and slope, that calibrates mutation rate to
-        proportion observed for high coverage exome. It includes models for CpG s,
-        non-CpG sites, and each population in `POPS`.
-    :param coverage_model: A linear model (output of `build_models()` in
-        gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
-        given coverage level to observed:expected ratio. It's a correction factor for
-        low coverage sites.
-    :param max_af: Maximum allele frequency for a variant to be included in returned
-        counts. Default is 0.001.
-    :param keep_annotations: Annotations to keep in the context Table and exome Table.
-    :param pops: List of populations to use for downsampling counts. Default is ().
-    :param partition_hint: Target number of partitions for aggregation when counting
-        variants. Default is 2000.
-    :param custom_model: The customized model (one of "standard" or "worst_csq"),
-        Default is None.
-    :param cov_cutoff: Median coverage cutoff. Sites with coverage above this cutoff
-        are considered well covered and will be used to build plateau models. Sites
-        below this cutoff have low coverage and will be used to build coverage models.
-        Default is `COVERAGE_CUTOFF`.
-    :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
-        (observed:expected ratio) annotations.
-    """
-    # Add necessary constraint annotations for grouping
-    if custom_model == "worst_csq":
-        (
-            context_ht,
-            _,
-        ) = annotate_constraint_groupings(context_ht, "worst_csq_by_gene")
-        exome_ht, grouping = annotate_constraint_groupings(
-            exome_ht, "worst_csq_by_gene"
-        )
-
-    else:
-        context_ht, _ = annotate_constraint_groupings(
-            context_ht, "transcript_consequences"
-        )
-        exome_ht, grouping = annotate_constraint_groupings(
-            exome_ht, "transcript_consequences"
-        )
-
-    # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
-    # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
-    freq_expr = exome_ht.freq[0]
-
-    # Set up the criteria to exclude variants not observed in the dataset, low-quality
-    # variants, and variants with allele frequency above the `max_af` cutoff.
-    keep_criteria = (
-        (freq_expr.AC > 0)
-        & exome_ht.pass_filters
-        & (freq_expr.AF <= max_af)
-        & (exome_ht.coverage > 0)
-    )
     keep_annotations += grouping
 
     # Keep variants that satisfy the criteria above.
+    filtered_exome_ht = exome_ht.filter(keep_criteria)
+
+    # If requested keep only variants that are synonymous, canonical
+    if filter_to_canonical_synonymous:
+        filtered_exome_ht = filter_vep_transcript_csqs(exome_ht.filter(keep_criteria))
+        context_ht = filter_vep_transcript_csqs(context_ht)
     # Count the observed variants in the entire Table and in each downsampling grouped
     # by `keep_annotations`.
     observed_ht = count_variants_by_group(
-        exome_ht.filter(keep_criteria).select(*list(keep_annotations) + ["freq"]),
+        filtered_exome_ht.select(*list(keep_annotations) + ["freq"]),
         additional_grouping=grouping,
         partition_hint=partition_hint,
         count_downsamplings=pops,
@@ -354,76 +213,159 @@ def apply_models(
     possible_ht = annotate_with_mu(possible_ht, mutation_ht)
     possible_ht = possible_ht.transmute(possible_variants=possible_ht.variant_count)
 
-    # Apply plateau models and coverage model.
-    possible_ht = annotate_mutation_type(
-        possible_ht.annotate(mu_agg=possible_ht.mu_snp * possible_ht.possible_variants)
-    )
-    # Apply plateau and coverage models for all sites.
-    total_plateau_model = hl.literal(plateau_models.total)[possible_ht.cpg]
-    ann_expr = {
-        "predicted_proportion_observed": possible_ht.mu_agg * total_plateau_model[1]
-        + total_plateau_model[0],
-        "coverage_correction": hl.case()
-        .when(possible_ht.coverage == 0, 0)
-        .when(possible_ht.coverage >= cov_cutoff, 1)
-        .default(
-            coverage_model[1] * hl.log10(possible_ht.coverage) + coverage_model[0]
-        ),
-    }
-    # Apply plateau models for specified populations.
-    for pop in pops:
-        pop_model = hl.literal(plateau_models[pop])
-        slopes = hl.map(lambda f: f[possible_ht.cpg][1], pop_model)
-        intercepts = hl.map(lambda f: f[possible_ht.cpg][0], pop_model)
-        ann_expr[f"predicted_proportion_observed_{pop}"] = (
-            possible_ht.mu_agg * slopes + intercepts
-        )
-    possible_ht = possible_ht.annotate(**ann_expr)
-    # Compute expected variant counts for all sites.
-    ann_expr = {
-        "expected_variants": possible_ht.predicted_proportion_observed
-        * possible_ht.coverage_correction,
-        "mu": possible_ht.mu_agg * possible_ht.coverage_correction,
-    }
-    # Compute expected variant counts for specified populations.
-    for pop in pops:
-        ann_expr[f"expected_variants_{pop}"] = (
-            possible_ht[f"predicted_proportion_observed_{pop}"]
-            * possible_ht.coverage_correction
-        )
-    possible_ht = possible_ht.annotate(**ann_expr)
-
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
+
+    # Annotate the Table with cpg sites and mutation_type (one of "CpG", "non-CpG
+    # transition", or "transversion").
+    ht = annotate_mutation_type(ht)
+
+    if global_annotation:
+        ht = ht.annotate_globals(
+            **{global_annotation: hl.struct(max_af=max_af, pops=pops)}
+        )
+
+    return ht
+
+
+def apply_models(
+    exome_ht: hl.Table,
+    context_ht: hl.Table,
+    mutation_ht: hl.Table,
+    plateau_models: hl.StructExpression,
+    coverage_model: Tuple[float, float],
+    max_af: float = 0.001,
+    keep_annotations: Tuple[str] = (
+        "context",
+        "ref",
+        "alt",
+        "methylation_level",
+    ),
+    pops: Tuple[str] = (),
+    partition_hint_for_counting_variants: int = 2000,
+    partition_hint_for_aggregation: int = 1000,
+    custom_vep_annotation: str = None,
+    cov_cutoff: int = COVERAGE_CUTOFF,
+) -> hl.Table:
+    """
+    Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
+
+    This function sums the number of possible variants times the mutation rate for all
+    variants, and applies the calibration model separately for CpG transitions and
+    other sites. For sites with coverage lower than the coverage cutoff, the value
+    obtained from the previous step is multiplied by the coverage correction factor.
+    These values are summed across the set of variants of interest to obtain the
+    expected number of variants.
+
+    A brief view of how to get the expected number of variants:
+        mu_agg = the number of possible variants * the mutation rate (all variants)
+        predicted_proportion_observed = sum(plateau model slop * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
+        if 0 < coverage < coverage cutoff:
+            coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
+            expected_variants = sum(predicted_proportion_observed * coverage_correction)
+        else:
+            expected_variants = sum(predicted_proportion_observed)
+        The expected_variants are summed across the set of variants of interest to
+        obtain the final expected number of variants.
+
+    Function adds the following annotations:
+        - observed_variants - observed variant counts annotated by `count_variants`
+          function grouped by groupings (output of `annotate_exploded_vep_for_constraint_groupings`)
+        - predicted_proportion_observed (including those for each population) - the sum
+          of mutation rate adjusted by plateau models and possible variant counts
+          grouped by groupings
+        - possible_variants (including those for each population if `pops` is
+          specified) - the sum of possible variant counts derived from the context
+          Table grouped by groupings
+        - expected_variants (including those for each population if `pops` is
+          specified) - the sum of expected variant counts grouped by groupings
+        - mu - sum(mu_snp * possible_variant * coverage_correction) grouped by groupings
+        - obs_exp - observed:expected ratio
+        - annotations annotated by `annotate_exploded_vep_for_constraint_groupings()`
+
+    :param exome_ht: Exome sites Table (output of `prepare_ht_for_constraint_calculations
+        ()`) filtered to autosomes and pseudoautosomal regions.
+    :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations
+        ()`) filtered to autosomes and pseudoautosomal regions.
+    :param mutation_ht: Mutation rate Table with 'mu_snp' field.
+    :param plateau_models: Linear models (output of `build_models()` in
+        gnomad_methods`), with the values of the dictionary formatted as a
+        StrucExpression of intercept and slope, that calibrates mutation rate to
+        proportion observed for high coverage exome. It includes models for CpG s,
+        non-CpG sites, and each population in `POPS`.
+    :param coverage_model: A linear model (output of `build_models()` in
+        gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
+        given coverage level to observed:expected ratio. It's a correction factor for
+        low coverage sites.
+    :param max_af: Maximum allele frequency for a variant to be included in returned
+        counts. Default is 0.001.
+    :param keep_annotations: Annotations to keep in the context Table and exome Table.
+    :param pops: List of populations to use for downsampling counts. Default is ().
+    :param partition_hint_for_counting_variants: Target number of partitions for
+        aggregation when counting variants. Default is 2000.
+    :param partition_hint_for_aggregation: Target number of partitions for sum
+        aggregators when computation is done. Default is 1000.
+    :param custom_vep_annotation: The customized model (one of
+        "transcript_consequences" or "worst_csq_by_gene"), Default is None.
+    :param cov_cutoff: Median coverage cutoff. Sites with coverage above this cutoff
+        are considered well covered and was used to build plateau models. Sites
+        below this cutoff have low coverage and was used to build coverage models.
+        Default is `COVERAGE_CUTOFF`.
+    :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
+        (observed:expected ratio) annotations.
+    """
+    # Add necessary constraint annotations for grouping
+    if custom_vep_annotation == "worst_csq_by_gene":
+        vep_annotation = "worst_csq_by_gene"
+    else:
+        vep_annotation = "transcript_consequences"
+
+    context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
+        context_ht, vep_annotation
+    )
+    exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
+        exome_ht, vep_annotation
+    )
+
+    # Compute observed and possible variant counts
+    ht = create_observed_and_possible_ht(
+        exome_ht,
+        context_ht,
+        mutation_ht,
+        max_af,
+        keep_annotations,
+        pops,
+        grouping,
+        partition_hint_for_counting_variants,
+        filter_coverage_over_0=True,
+        filter_to_canonical_synonymous=False,
+    )
+
+    mu_expr = ht.mu_snp * ht.possible_variants
+    # Determine coverage correction to use based on coverage value
+    cov_corr_expr = (
+        hl.case()
+        .when(ht.coverage == 0, 0)
+        .when(ht.coverage >= cov_cutoff, 1)
+        .default(coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
+    )
+    # Generate sum aggregators for 'mu' on the entire dataset.
+    agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
+    agg_expr.update(apply_plateau_models(ht, plateau_models, mu_expr, cov_corr_expr))
+    for pop in pops:
+        agg_expr.update(
+            apply_plateau_models(ht, plateau_models, mu_expr, cov_corr_expr, pop)
+        )
 
     grouping = list(grouping)
     grouping.remove("coverage")
 
-    # Generate sum aggregators for 'observed_variants',
-    # 'predicted_proportion_observed', 'possible_variants', 'expected_variants', and
-    # 'mu' on the entire dataset.
-    agg_expr = {
-        "observed_variants": hl.agg.sum(ht.observed_variants),
-        "predicted_proportion_observed": hl.agg.sum(ht.predicted_proportion_observed),
-        "possible_variants": hl.agg.sum(ht.possible_variants),
-        "expected_variants": hl.agg.sum(ht.expected_variants),
-        "mu": hl.agg.sum(ht.mu),
-    }
-    # Generate sum aggregators for 'observed_variants',
-    # 'predicted_proportion_observed', 'possible_variants', 'expected_variants', and
-    # 'mu' for specified populations.
-    for pop in pops:
-        agg_expr[f"predicted_proportion_observed_{pop}"] = hl.agg.array_sum(
-            ht[f"predicted_proportion_observed_{pop}"]
-        )
-        agg_expr[f"expected_variants_{pop}"] = hl.agg.array_sum(
-            ht[f"expected_variants_{pop}"]
-        )
-        agg_expr[f"downsampling_counts_{pop}"] = hl.agg.array_sum(
-            ht[f"downsampling_counts_{pop}"]
-        )
     # Aggregate the sum aggregators grouped by `grouping`
-    ht = ht.group_by(*grouping).partition_hint(1000).aggregate(**agg_expr)
+    ht = (
+        ht.group_by(*grouping)
+        .partition_hint(partition_hint_for_aggregation)
+        .aggregate(**agg_expr)
+    )
 
     # Annotate global annotations.
     ht = ht.annotate_globals(
@@ -436,3 +378,65 @@ def apply_models(
     )
     # Compute the observed:expected ratio.
     return ht.annotate(obs_exp=ht.observed_variants / ht.expected_variants)
+
+
+def apply_plateau_models(
+    ht: hl.Table,
+    plateau_models: hl.StructExpression,
+    mu_expr: hl.Float64Expression,
+    cov_corr_expr: hl.Float64Expression,
+    pop: Optional[str] = None,
+) -> Dict[str, Union[hl.Float64Expression, hl.Int64Expression]]:
+    """
+    Apply plateau models for all sites and for a population (if specified) to compute predicted proportion observed ratio and expected variant counts.
+
+    .. note:
+        Function expects following annotations to be present in `ht`:
+        - cpg
+        - observed_variants
+        - possible_variants
+
+    :param ht: Input Table.
+    :param plateau_models: Linear models (output of `build_models()` in
+        gnomad_methods`), with the values of the dictionary formatted as a
+        StrucExpression of intercept and slope, that calibrates mutation rate to
+        proportion observed for high coverage exome. It includes models for CpG s,
+        non-CpG sites, and each population in `POPS`.
+    :param mu_expr: Float64Expression of mutation rate.
+    :param cov_corr_expr: Float64Expression of corrected coverage expression.
+    :param pop: Population that will be used when applying plateau model. Default is
+        None.
+    :return: A dictionary with predicted proportion observed ratio and expected variant
+        counts.
+    """
+    if pop is None:
+        pop = ""
+        plateau_model = hl.literal(plateau_models.total)[ht.cpg]
+        slope = plateau_model[1]
+        intercept = plateau_model[0]
+        agg_func = hl.agg.sum
+        ann_to_sum = ["observed_variants", "possible_variants"]
+    else:
+        plateau_model = hl.literal(plateau_models[pop])
+        slope = hl.map(lambda f: f[ht.cpg][1], plateau_model)
+        intercept = hl.map(lambda f: f[ht.cpg][0], plateau_model)
+        agg_func = hl.agg.array_sum
+        pop = f"_{pop}"
+        ann_to_sum = [f"downsampling_counts{pop}"]
+
+    # Apply plateau models for specified population.
+    ppo_expr = mu_expr * slope + intercept
+
+    # Generate sum aggregators for 'predicted_proportion_observed' and
+    # 'expected_variants', for specified population.
+    agg_expr = {
+        f"predicted_proportion_observed{pop}": agg_func(ppo_expr),
+        f"expected_variants{pop}": agg_func(ppo_expr * cov_corr_expr),
+    }
+
+    # Generate sum aggregators for 'observed_variants' and 'possible_variants' on
+    # the entire dataset if pop is None, and for `downsampling_counts` for
+    # specified population if pop is not None.
+    agg_expr.update({ann: agg_func(ht[ann]) for ann in ann_to_sum})
+
+    return agg_expr
