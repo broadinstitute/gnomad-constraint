@@ -1,6 +1,7 @@
 """Script containing utility functions used in the constraint pipeline."""
-
-from typing import Optional, Tuple
+# cSpell: disable
+import pickle
+from typing import List, Optional, Tuple
 
 import hail as hl
 from gnomad.utils.constraint import (
@@ -8,10 +9,10 @@ from gnomad.utils.constraint import (
     annotate_with_mu,
     collapse_strand,
     count_variants_by_group,
+    get_downsamplings,
     trimer_from_heptamer,
 )
 from gnomad.utils.filtering import (
-    filter_by_frequency,
     filter_for_mu,
     filter_to_autosomes,
     remove_coverage_outliers,
@@ -20,6 +21,9 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
+from hail.utils.misc import new_temp_file
+
+from gnomad_constraint.resources.resource_utils import mutation_rate_ht
 
 
 def add_vep_context_annotations(
@@ -214,118 +218,125 @@ def create_constraint_training_dataset(
 
 def calculate_mu_by_downsampling(
     genome_ht: hl.Table,
-    raw_context_ht: hl.MatrixTable,
+    raw_context_ht: hl.Table,
     recalculate_all_possible_summary: bool = True,
     recalculate_all_possible_summary_unfiltered: bool = False,
     omit_methylation: bool = False,
     count_singletons: bool = False,
-    remove_common_downsampled: bool = True,
-    remove_common_ordinary: bool = False,
-    grouping_variables: Optional[Tuple[str]] = (),
     summary_file: str = None,
-) -> hl.Table:
-    """
-    _summary_.
-
-    :param genome_ht: _description_
-    :param raw_context_ht: _description_
-    :param recalculate_all_possible_summary: _description_, defaults to True
-    :param recalculate_all_possible_summary_unfiltered: _description_, defaults to False
-    :param omit_methylation: _description_, defaults to False
-    :param count_singletons: _description_, defaults to False
-    :param remove_common_downsampled: _description_, defaults to True
-    :param remove_common_ordinary: _description_, defaults to False
-    :param grouping_variables: _description_, defaults to ()
-    :param summary_file: _description_, defaults to None
-    :return: _description_
-    """
-    context_ht = filter_to_autosomes(remove_coverage_outliers(raw_context_ht))
-    genome_ht = filter_to_autosomes(remove_coverage_outliers(genome_ht))
-
-    if grouping_variables:
-        context_ht = context_ht.filter(
-            hl.all(
-                lambda x: x, [hl.is_defined(context_ht[x]) for x in grouping_variables]
-            )
-        )
-        genome_ht = genome_ht.filter(
-            hl.all(
-                lambda x: x, [hl.is_defined(genome_ht[x]) for x in grouping_variables]
-            )
-        )
-    else:
-        context_ht = filter_for_mu(context_ht)
-        genome_ht = filter_for_mu(genome_ht)
-
-    context_ht = context_ht.select(
-        "context", "ref", "alt", "methylation_level", *grouping_variables
-    )
-    genome_ht = genome_ht.select(
+    keep_annotations: Tuple[str] = (
         "context",
         "ref",
         "alt",
         "methylation_level",
-        "freq",
-        "pass_filters",
-        *grouping_variables,
-    )
+    ),
+    ac_cutoff: int = 5,
+    downsampling_level: int = 1000,
+    total_mu: float = 1.2e-08,
+    pops: Tuple[str] = (),
+) -> hl.Table:
+    """
+    Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
 
-    genome_join = genome_ht[context_ht.key]
-    if remove_common_downsampled:
-        ac_cutoff = 5
-        downsampling_level = 1000
-        freq_index = hl.eval(
-            hl.zip_with_index(genome_ht.freq_meta).find(
-                lambda f: (f[1].get("downsampling") == str(downsampling_level))
-                & (f[1].get("pop") == "global")
-                & (f[1].get("group") == "adj")
-                & (f[1].size() == 3)
-            )
-        )[0]
-        # In the denominator, only keep variants not in the genome dataset, or with AC <= ac_cutoff and passing filters
-        context_ht = context_ht.filter(
-            hl.is_missing(genome_join)
-            | (
-                (genome_join.freq[freq_index].AC <= ac_cutoff)
-                & genome_join.pass_filters
-            )
+    Prior to computing mutation rate the only following variants are kept:
+        - variants with the mean coverage in the gnomAD genomes was between 15X and 60X.
+        - variants whoes the most severe annotation was intron_variant or
+            intergenic_variant
+        - variants with the GERP score between the 5th and 95th percentile of the
+            genomewide distribution.
+        - high-quality variants: `exome_ht.pass_filters`
+        - Variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`
+
+    The returned Table includes the following annotations:
+        - context - trinucleotide genomic context
+        - ref - the reference allele
+        - alt - the alternate base
+        - methylation_level - methylation_level
+        - downsampling_counts_{pop} - variant counts in downsamplings for populations
+          in `pops`
+        - mu_snp - SNP mutation rate
+        - annotations added by `annotate_mutation_type`
+
+    :param genome_ht: Genome sites Table.
+    :param raw_context_ht: Context Table with locus that is on an autosome or in a
+        pseudoautosomal region and sex chromosomes.
+    :param recalculate_all_possible_summary: Whether to calculate possible variants
+        using context Table with locus that is only on an autosome or in a
+        pseudoautosomal region. Default is True.
+    :param recalculate_all_possible_summary_unfiltered: Whether to calculate possible
+        variants using raw context Table. Default is True.
+    :param omit_methylation: Whether to omit 'methylation_level' from the grouping when
+        counting variants. Default is False.
+    :param count_singletons: Whether to count singletons. Default is False.
+    :param summary_file: _description_, defaults to None
+    :param keep_annotations: Annotations to keep in the context Table and genome sites
+        Table.
+    :param ac_cutoff: The cutoff of allele count when filtering context Table and genome sites Table.
+    :param downsampling_level: The size of downsamplings will be used to count variants. Default is 1000.
+    :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
+    :param pops: List of populations to use for downsampling counts. Default is ().
+    :return: Mutation rate Table.
+    """
+    # keep only loci where the mean coverage in the gnomAD genomes was between 15X and
+    # 60X.
+    context_ht = filter_to_autosomes(remove_coverage_outliers(raw_context_ht))
+    ## Is it necessary to call `filter_to_autosomes()` again here?
+    genome_ht = filter_to_autosomes(remove_coverage_outliers(genome_ht))
+
+    # filter the Table so that the most severe annotation was intron_variant or
+    # intergenic_variant, and that the GERP score was between the 5th and 95th
+    # percentile of the genomewide distribution.
+    context_ht = filter_for_mu(context_ht)
+    genome_ht = filter_for_mu(genome_ht)
+
+    context_ht = context_ht.select(*keep_annotations)
+    genome_ht = genome_ht.select(*list(keep_annotations) + ["freq", "pass_filters"])
+
+    # downsampled the dataset to 1,000 genomes
+    freq_index = hl.eval(
+        hl.enumerate(genome_ht.freq_meta).find(
+            lambda f: (f[1].get("downsampling") == str(downsampling_level))
+            & (f[1].get("pop") == "global")
+            & (f[1].get("group") == "adj")
+            & (f[1].size() == 3)
         )
-        # Keep only AC <= ac_cutoff in numerator
-        genome_ht = genome_ht.filter(genome_ht.freq[freq_index].AC <= ac_cutoff)
-    elif remove_common_ordinary:
-        af_cutoff = 0.001
-        context_ht = context_ht.filter(
-            hl.is_missing(genome_join)
-            | ((genome_join.freq[0].AF <= af_cutoff) & genome_join.pass_filters)
-        )
-        # Keep only AF < af_cutoff in numerator
-        genome_ht = filter_by_frequency(
-            genome_ht, "below", frequency=af_cutoff, adj=True
-        )
-    else:
-        context_ht = context_ht.filter(
-            hl.is_missing(genome_join) | genome_join.pass_filters
-        )
-    genome_ht = genome_ht.filter(genome_ht.pass_filters)
+    )[0]
+    freq_expr = genome_ht.freq[freq_index]
+    # Set up the criteria to filtered out  low quality sites, and sites found in
+    # greater than 5 copies in the downsampled set.
+    keep_criteria = (freq_expr.AC <= ac_cutoff) & genome_ht.pass_filters
+
+    # Only keep variants with AC <= ac_cutoff and passing filters in genome site
+    # Table.
+    genome_ht = genome_ht.filter(keep_criteria)
+
+    # In the denominator, only keep variants not in the genome dataset, or with AC
+    # <= ac_cutoff and passing filters.
+    context_ht = context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False))
 
     if not summary_file:
-        summary_file = all_possible_summary_pickle
+        ## Should we save possible variants in a random path?
+        summary_file = new_temp_file(prefix="constraint", extension="he")
+
+    ## Is it possible to get rid of the usage of dtype here?
     all_possible_dtype = count_variants_by_group(
         context_ht,
         omit_methylation=omit_methylation,
-        additional_grouping=grouping_variables,
         return_type_only=True,
     )
+
+    # Count possible variants in context Table.
     if recalculate_all_possible_summary:
         all_possible = count_variants_by_group(
             context_ht,
             omit_methylation=omit_methylation,
-            additional_grouping=grouping_variables,
         ).variant_count
-        with hl.hadoop_open(summary_file, "wb") as f:
-            pickle.dump(all_possible, f)
-    with hl.hadoop_open(summary_file, "rb") as f:
-        all_possible = pickle.load(f)
+        # with hl.hadoop_open(summary_file, "wb") as f:
+        #     pickle.dump(all_possible, f)
+        hl.experimental.write_expression(all_possible, summary_file)
+    # with hl.hadoop_open(summary_file, "rb") as f:
+    #     all_possible = pickle.load(f)
+    all_possible = hl.experimental.read_expression(summary_file)
 
     if recalculate_all_possible_summary_unfiltered:
         all_possible_unfiltered = count_variants_by_group(
@@ -336,16 +347,19 @@ def calculate_mu_by_downsampling(
             for x, y in list(all_possible_unfiltered.items())
             if x.context is not None
         }
-        with hl.hadoop_open(all_possible_summary_unfiltered_pickle, "wb") as f:
-            pickle.dump(all_possible_unfiltered, f)
+        hl.experimental.write_expression(
+            all_possible_unfiltered, new_temp_file(prefix="constraint", extension="he")
+        )
+        # with hl.hadoop_open(new_temp_file(prefix="constraint", extension="he"), "wb") as f:
+        #     pickle.dump(all_possible_unfiltered, f)
     # Uncomment this line and next few commented lines to back-calculate total_mu from the old mutation rate dataset
     # all_possible_unfiltered = load_all_possible_summary(filtered=False)
 
+    # Count the observed variants in the genome sites Table.
     genome_ht = count_variants_by_group(
         genome_ht,
-        count_downsamplings=["global", "nfe", "afr"],
+        count_downsamplings=pops,
         count_singletons=count_singletons,
-        additional_grouping=grouping_variables,
         omit_methylation=omit_methylation,
     )
 
@@ -363,75 +377,65 @@ def calculate_mu_by_downsampling(
     total_bases = ht.aggregate(hl.agg.sum(ht.possible_variants)) // 3
     # total_bases_unfiltered = ht.aggregate(hl.agg.sum(ht.possible_variants_unfiltered)) // 3
     # total_mu = ht.aggregate(hl.agg.sum(ht.old_mu_snp * ht.possible_variants_unfiltered) / total_bases_unfiltered)
-    total_mu = 1.2e-08
 
-    correction_factors = ht.aggregate(
-        total_mu / (hl.agg.array_sum(ht.downsampling_counts_global) / total_bases)
-    )
-    correction_factors_nfe = ht.aggregate(
-        total_mu / (hl.agg.array_sum(ht.downsampling_counts_nfe) / total_bases)
-    )
-    correction_factors_afr = ht.aggregate(
-        total_mu / (hl.agg.array_sum(ht.downsampling_counts_afr) / total_bases)
-    )
+    for pop in pops:
+        correction_factors = ht.aggregate(
+            total_mu
+            / (hl.agg.array_sum(ht[f"downsampling_counts_{pop}"]) / total_bases)
+        )
+        ht = ht.annotate(
+            **{
+                f"downsamplings_mu_{pop}": hl.literal(correction_factors)
+                * ht[f"downsampling_counts_{pop}"]
+                / ht.possible_variants
+            }
+        )
 
     ht = annotate_mutation_type(
         ht.annotate(
             downsamplings_frac_observed=ht.downsampling_counts_global
-            / ht.possible_variants,
-            downsamplings_mu_snp=hl.literal(correction_factors)
-            * ht.downsampling_counts_global
-            / ht.possible_variants,
-            downsamplings_mu_nfe=hl.literal(correction_factors_nfe)
-            * ht.downsampling_counts_nfe
-            / ht.possible_variants,
-            downsamplings_mu_afr=hl.literal(correction_factors_afr)
-            * ht.downsampling_counts_afr
-            / ht.possible_variants,
+            / ht.possible_variants
         )
     )
-    downsamplings = list(map(lambda x: x[1], get_downsamplings(ht)))
+
+    # Get the index of dowsamplings with size of 1000 genomes
+    downsamplings = list(map(lambda x: x[1], get_downsamplings(ht.freq_meta)))
     index_1kg = downsamplings.index(1000)
+
+    # Compute the absolute mutation rate
+    for pop in pops:
+        if pop == "global":
+            ht = ht.annotate(**{"mu_snp": ht[f"downsamplings_mu_{pop}"][index_1kg]})
+        else:
+            ht = ht.annotate(
+                **{f"mu_snp_{pop}": ht[f"downsamplings_mu_{pop}"][index_1kg]}
+            )
+
+    # Compute the proportion observed, which represents the relative mutability of each
+    # variant class
     return ht.annotate(
         proportion_observed_1kg=ht.downsampling_counts_global[index_1kg]
         / ht.possible_variants,
         proportion_observed=ht.variant_count / ht.possible_variants,
-        mu_snp=ht.downsamplings_mu_snp[index_1kg],
-        mu_snp_nfe=ht.downsamplings_mu_nfe[index_1kg],
-        mu_snp_afr=ht.downsamplings_mu_afr[index_1kg],
     )
 
 
-# Data loads
-def get_old_mu_data() -> hl.Table:
+def get_old_mu_data(version) -> hl.Table:
     """
-    _summary_.
+    Get the mutation rate Table of last version.
 
-    :return: _description_
+    :return: Mutation rate Table.
     """
-    old_mu_data = hl.import_table(
-        f"{root}/old_exac_data/fordist_1KG_mutation_rate_table.txt",
-        delimiter=" ",
-        impute=True,
-    )
-    return old_mu_data.transmute(
-        context=old_mu_data["from"], ref=old_mu_data["from"][1], alt=old_mu_data.to[1]
-    ).key_by("context", "ref", "alt")
-
-
-def get_downsamplings(ht):
-    """
-    _summary_.
-
-    :param ht: _description_
-    :return: _description_
-    """
-    freq_meta = ht.freq_meta.collect()[0]
-    downsamplings = [
-        (i, int(x.get("downsampling")))
-        for i, x in enumerate(freq_meta)
-        if x.get("group") == "adj"
-        and x.get("pop") == "global"
-        and x.get("downsampling") is not None
-    ]
-    return downsamplings
+    if version == "2.1.1":
+        old_mu_data = hl.import_table(
+            "gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/old_exac_data/fordist_1KG_mutation_rate_table.txt",
+            delimiter=" ",
+            impute=True,
+        )
+        return old_mu_data.transmute(
+            context=old_mu_data["from"],
+            ref=old_mu_data["from"][1],
+            alt=old_mu_data.to[1],
+        ).key_by("context", "ref", "alt")
+    else:
+        return mutation_rate_ht.ht()

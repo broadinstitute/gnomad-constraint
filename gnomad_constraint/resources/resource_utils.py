@@ -23,7 +23,7 @@ VERSIONS = ["2.1.1"]
 CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
-GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
+GENOMIC_REGIONS = ["full", "autosome_par", "chrx_nonpar", "chry_nonpar"]
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 """
 Population labels from gnomAD.
@@ -45,14 +45,39 @@ annotated_context_ht = VersionedTableResource(
 )
 # Mutation rate Table that include the baseline mutation rate for each substitution
 # and context.
-mutation_rate_ht = VersionedTableResource(
-    CURRENT_VERSION,
-    versions={
-        "2.1.1": TableResource(
+# mutation_rate_ht = VersionedTableResource(
+#     CURRENT_VERSION,
+#     versions={
+#         "2.1.1": TableResource(
+#             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht",
+#         ),
+#     },
+# )
+
+
+def get_mutation_ht(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+    use_v2_mutation_ht: bool = False,
+) -> TableResource:
+    """
+    Return mutation Table that include the baseline mutation rate for each substitution and context.
+
+    :param version: The version of the Table. Default is CURRENT_VERSION.
+    :param test: Whether the Table is for testing purposes and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :param use_v2_mutation_ht: Whether to use old mutation rate table in version 2.1.1.
+    :return: Mutation rate Table.
+    """
+    if use_v2_mutation_ht:
+        return TableResource(
             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht",
-        ),
-    },
-)
+        )
+    else:
+        check_param_scope(version)
+        return TableResource(
+            f"gs://gnomad/{version}/constraint/constraint_mutation_rate.{'.test' if test else ''}.ht"
+        )
 
 
 def get_sites_resource(
