@@ -348,7 +348,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--apply-models",
-        help="Apply plateau and coverage models to compute expected variant counts.",
+        help=(
+            "Apply plateau and coverage models to variants in exome sites Table and"
+            " context Table to compute expected variant counts."
+        ),
         action="store_true",
     )
     parser.add_argument(

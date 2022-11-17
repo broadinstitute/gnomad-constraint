@@ -7,6 +7,7 @@ from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
+    apply_plateau_models,
     collapse_strand,
     count_variants_by_group,
     trimer_from_heptamer,
@@ -15,6 +16,7 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
+from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import COVERAGE_CUTOFF
 
@@ -168,7 +170,8 @@ def create_observed_and_possible_ht(
     freq_expr = exome_ht.freq[0]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
-    # variants, and variants with allele frequency above the `max_af` cutoff.
+    # variants, variants with allele frequency above the `max_af` cutoff, and variants
+    # with exome coverage larger then 0 if requested.
     keep_criteria = (
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
@@ -215,6 +218,10 @@ def create_observed_and_possible_ht(
 
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
+
+    tmp_path = new_temp_file(prefix="constraint", extension="ht")
+    ht.write(tmp_path)
+    ht = hl.read_table(tmp_path)
 
     # Annotate the Table with cpg sites and mutation_type (one of "CpG", "non-CpG
     # transition", or "transversion").
