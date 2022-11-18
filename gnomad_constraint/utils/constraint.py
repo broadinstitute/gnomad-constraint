@@ -7,8 +7,8 @@ from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
-    apply_plateau_models,
     collapse_strand,
+    compute_expected_variants,
     count_variants_by_group,
     trimer_from_heptamer,
 )
@@ -349,7 +349,7 @@ def apply_models(
     )
 
     mu_expr = ht.mu_snp * ht.possible_variants
-    # Determine coverage correction to use based on coverage value
+    # Determine coverage correction to use based on coverage value.
     cov_corr_expr = (
         hl.case()
         .when(ht.coverage == 0, 0)
@@ -358,16 +358,18 @@ def apply_models(
     )
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
-    agg_expr.update(apply_plateau_models(ht, plateau_models, mu_expr, cov_corr_expr))
+    agg_expr.update(
+        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr)
+    )
     for pop in pops:
         agg_expr.update(
-            apply_plateau_models(ht, plateau_models, mu_expr, cov_corr_expr, pop)
+            compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, pop)
         )
 
     grouping = list(grouping)
     grouping.remove("coverage")
 
-    # Aggregate the sum aggregators grouped by `grouping`
+    # Aggregate the sum aggregators grouped by `grouping`.
     ht = (
         ht.group_by(*grouping)
         .partition_hint(partition_hint_for_aggregation)
