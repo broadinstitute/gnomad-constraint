@@ -304,6 +304,7 @@ def calculate_mu_by_downsampling(
     freq_expr = genome_ht.freq[freq_index]
     # Set up the criteria to filtered out  low quality sites, and sites found in
     # greater than 5 copies in the downsampled set.
+    ## check pas_filters in v3 release table
     keep_criteria = (freq_expr.AC <= ac_cutoff) & genome_ht.pass_filters
 
     # Only keep variants with AC <= ac_cutoff and passing filters in genome site
@@ -319,11 +320,12 @@ def calculate_mu_by_downsampling(
         summary_file = new_temp_file(prefix="constraint", extension="he")
 
     ## Is it possible to get rid of the usage of dtype here?
+    ## test if it works!
     all_possible_dtype = count_variants_by_group(
         context_ht,
         omit_methylation=omit_methylation,
         return_type_only=True,
-    )
+    ).variant_count.dtype
 
     # Count possible variants in context Table.
     if recalculate_all_possible_summary:
@@ -373,10 +375,18 @@ def calculate_mu_by_downsampling(
             hl.struct(context=genome_ht.context, ref=genome_ht.ref, alt=genome_ht.alt)
         ].mu_snp,
     )
+
+    ## add checkpoint here replace persist
     ht = ht.persist()
+
     total_bases = ht.aggregate(hl.agg.sum(ht.possible_variants)) // 3
     # total_bases_unfiltered = ht.aggregate(hl.agg.sum(ht.possible_variants_unfiltered)) // 3
     # total_mu = ht.aggregate(hl.agg.sum(ht.old_mu_snp * ht.possible_variants_unfiltered) / total_bases_unfiltered)
+
+    # Get the index of dowsamplings with size of 1000 genomes
+    downsamplings = list(map(lambda x: x[1], get_downsamplings(ht.freq_meta)))
+    ## rename 1kg with downsampling index
+    index_1kg = downsamplings.index(1000)
 
     for pop in pops:
         correction_factors = ht.aggregate(
@@ -390,6 +400,12 @@ def calculate_mu_by_downsampling(
                 / ht.possible_variants
             }
         )
+        if pop == "global":
+            ht = ht.annotate(**{"mu_snp": ht[f"downsamplings_mu_{pop}"][index_1kg]})
+        else:
+            ht = ht.annotate(
+                **{f"mu_snp_{pop}": ht[f"downsamplings_mu_{pop}"][index_1kg]}
+            )
 
     ht = annotate_mutation_type(
         ht.annotate(
@@ -397,19 +413,6 @@ def calculate_mu_by_downsampling(
             / ht.possible_variants
         )
     )
-
-    # Get the index of dowsamplings with size of 1000 genomes
-    downsamplings = list(map(lambda x: x[1], get_downsamplings(ht.freq_meta)))
-    index_1kg = downsamplings.index(1000)
-
-    # Compute the absolute mutation rate
-    for pop in pops:
-        if pop == "global":
-            ht = ht.annotate(**{"mu_snp": ht[f"downsamplings_mu_{pop}"][index_1kg]})
-        else:
-            ht = ht.annotate(
-                **{f"mu_snp_{pop}": ht[f"downsamplings_mu_{pop}"][index_1kg]}
-            )
 
     # Compute the proportion observed, which represents the relative mutability of each
     # variant class
@@ -426,6 +429,7 @@ def get_old_mu_data(version) -> hl.Table:
 
     :return: Mutation rate Table.
     """
+    ## Check with konrad if it's necessary to use exac mutation rate
     if version == "2.1.1":
         old_mu_data = hl.import_table(
             "gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/old_exac_data/fordist_1KG_mutation_rate_table.txt",
