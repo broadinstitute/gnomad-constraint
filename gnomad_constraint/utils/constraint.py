@@ -479,3 +479,45 @@ def compute_constraint_metrics(
             all_ht = all_ht.annotate(**ht[all_ht.key])
 
     return all_ht
+
+
+def split_context_ht(
+    vep_context_ht: str,
+    coverage_hts: Dict[str, str],
+    methylation_ht: str,
+    gerp_ht: str,
+) -> hl.Table:
+    """
+    Split multiallelic sites and add 'methylation', 'coverage', and 'gerp' annotation to context Table with VEP annotation.
+
+    :param vep_context_ht: Input Table with VEP annotation.
+    :param coverage_hts: A Dictionary with key as one of 'exomes' or 'genomes' and
+        values as corresponding coverage Tables.
+    :param methylation_ht: Methylation Table.
+    :param gerp_ht: Table with gerp annotation.
+    :return: Table with splitted sites and necessary annotations.
+    """
+    # Split multiallelic sites in context Table.
+    split_context_ht = hl.split_multi_hts(vep_context_ht)
+    # raw_context_ht = raw_context_ht.checkpoint(f'{raw_context_ht_path}.temp_split.ht', overwrite)
+
+    # Drop unnecessary annotations in coverage Table.
+    coverage_hts = {
+        loc: coverage_ht.drop("#chrom", "pos")
+        if "#chrom" in list(coverage_ht.row)
+        else coverage_ht
+        for loc, coverage_ht in coverage_hts.items()
+    }
+
+    # Add 'methylation', 'coverage', and 'gerp' annotation.
+    annotated_context_ht = split_context_ht.annotate(
+        methylation=methylation_ht[split_context_ht.locus],
+        coverage=hl.struct(
+            **{
+                loc: coverage_ht[split_context_ht.locus]
+                for loc, coverage_ht in coverage_hts.items()
+            }
+        ),
+        gerp=gerp_ht[split_context_ht.locus].S,
+    )
+    return split_context_ht, annotated_context_ht

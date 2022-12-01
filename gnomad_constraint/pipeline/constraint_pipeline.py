@@ -25,6 +25,7 @@ import argparse
 import logging
 
 import hail as hl
+from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -37,16 +38,19 @@ from gnomad_constraint.resources.resource_utils import (
     MODEL_TYPES,
     POPS,
     VERSIONS,
-    annotated_context_ht,
     check_resource_existence,
     constraint_tmp_prefix,
+    gerp_ht,
+    get_annotated_context_ht,
     get_constraint_metrics_dataset,
+    get_coverage_ht,
     get_logging_path,
     get_models,
     get_predicted_proportion_observed_dataset,
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
+    methylation_ht,
     mutation_rate_ht,
 )
 from gnomad_constraint.utils.constraint import (
@@ -55,6 +59,7 @@ from gnomad_constraint.utils.constraint import (
     compute_constraint_metrics,
     create_observed_and_possible_ht,
     prepare_ht_for_constraint_calculations,
+    split_context_ht,
 )
 
 logging.basicConfig(
@@ -75,6 +80,7 @@ def main(args):
     test = args.test
     overwrite = args.overwrite
     max_af = args.max_af
+    prepare_context_ht = args.prepare_context_ht
     training_set_partition_hint = args.training_set_partition_hint
     apply_obs_pos_count_partition_hint = args.apply_obs_pos_count_partition_hint
     apply_expected_variant_partition_hint = args.apply_expected_variant_partition_hint
@@ -124,9 +130,20 @@ def main(args):
                 "Adding VEP context annotations and preparing tables for constraint"
                 " calculations..."
             )
-            # TODO: Need to add function that annotates methylation, coverage, and
-            #  gerp in the vep context table.
-            context_ht = annotated_context_ht.versions[version].ht()
+            # Annotates methylation, coverage, and gerp in the vep context Table.
+            if prepare_context_ht:
+                split_context_ht(
+                    vep_context.versions["101"].ht(),
+                    {
+                        "exomes": get_coverage_ht("exomes"),
+                        "genomes": get_coverage_ht("genomes"),
+                    },
+                    methylation_ht.versions[version].ht(),
+                    gerp_ht.versions[version].ht(),
+                ).write(get_annotated_context_ht(version).path, overwrite)
+                context_ht = get_annotated_context_ht(version).ht()
+            else:
+                context_ht = get_annotated_context_ht(use_old_data=True).ht()
             # Raise error if any of the output resources exist and --overwrite is not
             # used.
             check_resource_existence(
@@ -338,6 +355,14 @@ if __name__ == "__main__":
         help="Maximum variant allele frequency to keep.",
         type=float,
         default=0.001,
+    )
+    parser.add_argument(
+        "--prepare-context-ht",
+        help=(
+            "Whether to split multiallelic sites and add 'methylation', 'coverage', and"
+            " 'gerp' annotation to context Table with VEP annotation."
+        ),
+        action="store_true",
     )
     parser.add_argument(
         "--preprocess-data",
