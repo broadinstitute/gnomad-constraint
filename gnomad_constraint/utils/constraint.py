@@ -483,7 +483,7 @@ def compute_constraint_metrics(
 
 def split_context_ht(
     vep_context_ht: str,
-    coverage_hts: Dict[str, str],
+    coverage_hts: Dict[str, hl.Table],
     methylation_ht: str,
     gerp_ht: str,
 ) -> hl.Table:

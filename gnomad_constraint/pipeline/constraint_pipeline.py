@@ -135,8 +135,8 @@ def main(args):
                 split_context_ht(
                     vep_context.versions["101"].ht(),
                     {
-                        "exomes": get_coverage_ht("exomes"),
-                        "genomes": get_coverage_ht("genomes"),
+                        "exomes": get_coverage_ht("exomes").ht(),
+                        "genomes": get_coverage_ht("genomes").ht(),
                     },
                     methylation_ht.versions[version].ht(),
                     gerp_ht.versions[version].ht(),
