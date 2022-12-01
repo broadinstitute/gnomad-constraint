@@ -158,11 +158,11 @@ def create_observed_and_possible_ht(
         ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :param filter_coverage_over_0: Whether to filter the exome Table and context Table
-        to variants with coverage larger then 0. Default is False.
+        to variants with coverage larger than 0. Default is False.
     :param filter_to_canonical_synonymous: Whether to keep only canonical synonymous
-        variants in exome Table. Default is False.
-    :param global_annotation: The annotation name of the StructExpression that contains
-        input parameters. Default is None.
+        variants in the exome Table. Default is False.
+    :param global_annotation: The annotation name to use as a global StructExpression annotation containing
+        input parameter values. If no value is supplied, this global annotation will not be added. Default is None.
     :return: Table with observed variant and possible variant count.
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
@@ -221,7 +221,7 @@ def create_observed_and_possible_ht(
 
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
-    # Annotate the Table with cpg sites and mutation_type (one of "CpG", "non-CpG
+    # Annotate the Table with 'cpg' and 'mutation_type' (one of "CpG", "non-CpG
     # transition", or "transversion").
     ht = annotate_mutation_type(ht)
 
@@ -296,7 +296,7 @@ def apply_models(
     :param plateau_models: Linear models (output of `build_models()` in
         gnomad_methods`), with the values of the dictionary formatted as a
         StrucExpression of intercept and slope, that calibrates mutation rate to
-        proportion observed for high coverage exome. It includes models for CpG s,
+        proportion observed for high coverage exome. It includes models for CpG sites,
         non-CpG sites, and each population in `POPS`.
     :param coverage_model: A linear model (output of `build_models()` in
         gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
