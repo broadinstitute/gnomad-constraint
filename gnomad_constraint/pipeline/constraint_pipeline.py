@@ -296,7 +296,6 @@ def main(args):
             # Compute constraint metrics
             compute_constraint_metrics(
                 union_ht,
-                n_partitions=partition_hint * 10,
                 pops=POPS if use_pops else (),
             ).write(constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")

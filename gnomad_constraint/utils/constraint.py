@@ -9,8 +9,8 @@ from gnomad.utils.constraint import (
     annotate_with_mu,
     calculate_all_z_scores,
     collapse_strand,
-    compute_expected_variants,
     compute_all_pLI_scores,
+    compute_expected_variants,
     compute_oe_per_transcript,
     count_variants_by_group,
     oe_confidence_interval,
@@ -394,7 +394,6 @@ def apply_models(
 def compute_constraint_metrics(
     ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
-    n_partitions: int = 1000,
     classic_lof_annotations: Set[str] = {
         "stop_gained",
         "splice_donor_variant",
@@ -409,7 +408,7 @@ def compute_constraint_metrics(
         The following annotations should be present in `ht`:
             - modifier
             - annotation
-            - variant_count
+            - observed_variants
             - mu
             - possible_variants
             - expected_variants
@@ -420,55 +419,49 @@ def compute_constraint_metrics(
         `get_proportion_observed()`).
     :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
         'canonical').
-    :param n_partitions: Desired number of partitions for `Table.repartition()`,
-        defaults to 1000.
     :param classic_lof_annotations: Classic LoF Annotations used to filter Input Table. Default is {}.
     :param pops: List of populations used to compute constraint metrics. Default is ().
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
+    classic_lof_annotations = hl.literal(classic_lof_annotations)
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
-    ht = ht.repartition(n_partitions).persist()
+    # `annotation_dict` stats the rule of filtration for each annotation.
     ht_annotations = ["lof_hc_lc", "lof_hc_os", "lof", "mis", "mis_pphen", "syn"]
+    annotation_dict = {
+        # Filter to classic LoF annotations with LOFTEE HC or LC.
+        "lof_hc_lc": classic_lof_annotations.contains(ht.annotation)
+        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        # Filter to LoF annotations with LOFTEE HC or OS.
+        "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
+        # Filter to LoF annotations with LOFTEE HC.
+        "lof": ht.modifier == "HC",
+        # Filter to missense variants.
+        "mis": ht.annotation == "missense_variant",
+        # Filter to probably damaging missense variants predicted by PolyPen-2.
+        "mis_pphen": ht.modifier == "probably_damaging",
+        # Filter to synonymous variants.
+        "syn": ht.annotation == "synonymous_variant",
+    }
 
     all_ht = None
     for annotation_name in ht_annotations:
-        if annotation_name == "lof_hc_lc":
-            # Filter to classic LoF annotations (no LOFTEE).
-            classic_lof_annotations = hl.literal(classic_lof_annotations)
-            ht = ht.filter(
-                classic_lof_annotations.contains(ht.annotation)
-                & ((ht.modifier == "HC") | (ht.modifier == "LC"))
-            )
-        elif annotation_name == "lof_hc_os":
-            # Filter to all LoF annotations (LOFTEE HC + OS).
-            ht = ht.filter((ht.modifier == "HC") | (ht.modifier == "OS"))
-        elif annotation_name == "lof":
-            # Filter to all LoF annotations (LOFTEE HC).
-            ht = ht.filter(ht.modifier == "HC")
-        elif annotation_name == "mis":
-            # Filter to missense variants.
-            ht = ht.filter(ht.annotation == "missense_variant")
-        elif annotation_name == "mis_pphen":
-            # Filter to probably damaging missense variants predicted by PolyPen-2.
-            ht = ht.filter(ht.modifier == "probably_damaging")
-        elif annotation_name == "syn":
-            # Filter to synonymous variants.
-            ht = ht.filter(ht.annotation == "synonymous_variant").key_by(*keys)
-        else:
-            raise ValueError(f"Unknown mutation_type: {annotation_name}")
-
         # Compute the observed: expected ratio.
         if annotation_name != "mis_pphen":
-            ht = compute_oe_per_transcript(ht, keys, annotation_name, pops)
+            ht = compute_oe_per_transcript(
+                ht, annotation_name, annotation_dict[annotation_name], keys, pops
+            )
         else:
-            ht = compute_oe_per_transcript(ht, keys, annotation_name)
+            ht = compute_oe_per_transcript(
+                ht, annotation_name, annotation_dict[annotation_name], keys
+            )
 
         # Compute the pLI scores for LoF variants.
         if "lof" in annotation_name:
             ht = compute_all_pLI_scores(ht, keys, annotation_name)
 
-        # Compute the 90% confidence interval around the observed:expected ratio.
+        # Compute the 90% confidence interval around the observed:expected ratio and z
+        # scores.
         if annotation_name in ["lof", "mis", "syn"]:
             oe_ci = oe_confidence_interval(
                 ht,
