@@ -47,23 +47,18 @@ from gnomad_constraint.resources.resource_utils import (
     get_logging_path,
     get_models,
     get_mutation_ht,
+    get_predicted_proportion_observed_dataset,
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
+    methylation_ht,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
     apply_models,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
-    create_constraint_training_dataset,
     create_observed_and_possible_ht,
-    get_predicted_proportion_observed_dataset,
-    get_preprocessed_ht,
-    get_sites_resource,
-    get_training_dataset,
-    methylation_ht,
-    mutation_rate_ht,
     prepare_ht_for_constraint_calculations,
     split_context_ht,
 )
@@ -418,11 +413,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--calculate-mutation-rate",
         help="Calculate mutation rate",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--use-v2-mutation-ht",
-        help="Whether to use version 2.1.1 mutation rate Table.",
         action="store_true",
     )
     parser.add_argument(
