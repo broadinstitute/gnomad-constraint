@@ -52,8 +52,8 @@ from gnomad_constraint.resources.resource_utils import (
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
     apply_models,
-    create_observed_and_possible_ht,
     compute_constraint_metrics,
+    create_observed_and_possible_ht,
     prepare_ht_for_constraint_calculations,
 )
 
@@ -284,22 +284,19 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                {"--apply_models": testing_resources.values()},
+                {"--apply_models": applying_resources.values()},
                 {"--compute-constraint-metrics": (constraint_metrics_ht)},
                 overwrite,
             )
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
             union_ht = None
-            for region in GENOMIC_REGIONS:
-                if not union_ht:
-                    union_ht = testing_resources[region].ht()
-                else:
-                    union_ht = union_ht.union(testing_resources[region].ht())
+            hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
+            union_ht = hts[0].union(*hts[1:])
             # Compute constraint metrics
             compute_constraint_metrics(
                 union_ht,
-                partition_hint=partition_hint * 10,
+                n_partitions=partition_hint * 10,
                 pops=POPS if use_pops else (),
             ).write(constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
