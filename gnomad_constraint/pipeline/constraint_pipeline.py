@@ -73,9 +73,9 @@ def main(args):
     test = args.test
     overwrite = args.overwrite
     max_af = args.max_af
-    count_obs_pos_vars_partition_hint = args.count_obs_pos_vars_partition_hint
-    apply_obs_pos_count_partition_hint = args.apply_obs_pos_count_partition_hint
     training_set_partition_hint = args.training_set_partition_hint
+    apply_obs_pos_count_partition_hint = args.apply_obs_pos_count_partition_hint
+    apply_expected_variant_partition_hint = args.apply_expected_variant_partition_hint
     use_pops = args.use_pops
     use_weights = args.use_weights
     custom_vep_annotation = args.custom_vep_annotation
@@ -263,8 +263,8 @@ def main(args):
                     models[(region, "coverage")].he(),
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint_for_counting_variants=count_obs_pos_vars_partition_hint,
-                    partition_hint_for_aggregation=apply_obs_pos_count_partition_hint,
+                    partition_hint_for_counting_variants=apply_obs_pos_count_partition_hint,
+                    partition_hint_for_aggregation=apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
                 ).write(applying_resources[region].path, overwrite=overwrite)
             logger.info(
@@ -358,7 +358,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--count-obs-pos-vars-partition-hint",
+        "--apply-obs-pos-count-partition-hint",
         help=(
             "Target number of partitions for aggregation when counting observed and"
             " expected variants for model application"
