@@ -278,7 +278,7 @@ def main(args):
 
         if args.compute_constraint_metrics:
             logger.info(
-                "Computing the constraint metrics including pLI scores, z scores, oe"
+                "Computing constraint metrics, including pLI scores, z scores, oe"
                 " ratio, and confidence interval around oe ratio..."
             )
 
@@ -288,7 +288,7 @@ def main(args):
                 {"--compute-constraint-metrics": (constraint_metrics_ht)},
                 overwrite,
             )
-            # Combine Table with expected variant counts at autosomes/pseudoautosomal
+            # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
             union_ht = None
             for region in GENOMIC_REGIONS:
@@ -302,7 +302,7 @@ def main(args):
                 partition_hint=partition_hint * 10,
                 pops=POPS if use_pops else (),
             ).write(constraint_metrics_ht.path, overwrite=overwrite)
-            logger.info("Done with computsing constraint metrics.")
+            logger.info("Done with computing constraint metrics.")
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -422,7 +422,7 @@ if __name__ == "__main__":
         "--compute-constraint-metrics",
         help=(
             "Compute constraint metrics including pLI scores, z scores, oe ratio, and"
-            " confidence interval around oe ratio"
+            " confidence interval around oe ratio."
         ),
         action="store_true",
     )
