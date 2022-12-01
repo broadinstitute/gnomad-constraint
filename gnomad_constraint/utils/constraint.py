@@ -219,9 +219,7 @@ def create_observed_and_possible_ht(
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
 
-    tmp_path = new_temp_file(prefix="constraint", extension="ht")
-    ht.write(tmp_path)
-    ht = hl.read_table(tmp_path)
+    ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     # Annotate the Table with cpg sites and mutation_type (one of "CpG", "non-CpG
     # transition", or "transversion").
@@ -275,18 +273,18 @@ def apply_models(
         The expected_variants are summed across the set of variants of interest to
         obtain the final expected number of variants.
 
-    Function adds the following annotations:
+    Function adds the following annotations all grouped by groupings (output of
+        `annotate_exploded_vep_for_constraint_groupings()`):
         - observed_variants - observed variant counts annotated by `count_variants`
-          function grouped by groupings (output of `annotate_exploded_vep_for_constraint_groupings`)
+          function
         - predicted_proportion_observed (including those for each population) - the sum
           of mutation rate adjusted by plateau models and possible variant counts
-          grouped by groupings
         - possible_variants (including those for each population if `pops` is
           specified) - the sum of possible variant counts derived from the context
-          Table grouped by groupings
+          Table
         - expected_variants (including those for each population if `pops` is
-          specified) - the sum of expected variant counts grouped by groupings
-        - mu - sum(mu_snp * possible_variant * coverage_correction) grouped by groupings
+          specified) - the sum of expected variant counts
+        - mu - sum(mu_snp * possible_variant * coverage_correction)
         - obs_exp - observed:expected ratio
         - annotations annotated by `annotate_exploded_vep_for_constraint_groupings()`
 

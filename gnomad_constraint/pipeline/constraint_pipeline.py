@@ -31,6 +31,7 @@ from gnomad.utils.reference_genome import get_reference_genome
 
 from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
+    CUSTOM_VEP_ANNOTATIONS,
     DATA_TYPES,
     GENOMIC_REGIONS,
     MODEL_TYPES,
@@ -38,6 +39,7 @@ from gnomad_constraint.resources.resource_utils import (
     VERSIONS,
     annotated_context_ht,
     check_resource_existence,
+    constraint_tmp_prefix,
     get_logging_path,
     get_models,
     get_predicted_proportion_observed_dataset,
@@ -63,7 +65,10 @@ logger.setLevel(logging.INFO)
 
 def main(args):
     """Execute the constraint pipeline."""
-    hl.init(log="/constraint_pipeline.log")
+    hl.init(
+        log="/constraint_pipeline.log",
+        tmp_dir=constraint_tmp_prefix,
+    )
 
     test = args.test
     overwrite = args.overwrite
@@ -71,8 +76,8 @@ def main(args):
     partition_hint_when_creating_training_set = (
         args.partition_hint_when_creating_training_set
     )
-    partition_hint_when_counting_variants = args.partition_hint_when_counting_variants
-    partition_hint_for_sum_aggregators = args.partition_hint_for_sum_aggregators
+    count_obs_pos_vars_partition_hint = args.count_obs_pos_vars_partition_hint
+    apply_obs_pos_count_partition_hint = args.apply_obs_pos_count_partition_hint
     use_pops = args.use_pops
     use_weights = args.use_weights
     custom_vep_annotation = args.custom_vep_annotation
@@ -260,8 +265,8 @@ def main(args):
                     models[(region, "coverage")].he(),
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint_for_counting_variants=partition_hint_when_counting_variants,
-                    partition_hint_for_aggregation=partition_hint_for_sum_aggregators,
+                    partition_hint_for_counting_variants=count_obs_pos_vars_partition_hint,
+                    partition_hint_for_aggregation=apply_obs_pos_count_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
                 ).write(testing_resources[region].path, overwrite=overwrite)
             logger.info(
@@ -355,7 +360,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--partition-hint-when-counting-variants",
+        "--count-obs-pos-vars-partition-hint",
         help=(
             "Target number of partitions for aggregation when counting variants and"
             " applying models."
@@ -364,7 +369,7 @@ if __name__ == "__main__":
         default=2000,
     )
     parser.add_argument(
-        "--partition-hint-for-sum-aggregators",
+        "--apply-expected-variant-partition-hint",
         help="Target number of partitions for sum aggregators after applying models.",
         type=int,
         default=1000,
@@ -377,7 +382,7 @@ if __name__ == "__main__":
         ),
         type=str,
         default="transcript_consequences",
-        choices=["transcript_consequences", "worst_csq_by_gene"],
+        choices=CUSTOM_VEP_ANNOTATIONS,
     )
 
     args = parser.parse_args()

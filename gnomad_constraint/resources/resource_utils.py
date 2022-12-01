@@ -30,9 +30,12 @@ CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
 """
 VEP annotations used when applying models.
 
-"transcript_consequences" option will annotate the Table with 'annotation', 'gene', 'coverage', 'transcript', and 'canonical' annotations using 'transcript_consequences' VEP annotation.
+"transcript_consequences" option will annotate the Table with 'annotation', 'gene',
+'coverage', 'transcript', and 'canonical' annotations using 'transcript_consequences'
+VEP annotation.
 
-"worst_csq_by_gene" option will annotate the Table with 'annotation', 'gene', and 'coverage' annotations using 'worst_csq_by_gene' VEP annotation.
+"worst_csq_by_gene" option will annotate the Table with 'annotation', 'gene', and
+'coverage' annotations using 'worst_csq_by_gene' VEP annotation.
 """
 
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
@@ -168,7 +171,7 @@ def get_models(
 
 
 def get_predicted_proportion_observed_dataset(
-    custom_vep_annotation: str,
+    custom_vep_annotation: str = "transcript_consequences",
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
     test: bool = False,
