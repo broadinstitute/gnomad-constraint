@@ -68,9 +68,7 @@ def main(args):
     test = args.test
     overwrite = args.overwrite
     max_af = args.max_af
-    partition_hint_when_creating_training_set = (
-        args.partition_hint_when_creating_training_set
-    )
+    training_set_partition_hint = args.training_set_partition_hint
     partition_hint_when_counting_variants = args.partition_hint_when_counting_variants
     partition_hint_for_sum_aggregators = args.partition_hint_for_sum_aggregators
     use_pops = args.use_pops
@@ -89,7 +87,7 @@ def main(args):
     preprocess_resources = {}
     training_resources = {}
     models = {}
-    testing_resources = {}
+    applying_resources = {}
 
     for region in GENOMIC_REGIONS:
         for data_type in DATA_TYPES:
@@ -105,8 +103,8 @@ def main(args):
             # Save a path to `models`
             models[(region, model_type)] = get_models(model_type, version, region, test)
 
-        # Save a TableResource with a path to `testing_resources`
-        testing_resources[region] = get_predicted_proportion_observed_dataset(
+        # Save a TableResource with a path to `applying_resources`
+       applying_resources[region] = get_predicted_proportion_observed_dataset(
             custom_vep_annotation, version, region, test
         )
 
@@ -196,7 +194,7 @@ def main(args):
                     mutation_ht,
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint=partition_hint_when_creating_training_set,
+                    partition_hint=training_set_partition_hint,
                     filter_to_canonical_synonymous=True,
                     global_annotation="training_dataset_params",
                 ).write(training_resources[region].path, overwrite=overwrite)
@@ -241,7 +239,7 @@ def main(args):
                     "--preprocess-data": preprocess_resources.values(),
                     "--build_models": models.values(),
                 },
-                {"--apply_models": testing_resources.values()},
+                {"--apply_models": applying_resources.values()},
                 overwrite,
             )
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
@@ -263,7 +261,7 @@ def main(args):
                     partition_hint_for_counting_variants=partition_hint_when_counting_variants,
                     partition_hint_for_aggregation=partition_hint_for_sum_aggregators,
                     custom_vep_annotation=custom_vep_annotation,
-                ).write(testing_resources[region].path, overwrite=overwrite)
+                ).write(applying_resources[region].path, overwrite=overwrite)
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
@@ -325,7 +323,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--partition-hint-when-creating-training-set",
+        "--training-set-partition-hint",
         help=(
             "Target number of partitions for aggregation when counting variants for"
             " training datasets."
@@ -357,22 +355,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--partition-hint-when-counting-variants",
         help=(
-            "Target number of partitions for aggregation when counting variants and"
-            " applying models."
+            "Target number of partitions for aggregation when counting observed and expected variants for"
+            " model application"
         ),
         type=int,
         default=2000,
     )
     parser.add_argument(
         "--partition-hint-for-sum-aggregators",
-        help="Target number of partitions for sum aggregators after applying models.",
+        help="Target number of partitions for sum aggregators after applying models to get expected variant counts.",
         type=int,
         default=1000,
     )
     parser.add_argument(
         "--custom-vep-annotation",
         help=(
-            "Custom which VEP annotation to be used to annotate transcript when"
+            "Custom VEP annotation to be used to annotate transcript when"
             ' applying models (one of "transcript_consequences" or "worst_csq_by_gene")'
         ),
         type=str,

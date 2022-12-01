@@ -176,7 +176,7 @@ def get_predicted_proportion_observed_dataset(
     """
     Return TableResource containing the expected variant counts and observed:expected ratio.
 
-    :param custom_vep_annotation: The customized model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint model (one of "transcript_consequences" or "worst_csq_by_gene").
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
@@ -257,7 +257,7 @@ def check_param_scope(
         "chrx_non_par", or "chry_non_par". Default is None.
     :param data_type: One of "exomes", "genomes" or "context". Default is None.
     :param model_type: One of "plateau", "coverage". Default is None.
-    :param custom_vep_annotation: The customized model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint model (one of "transcript_consequences" or "worst_csq_by_gene").
         Default is None.
     """
     if version and version not in VERSIONS:
