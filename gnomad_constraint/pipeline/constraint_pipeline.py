@@ -46,18 +46,24 @@ from gnomad_constraint.resources.resource_utils import (
     get_coverage_ht,
     get_logging_path,
     get_models,
+    get_mutation_ht,
+    get_preprocessed_ht,
+    get_sites_resource,
+    get_training_dataset,
+)
+from gnomad_constraint.utils.constraint import (
+    add_vep_context_annotations,
+    apply_models,
+    calculate_mu_by_downsampling,
+    compute_constraint_metrics,
+    create_constraint_training_dataset,
+    create_observed_and_possible_ht,
     get_predicted_proportion_observed_dataset,
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
     methylation_ht,
     mutation_rate_ht,
-)
-from gnomad_constraint.utils.constraint import (
-    add_vep_context_annotations,
-    apply_models,
-    compute_constraint_metrics,
-    create_observed_and_possible_ht,
     prepare_ht_for_constraint_calculations,
     split_context_ht,
 )
@@ -86,6 +92,7 @@ def main(args):
     apply_expected_variant_partition_hint = args.apply_expected_variant_partition_hint
     use_pops = args.use_pops
     use_weights = args.use_weights
+    # use_old_mutation_ht= args.use_old_mutation_ht
     custom_vep_annotation = args.custom_vep_annotation
 
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
@@ -109,6 +116,10 @@ def main(args):
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
                     data_type, version, region, test
                 )
+            if (region == "full") | (data_type == "context"):
+                preprocess_resources[(region, data_type)] = get_preprocessed_ht(
+                    data_type, version, region, test
+                )
         # Save a TableResource with a path to `training_resources`
         training_resources[region] = get_training_dataset(version, region, test)
 
@@ -120,7 +131,8 @@ def main(args):
         applying_resources[region] = get_predicted_proportion_observed_dataset(
             custom_vep_annotation, version, region, test
         )
-
+    # Save a TableResource with a path to mutation rate Table.
+    mutation_rate_resource = get_mutation_ht(version, test)
     # Save a TableResource with a path to `constraint_metrics_ht`.
     constraint_metrics_ht = get_constraint_metrics_dataset(version, test)
 
@@ -180,6 +192,13 @@ def main(args):
                 # Filter input Table and add annotations used in constraint
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(ht)
+
+                if data_type == "context":
+                    ht.write(
+                        preprocess_resources[("full", data_type)].path,
+                        overwrite=overwrite,
+                    )
+
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
                     preprocess_resources[("autosome_par", data_type)].path,
@@ -199,7 +218,30 @@ def main(args):
                     )
             logger.info("Done with preprocessing genome and exome Table.")
 
-        mutation_ht = mutation_rate_ht.versions[version].ht().select("mu_snp")
+        # Use version 2.1.1 mutation rate Table by default.
+        mutation_ht = get_mutation_ht(use_old_mutation_ht=True).ht().select("mu_snp")
+
+        # Calculate mutation rate Table.
+        if args.calculate_mutation_rate:
+            logger.info("Calculating mutation rate...")
+            # Check if the input/output resources exist.
+            check_resource_existence(
+                "--preprocess-data",
+                "--calculate-mutation-rate",
+                preprocess_resources.values(),
+                (mutation_rate_resource),
+                overwrite,
+            )
+            # Calculate mutation rate using the downsampling with size 1000 genome in
+            # genome site Table.
+            calculate_mu_by_downsampling(
+                preprocess_resources[("autosome_par", "genome")].ht(),
+                preprocess_resources[("full", "context")].ht(),
+                recalculate_all_possible_summary=True,
+                recalculate_all_possible_summary_unfiltered=False,
+                pops=POPS if use_pops else (),
+            ).write(mutation_rate_resource.path, overwrite=overwrite)
+            mutation_ht = mutation_rate_resource.ht().select("mu_snp")
 
         # Create training datasets that include possible and observed variant counts
         # for building models.
@@ -371,6 +413,16 @@ if __name__ == "__main__":
             " calculations by adding necessary coverage, methylation level, and VEP"
             " annotations."
         ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--calculate-mutation-rate",
+        help="Calculate mutation rate",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--use-v2-mutation-ht",
+        help="Whether to use version 2.1.1 mutation rate Table.",
         action="store_true",
     )
     parser.add_argument(
