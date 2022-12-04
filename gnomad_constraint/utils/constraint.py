@@ -360,7 +360,9 @@ def apply_models(
     )
     for pop in pops:
         agg_expr.update(
-            compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg, pop)
+            compute_expected_variants(
+                ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg, pop
+            )
         )
 
     grouping = list(grouping)
