@@ -222,7 +222,7 @@ def check_resource_existence(
     if input_step_resources:
         for step, input_resources in input_step_resources.items():
             check_file_exists_raise_error(
-                input_resources,
+                [r if isinstance(r, str) else r.path for r in input_resources],
                 error_if_not_exists=True,
                 error_if_not_exists_msg=(
                     f"Not all input resources exist. Please add {step} to "
@@ -234,7 +234,7 @@ def check_resource_existence(
     if not overwrite and output_step_resources:
         for step, output_resources in output_step_resources.items():
             check_file_exists_raise_error(
-                output_resources,
+                [r if isinstance(r, str) else r.path for r in output_resources],
                 error_if_exists=True,
                 error_if_exists_msg=(
                     "Some of the output resources that will be created by "

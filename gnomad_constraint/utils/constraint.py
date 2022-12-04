@@ -218,7 +218,6 @@ def create_observed_and_possible_ht(
 
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
-
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     # Annotate the Table with 'cpg' and 'mutation_type' (one of "CpG", "non-CpG
@@ -357,11 +356,11 @@ def apply_models(
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
     agg_expr.update(
-        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr)
+        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg)
     )
     for pop in pops:
         agg_expr.update(
-            compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, pop)
+            compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg, pop)
         )
 
     grouping = list(grouping)

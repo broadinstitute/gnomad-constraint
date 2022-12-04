@@ -67,7 +67,7 @@ def main(args):
     """Execute the constraint pipeline."""
     hl.init(
         log="/constraint_pipeline.log",
-        tmp_dir=constraint_tmp_prefix,
+        tmp_dir="gs://gnomad-tmp-4day",
     )
 
     test = args.test
