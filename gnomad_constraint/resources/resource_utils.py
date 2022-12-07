@@ -175,7 +175,7 @@ def get_predicted_proportion_observed_dataset(
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
     test: bool = False,
-) -> str:
+) -> TableResource:
     """
     Return TableResource containing the expected variant counts and observed:expected ratio.
 
