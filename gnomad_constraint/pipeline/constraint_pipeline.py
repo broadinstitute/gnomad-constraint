@@ -263,8 +263,8 @@ def main(args):
                     models[(region, "coverage")].he(),
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint_for_counting_variants=apply_obs_pos_count_partition_hint,
-                    partition_hint_for_aggregation=apply_expected_variant_partition_hint,
+                    obs_pos_count_partition_hint=apply_obs_pos_count_partition_hint,
+                    expected_variant_partition_hint=apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
                 ).write(applying_resources[region].path, overwrite=overwrite)
             logger.info(
