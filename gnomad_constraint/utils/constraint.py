@@ -1,15 +1,19 @@
 """Script containing utility functions used in the constraint pipeline."""
 
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Set, Tuple, Union
 
 import hail as hl
 from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
+    calculate_all_z_scores,
     collapse_strand,
+    compute_all_pLI_scores,
     compute_expected_variants,
+    compute_oe_per_transcript,
     count_variants_by_group,
+    oe_confidence_interval,
     trimer_from_heptamer,
 )
 from gnomad.utils.vep import (
@@ -386,3 +390,93 @@ def apply_models(
     )
     # Compute the observed:expected ratio.
     return ht.annotate(obs_exp=ht.observed_variants / ht.expected_variants)
+
+
+def compute_constraint_metrics(
+    ht: hl.Table,
+    keys: Tuple[str] = ("gene", "transcript", "canonical"),
+    classic_lof_annotations: Set[str] = {
+        "stop_gained",
+        "splice_donor_variant",
+        "splice_acceptor_variant",
+    },
+    pops: Tuple[str] = (),
+) -> hl.Table:
+    """
+    Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+
+    .. note::
+        The following annotations should be present in `ht`:
+            - modifier
+            - annotation
+            - observed_variants
+            - mu
+            - possible_variants
+            - expected_variants
+            - expected_variants_{pop} (if `pops` is specified)
+            - downsampling_counts_{pop} (if `pops` is specified)
+
+    :param ht: Input Table with the number of expected variants (output of
+        `get_proportion_observed()`).
+    :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
+        'canonical').
+    :param classic_lof_annotations: Classic LoF Annotations used to filter Input Table. Default is {}.
+    :param pops: List of populations used to compute constraint metrics. Default is ().
+    :return: Table with pLI scores, observed:expected ratio, confidence interval of the
+        observed:expected ratio, and z scores.
+    """
+    classic_lof_annotations = hl.literal(classic_lof_annotations)
+    # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
+    # `annotation_dict` stats the rule of filtration for each annotation.
+    ht_annotations = ["lof_hc_lc", "lof_hc_os", "lof", "mis", "mis_pphen", "syn"]
+    annotation_dict = {
+        # Filter to classic LoF annotations with LOFTEE HC or LC.
+        "lof_hc_lc": classic_lof_annotations.contains(ht.annotation)
+        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        # Filter to LoF annotations with LOFTEE HC or OS.
+        "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
+        # Filter to LoF annotations with LOFTEE HC.
+        "lof": ht.modifier == "HC",
+        # Filter to missense variants.
+        "mis": ht.annotation == "missense_variant",
+        # Filter to probably damaging missense variants predicted by PolyPen-2.
+        "mis_pphen": ht.modifier == "probably_damaging",
+        # Filter to synonymous variants.
+        "syn": ht.annotation == "synonymous_variant",
+    }
+
+    all_ht = None
+    for annotation_name in ht_annotations:
+        # Compute the observed: expected ratio.
+        if annotation_name != "mis_pphen":
+            ht = compute_oe_per_transcript(
+                ht, annotation_name, annotation_dict[annotation_name], keys, pops
+            )
+        else:
+            ht = compute_oe_per_transcript(
+                ht, annotation_name, annotation_dict[annotation_name], keys
+            )
+
+        # Compute the pLI scores for LoF variants.
+        if "lof" in annotation_name:
+            ht = compute_all_pLI_scores(ht, keys, annotation_name)
+
+        # Compute the 90% confidence interval around the observed:expected ratio and z
+        # scores.
+        if annotation_name in ["lof", "mis", "syn"]:
+            oe_ci = oe_confidence_interval(
+                ht,
+                ht[f"obs_{annotation_name}"],
+                ht[f"exp_{annotation_name}"],
+                prefix=f"oe_{annotation_name}",
+            )
+            ht = ht.annotate(**oe_ci[ht.key])
+            ht = calculate_all_z_scores(ht)
+
+        # Combine all the metrics annotations.
+        if not all_ht:
+            all_ht = ht
+        else:
+            all_ht = all_ht.annotate(**ht[all_ht.key])
+
+    return all_ht

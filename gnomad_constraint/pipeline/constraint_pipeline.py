@@ -40,6 +40,7 @@ from gnomad_constraint.resources.resource_utils import (
     annotated_context_ht,
     check_resource_existence,
     constraint_tmp_prefix,
+    get_constraint_metrics_dataset,
     get_logging_path,
     get_models,
     get_predicted_proportion_observed_dataset,
@@ -51,6 +52,7 @@ from gnomad_constraint.resources.resource_utils import (
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
     apply_models,
+    compute_constraint_metrics,
     create_observed_and_possible_ht,
     prepare_ht_for_constraint_calculations,
 )
@@ -112,6 +114,9 @@ def main(args):
         applying_resources[region] = get_predicted_proportion_observed_dataset(
             custom_vep_annotation, version, region, test
         )
+
+    # Save a TableResource with a path to `constraint_metrics_ht`.
+    constraint_metrics_ht = get_constraint_metrics_dataset(version, test)
 
     try:
         if args.preprocess_data:
@@ -271,6 +276,30 @@ def main(args):
                 "Done computing expected variant count and observed:expected ratio."
             )
 
+        if args.compute_constraint_metrics:
+            logger.info(
+                "Computing constraint metrics, including pLI scores, z scores, oe"
+                " ratio, and confidence interval around oe ratio..."
+            )
+
+            # Check if the input/output resources exist.
+            check_resource_existence(
+                {"--apply_models": applying_resources.values()},
+                {"--compute-constraint-metrics": (constraint_metrics_ht)},
+                overwrite,
+            )
+            # Combine Tables of expected variant counts at autosomes/pseudoautosomal
+            # regions, chromosome X, and chromosome Y sites.
+            union_ht = None
+            hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
+            union_ht = hts[0].union(*hts[1:])
+            # Compute constraint metrics
+            compute_constraint_metrics(
+                union_ht,
+                pops=POPS if use_pops else (),
+            ).write(constraint_metrics_ht.path, overwrite=overwrite)
+            logger.info("Done with computing constraint metrics.")
+
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(get_logging_path("constraint_pipeline"))
@@ -384,6 +413,14 @@ if __name__ == "__main__":
         type=str,
         default="transcript_consequences",
         choices=CUSTOM_VEP_ANNOTATIONS,
+    )
+    parser.add_argument(
+        "--compute-constraint-metrics",
+        help=(
+            "Compute constraint metrics including pLI scores, z scores, oe ratio, and"
+            " confidence interval around oe ratio."
+        ),
+        action="store_true",
     )
 
     args = parser.parse_args()
