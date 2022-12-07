@@ -262,6 +262,7 @@ def check_param_scope(
     :param model_type: One of "plateau", "coverage". Default is None.
     :param custom_vep_annotation: The VEP annotation used to customize the constraint model (one of "transcript_consequences" or "worst_csq_by_gene").
         Default is None.
+    :return: None.
     """
     if version and version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
