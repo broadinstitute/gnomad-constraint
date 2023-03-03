@@ -284,13 +284,14 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                {"--apply_models": applying_resources.values()},
-                {"--compute-constraint-metrics": (constraint_metrics_ht)},
-                overwrite,
+                input_resources={"--apply_models": applying_resources.values()},
+                output_reources={
+                    "--compute-constraint-metrics": (constraint_metrics_ht)
+                },
+                overwrite=overwrite,
             )
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
-            union_ht = None
             hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
             union_ht = hts[0].union(*hts[1:])
             # Compute constraint metrics

@@ -419,7 +419,7 @@ def compute_constraint_metrics(
         `get_proportion_observed()`).
     :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
         'canonical').
-    :param classic_lof_annotations: Classic LoF Annotations used to filter Input Table. Default is {}.
+    :param classic_lof_annotations: Classic LoF Annotations used to filter the input Table. Default is {"stop_gained", "splice_donor_variant", "splice_acceptor_variant"}.
     :param pops: List of populations used to compute constraint metrics. Default is ().
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
@@ -445,8 +445,9 @@ def compute_constraint_metrics(
     }
 
     all_ht = None
+    # TODO: Julia see if this can be one annotation instead of a loop
     for annotation_name in ht_annotations:
-        # Compute the observed: expected ratio.
+        # Compute the observed: expected ratio. Will not compute per pop for "mis_pphen".
         if annotation_name != "mis_pphen":
             ht = compute_oe_per_transcript(
                 ht, annotation_name, annotation_dict[annotation_name], keys, pops
@@ -458,7 +459,8 @@ def compute_constraint_metrics(
 
         # Compute the pLI scores for LoF variants.
         if "lof" in annotation_name:
-            ht = compute_all_pLI_scores(ht, keys, annotation_name)
+            # TODO: rename compute_all_pLI_scores_. annotate_pLI_scores
+            ht = compute_all_pLI_scores(ht, annotation_name, keys, pops)
 
         # Compute the 90% confidence interval around the observed:expected ratio and z
         # scores.
@@ -469,11 +471,23 @@ def compute_constraint_metrics(
                 ht[f"exp_{annotation_name}"],
                 prefix=f"oe_{annotation_name}",
             )
-            ht = ht.annotate(**oe_ci[ht.key])
-            ht = calculate_all_z_scores(ht)
+            ht = ht.annotate(**oe_ci)
+
+            ht = ht.annotate(
+                **calculate_z_score(
+                    ht,
+                    ht[f"obs_{annotation_name}"],
+                    ht[f"exp_{annotation_name}"],
+                    f"{annotation_name}_z_raw",
+                )[
+                    ht.key
+                ]  # TODO: return as expression instead
+            )
+            # TODO: Reasons code instead of calculate_all_z_scores
+            # ht = calculate_all_z_scores(ht)
 
         # Combine all the metrics annotations.
-        if not all_ht:
+        if all_ht is None:
             all_ht = ht
         else:
             all_ht = all_ht.annotate(**ht[all_ht.key])
