@@ -165,8 +165,9 @@ def create_observed_and_possible_ht(
         to variants with coverage larger than 0. Default is False.
     :param filter_to_canonical_synonymous: Whether to keep only canonical synonymous
         variants in the exome Table. Default is False.
-    :param global_annotation: The annotation name to use as a global StructExpression annotation containing
-        input parameter values. If no value is supplied, this global annotation will not be added. Default is None.
+    :param global_annotation: The annotation name to use as a global StructExpression
+        annotation containing input parameter values. If no value is supplied, this
+        global annotation will not be added. Default is None.
     :return: Table with observed variant and possible variant count.
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
@@ -420,7 +421,9 @@ def compute_constraint_metrics(
         `get_proportion_observed()`).
     :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
         'canonical').
-    :param classic_lof_annotations: Classic LoF Annotations used to filter the input Table. Default is {"stop_gained", "splice_donor_variant", "splice_acceptor_variant"}.
+    :param classic_lof_annotations: Classic LoF Annotations used to filter the input
+        Table. Default is {"stop_gained", "splice_donor_variant",
+        "splice_acceptor_variant"}.
     :param pops: List of populations used to compute constraint metrics. Default is ().
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
