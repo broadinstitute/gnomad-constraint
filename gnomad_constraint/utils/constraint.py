@@ -8,11 +8,11 @@ from gnomad.utils.constraint import (
     annotate_mutation_type,
     annotate_pLI_scores,
     annotate_with_mu,
-    collapse_strand,
     calculate_z_score,
+    collapse_strand,
     compute_expected_variants,
-    get_oe_aggregation_expr,
     count_variants_by_group,
+    get_oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
 )
@@ -449,13 +449,13 @@ def compute_constraint_metrics(
 
     # Compute the observed: expected ratio. Will not compute per pop for "mis_pphen".
     agg_expr = {
-            get_oe_aggregation_expr(
-                ht,
-                filter_expr,
-                postfix=annotation_name,
-                pops=None if annotation_name == "mis_pphen" else pops
-            )
-            for annotation_name, filter_expr in annotation_dict.items()
+        get_oe_aggregation_expr(
+            ht,
+            filter_expr,
+            postfix=annotation_name,
+            pops=None if annotation_name == "mis_pphen" else pops,
+        )
+        for annotation_name, filter_expr in annotation_dict.items()
     }
     ht = ht.group_by(*keys).aggregate(**agg_expr)
 
@@ -481,7 +481,7 @@ def compute_constraint_metrics(
                 ht[f"obs_{annotation_name}"],
                 ht[f"exp_{annotation_name}"],
                 f"{annotation_name}_z_raw",
-            )
+            ),
         }
         for annotation_name in ["lof", "mis", "syn"]
     }

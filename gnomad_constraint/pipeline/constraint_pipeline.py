@@ -191,8 +191,12 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                input_step_resources={"--preprocess-data": preprocess_resources.values()},
-                output_step_resources={"--create-training-set": training_resources.values()},
+                input_step_resources={
+                    "--preprocess-data": preprocess_resources.values()
+                },
+                output_step_resources={
+                    "--create-training-set": training_resources.values()
+                },
                 overwrite=overwrite,
             )
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
@@ -215,7 +219,9 @@ def main(args):
         if args.build_models:
             # Check if the training datasets exist.
             check_resource_existence(
-                input_step_resources={"--create-training-set": training_resources.values()},
+                input_step_resources={
+                    "--create-training-set": training_resources.values()
+                },
                 output_step_resources={"--build_models": models.values()},
                 overwrite=overwrite,
             )
