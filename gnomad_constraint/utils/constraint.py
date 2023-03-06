@@ -6,12 +6,12 @@ import hail as hl
 from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
+    annotate_pLI_scores,
     annotate_with_mu,
-    calculate_all_z_scores,
     collapse_strand,
-    compute_all_pLI_scores,
+    calculate_z_score,
     compute_expected_variants,
-    compute_oe_per_transcript,
+    get_oe_aggregation_expr,
     count_variants_by_group,
     oe_confidence_interval,
     trimer_from_heptamer,
@@ -427,7 +427,6 @@ def compute_constraint_metrics(
     classic_lof_annotations = hl.literal(classic_lof_annotations)
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
     # `annotation_dict` stats the rule of filtration for each annotation.
-    ht_annotations = ["lof_hc_lc", "lof_hc_os", "lof", "mis", "mis_pphen", "syn"]
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
         "lof_hc_lc": classic_lof_annotations.contains(ht.annotation)
@@ -444,52 +443,48 @@ def compute_constraint_metrics(
         "syn": ht.annotation == "synonymous_variant",
     }
 
-    all_ht = None
-    # TODO: Julia see if this can be one annotation instead of a loop
-    for annotation_name in ht_annotations:
-        # Compute the observed: expected ratio. Will not compute per pop for "mis_pphen".
-        if annotation_name != "mis_pphen":
-            ht = compute_oe_per_transcript(
-                ht, annotation_name, annotation_dict[annotation_name], keys, pops
+    # Compute the observed: expected ratio. Will not compute per pop for "mis_pphen".
+    agg_expr = {
+            get_oe_aggregation_expr(
+                ht,
+                filter_expr,
+                postfix=annotation_name,
+                pops=None if annotation_name == "mis_pphen" else pops
             )
-        else:
-            ht = compute_oe_per_transcript(
-                ht, annotation_name, annotation_dict[annotation_name], keys
-            )
+            for annotation_name, filter_expr in annotation_dict.items()
+    }
+    ht = ht.group_by(*keys).aggregate(**agg_expr)
 
-        # Compute the pLI scores for LoF variants.
-        if "lof" in annotation_name:
-            # TODO: rename compute_all_pLI_scores_. annotate_pLI_scores
-            ht = compute_all_pLI_scores(ht, annotation_name, keys, pops)
+    # Compute the pLI scores for LoF variants.
+    pli_expr = {
+        annotate_pLI_scores(ht, annotation_name, pops)
+        for annotation_name in ["lof_hc_lc", "lof_hc_os", "lof"]
+    }
+    ht = ht.annotate(**pli_expr)
 
-        # Compute the 90% confidence interval around the observed:expected ratio and z
-        # scores.
-        if annotation_name in ["lof", "mis", "syn"]:
-            oe_ci = oe_confidence_interval(
+    # Compute the 90% confidence interval around the observed:expected ratio and z
+    # scores.
+    oe_ci_z_expr = {
+        {
+            **oe_confidence_interval(
                 ht,
                 ht[f"obs_{annotation_name}"],
                 ht[f"exp_{annotation_name}"],
                 prefix=f"oe_{annotation_name}",
+            ),
+            **calculate_z_score(
+                ht,
+                ht[f"obs_{annotation_name}"],
+                ht[f"exp_{annotation_name}"],
+                f"{annotation_name}_z_raw",
             )
-            ht = ht.annotate(**oe_ci)
+        }
+        for annotation_name in ["lof", "mis", "syn"]
+    }
 
-            ht = ht.annotate(
-                **calculate_z_score(
-                    ht,
-                    ht[f"obs_{annotation_name}"],
-                    ht[f"exp_{annotation_name}"],
-                    f"{annotation_name}_z_raw",
-                )[
-                    ht.key
-                ]  # TODO: return as expression instead
-            )
-            # TODO: Reasons code instead of calculate_all_z_scores
-            # ht = calculate_all_z_scores(ht)
+    ht = ht.annotate(**oe_ci_z_expr)
 
-        # Combine all the metrics annotations.
-        if all_ht is None:
-            all_ht = ht
-        else:
-            all_ht = all_ht.annotate(**ht[all_ht.key])
+    # TODO: Reasons code instead of calculate_all_z_scores
+    # ht = calculate_all_z_scores(ht)
 
-    return all_ht
+    return ht
