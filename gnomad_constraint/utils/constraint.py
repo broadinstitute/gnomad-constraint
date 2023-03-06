@@ -222,7 +222,6 @@ def create_observed_and_possible_ht(
 
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
-
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     # Annotate the Table with 'cpg' and 'mutation_type' (one of "CpG", "non-CpG
@@ -251,8 +250,8 @@ def apply_models(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
-    partition_hint_for_counting_variants: int = 2000,
-    partition_hint_for_aggregation: int = 1000,
+    obs_pos_count_partition_hint: int = 2000,
+    expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
     cov_cutoff: int = COVERAGE_CUTOFF,
 ) -> hl.Table:
@@ -310,9 +309,9 @@ def apply_models(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
-    :param partition_hint_for_counting_variants: Target number of partitions for
+    :param obs_pos_count_partition_hint: Target number of partitions for
         aggregation when counting variants. Default is 2000.
-    :param partition_hint_for_aggregation: Target number of partitions for sum
+    :param expected_variant_partition_hint: Target number of partitions for sum
         aggregators when computation is done. Default is 1000.
     :param custom_vep_annotation: The customized model (one of
         "transcript_consequences" or "worst_csq_by_gene"), Default is None.
@@ -345,7 +344,7 @@ def apply_models(
         keep_annotations,
         pops,
         grouping,
-        partition_hint_for_counting_variants,
+        obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         filter_to_canonical_synonymous=False,
     )
@@ -361,11 +360,13 @@ def apply_models(
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
     agg_expr.update(
-        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr)
+        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg)
     )
     for pop in pops:
         agg_expr.update(
-            compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, pop)
+            compute_expected_variants(
+                ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg, pop
+            )
         )
 
     grouping = list(grouping)
@@ -374,7 +375,7 @@ def apply_models(
     # Aggregate the sum aggregators grouped by `grouping`.
     ht = (
         ht.group_by(*grouping)
-        .partition_hint(partition_hint_for_aggregation)
+        .partition_hint(expected_variant_partition_hint)
         .aggregate(**agg_expr)
     )
 
