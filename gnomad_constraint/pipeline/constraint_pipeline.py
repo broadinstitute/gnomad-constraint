@@ -191,9 +191,9 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                {"--preprocess-data": preprocess_resources.values()},
-                {"--create-training-set": training_resources.values()},
-                overwrite,
+                input_step_resources={"--preprocess-data": preprocess_resources.values()},
+                output_step_resources={"--create-training-set": training_resources.values()},
+                overwrite=overwrite,
             )
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
@@ -215,9 +215,9 @@ def main(args):
         if args.build_models:
             # Check if the training datasets exist.
             check_resource_existence(
-                {"--create-training-set": training_resources.values()},
-                {"--build_models": models.values()},
-                overwrite,
+                input_step_resources={"--create-training-set": training_resources.values()},
+                output_step_resources={"--build_models": models.values()},
+                overwrite=overwrite,
             )
             # Build plateau and coverage models.
             for region in GENOMIC_REGIONS:
@@ -245,12 +245,12 @@ def main(args):
         if args.apply_models:
             # Check if the input/output resources exist.
             check_resource_existence(
-                {
+                input_step_resources={
                     "--preprocess-data": preprocess_resources.values(),
                     "--build_models": models.values(),
                 },
-                {"--apply_models": applying_resources.values()},
-                overwrite,
+                output_step_resources={"--apply_models": applying_resources.values()},
+                overwrite=overwrite,
             )
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y.
@@ -284,8 +284,8 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                input_resources={"--apply_models": applying_resources.values()},
-                output_reources={
+                input_step_resources={"--apply_models": applying_resources.values()},
+                output_step_resources={
                     "--compute-constraint-metrics": (constraint_metrics_ht)
                 },
                 overwrite=overwrite,
