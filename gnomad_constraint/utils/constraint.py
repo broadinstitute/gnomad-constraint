@@ -1,19 +1,20 @@
 """Script containing utility functions used in the constraint pipeline."""
 
+from functools import reduce
 from typing import Dict, Optional, Set, Tuple, Union
 
 import hail as hl
 from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
-    annotate_pLI_scores,
     annotate_with_mu,
     calculate_z_score,
     collapse_strand,
     compute_expected_variants,
     count_variants_by_group,
-    get_oe_aggregation_expr,
+    oe_aggregation_expr,
     oe_confidence_interval,
+    pli_scores_expr,
     trimer_from_heptamer,
 )
 from gnomad.utils.vep import (
@@ -447,46 +448,69 @@ def compute_constraint_metrics(
         "syn": ht.annotation == "synonymous_variant",
     }
 
-    # Compute the observed: expected ratio. Will not compute per pop for "mis_pphen".
-    agg_expr = {
-        get_oe_aggregation_expr(
-            ht,
-            filter_expr,
-            postfix=annotation_name,
-            pops=None if annotation_name == "mis_pphen" else pops,
+    # Compute the observed:expected ratio. Will not compute per pop for "mis_pphen".
+    hts = []
+    partition_intervals = None
+    for ann, filter_expr in annotation_dict.items():
+        if ann == "mis_pphen":
+            agg_pops = ()
+            exclude_mu_sum = True
+        else:
+            agg_pops = pops
+            exclude_mu_sum = False
+
+        ann_ht = (
+            ht.group_by(*keys)
+            .aggregate(
+                **oe_aggregation_expr(
+                    ht, ann, filter_expr, pops=agg_pops, exclude_mu_sum=exclude_mu_sum
+                )
+            )
+            .checkpoint(
+                new_temp_file(prefix=f"constraint_oe_agg.{ann}", extension="ht"),
+                _intervals=partition_intervals,
+            )
         )
-        for annotation_name, filter_expr in annotation_dict.items()
-    }
-    ht = ht.group_by(*keys).aggregate(**agg_expr)
+        ann_ht.describe()
+        hts.append(ann_ht)
+
+        if partition_intervals is None:
+            partition_intervals = ann_ht._partitions
+
+    ht = reduce((lambda joined_ht, ht: joined_ht.join(ht, "left")), hts)
+    ht.describe()
+    ht = ht.checkpoint(
+        new_temp_file(prefix="compute_constraint_metrics", extension="ht")
+    )
 
     # Compute the pLI scores for LoF variants.
-    pli_expr = {
-        annotate_pLI_scores(ht, annotation_name, pops)
-        for annotation_name in ["lof_hc_lc", "lof_hc_os", "lof"]
-    }
+    pli_expr = {}
+    for annotation_name in ["lof_hc_lc", "lof_hc_os", "lof"]:
+        pli_expr.update(pli_scores_expr(ht, annotation_name, pops))
     ht = ht.annotate(**pli_expr)
+    ht.describe()
 
     # Compute the 90% confidence interval around the observed:expected ratio and z
     # scores.
-    oe_ci_z_expr = {
-        {
-            **oe_confidence_interval(
-                ht,
+    oe_ci_z_expr = {}
+    for annotation_name in ["lof", "mis", "syn"]:
+        oe_ci_z_expr.update(
+            oe_confidence_interval(
                 ht[f"obs_{annotation_name}"],
                 ht[f"exp_{annotation_name}"],
                 prefix=f"oe_{annotation_name}",
-            ),
-            **calculate_z_score(
-                ht,
+            )
+        )
+        oe_ci_z_expr.update(
+            calculate_z_score(
                 ht[f"obs_{annotation_name}"],
                 ht[f"exp_{annotation_name}"],
                 f"{annotation_name}_z_raw",
-            ),
-        }
-        for annotation_name in ["lof", "mis", "syn"]
-    }
+            )
+        )
 
     ht = ht.annotate(**oe_ci_z_expr)
+    ht.describe()
 
     # TODO: Reasons code instead of calculate_all_z_scores
     # ht = calculate_all_z_scores(ht)

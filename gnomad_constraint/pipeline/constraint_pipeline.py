@@ -28,6 +28,7 @@ import hail as hl
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
+from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
@@ -222,7 +223,7 @@ def main(args):
                 input_step_resources={
                     "--create-training-set": training_resources.values()
                 },
-                output_step_resources={"--build_models": models.values()},
+                output_step_resources={"--build-models": models.values()},
                 overwrite=overwrite,
             )
             # Build plateau and coverage models.
@@ -253,9 +254,9 @@ def main(args):
             check_resource_existence(
                 input_step_resources={
                     "--preprocess-data": preprocess_resources.values(),
-                    "--build_models": models.values(),
+                    "--build-models": models.values(),
                 },
-                output_step_resources={"--apply_models": applying_resources.values()},
+                output_step_resources={"--apply-models": applying_resources.values()},
                 overwrite=overwrite,
             )
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
@@ -290,9 +291,9 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                input_step_resources={"--apply_models": applying_resources.values()},
+                input_step_resources={"--apply-models": applying_resources.values()},
                 output_step_resources={
-                    "--compute-constraint-metrics": (constraint_metrics_ht)
+                    "--compute-constraint-metrics": [constraint_metrics_ht]
                 },
                 overwrite=overwrite,
             )
@@ -300,6 +301,10 @@ def main(args):
             # regions, chromosome X, and chromosome Y sites.
             hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
             union_ht = hts[0].union(*hts[1:])
+            union_ht = union_ht.checkpoint(
+                new_temp_file(prefix="constraint_apply_union", extension="ht")
+            )
+
             # Compute constraint metrics
             compute_constraint_metrics(
                 union_ht,

@@ -215,7 +215,7 @@ def get_constraint_metrics_dataset(
     check_param_scope(version=version)
 
     return TableResource(
-        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics.{'.test' if test else ''}.ht"
+        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics{'.test' if test else ''}.ht"
     )
 
 
