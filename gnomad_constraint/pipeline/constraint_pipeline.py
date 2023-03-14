@@ -301,7 +301,8 @@ def main(args):
             # regions, chromosome X, and chromosome Y sites.
             hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
             union_ht = hts[0].union(*hts[1:])
-            union_ht = union_ht.checkpoint(
+            # TODO: Should we add an argument for this repartition number?
+            union_ht = union_ht.repartition(1000).checkpoint(
                 new_temp_file(prefix="constraint_apply_union", extension="ht")
             )
 
