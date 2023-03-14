@@ -468,6 +468,7 @@ def compute_constraint_metrics(
     # TODO: Add function to pLI computation run on pops downsampling if needed.
     #  This may take some thought on how to reduce the number of aggregations so there
     #  are not multiple aggregations done per population per downsampling.
+    # TODO: Should we add arguments for the expected_values and min_diff_convergence?
     ht = ht.annotate(
         **{
             ann: ht[ann].annotate(**compute_pli(ht, ht[ann].obs, ht[ann].exp))
