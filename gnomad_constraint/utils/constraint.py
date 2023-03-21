@@ -471,10 +471,6 @@ def compute_constraint_metrics(
     )
 
     # Compute the pLI scores for LoF variants.
-    # TODO: Add function to pLI computation run on pops downsampling if needed.
-    #  This may take some thought on how to reduce the number of aggregations so there
-    #  are not multiple aggregations done per population per downsampling.
-    # TODO: Should we add arguments for the expected_values and min_diff_convergence?
     ht = ht.annotate(
         **{
             ann: ht[ann].annotate(**compute_pli(ht, ht[ann].obs, ht[ann].exp))
@@ -494,38 +490,38 @@ def compute_constraint_metrics(
         }
     )
 
+    # TODO: add parameter for -5 and 5.
     ht = ht.annotate(
-    **{
-        ann: ht[ann].annotate(
-            constraint_flags=add_constraint_flags(
-                exp_expr=ht[ann].exp,
-                outlier_expr=ht[ann].z_raw < -5
-                if ann != "syn"
-                else hl.abs(ht[ann].z_raw) > 5,
+        **{
+            ann: ht[ann].annotate(
+                constraint_flags=add_constraint_flags(
+                    exp_expr=ht[ann].exp,
+                    outlier_expr=ht[ann].z_raw < -5
+                    if ann != "syn"
+                    else hl.abs(ht[ann].z_raw) > 5,
+                )
             )
-        )
-        for ann in ["lof", "mis", "syn"]
-    }
-)
+            for ann in ["lof", "mis", "syn"]
+        }
+    )
 
-#TODO: rewrite no_variants flag
-# Add 'no_variants' to the constraint flags if there are a total of 0 observed variants summed across lof, mis, and syn
+    # Add 'no_variants' to the constraint flags if there are a total of 0 observed
+    # variants summed across lof, mis, and syn.
     ht = ht.annotate(
-    **{
-        ann: ht[ann].annotate(
-            constraint_flags=hl.if_else(
-                hl.or_else(ht.lof["obs"], 0)
-                + hl.or_else(ht.mis["obs"], 0)
-                + hl.or_else(ht.syn["obs"], 0)
-                == 0,
-                ht[ann].constraint_flags.add("no_variants"),
-                ht[ann].constraint_flags,
+        **{
+            ann: ht[ann].annotate(
+                constraint_flags=hl.if_else(
+                    hl.or_else(ht.lof["obs"], 0)
+                    + hl.or_else(ht.mis["obs"], 0)
+                    + hl.or_else(ht.syn["obs"], 0)
+                    == 0,
+                    ht[ann].constraint_flags.add("no_variants"),
+                    ht[ann].constraint_flags,
+                )
             )
-        )
-        for ann in ["lof", "mis", "syn"]
-    }
-)
-
+            for ann in ["lof", "mis", "syn"]
+        }
+    )
 
     ht = ht.annotate(
         **{
@@ -533,13 +529,17 @@ def compute_constraint_metrics(
                 **calculate_z_score(
                     raw_z_expr=ht[ann].z_raw,
                     flag_expr=ht[ann].constraint_flags,
-                    additional_requirements_expr=ht[ann].z_raw < 0 if ann != "syn" else True,
+                    additional_requirements_expr=ht[ann].z_raw < 0
+                    if ann != "syn"
+                    else True,
                     both=True if ann != "syn" else False,
-               )
-           )
+                )
+            )
             for ann in ["lof", "mis", "syn"]
         }
     )
-    # ht = calculate_all_z_scores(ht)
+
+    # TODO: Add final contstraint flag.
+    # TODO: Move standard deviations into globals.
 
     return ht
