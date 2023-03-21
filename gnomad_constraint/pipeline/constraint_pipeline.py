@@ -87,7 +87,7 @@ def main(args):
     apply_expected_variant_partition_hint = args.apply_expected_variant_partition_hint
     use_pops = args.use_pops
     use_weights = args.use_weights
-    # use_old_mutation_ht= args.use_old_mutation_ht
+    use_v2_release_mutation_ht= args.use_v2_release_mutation_ht
     custom_vep_annotation = args.custom_vep_annotation
 
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
@@ -127,7 +127,7 @@ def main(args):
             custom_vep_annotation, version, region, test
         )
     # Save a TableResource with a path to mutation rate Table.
-    mutation_rate_resource = get_mutation_ht(version, test)
+    mutation_rate_resource = get_mutation_ht(version, test, use_v2_release_mutation_ht)
     # Save a TableResource with a path to `constraint_metrics_ht`.
     constraint_metrics_ht = get_constraint_metrics_dataset(version, test)
 
@@ -189,7 +189,7 @@ def main(args):
                 ht = prepare_ht_for_constraint_calculations(ht)
 
                 if data_type == "context":
-                    ht.write(
+                    ht = ht.checkpoint(
                         preprocess_resources[("full", data_type)].path,
                         overwrite=overwrite,
                     )
@@ -213,11 +213,10 @@ def main(args):
                     )
             logger.info("Done with preprocessing genome and exome Table.")
 
-        # Use version 2.1.1 mutation rate Table by default.
-        mutation_ht = get_mutation_ht(use_old_mutation_ht=True).ht().select("mu_snp")
-
         # Calculate mutation rate Table.
         if args.calculate_mutation_rate:
+            # Save a TableResource with a path to mutation rate Table.
+            mutation_rate_resource = get_mutation_ht(version, test)
             logger.info("Calculating mutation rate...")
             # Check if the input/output resources exist.
             check_resource_existence(
@@ -227,7 +226,7 @@ def main(args):
                 (mutation_rate_resource),
                 overwrite,
             )
-            # Calculate mutation rate using the downsampling with size 1000 genome in
+            # Calculate mutation rate using the downsampling with size 1000 genomes in
             # genome site Table.
             calculate_mu_by_downsampling(
                 preprocess_resources[("autosome_par", "genome")].ht(),
@@ -236,7 +235,6 @@ def main(args):
                 recalculate_all_possible_summary_unfiltered=False,
                 pops=POPS if use_pops else (),
             ).write(mutation_rate_resource.path, overwrite=overwrite)
-            mutation_ht = mutation_rate_resource.ht().select("mu_snp")
 
         # Create training datasets that include possible and observed variant counts
         # for building models.

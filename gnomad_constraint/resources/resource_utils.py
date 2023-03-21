@@ -65,18 +65,6 @@ mutation_rate_ht = VersionedTableResource(
         ),
     },
 )
-# Mutation rate Table that include the baseline mutation rate for each substitution
-# and context.
-# mutation_rate_ht = VersionedTableResource(
-#     CURRENT_VERSION,
-#     versions={
-#         "2.1.1": TableResource(
-#             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht",
-#         ),
-#     },
-# )
-
-
 # Methylation Table
 # TODO: decide path to methylation Table
 methylation_ht = VersionedTableResource(
@@ -135,25 +123,25 @@ def get_coverage_ht(
 def get_mutation_ht(
     version: str = CURRENT_VERSION,
     test: bool = False,
-    use_old_mutation_ht: bool = False,
+    use_v2_release_mutation_ht: bool = False,
 ) -> TableResource:
     """
-    Return mutation Table that include the baseline mutation rate for each substitution and context.
+    Return mutation Table that includes the baseline mutation rate for each substitution and context.
 
     :param version: The version of the Table. Default is CURRENT_VERSION.
     :param test: Whether the Table is for testing purposes and only contains sites in
         chr20, chrX, and chrY. Default is False.
-    :param use_old_mutation_ht: Whether to use old mutation rate table in version 2.1.1.
+    :param use_v2_release_mutation_ht: Whether to use the precomputed gnomAD v2.1.1 released mutation rate table.
     :return: Mutation rate Table.
     """
-    if use_old_mutation_ht:
+    if use_v2_release_mutation_ht:
         return TableResource(
             path="gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/model/mutation_rate_methylation_bins.ht",
         )
     else:
         check_param_scope(version)
         return TableResource(
-            f"gs://gnomad/{version}/constraint/constraint_mutation_rate.{'.test' if test else ''}.ht"
+            f"{constraint_tmp_prefix if test else get_constraint_release_prefix(version)}/gnomad.v{version}.constraint.mutation_rate.{'.test' if test else ''}.ht"
         )
 
 

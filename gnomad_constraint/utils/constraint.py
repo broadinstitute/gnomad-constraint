@@ -405,7 +405,7 @@ def calculate_mu_by_downsampling(
     recalculate_all_possible_summary_unfiltered: bool = False,
     omit_methylation: bool = False,
     count_singletons: bool = False,
-    summary_file: str = None,
+    checkpoint_prefix: str = None,
     keep_annotations: Tuple[str] = (
         "context",
         "ref",
@@ -473,84 +473,55 @@ def calculate_mu_by_downsampling(
     context_ht = context_ht.select(*keep_annotations)
     genome_ht = genome_ht.select(*list(keep_annotations) + ["freq", "pass_filters"])
 
-    # downsampled the dataset to 1,000 genomes
-    freq_index = hl.eval(
-        hl.enumerate(genome_ht.freq_meta).find(
-            lambda f: (f[1].get("downsampling") == str(downsampling_level))
-            & (f[1].get("pop") == "global")
-            & (f[1].get("group") == "adj")
-            & (f[1].size() == 3)
-        )
-    )[0]
-    freq_expr = genome_ht.freq[freq_index]
-    # Set up the criteria to filtered out  low quality sites, and sites found in
-    # greater than 5 copies in the downsampled set.
+    # Get the frequency index of dowsampling with size of `downsampling_level`.
+    downsampling_meta = get_downsampling_freq_indices(genome_ht.freq_meta)
+    downsampling_idx = hl.eval(downsampling_meta.filter(lambda x: x[1]['downsampling'] == str(downsampling_level))[0][0])
+    freq_expr = genome_ht.freq[downsampling_idx]
+
+    # Set up the criteria to filtered out low quality sites, and sites found in
+    # greater than ac_cutoff copies in the downsampled set.
     keep_criteria = (freq_expr.AC <= ac_cutoff) & genome_ht.pass_filters
 
-    # Only keep variants with AC <= ac_cutoff and passing filters in genome site
-    # Table.
-    genome_ht = genome_ht.filter(keep_criteria)
-
-    # In the denominator, only keep variants not in the genome dataset, or with AC
-    # <= ac_cutoff and passing filters.
-    context_ht = context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False))
-
-    if not summary_file:
-        summary_file = new_temp_file(prefix="constraint", extension="he")
-
-    all_possible_dtype = count_variants_by_group(
-        context_ht,
-        omit_methylation=omit_methylation,
-        return_type_only=True,
-    ).variant_count.dtype
-
-    # Count possible variants in context Table.
-    if recalculate_all_possible_summary:
-        all_possible = count_variants_by_group(
-            context_ht,
-            omit_methylation=omit_methylation,
-        ).variant_count
-        # with hl.hadoop_open(summary_file, "wb") as f:
-        #     pickle.dump(all_possible, f)
-        hl.experimental.write_expression(all_possible, summary_file)
-    # with hl.hadoop_open(summary_file, "rb") as f:
-    #     all_possible = pickle.load(f)
-    all_possible = hl.experimental.read_expression(summary_file)
-
-    if recalculate_all_possible_summary_unfiltered:
-        all_possible_unfiltered = count_variants_by_group(
-            raw_context_ht.rows(), omit_methylation=omit_methylation
-        ).variant_count
-        all_possible_unfiltered = {
-            x: y
-            for x, y in list(all_possible_unfiltered.items())
-            if x.context is not None
-        }
-        hl.experimental.write_expression(
-            all_possible_unfiltered, new_temp_file(prefix="constraint", extension="he")
-        )
-        # with hl.hadoop_open(new_temp_file(prefix="constraint", extension="he"), "wb") as f:
-        #     pickle.dump(all_possible_unfiltered, f)
-    # Uncomment this line and next few commented lines to back-calculate total_mu from the old mutation rate dataset
-    # all_possible_unfiltered = load_all_possible_summary(filtered=False)
-
     # Count the observed variants in the genome sites Table.
-    genome_ht = count_variants_by_group(
-        genome_ht,
+    observed_ht = count_variants_by_group(
+        genome_ht.filter(keep_criteria).select(*list(keep_annotations) + ["freq"]),
         count_downsamplings=pops,
         count_singletons=count_singletons,
         omit_methylation=omit_methylation,
+        use_table_group_by=True,
+    )
+
+    # Count possible variants in context Table, only keeping variants not in the genome dataset, 
+    # or with AC <= ac_cutoff and passing filters.
+    all_possible_ht = count_variants_by_group(
+        context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False)).select(*keep_annotations),
+        omit_methylation=omit_methylation,
+        use_table_group_by=True,
+    )
+    all_possible_ht = all_possible_ht.checkpoint(
+        get_checkpoint_path(checkpoint_prefix + ".all_possible_summary"), 
+        _read_if_exists=not recalculate_all_possible_summary,
+        overwrite=recalculate_all_possible_summary,
+    )
+
+    # Count possible variants in unfiltered context Table.
+    all_possible_unfiltered_ht = count_variants_by_group(
+        raw_context_ht, 
+        omit_methylation=omit_methylation,
+        use_table_group_by=True,
+    )
+    all_possible_unfiltered_ht = all_possible_unfiltered_ht.filter(hl.is_defined(all_possible_unfiltered_ht.context))
+    all_possible_unfiltered_ht = all_possible_unfiltered_ht.checkpoint(
+        get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered"), 
+        _read_if_exists=not recalculate_all_possible_unfiltered_summary,
+        overwrite=recalculate_all_possible_unfiltered_summary,
     )
 
     old_mu_data = mutation_rate_ht.ht()
-    ht = genome_ht.annotate(
-        possible_variants=hl.literal(all_possible, dtype=all_possible_dtype)[
-            genome_ht.key
-        ],
-        # possible_variants_unfiltered=hl.literal(all_possible_unfiltered, dtype=all_possible_dtype)[genome_ht.key],
-        old_mu_snp=old_mu_data[
-            hl.struct(context=genome_ht.context, ref=genome_ht.ref, alt=genome_ht.alt)
-        ].mu_snp,
+    ht = observed_ht.annotate(
+        possible_variants=all_possible_ht[observed_ht.key].variant_count,
+        # possible_variants_unfiltered=all_possible_unfiltered_ht[observed_ht.key].variant_count,
+        old_mu_snp=old_mu_data[hl.struct(context=observed_ht.context, ref=observed_ht.ref, alt=observed_ht.alt)].mu_snp,
     )
 
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
@@ -559,45 +530,27 @@ def calculate_mu_by_downsampling(
     # total_bases_unfiltered = ht.aggregate(hl.agg.sum(ht.possible_variants_unfiltered)) // 3
     # total_mu = ht.aggregate(hl.agg.sum(ht.old_mu_snp * ht.possible_variants_unfiltered) / total_bases_unfiltered)
 
-    # Get the index of dowsamplings with size of 1000 genomes
-    downsamplings = list(map(lambda x: x[1], get_downsamplings(ht.freq_meta)))
-    downsampling_idx = downsamplings.index(1000)
-
-    for pop in pops:
-        correction_factors = ht.aggregate(
-            total_mu
-            / (hl.agg.array_sum(ht[f"downsampling_counts_{pop}"]) / total_bases)
-        )
-        ht = ht.annotate(
-            **{
-                f"downsamplings_mu_{pop}": hl.literal(correction_factors)
-                * ht[f"downsampling_counts_{pop}"]
-                / ht.possible_variants
-            }
-        )
-        if pop == "global":
-            ht = ht.annotate(
-                **{"mu_snp": ht[f"downsamplings_mu_{pop}"][downsampling_idx]}
-            )
-        else:
-            ht = ht.annotate(
-                **{f"mu_snp_{pop}": ht[f"downsamplings_mu_{pop}"][downsampling_idx]}
-            )
-
-    ht = annotate_mutation_type(
-        ht.annotate(
-            downsamplings_frac_observed=ht.downsampling_counts_global
-            / ht.possible_variants
-        )
-    )
+    # Get the index of dowsampling with size of `downsampling_level`.
+    downsampling_idx = hl.eval(downsampling_meta.map(lambda x: hl.int(x[1]['downsampling'])).index(downsampling_level))
 
     # Compute the proportion observed, which represents the relative mutability of each
     # variant class
-    return ht.annotate(
-        proportion_observed_1kg=ht.downsampling_counts_global[downsampling_idx]
-        / ht.possible_variants,
-        proportion_observed=ht.variant_count / ht.possible_variants,
-    )
+    ann_expr = {
+        "proportion_observed": ht.variant_count / ht.possible_variants,
+        f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[downsampling_idx] / ht.possible_variants,
+        "downsamplings_frac_observed": ht.downsampling_counts_global / ht.possible_variants,
+    }
+
+    for pop in pops:
+        pop_counts_expr = ht[f"downsampling_counts_{pop}"]
+        correction_factors = ht.aggregate(total_mu / (hl.agg.array_sum(pop_counts_expr) / total_bases), _localize=False)
+        downsamplings_mu_expr = correction_factors * pop_counts_expr / ht.possible_variants
+        ann_expr[f"downsamplings_mu_{'snp' if pop == 'global' else pop}"] = downsamplings_mu_expr
+        ann_expr[f"mu_snp{'' if pop == 'global' else f'_{pop}'}"] = downsamplings_mu_expr[downsampling_idx]
+
+    ht = ht.annotate(**ann_expr).checkpoint(new_temp_file(prefix="constraint", extension="ht"))
+    
+    return annotate_mutation_type(ht)
 
 
 def compute_constraint_metrics(
