@@ -440,6 +440,57 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    parser.add_argument(
+        "--compute-constraint-metrics-partitions",
+        help=(
+            "Number of partitions to which the unioned Table of expected variant counts"
+            " for autosomes/pseudoautosomal regions, chromosome X, and chromosome Y "
+            " should be reaprtitioned."
+        ),
+        type=int,
+        default=1000,
+    )
+
+    parser.add_argument(
+        "--min-diff-convergence?",
+        help=(
+            "Minimum iteration change in pLI (Probability of loss-of-function"
+            " intolerance for haploinsufficient genes) to consider the EM"
+            " (expectation-maximization) model convergence criteria as met when"
+            " calculating pLI scores."
+        ),
+        type=float,
+        default=0.001,
+    )
+
+    parser.add_argument(
+        "--expectation-null",
+        help=(
+            "Expected observed/expected rate of truncating variation for genes where"
+            " protein truncating variation is completely tolerated by natural"
+            " selection."
+        ),
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--expectation-rec",
+        help=(
+            "Expected observed/expected rate of truncating variation for recessive"
+            " disease genes."
+        ),
+        type=float,
+        default=0.463,
+    )
+    parser.add_argument(
+        "--expectation-li",
+        help=(
+            "Expected observed/expected rate of truncating variation for severe"
+            " haploinsufficient genes."
+        ),
+        type=float,
+        default=0.089,
+    )
 
     args = parser.parse_args()
     main(args)
