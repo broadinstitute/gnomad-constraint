@@ -302,7 +302,7 @@ def main(args):
             hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
             union_ht = hts[0].union(*hts[1:])
             # TODO: Should we add an argument for this repartition number?
-            union_ht = union_ht.repartition(1000).checkpoint(
+            union_ht = union_ht.repartition(args.compute_constraint_metrics_partitions").checkpoint(
                 new_temp_file(prefix="constraint_apply_union", extension="ht")
             )
 
@@ -310,6 +310,8 @@ def main(args):
             compute_constraint_metrics(
                 union_ht,
                 pops=POPS if use_pops else (),
+                expected_values = {"Null": args.expectation_null, "Rec": args.expectation_rec, "LI": args.expectation_li},
+                min_diff_convergence = args.min_diff_convergence,
             ).write(constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 

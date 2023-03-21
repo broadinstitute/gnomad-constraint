@@ -403,6 +403,8 @@ def compute_constraint_metrics(
         "splice_acceptor_variant",
     },
     pops: Tuple[str] = (),
+    expected_values: Dict[str, float] = {"Null": 1.0, "Rec": 0.463, "LI": 0.089},
+    min_diff_convergence: float = 0.001,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -426,6 +428,10 @@ def compute_constraint_metrics(
         Table. Default is {"stop_gained", "splice_donor_variant",
         "splice_acceptor_variant"}.
     :param pops: List of populations used to compute constraint metrics. Default is ().
+    :param expected_values: Dictionary containing the expected values for 'Null',
+        'Rec', and 'LI' to use as starting values.
+    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
+        model convergence criteria as met. Default is 0.001.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -482,13 +488,58 @@ def compute_constraint_metrics(
         **{
             ann: ht[ann].annotate(
                 oe_ci=oe_confidence_interval(ht[ann].obs, ht[ann].exp),
-                z_raw=calculate_z_score(ht[ann].obs, ht[ann].exp),
+                z_raw=calculate_raw_z_score(ht[ann].obs, ht[ann].exp),
             )
             for ann in ["lof", "mis", "syn"]
         }
     )
 
-    # TODO: Reasons code instead of calculate_all_z_scores.
+    ht = ht.annotate(
+    **{
+        ann: ht[ann].annotate(
+            constraint_flags=add_constraint_flags(
+                exp_expr=ht[ann].exp,
+                outlier_expr=ht[ann].z_raw < -5
+                if ann != "syn"
+                else hl.abs(ht[ann].z_raw) > 5,
+            )
+        )
+        for ann in ["lof", "mis", "syn"]
+    }
+)
+
+#TODO: rewrite no_variants flag
+# Add 'no_variants' to the constraint flags if there are a total of 0 observed variants summed across lof, mis, and syn
+    ht = ht.annotate(
+    **{
+        ann: ht[ann].annotate(
+            constraint_flags=hl.if_else(
+                hl.or_else(ht.lof["obs"], 0)
+                + hl.or_else(ht.mis["obs"], 0)
+                + hl.or_else(ht.syn["obs"], 0)
+                == 0,
+                ht[ann].constraint_flags.add("no_variants"),
+                ht[ann].constraint_flags,
+            )
+        )
+        for ann in ["lof", "mis", "syn"]
+    }
+)
+
+
+    ht = ht.annotate(
+        **{
+            ann: ht[ann].annotate(
+                **calculate_z_score(
+                    raw_z_expr=ht[ann].z_raw,
+                    flag_expr=ht[ann].constraint_flags,
+                    additional_requirements_expr=ht[ann].z_raw < 0 if ann != "syn" else True,
+                    both=True if ann != "syn" else False,
+               )
+           )
+            for ann in ["lof", "mis", "syn"]
+        }
+    )
     # ht = calculate_all_z_scores(ht)
 
     return ht
