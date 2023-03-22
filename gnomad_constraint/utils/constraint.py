@@ -544,7 +544,7 @@ def compute_constraint_metrics(
         ht[ann].constraint_flags.map(
             lambda x: hl.if_else(x != "no_variants", (x + "_" + ann), x)
         )
-        for ann in ["lof_hc_lc", "new_lof_hc_lc"]
+        for ann in ["lof", "mis", "syn"]
     ]
     ht = ht.annotate(all_constraint_flags=flag_lists[0].union(*flag_lists[1:]))
 
