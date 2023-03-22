@@ -405,6 +405,7 @@ def compute_constraint_metrics(
     pops: Tuple[str] = (),
     expected_values: Dict[str, float] = {"Null": 1.0, "Rec": 0.463, "LI": 0.089},
     min_diff_convergence: float = 0.001,
+    raw_z_outlier_threshold: int = 5,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -432,6 +433,7 @@ def compute_constraint_metrics(
         'Rec', and 'LI' to use as starting values.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
         model convergence criteria as met. Default is 0.001.
+    :param raw_z_outlier_threshold: Value at which the raw z-score is considered an outlier. Values below the negative of '--raw-z-outlier-threshold' will be considered outliers for lof and missense varaint counts (indicating too many variants), whereas values either above '--raw-z-outlier-threshold' or below the negative of '--raw-z-outlier-threshold' will be considered outliers for synonymous varaint counts (indicating too few or too many variants)."
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -490,15 +492,14 @@ def compute_constraint_metrics(
         }
     )
 
-    # TODO: add parameter for -5 and 5.
     ht = ht.annotate(
         **{
             ann: ht[ann].annotate(
                 constraint_flags=add_constraint_flags(
                     exp_expr=ht[ann].exp,
-                    outlier_expr=ht[ann].z_raw < -5
+                    outlier_expr=ht[ann].z_raw < -raw_z_outlier_threshold
                     if ann != "syn"
-                    else hl.abs(ht[ann].z_raw) > 5,
+                    else hl.abs(ht[ann].z_raw) > raw_z_outlier_threshold,
                 )
             )
             for ann in ["lof", "mis", "syn"]

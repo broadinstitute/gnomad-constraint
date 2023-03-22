@@ -315,6 +315,7 @@ def main(args):
                     "LI": args.expectation_li,
                 },
                 min_diff_convergence=args.min_diff_convergence,
+                raw_z_outlier_threshold=args.raw_z_outlier_threshold,
             ).write(constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 
@@ -490,6 +491,19 @@ if __name__ == "__main__":
         ),
         type=float,
         default=0.089,
+    )
+    parser.add_argument(
+        "--raw-z-outlier-threshold",
+        help=(
+            "Value at which the raw z-score is considered an outlier. Values below the"
+            " negative of '--raw-z-outlier-threshold' will be considered outliers for"
+            " lof and missense varaint counts (indicating too many variants), whereas"
+            " values either above '--raw-z-outlier-threshold' or below the negative of"
+            " '--raw-z-outlier-threshold' will be considered outliers for synonymous"
+            " varaint counts (indicating too few or too many variants)."
+        ),
+        type=int,
+        default=5,
     )
 
     args = parser.parse_args()
