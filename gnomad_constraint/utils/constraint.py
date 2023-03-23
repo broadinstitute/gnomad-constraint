@@ -528,6 +528,7 @@ def compute_constraint_metrics(
         **{
             ann: ht[ann].annotate(
                 **calculate_z_score(
+                    ht,
                     raw_z_expr=ht[ann].z_raw,
                     flag_expr=ht[ann].constraint_flags,
                     additional_requirements_expr=ht[ann].z_raw < 0
@@ -540,6 +541,16 @@ def compute_constraint_metrics(
         }
     )
 
+    # Move z-score 'sd' annotation to globals
+    ht = ht.annotate_globals(
+        **{
+            f"sd_raw_z_{ann}": ht.aggregate(hl.agg.collect_as_set(ht[ann].sd))
+            for ann in ["lof", "mis", "syn"]
+        }
+    )
+    ht = ht.annotate(**{ann: ht[ann].drop("sd") for ann in ["lof", "mis", "syn"]})
+
+    # Create 'all_constraint_flags' annotation containing union of constraint flags from individual annotations
     flag_lists = [
         ht[ann].constraint_flags.map(
             lambda x: hl.if_else(x != "no_variants", (x + "_" + ann), x)
@@ -547,7 +558,5 @@ def compute_constraint_metrics(
         for ann in ["lof", "mis", "syn"]
     ]
     ht = ht.annotate(all_constraint_flags=flag_lists[0].union(*flag_lists[1:]))
-
-    # TODO: Move standard deviations into globals.
 
     return ht
