@@ -5,10 +5,12 @@ from typing import Dict, Optional, Set, Tuple, Union
 
 import hail as hl
 from gnomad.utils.constraint import (
+    add_constraint_flags,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
-    calculate_z_score,
+    calculate_raw_z_score,
+    calculate_raw_z_score_sd,
     collapse_strand,
     compute_expected_variants,
     compute_pli,
@@ -405,7 +407,7 @@ def compute_constraint_metrics(
     pops: Tuple[str] = (),
     expected_values: Dict[str, float] = {"Null": 1.0, "Rec": 0.463, "LI": 0.089},
     min_diff_convergence: float = 0.001,
-    raw_z_outlier_threshold: int = 5,
+    raw_z_outlier_threshold: float = 5.0,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -433,16 +435,20 @@ def compute_constraint_metrics(
         'Rec', and 'LI' to use as starting values.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
         model convergence criteria as met. Default is 0.001.
-    :param raw_z_outlier_threshold: Value at which the raw z-score is considered an outlier. Values below the negative of '--raw-z-outlier-threshold' will be considered outliers for lof and missense varaint counts (indicating too many variants), whereas values either above '--raw-z-outlier-threshold' or below the negative of '--raw-z-outlier-threshold' will be considered outliers for synonymous varaint counts (indicating too few or too many variants)."
+    :param raw_z_outlier_threshold: Value at which the raw z-score is considered an
+        outlier. Values below the negative of '--raw-z-outlier-threshold' will be
+        considered outliers for lof and missense varaint counts (indicating too many
+        variants), whereas values either above '--raw-z-outlier-threshold' or below
+        the negative of '--raw-z-outlier-threshold' will be considered outliers for
+        synonymous varaint counts (indicating too few or too many variants).
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
-    classic_lof_annotations = hl.literal(classic_lof_annotations)
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": classic_lof_annotations.contains(ht.annotation)
+        "lof_hc_lc": hl.literal(classic_lof_annotations).contains(ht.annotation)
         & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
@@ -455,6 +461,8 @@ def compute_constraint_metrics(
         # Filter to synonymous variants.
         "syn": ht.annotation == "synonymous_variant",
     }
+    oe_ann = ["lof", "mis", "syn"]
+    lof_ann = ["lof_hc_lc", "lof_hc_os", "lof"]
 
     # Compute the observed:expected ratio. Will not compute per pop for "mis_pphen".
     ht = ht.group_by(*keys).aggregate(
@@ -473,90 +481,88 @@ def compute_constraint_metrics(
     )
 
     # Compute the pLI scores for LoF variants.
-    ht = ht.annotate(
-        **{
-            ann: ht[ann].annotate(**compute_pli(ht, ht[ann].obs, ht[ann].exp))
-            for ann in ["lof_hc_lc", "lof_hc_os", "lof"]
-        }
-    )
-
-    # Compute the 90% confidence interval around the observed:expected ratio and z
-    # scores.
-    ht = ht.annotate(
-        **{
-            ann: ht[ann].annotate(
-                oe_ci=oe_confidence_interval(ht[ann].obs, ht[ann].exp),
-                z_raw=calculate_raw_z_score(ht[ann].obs, ht[ann].exp),
+    ann_expr = {
+        ann: ht[ann].annotate(
+            **compute_pli(
+                ht,
+                obs_expr=ht[ann].obs,
+                exp_expr=ht[ann].exp,
+                expected_values=expected_values,
+                min_diff_convergence=min_diff_convergence,
             )
-            for ann in ["lof", "mis", "syn"]
-        }
+        )
+        for ann in lof_ann
+    }
+
+    no_var_expr = hl.sum([hl.or_else(ht[ann].obs, 0) for ann in oe_ann]) == 0
+    for ann in oe_ann:
+        obs_expr = ht[ann].obs
+        exp_expr = ht[ann].exp
+        # Compute the 90% confidence interval around the observed:expected ratio.
+        oe_ci_expr = oe_confidence_interval(obs_expr, exp_expr)
+        # Compute raw z-scores.
+        raw_z_expr = calculate_raw_z_score(obs_expr, exp_expr)
+        # Add flags that define why constraint will not be calculated.
+        constraint_flags_expr = add_constraint_flags(
+            exp_expr=exp_expr,
+            raw_z_expr=raw_z_expr,
+            no_var_expr=no_var_expr,
+            raw_z_lower_threshold=-raw_z_outlier_threshold,
+            raw_z_upper_threshold=raw_z_outlier_threshold if ann == "syn" else None,
+        )
+
+        if ann not in ann_expr:
+            ann_expr[ann] = ht[ann]
+
+        ann_expr[ann] = ann_expr[ann].annotate(
+            oe_ci=oe_ci_expr,
+            z_raw=raw_z_expr,
+            constraint_flags=constraint_flags_expr,
+        )
+
+    ht = ht.annotate(**ann_expr)
+    ht = ht.checkpoint(
+        new_temp_file(prefix="compute_constraint_metrics", extension="ht")
     )
 
-    ht = ht.annotate(
-        **{
-            ann: ht[ann].annotate(
-                constraint_flags=add_constraint_flags(
-                    exp_expr=ht[ann].exp,
-                    outlier_expr=ht[ann].z_raw < -raw_z_outlier_threshold
-                    if ann != "syn"
-                    else hl.abs(ht[ann].z_raw) > raw_z_outlier_threshold,
-                )
-            )
-            for ann in ["lof", "mis", "syn"]
-        }
-    )
-
-    # Add 'no_variants' to the constraint flags if there are a total of 0 observed
-    # variants summed across lof, mis, and syn.
-    ht = ht.annotate(
-        **{
-            ann: ht[ann].annotate(
-                constraint_flags=hl.if_else(
-                    hl.or_else(ht.lof["obs"], 0)
-                    + hl.or_else(ht.mis["obs"], 0)
-                    + hl.or_else(ht.syn["obs"], 0)
-                    == 0,
-                    ht[ann].constraint_flags.add("no_variants"),
-                    ht[ann].constraint_flags,
-                )
-            )
-            for ann in ["lof", "mis", "syn"]
-        }
-    )
-
-    ht = ht.annotate(
-        **{
-            ann: ht[ann].annotate(
-                **calculate_z_score(
-                    ht,
-                    raw_z_expr=ht[ann].z_raw,
-                    flag_expr=ht[ann].constraint_flags,
-                    additional_requirements_expr=ht[ann].z_raw < 0
-                    if ann != "syn"
-                    else True,
-                    both=True if ann != "syn" else False,
-                )
-            )
-            for ann in ["lof", "mis", "syn"]
-        }
-    )
-
-    # Move z-score 'sd' annotation to globals
+    # Add z-score 'sd' annotation to globals.
     ht = ht.annotate_globals(
+        sd_raw_z=ht.aggregate(
+            hl.struct(
+                **{
+                    ann: calculate_raw_z_score_sd(
+                        raw_z_expr=ht[ann].z_raw,
+                        flag_expr=ht[ann].constraint_flags,
+                        neg_raw_z_only=(ann != "syn"),
+                        both=(ann != "syn"),
+                    )
+                    for ann in oe_ann
+                }
+            )
+        )
+    )
+
+    # Compute z-score from raw z-score and standard deviations.
+    ht = ht.annotate(
         **{
-            f"sd_raw_z_{ann}": ht.aggregate(hl.agg.collect_as_set(ht[ann].sd))
-            for ann in ["lof", "mis", "syn"]
+            ann: ht[ann].annotate(z_score=ht[ann].z_raw / ht.sd_raw_z[ann])
+            for ann in oe_ann
         }
     )
-    ht = ht.annotate(**{ann: ht[ann].drop("sd") for ann in ["lof", "mis", "syn"]})
 
-    # Create 'all_constraint_flags' annotation containing union of constraint flags from individual annotations
+    # Create 'all_constraint_flags' annotation containing union of constraint flags
+    # from individual annotations.
     flag_lists = [
         ht[ann].constraint_flags.map(
-            lambda x: hl.if_else(x != "no_variants", (x + "_" + ann), x)
+            lambda x: hl.if_else(x != "no_variants", f"{x}_{ann}", x)
         )
-        for ann in ["lof", "mis", "syn"]
+        for ann in oe_ann
     ]
-    ht = ht.annotate(all_constraint_flags=flag_lists[0].union(*flag_lists[1:]))
+    ht = ht.annotate(
+        all_constraint_flags=hl.fold(
+            lambda x, y: x.union(y), flag_lists[0], flag_lists[1:]
+        )
+    )
+    ht.describe()
 
     return ht
