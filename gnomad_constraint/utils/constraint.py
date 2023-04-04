@@ -1,11 +1,10 @@
 """Script containing utility functions used in the constraint pipeline."""
 
-from functools import reduce
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Dict, Optional, Tuple
 
 import hail as hl
 from gnomad.utils.constraint import (
-    add_constraint_flags,
+    get_constraint_flags,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
@@ -19,6 +18,7 @@ from gnomad.utils.constraint import (
     oe_confidence_interval,
     trimer_from_heptamer,
 )
+from gnomad.utils.filtering import add_filters_expr
 from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
@@ -399,13 +399,13 @@ def apply_models(
 def compute_constraint_metrics(
     ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
-    classic_lof_annotations: Set[str] = {
+    classic_lof_annotations: Tuple[str] = (
         "stop_gained",
         "splice_donor_variant",
         "splice_acceptor_variant",
-    },
+    ),
     pops: Tuple[str] = (),
-    expected_values: Dict[str, float] = {"Null": 1.0, "Rec": 0.463, "LI": 0.089},
+    expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
     raw_z_outlier_threshold: float = 5.0,
 ) -> hl.Table:
@@ -444,11 +444,13 @@ def compute_constraint_metrics(
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
+    if expected_values is None:
+        expected_values = {"Null": 1.0, "Rec": 0.463, "LI": 0.089}
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(classic_lof_annotations).contains(ht.annotation)
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
         & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
@@ -476,6 +478,7 @@ def compute_constraint_metrics(
             for ann, filter_expr in annotation_dict.items()
         }
     )
+    ht = ht.filter(hl.sum([hl.or_else(ht[ann].obs, 0) + hl.or_else(ht[ann].exp, 0) for ann in annotation_dict]) > 0)
     ht = ht.checkpoint(
         new_temp_file(prefix="compute_constraint_metrics", extension="ht")
     )
@@ -494,7 +497,10 @@ def compute_constraint_metrics(
         for ann in lof_ann
     }
 
-    no_var_expr = hl.sum([hl.or_else(ht[ann].obs, 0) for ann in oe_ann]) == 0
+    # Add a 'no_variants' flag indicating that there are zero observed variants summed
+    # across pLoF, missense, and synonymous variants.
+    constraint_flags_expr = {"no_variants": hl.sum([hl.or_else(ht[ann].obs, 0) for ann in oe_ann]) == 0}
+    constraint_flags = {}
     for ann in oe_ann:
         obs_expr = ht[ann].obs
         exp_expr = ht[ann].exp
@@ -503,23 +509,24 @@ def compute_constraint_metrics(
         # Compute raw z-scores.
         raw_z_expr = calculate_raw_z_score(obs_expr, exp_expr)
         # Add flags that define why constraint will not be calculated.
-        constraint_flags_expr = add_constraint_flags(
+        ann_constraint_flags_expr = get_constraint_flags(
             exp_expr=exp_expr,
             raw_z_expr=raw_z_expr,
-            no_var_expr=no_var_expr,
             raw_z_lower_threshold=-raw_z_outlier_threshold,
             raw_z_upper_threshold=raw_z_outlier_threshold if ann == "syn" else None,
+            flag_postfix=ann,
         )
-
+        constraint_flags_expr.update(ann_constraint_flags_expr)
+        constraint_flags[ann] = hl.set(ann_constraint_flags_expr.keys() | {"no_variants"})
         if ann not in ann_expr:
             ann_expr[ann] = ht[ann]
 
         ann_expr[ann] = ann_expr[ann].annotate(
             oe_ci=oe_ci_expr,
             z_raw=raw_z_expr,
-            constraint_flags=constraint_flags_expr,
         )
 
+    ann_expr["constraint_flags"] = add_filters_expr(filters=constraint_flags_expr)
     ht = ht.annotate(**ann_expr)
     ht = ht.checkpoint(
         new_temp_file(prefix="compute_constraint_metrics", extension="ht")
@@ -532,7 +539,7 @@ def compute_constraint_metrics(
                 **{
                     ann: calculate_raw_z_score_sd(
                         raw_z_expr=ht[ann].z_raw,
-                        flag_expr=ht[ann].constraint_flags,
+                        flag_expr=ht.constraint_flags.union(constraint_flags[ann]),
                         neg_raw_z_only=(ann != "syn"),
                         both=(ann != "syn"),
                     )
@@ -550,19 +557,6 @@ def compute_constraint_metrics(
         }
     )
 
-    # Create 'all_constraint_flags' annotation containing union of constraint flags
-    # from individual annotations.
-    flag_lists = [
-        ht[ann].constraint_flags.map(
-            lambda x: hl.if_else(x != "no_variants", f"{x}_{ann}", x)
-        )
-        for ann in oe_ann
-    ]
-    ht = ht.annotate(
-        all_constraint_flags=hl.fold(
-            lambda x, y: x.union(y), flag_lists[0], flag_lists[1:]
-        )
-    )
     ht.describe()
 
     return ht
