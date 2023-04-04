@@ -539,7 +539,7 @@ def compute_constraint_metrics(
                 **{
                     ann: calculate_raw_z_score_sd(
                         raw_z_expr=ht[ann].z_raw,
-                        flag_expr=ht.constraint_flags.union(constraint_flags[ann]),
+                        flag_expr=ht.constraint_flags.intersection(constraint_flags[ann]),
                         neg_raw_z_only=(ann != "syn"),
                         both=(ann != "syn"),
                     )
