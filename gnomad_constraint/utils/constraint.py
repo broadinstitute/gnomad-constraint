@@ -4,7 +4,6 @@ from typing import Dict, Optional, Tuple
 
 import hail as hl
 from gnomad.utils.constraint import (
-    get_constraint_flags,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
@@ -14,6 +13,7 @@ from gnomad.utils.constraint import (
     compute_expected_variants,
     compute_pli,
     count_variants_by_group,
+    get_constraint_flags,
     oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
@@ -89,10 +89,12 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     ht = annotate_mutation_type(collapse_strand(ht))
     # Add annotation for the methylation level
     annotation = {
-        "methylation_level": hl.case()
-        .when(ht.cpg & (ht.methylation.MEAN > 0.6), 2)
-        .when(ht.cpg & (ht.methylation.MEAN > 0.2), 1)
-        .default(0)
+        "methylation_level": (
+            hl.case()
+            .when(ht.cpg & (ht.methylation.MEAN > 0.6), 2)
+            .when(ht.cpg & (ht.methylation.MEAN > 0.2), 1)
+            .default(0)
+        )
     }
     # Add annotation for the median exome coverage
     annotation["exome_coverage"] = ht.coverage.exomes.median
@@ -450,8 +452,9 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
-        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
+            ht.annotation
+        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
         # Filter to LoF annotations with LOFTEE HC.
@@ -478,7 +481,15 @@ def compute_constraint_metrics(
             for ann, filter_expr in annotation_dict.items()
         }
     )
-    ht = ht.filter(hl.sum([hl.or_else(ht[ann].obs, 0) + hl.or_else(ht[ann].exp, 0) for ann in annotation_dict]) > 0)
+    ht = ht.filter(
+        hl.sum(
+            [
+                hl.or_else(ht[ann].obs, 0) + hl.or_else(ht[ann].exp, 0)
+                for ann in annotation_dict
+            ]
+        )
+        > 0
+    )
     ht = ht.checkpoint(
         new_temp_file(prefix="compute_constraint_metrics", extension="ht")
     )
@@ -499,7 +510,9 @@ def compute_constraint_metrics(
 
     # Add a 'no_variants' flag indicating that there are zero observed variants summed
     # across pLoF, missense, and synonymous variants.
-    constraint_flags_expr = {"no_variants": hl.sum([hl.or_else(ht[ann].obs, 0) for ann in oe_ann]) == 0}
+    constraint_flags_expr = {
+        "no_variants": hl.sum([hl.or_else(ht[ann].obs, 0) for ann in oe_ann]) == 0
+    }
     constraint_flags = {}
     for ann in oe_ann:
         obs_expr = ht[ann].obs
@@ -517,7 +530,9 @@ def compute_constraint_metrics(
             flag_postfix=ann,
         )
         constraint_flags_expr.update(ann_constraint_flags_expr)
-        constraint_flags[ann] = hl.set(ann_constraint_flags_expr.keys() | {"no_variants"})
+        constraint_flags[ann] = hl.set(
+            ann_constraint_flags_expr.keys() | {"no_variants"}
+        )
         if ann not in ann_expr:
             ann_expr[ann] = ht[ann]
 
@@ -539,7 +554,9 @@ def compute_constraint_metrics(
                 **{
                     ann: calculate_raw_z_score_sd(
                         raw_z_expr=ht[ann].z_raw,
-                        flag_expr=ht.constraint_flags.intersection(constraint_flags[ann]),
+                        flag_expr=ht.constraint_flags.intersection(
+                            constraint_flags[ann]
+                        ),
                         neg_raw_z_only=(ann != "syn"),
                         both=(ann != "syn"),
                     )
