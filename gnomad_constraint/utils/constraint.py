@@ -89,12 +89,10 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     ht = annotate_mutation_type(collapse_strand(ht))
     # Add annotation for the methylation level
     annotation = {
-        "methylation_level": (
-            hl.case()
-            .when(ht.cpg & (ht.methylation.MEAN > 0.6), 2)
-            .when(ht.cpg & (ht.methylation.MEAN > 0.2), 1)
-            .default(0)
-        )
+        "methylation_level": hl.case()
+        .when(ht.cpg & (ht.methylation.MEAN > 0.6), 2)
+        .when(ht.cpg & (ht.methylation.MEAN > 0.2), 1)
+        .default(0)
     }
     # Add annotation for the median exome coverage
     annotation["exome_coverage"] = ht.coverage.exomes.median
@@ -573,7 +571,5 @@ def compute_constraint_metrics(
             for ann in oe_ann
         }
     )
-
-    ht.describe()
 
     return ht

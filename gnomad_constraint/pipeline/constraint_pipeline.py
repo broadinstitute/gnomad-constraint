@@ -263,10 +263,8 @@ def main(args):
             # regions, chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
                 logger.info(
-                    (
-                        "Applying %s plateau and coverage models and computing expected"
-                        " variant count and observed:expected ratio..."
-                    ),
+                    "Applying %s plateau and coverage models and computing expected"
+                    " variant count and observed:expected ratio...",
                     region,
                 )
                 apply_models(
