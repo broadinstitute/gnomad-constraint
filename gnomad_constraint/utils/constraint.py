@@ -464,7 +464,11 @@ def compute_constraint_metrics(
         # Filter to synonymous variants.
         "syn": ht.annotation == "synonymous_variant",
     }
+
+    # Define two lists of 'annotation_dict' keys that require different computations.
+    # The 90% CI around obs:exp and z-scores are only computed for lof, mis, and syn.
     oe_ann = ["lof", "mis", "syn"]
+    # pLI scores are only computed for LoF variants.
     lof_ann = ["lof_hc_lc", "lof_hc_os", "lof"]
 
     # Compute the observed:expected ratio. Will not compute per pop for "mis_pphen".
@@ -479,6 +483,7 @@ def compute_constraint_metrics(
             for ann, filter_expr in annotation_dict.items()
         }
     )
+    # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
     ht = ht.filter(
         hl.sum(
             [
@@ -528,9 +533,14 @@ def compute_constraint_metrics(
             flag_postfix=ann,
         )
         constraint_flags_expr.update(ann_constraint_flags_expr)
+        # The constraint_flags dict is used to filter the final ht.constraint_flags
+        # annotation to the flags that should be considered in the z-score 'sd'
+        # computation of the specified ann.
         constraint_flags[ann] = hl.set(
             ann_constraint_flags_expr.keys() | {"no_variants"}
         )
+        # Add initial ann to ann_expr if it isn't present.
+        # The ann_expr dict will already have all ann in lof_ann.
         if ann not in ann_expr:
             ann_expr[ann] = ht[ann]
 
