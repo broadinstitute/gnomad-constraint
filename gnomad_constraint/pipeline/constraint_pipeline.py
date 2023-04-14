@@ -453,7 +453,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--min-diff-convergence?",
+        "--min-diff-convergence",
         help=(
             "Minimum iteration change in pLI (Probability of loss-of-function"
             " intolerance for haploinsufficient genes) to consider the EM"
