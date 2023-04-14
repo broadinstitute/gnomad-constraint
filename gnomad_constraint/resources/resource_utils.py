@@ -199,6 +199,26 @@ def get_predicted_proportion_observed_dataset(
     )
 
 
+def get_constraint_metrics_dataset(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> TableResource:
+    """
+    Return TableResource of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param test: Whether the Table is for testing purposes and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :return: TableResource of constraint metrics.
+    """
+    check_param_scope(version=version)
+
+    return TableResource(
+        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics{'.test' if test else ''}.ht"
+    )
+
+
 def check_resource_existence(
     input_step_resources: Optional[Dict[str, Tuple]] = None,
     output_step_resources: Optional[Dict[str, Tuple]] = None,
