@@ -565,8 +565,7 @@ def compute_constraint_metrics(
                         flag_expr=ht.constraint_flags.intersection(
                             constraint_flags[ann]
                         ),
-                        neg_raw_z_only=(ann != "syn"),
-                        both=(ann != "syn"),
+                        mirror_neg_raw_z=(ann != "syn"),
                     )
                     for ann in oe_ann
                 }
