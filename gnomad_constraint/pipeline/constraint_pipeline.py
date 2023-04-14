@@ -40,7 +40,6 @@ from gnomad_constraint.resources.resource_utils import (
     VERSIONS,
     annotated_context_ht,
     check_resource_existence,
-    constraint_tmp_prefix,
     get_constraint_metrics_dataset,
     get_logging_path,
     get_models,
