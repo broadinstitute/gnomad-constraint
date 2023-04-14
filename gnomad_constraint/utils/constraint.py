@@ -450,9 +450,8 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
-            ht.annotation
-        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
+        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
         # Filter to LoF annotations with LOFTEE HC.
