@@ -4,6 +4,7 @@ import pickle
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import hail as hl
+import numpy as np
 from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
@@ -416,6 +417,10 @@ def calculate_mu_by_downsampling(
     downsampling_level: int = 1000,
     total_mu: float = 1.2e-08,
     pops: Tuple[str] = (),
+    min_cov: int = 15,
+    max_cov: int = 60,
+    gerp_lower_cutoff: float = -3.9885,
+    gerp_higher_cutoff: float = 2.6607,
 ) -> hl.Table:
     """
     Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
@@ -457,17 +462,28 @@ def calculate_mu_by_downsampling(
     :param downsampling_level: The size of downsamplings will be used to count variants. Default is 1000.
     :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
     :param pops: List of populations to use for downsampling counts. Default is ().
+    :param min_cov: Minimum coverage required to keep a site when calculating the mutation rate. Default is 15.
+    :param max_cov: Maximum coverage required to keep a site when calculating the mutation rate. Default is 60.
+    :param gerp_lower_cutoff: Minimum gerp score for variant to be included when calculating the mutation rate. Default is -3.9885.
+    :param gerp_higher_cutoff: Maximum gerp score for variant to be included when calculating the mutation rate. Default is 2.6607.
     :return: Mutation rate Table.
     """
-    # keep only loci where the mean coverage in the gnomAD genomes was between 15X and
-    # 60X.
-    context_ht = filter_to_autosomes(remove_coverage_outliers(raw_context_ht))
-    genome_ht = filter_to_autosomes(remove_coverage_outliers(genome_ht))
+    # Filter to autosomes and sites between min_cov and max_cov.
+    context_ht = filter_to_autosomes(
+        filter_by_numeric_expr_range(
+            genome_ht, genome_ht.coverage.genomes.mean, (min_cov, max_cov)
+        )
+    )
+    genome_ht = filter_to_autosomes(
+        ilter_by_numeric_expr_range(
+            genome_ht, genome_ht.coverage.genomes.mean, (min_cov, max_cov)
+        )
+    )
 
-    # filter the Table so that the most severe annotation was intron_variant or
-    # intergenic_variant, and that the GERP score was between the 5th and 95th
-    # percentile of the genomewide distribution.
-    context_ht = filter_for_mu(context_ht)
+    # Filter the Table so that the most severe annotation is intron_variant or
+    # intergenic_variant, and that the GERP score is between gerp_lower_cutoff and gerp_higher_cutoff (ideally these values will define the 5th and 95th
+    # percentile of the genomewide distribution).
+    context_ht = filter_for_mu(context_ht, gerp_lower_cutoff, gerp_higher_cutoff)
     genome_ht = filter_for_mu(genome_ht)
 
     context_ht = context_ht.select(*keep_annotations)
@@ -475,7 +491,11 @@ def calculate_mu_by_downsampling(
 
     # Get the frequency index of dowsampling with size of `downsampling_level`.
     downsampling_meta = get_downsampling_freq_indices(genome_ht.freq_meta)
-    downsampling_idx = hl.eval(downsampling_meta.filter(lambda x: x[1]['downsampling'] == str(downsampling_level))[0][0])
+    downsampling_idx = hl.eval(
+        downsampling_meta.filter(
+            lambda x: x[1]["downsampling"] == str(downsampling_level)
+        )[0][0]
+    )
     freq_expr = genome_ht.freq[downsampling_idx]
 
     # Set up the criteria to filtered out low quality sites, and sites found in
@@ -491,65 +511,101 @@ def calculate_mu_by_downsampling(
         use_table_group_by=True,
     )
 
-    # Count possible variants in context Table, only keeping variants not in the genome dataset, 
+    # Count possible variants in context Table, only keeping variants not in the genome dataset,
     # or with AC <= ac_cutoff and passing filters.
     all_possible_ht = count_variants_by_group(
-        context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False)).select(*keep_annotations),
+        context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False)).select(
+            *keep_annotations
+        ),
         omit_methylation=omit_methylation,
         use_table_group_by=True,
     )
     all_possible_ht = all_possible_ht.checkpoint(
-        get_checkpoint_path(checkpoint_prefix + ".all_possible_summary"), 
+        get_checkpoint_path(checkpoint_prefix + ".all_possible_summary"),
         _read_if_exists=not recalculate_all_possible_summary,
         overwrite=recalculate_all_possible_summary,
     )
 
     # Count possible variants in unfiltered context Table.
-    all_possible_unfiltered_ht = count_variants_by_group(
-        raw_context_ht, 
-        omit_methylation=omit_methylation,
-        use_table_group_by=True,
-    )
-    all_possible_unfiltered_ht = all_possible_unfiltered_ht.filter(hl.is_defined(all_possible_unfiltered_ht.context))
-    all_possible_unfiltered_ht = all_possible_unfiltered_ht.checkpoint(
-        get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered"), 
-        _read_if_exists=not recalculate_all_possible_unfiltered_summary,
-        overwrite=recalculate_all_possible_unfiltered_summary,
+    if recalculate_all_possible_summary_unfiltered:
+        all_possible_unfiltered_ht = count_variants_by_group(
+            raw_context_ht,
+            omit_methylation=omit_methylation,
+            use_table_group_by=True,
+        )
+        all_possible_unfiltered_ht = all_possible_unfiltered_ht.filter(
+            hl.is_defined(all_possible_unfiltered_ht.context)
+        )
+        all_possible_unfiltered_ht = all_possible_unfiltered_ht.checkpoint(
+            get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered"),
+            _read_if_exists=not recalculate_all_possible_unfiltered_summary,
+            overwrite=recalculate_all_possible_unfiltered_summary,
+        )
+
+    all_possible_unfiltered_ht = hl.read_table(
+        get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered")
     )
 
     old_mu_data = mutation_rate_ht.ht()
     ht = observed_ht.annotate(
         possible_variants=all_possible_ht[observed_ht.key].variant_count,
-        # possible_variants_unfiltered=all_possible_unfiltered_ht[observed_ht.key].variant_count,
-        old_mu_snp=old_mu_data[hl.struct(context=observed_ht.context, ref=observed_ht.ref, alt=observed_ht.alt)].mu_snp,
+        old_mu_snp=old_mu_data[
+            hl.struct(
+                context=observed_ht.context, ref=observed_ht.ref, alt=observed_ht.alt
+            )
+        ].mu_snp,
     )
 
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     total_bases = ht.aggregate(hl.agg.sum(ht.possible_variants)) // 3
-    # total_bases_unfiltered = ht.aggregate(hl.agg.sum(ht.possible_variants_unfiltered)) // 3
-    # total_mu = ht.aggregate(hl.agg.sum(ht.old_mu_snp * ht.possible_variants_unfiltered) / total_bases_unfiltered)
+    total_bases_unfiltered = (
+        ht.aggregate(hl.agg.sum(ht.possible_variants_unfiltered)) // 3
+    )
+    total_mu_unfiltered = ht.aggregate(
+        hl.agg.sum(ht.old_mu_snp * ht.possible_variants_unfiltered)
+        / total_bases_unfiltered
+    )
 
     # Get the index of dowsampling with size of `downsampling_level`.
-    downsampling_idx = hl.eval(downsampling_meta.map(lambda x: hl.int(x[1]['downsampling'])).index(downsampling_level))
+    downsampling_idx = hl.eval(
+        downsampling_meta.map(lambda x: hl.int(x[1]["downsampling"])).index(
+            downsampling_level
+        )
+    )
 
     # Compute the proportion observed, which represents the relative mutability of each
     # variant class
     ann_expr = {
         "proportion_observed": ht.variant_count / ht.possible_variants,
-        f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[downsampling_idx] / ht.possible_variants,
-        "downsamplings_frac_observed": ht.downsampling_counts_global / ht.possible_variants,
+        f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[
+            downsampling_idx
+        ]
+        / ht.possible_variants,
+        "downsamplings_frac_observed": ht.downsampling_counts_global
+        / ht.possible_variants,
     }
 
     for pop in pops:
         pop_counts_expr = ht[f"downsampling_counts_{pop}"]
-        correction_factors = ht.aggregate(total_mu / (hl.agg.array_sum(pop_counts_expr) / total_bases), _localize=False)
-        downsamplings_mu_expr = correction_factors * pop_counts_expr / ht.possible_variants
-        ann_expr[f"downsamplings_mu_{'snp' if pop == 'global' else pop}"] = downsamplings_mu_expr
-        ann_expr[f"mu_snp{'' if pop == 'global' else f'_{pop}'}"] = downsamplings_mu_expr[downsampling_idx]
+        correction_factors = ht.aggregate(
+            total_mu / (hl.agg.array_sum(pop_counts_expr) / total_bases),
+            _localize=False,
+        )
+        downsamplings_mu_expr = (
+            correction_factors * pop_counts_expr / ht.possible_variants
+        )
+        ann_expr[
+            f"downsamplings_mu_{'snp' if pop == 'global' else pop}"
+        ] = downsamplings_mu_expr
+        ann_expr[
+            f"mu_snp{'' if pop == 'global' else f'_{pop}'}"
+        ] = downsamplings_mu_expr[downsampling_idx]
 
-    ht = ht.annotate(**ann_expr).checkpoint(new_temp_file(prefix="constraint", extension="ht"))
-    
+    ht = ht.annotate(**ann_expr).checkpoint(
+        new_temp_file(prefix="constraint", extension="ht")
+    )
+
     return annotate_mutation_type(ht)
 
 
@@ -683,3 +739,22 @@ def split_context_ht(
         gerp=gerp_ht[split_context_ht.locus].S,
     )
     return split_context_ht, annotated_context_ht
+
+
+def find_gerp_percentiles(ht: hl.Table) -> Tuple[float, float]:
+    """
+    Find GERP cutoffs determined by the 5% and 95% percentiles.
+
+    :param ht: Input Table.
+    :return: Tuple containing values determining the 5-95th percentile of the gerp score.
+    """
+    summary_hist = ht.aggregate(
+        hl.struct(gerp=hl.agg.hist(ht["gerp"], -12.3, 6.17, 100))
+    )
+    cumulative_data = (
+        np.cumsum(summary_hist.gerp.bin_freq) + summary_hist.gerp.n_smaller
+    )
+    np.append(cumulative_data, [cumulative_data[-1] + summary_hist.gerp.n_larger])
+    return list(
+        zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
+    )

@@ -38,7 +38,6 @@ from gnomad_constraint.resources.resource_utils import (
     MODEL_TYPES,
     POPS,
     VERSIONS,
-    check_resource_existence,
     constraint_tmp_prefix,
     gerp_ht,
     get_annotated_context_ht,
@@ -62,6 +61,8 @@ from gnomad_constraint.utils.constraint import (
     prepare_ht_for_constraint_calculations,
     split_context_ht,
 )
+
+from gnomad_qc import check_resource_existence  # TODO: fix throughout code
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -87,8 +88,10 @@ def main(args):
     apply_expected_variant_partition_hint = args.apply_expected_variant_partition_hint
     use_pops = args.use_pops
     use_weights = args.use_weights
-    use_v2_release_mutation_ht= args.use_v2_release_mutation_ht
+    use_v2_release_mutation_ht = args.use_v2_release_mutation_ht
     custom_vep_annotation = args.custom_vep_annotation
+
+    pops = POPS if use_pops else ()  # TODO: fix throughout code
 
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
@@ -104,28 +107,40 @@ def main(args):
     models = {}
     applying_resources = {}
 
+    # For genomes need a preprocessed ht for autosome_par.
+    # For exomes need a preprocessed ht for autosome_par, chrX, and chrY.
+    # For context need a preprocessed ht for autosome_par, chrX, chrY, and full (autosome_par + chrX + chrY).
+    for data_type in DATA_TYPES:
+        if data_type != "genomes":
+            for region in GENOMIC_REGIONS:
+                preprocess_resources[(region, data_type)] = get_preprocessed_ht(
+                    data_type, version, region, test
+                )
+        else:
+            preprocess_resources[(region, data_type)] = get_preprocessed_ht(
+                data_type, autosome_par, "autosome_par", test
+            )
+
+        if data_type == "context":
+            preprocess_resources[(region, data_type)] = get_preprocessed_ht(
+                data_type, version, "full", test
+            )
+
     for region in GENOMIC_REGIONS:
-        for data_type in DATA_TYPES:
-            if (region == "autosome_par") | (data_type != "genomes"):
-                # Save a TableResource with a path to `preprocess_resources`
-                preprocess_resources[(region, data_type)] = get_preprocessed_ht(
-                    data_type, version, region, test
-                )
-            if (region == "full") | (data_type == "context"):
-                preprocess_resources[(region, data_type)] = get_preprocessed_ht(
-                    data_type, version, region, test
-                )
-        # Save a TableResource with a path to `training_resources`
-        training_resources[region] = get_training_dataset(version, region, test)
+        if region != "full":
+            # Save a TableResource with a path to `training_resources`
+            training_resources[region] = get_training_dataset(version, region, test)
 
-        for model_type in MODEL_TYPES:
+            # Save a TableResource with a path to `applying_resources`
+            applying_resources[region] = get_predicted_proportion_observed_dataset(
+                custom_vep_annotation, version, region, test
+            )
             # Save a path to `models`
-            models[(region, model_type)] = get_models(model_type, version, region, test)
+            for model_type in MODEL_TYPES:
+                models[(region, model_type)] = get_models(
+                    model_type, version, region, test
+                )
 
-        # Save a TableResource with a path to `applying_resources`
-        applying_resources[region] = get_predicted_proportion_observed_dataset(
-            custom_vep_annotation, version, region, test
-        )
     # Save a TableResource with a path to mutation rate Table.
     mutation_rate_resource = get_mutation_ht(version, test, use_v2_release_mutation_ht)
     # Save a TableResource with a path to `constraint_metrics_ht`.
@@ -188,6 +203,7 @@ def main(args):
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(ht)
 
+                # Checkpoint the full preprocessed context ht containing autsome_par, chrX, and chrY.
                 if data_type == "context":
                     ht = ht.checkpoint(
                         preprocess_resources[("full", data_type)].path,
@@ -220,20 +236,29 @@ def main(args):
             logger.info("Calculating mutation rate...")
             # Check if the input/output resources exist.
             check_resource_existence(
-                "--preprocess-data",
-                "--calculate-mutation-rate",
-                preprocess_resources.values(),
-                (mutation_rate_resource),
-                overwrite,
+                input_step_resources={
+                    "--preprocess-data": preprocess_resources.values()
+                },
+                output_step_resources={
+                    "--calculate-mutation-rate": [mutation_rate_resource]
+                },
+                overwrite=overwrite,
             )
+
             # Calculate mutation rate using the downsampling with size 1000 genomes in
             # genome site Table.
             calculate_mu_by_downsampling(
-                preprocess_resources[("autosome_par", "genome")].ht(),
-                preprocess_resources[("full", "context")].ht(),
+                preprocess_resources[("autosome_par", "genomes")].ht(),
+                preprocess_resources[
+                    ("autosome_par", "context")
+                ].ht(),  # TODO: check why this was 'full' before (doesn't exist and immediately filtered to autosomes)
                 recalculate_all_possible_summary=True,
                 recalculate_all_possible_summary_unfiltered=False,
-                pops=POPS if use_pops else (),
+                pops=pops,
+                min_cov=args.min_cov,
+                max_cov=args.max_cov,
+                gerp_lower_cutoff=args.gerp_lower_cutoff,
+                gerp_higher_cutoff=args.gerp_higher_cutoff,
             ).write(mutation_rate_resource.path, overwrite=overwrite)
 
         # Create training datasets that include possible and observed variant counts
@@ -243,9 +268,14 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                {"--preprocess-data": preprocess_resources.values()},
-                {"--create-training-set": training_resources.values()},
-                overwrite,
+                input_step_resources={
+                    "--preprocess-data": preprocess_resources.values(),
+                    "--calculate-mutation-rate": [mutation_rate_resource],
+                },
+                output_step_resources={
+                    "--create-training-set": training_resources.values()
+                },
+                overwrite=overwrite,
             )
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
@@ -253,7 +283,7 @@ def main(args):
                 create_observed_and_possible_ht(
                     preprocess_resources[(region, "exomes")].ht(),
                     preprocess_resources[(region, "context")].ht(),
-                    mutation_ht,
+                    mutation_rate_resource.ht().select("mu_snp"),
                     max_af=max_af,
                     pops=POPS if use_pops else (),
                     partition_hint=training_set_partition_hint,
@@ -297,12 +327,13 @@ def main(args):
         if args.apply_models:
             # Check if the input/output resources exist.
             check_resource_existence(
-                {
+                input_step_resources={
                     "--preprocess-data": preprocess_resources.values(),
+                    "--calculate-mutation-rate": [mutation_rate_resource],
                     "--build_models": models.values(),
                 },
-                {"--apply_models": applying_resources.values()},
-                overwrite,
+                output_step_resources={"--apply_models": applying_resources.values()},
+                overwrite=overwrite,
             )
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y.
@@ -315,7 +346,7 @@ def main(args):
                 apply_models(
                     preprocess_resources[(region, "exomes")].ht(),
                     preprocess_resources[(region, "context")].ht(),
-                    mutation_ht,
+                    mutation_rate_resource.ht().select("mu_snp"),
                     models[(region, "plateau")].he(),
                     models[(region, "coverage")].he(),
                     max_af=max_af,
@@ -412,6 +443,42 @@ if __name__ == "__main__":
         "--calculate-mutation-rate",
         help="Calculate mutation rate",
         action="store_true",
+    )
+    parser.add_argument(
+        "--min-cov",
+        help=(
+            "Minimum coverage required to keep a site when calculating the mutation"
+            " rate. Default is 15."
+        ),
+        type=int,
+        default=15,
+    )
+    parser.add_argument(
+        "--max-cov",
+        help=(
+            "Maximum coverage required to keep a site when calculating the mutation"
+            " rate. Default is 60."
+        ),
+        type=int,
+        default=60,
+    )
+    parser.add_argument(
+        "--gerp-lower-cutoff",
+        help=(
+            "Minimum gerp score for variant to be included when calculating the"
+            " mutation rate. Default is -3.9885."
+        ),
+        type=float,
+        default=-3.9885,
+    )
+    parser.add_argument(
+        "--gerp-higher-cutoff",
+        help=(
+            "Maximum gerp score for variant to be included when calculating the"
+            " mutation rate. Default is 2.6607."
+        ),
+        type=float,
+        default=2.6607,
     )
     parser.add_argument(
         "--create-training-set",
