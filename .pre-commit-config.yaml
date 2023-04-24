@@ -25,7 +25,7 @@ repos:
         args: ["--convention=pep257"]
         additional_dependencies: ["toml"]
   - repo: https://github.com/pycqa/isort
-    rev: 5.10.1 # This should be kept in sync with the version in requirements-dev.in
+    rev: 5.12.0 # This should be kept in sync with the version in requirements-dev.in
     hooks:
       - id: isort
         args: ["--profile", "black", "--filter-files"]

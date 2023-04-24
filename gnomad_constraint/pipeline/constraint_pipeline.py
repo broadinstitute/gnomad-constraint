@@ -29,6 +29,7 @@ from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
+from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
     CURRENT_VERSION,
@@ -74,7 +75,7 @@ def main(args):
     """Execute the constraint pipeline."""
     hl.init(
         log="/constraint_pipeline.log",
-        tmp_dir=constraint_tmp_prefix,
+        tmp_dir="gs://gnomad-tmp-4day",
     )
 
     test = args.test
@@ -208,9 +209,13 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                {"--preprocess-data": preprocess_resources.values()},
-                {"--create-training-set": training_resources.values()},
-                overwrite,
+                input_step_resources={
+                    "--preprocess-data": preprocess_resources.values()
+                },
+                output_step_resources={
+                    "--create-training-set": training_resources.values()
+                },
+                overwrite=overwrite,
             )
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
@@ -232,9 +237,11 @@ def main(args):
         if args.build_models:
             # Check if the training datasets exist.
             check_resource_existence(
-                {"--create-training-set": training_resources.values()},
-                {"--build_models": models.values()},
-                overwrite,
+                input_step_resources={
+                    "--create-training-set": training_resources.values()
+                },
+                output_step_resources={"--build-models": models.values()},
+                overwrite=overwrite,
             )
             # Build plateau and coverage models.
             for region in GENOMIC_REGIONS:
@@ -262,12 +269,12 @@ def main(args):
         if args.apply_models:
             # Check if the input/output resources exist.
             check_resource_existence(
-                {
+                input_step_resources={
                     "--preprocess-data": preprocess_resources.values(),
-                    "--build_models": models.values(),
+                    "--build-models": models.values(),
                 },
-                {"--apply_models": applying_resources.values()},
-                overwrite,
+                output_step_resources={"--apply-models": applying_resources.values()},
+                overwrite=overwrite,
             )
             # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y.
@@ -285,8 +292,8 @@ def main(args):
                     models[(region, "coverage")].he(),
                     max_af=max_af,
                     pops=POPS if use_pops else (),
-                    partition_hint_for_counting_variants=apply_obs_pos_count_partition_hint,
-                    partition_hint_for_aggregation=apply_expected_variant_partition_hint,
+                    obs_pos_count_partition_hint=apply_obs_pos_count_partition_hint,
+                    expected_variant_partition_hint=apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
                 ).write(applying_resources[region].path, overwrite=overwrite)
             logger.info(
@@ -301,19 +308,31 @@ def main(args):
 
             # Check if the input/output resources exist.
             check_resource_existence(
-                {"--apply_models": applying_resources.values()},
-                {"--compute-constraint-metrics": (constraint_metrics_ht)},
-                overwrite,
+                input_step_resources={"--apply-models": applying_resources.values()},
+                output_step_resources={
+                    "--compute-constraint-metrics": [constraint_metrics_ht]
+                },
+                overwrite=overwrite,
             )
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
-            union_ht = None
             hts = [applying_resources[region].ht() for region in GENOMIC_REGIONS]
             union_ht = hts[0].union(*hts[1:])
+            union_ht = union_ht.repartition(
+                args.compute_constraint_metrics_partitions
+            ).checkpoint(new_temp_file(prefix="constraint_apply_union", extension="ht"))
+
             # Compute constraint metrics
             compute_constraint_metrics(
                 union_ht,
                 pops=POPS if use_pops else (),
+                expected_values={
+                    "Null": args.expectation_null,
+                    "Rec": args.expectation_rec,
+                    "LI": args.expectation_li,
+                },
+                min_diff_convergence=args.min_diff_convergence,
+                raw_z_outlier_threshold=args.raw_z_outlier_threshold,
             ).write(constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 
@@ -446,6 +465,70 @@ if __name__ == "__main__":
             " confidence interval around oe ratio."
         ),
         action="store_true",
+    )
+    parser.add_argument(
+        "--compute-constraint-metrics-partitions",
+        help=(
+            "Number of partitions to which the unioned Table of expected variant counts"
+            " for autosomes/pseudoautosomal regions, chromosome X, and chromosome Y "
+            " should be reaprtitioned."
+        ),
+        type=int,
+        default=1000,
+    )
+
+    parser.add_argument(
+        "--min-diff-convergence",
+        help=(
+            "Minimum iteration change in pLI (Probability of loss-of-function"
+            " intolerance for haploinsufficient genes) to consider the EM"
+            " (expectation-maximization) model convergence criteria as met when"
+            " calculating pLI scores."
+        ),
+        type=float,
+        default=0.001,
+    )
+
+    parser.add_argument(
+        "--expectation-null",
+        help=(
+            "Expected observed/expected rate of truncating variation for genes where"
+            " protein truncating variation is completely tolerated by natural"
+            " selection."
+        ),
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--expectation-rec",
+        help=(
+            "Expected observed/expected rate of truncating variation for recessive"
+            " disease genes."
+        ),
+        type=float,
+        default=0.463,
+    )
+    parser.add_argument(
+        "--expectation-li",
+        help=(
+            "Expected observed/expected rate of truncating variation for severe"
+            " haploinsufficient genes."
+        ),
+        type=float,
+        default=0.089,
+    )
+    parser.add_argument(
+        "--raw-z-outlier-threshold",
+        help=(
+            "Value at which the raw z-score is considered an outlier. Values below the"
+            " negative of '--raw-z-outlier-threshold' will be considered outliers for"
+            " lof and missense varaint counts (indicating too many variants), whereas"
+            " values either above '--raw-z-outlier-threshold' or below the negative of"
+            " '--raw-z-outlier-threshold' will be considered outliers for synonymous"
+            " varaint counts (indicating too few or too many variants)."
+        ),
+        type=int,
+        default=5,
     )
 
     args = parser.parse_args()

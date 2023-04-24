@@ -226,11 +226,12 @@ def get_predicted_proportion_observed_dataset(
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
     test: bool = False,
-) -> str:
+) -> TableResource:
     """
     Return TableResource containing the expected variant counts and observed:expected ratio.
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
@@ -252,24 +253,20 @@ def get_predicted_proportion_observed_dataset(
 def get_constraint_metrics_dataset(
     version: str = CURRENT_VERSION,
     test: bool = False,
-) -> str:
+) -> TableResource:
     """
-    Return TableResource of testing dataset with expected variant count and observed:expected ratio.
+    Return TableResource of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
 
-    :param custom_model: The customized model (one of "standard" or "worst_csq").
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
-    :param genomic_region: The genomic region of the resource. One of "autosome_par",
-        "chrx_non_par", or "chry_non_par". Default is "autosome_par".
-    :param test: Whether the Table is for testing purpose and only contains sites in
+    :param test: Whether the Table is for testing purposes and only contains sites in
         chr20, chrX, and chrY. Default is False.
-    :return: Path of the model.
+    :return: TableResource of constraint metrics.
     """
-    check_param_scope(
-        version=version,
-    )
+    check_param_scope(version=version)
+
     return TableResource(
-        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics.{'.test' if test else ''}.ht"
+        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics{'.test' if test else ''}.ht"
     )
 
 
@@ -297,7 +294,7 @@ def check_resource_existence(
     if input_step_resources:
         for step, input_resources in input_step_resources.items():
             check_file_exists_raise_error(
-                input_resources,
+                [r if isinstance(r, str) else r.path for r in input_resources],
                 error_if_not_exists=True,
                 error_if_not_exists_msg=(
                     f"Not all input resources exist. Please add {step} to "
@@ -309,7 +306,7 @@ def check_resource_existence(
     if not overwrite and output_step_resources:
         for step, output_resources in output_step_resources.items():
             check_file_exists_raise_error(
-                output_resources,
+                [r if isinstance(r, str) else r.path for r in output_resources],
                 error_if_exists=True,
                 error_if_exists_msg=(
                     "Some of the output resources that will be created by "
@@ -335,8 +332,9 @@ def check_param_scope(
         "chrx_non_par", or "chry_non_par". Default is None.
     :param data_type: One of "exomes", "genomes" or "context". Default is None.
     :param model_type: One of "plateau", "coverage". Default is None.
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint model (one of "transcript_consequences" or "worst_csq_by_gene").
-        Default is None.
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is None.
+    :return: None.
     """
     if version and version not in VERSIONS:
         raise ValueError("The requested version doesn't exist!")
