@@ -1,5 +1,5 @@
 black==22.10.0 # This should be kept in sync with the version in .pre-commit-config.yaml
-isort==5.10.1 # This should be kept in sync with the version in .pre-commit-config.yaml
+isort==5.12.0 # This should be kept in sync with the version in .pre-commit-config.yaml
 pip-tools
 autopep8==1.7.0 # This should be kept in sync with the version in .pre-commit-config.yaml
 pydocstyle[toml]==6.1.1 # This should be kept in sync with the version in .pre-commit-config.yaml

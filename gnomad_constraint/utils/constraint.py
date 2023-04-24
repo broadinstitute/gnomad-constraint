@@ -1,7 +1,5 @@
 """Script containing utility functions used in the constraint pipeline."""
-# cSpell: disable
-import pickle
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, Optional, Tuple
 
 import hail as hl
 import numpy as np
@@ -9,17 +7,20 @@ from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
-    calculate_all_z_scores,
+    calculate_raw_z_score,
+    calculate_raw_z_score_sd,
     collapse_strand,
-    compute_all_pLI_scores,
     compute_expected_variants,
-    compute_oe_per_transcript,
+    compute_pli,
     count_variants_by_group,
+    get_constraint_flags,
     get_downsamplings,
+    oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
 )
 from gnomad.utils.filtering import (
+    add_filters_expr,
     filter_for_mu,
     filter_to_autosomes,
     remove_coverage_outliers,
@@ -173,8 +174,9 @@ def create_observed_and_possible_ht(
         to variants with coverage larger than 0. Default is False.
     :param filter_to_canonical_synonymous: Whether to keep only canonical synonymous
         variants in the exome Table. Default is False.
-    :param global_annotation: The annotation name to use as a global StructExpression annotation containing
-        input parameter values. If no value is supplied, this global annotation will not be added. Default is None.
+    :param global_annotation: The annotation name to use as a global StructExpression
+        annotation containing input parameter values. If no value is supplied, this
+        global annotation will not be added. Default is None.
     :return: Table with observed variant and possible variant count.
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
@@ -230,7 +232,6 @@ def create_observed_and_possible_ht(
 
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
-
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     # Annotate the Table with 'cpg' and 'mutation_type' (one of "CpG", "non-CpG
@@ -259,8 +260,8 @@ def apply_models(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
-    partition_hint_for_counting_variants: int = 2000,
-    partition_hint_for_aggregation: int = 1000,
+    obs_pos_count_partition_hint: int = 2000,
+    expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
     cov_cutoff: int = COVERAGE_CUTOFF,
 ) -> hl.Table:
@@ -318,9 +319,9 @@ def apply_models(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
-    :param partition_hint_for_counting_variants: Target number of partitions for
+    :param obs_pos_count_partition_hint: Target number of partitions for
         aggregation when counting variants. Default is 2000.
-    :param partition_hint_for_aggregation: Target number of partitions for sum
+    :param expected_variant_partition_hint: Target number of partitions for sum
         aggregators when computation is done. Default is 1000.
     :param custom_vep_annotation: The customized model (one of
         "transcript_consequences" or "worst_csq_by_gene"), Default is None.
@@ -353,7 +354,7 @@ def apply_models(
         keep_annotations,
         pops,
         grouping,
-        partition_hint_for_counting_variants,
+        obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         filter_to_canonical_synonymous=False,
     )
@@ -369,11 +370,13 @@ def apply_models(
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
     agg_expr.update(
-        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr)
+        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg)
     )
     for pop in pops:
         agg_expr.update(
-            compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, pop)
+            compute_expected_variants(
+                ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg, pop
+            )
         )
 
     grouping = list(grouping)
@@ -382,7 +385,7 @@ def apply_models(
     # Aggregate the sum aggregators grouped by `grouping`.
     ht = (
         ht.group_by(*grouping)
-        .partition_hint(partition_hint_for_aggregation)
+        .partition_hint(expected_variant_partition_hint)
         .aggregate(**agg_expr)
     )
 
@@ -612,12 +615,15 @@ def calculate_mu_by_downsampling(
 def compute_constraint_metrics(
     ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
-    classic_lof_annotations: Set[str] = {
+    classic_lof_annotations: Tuple[str] = (
         "stop_gained",
         "splice_donor_variant",
         "splice_acceptor_variant",
-    },
+    ),
     pops: Tuple[str] = (),
+    expected_values: Optional[Dict[str, float]] = None,
+    min_diff_convergence: float = 0.001,
+    raw_z_outlier_threshold: float = 5.0,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -637,18 +643,30 @@ def compute_constraint_metrics(
         `get_proportion_observed()`).
     :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
         'canonical').
-    :param classic_lof_annotations: Classic LoF Annotations used to filter Input Table. Default is {}.
+    :param classic_lof_annotations: Classic LoF Annotations used to filter the input
+        Table. Default is {"stop_gained", "splice_donor_variant",
+        "splice_acceptor_variant"}.
     :param pops: List of populations used to compute constraint metrics. Default is ().
+    :param expected_values: Dictionary containing the expected values for 'Null',
+        'Rec', and 'LI' to use as starting values.
+    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
+        model convergence criteria as met. Default is 0.001.
+    :param raw_z_outlier_threshold: Value at which the raw z-score is considered an
+        outlier. Values below the negative of '--raw-z-outlier-threshold' will be
+        considered outliers for lof and missense varaint counts (indicating too many
+        variants), whereas values either above '--raw-z-outlier-threshold' or below
+        the negative of '--raw-z-outlier-threshold' will be considered outliers for
+        synonymous varaint counts (indicating too few or too many variants).
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
-    classic_lof_annotations = hl.literal(classic_lof_annotations)
+    if expected_values is None:
+        expected_values = {"Null": 1.0, "Rec": 0.463, "LI": 0.089}
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
     # `annotation_dict` stats the rule of filtration for each annotation.
-    ht_annotations = ["lof_hc_lc", "lof_hc_os", "lof", "mis", "mis_pphen", "syn"]
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": classic_lof_annotations.contains(ht.annotation)
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
         & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
@@ -662,41 +680,123 @@ def compute_constraint_metrics(
         "syn": ht.annotation == "synonymous_variant",
     }
 
-    all_ht = None
-    for annotation_name in ht_annotations:
-        # Compute the observed: expected ratio.
-        if annotation_name != "mis_pphen":
-            ht = compute_oe_per_transcript(
-                ht, annotation_name, annotation_dict[annotation_name], keys, pops
-            )
-        else:
-            ht = compute_oe_per_transcript(
-                ht, annotation_name, annotation_dict[annotation_name], keys
-            )
+    # Define two lists of 'annotation_dict' keys that require different computations.
+    # The 90% CI around obs:exp and z-scores are only computed for lof, mis, and syn.
+    oe_ann = ["lof", "mis", "syn"]
+    # pLI scores are only computed for LoF variants.
+    lof_ann = ["lof_hc_lc", "lof_hc_os", "lof"]
 
-        # Compute the pLI scores for LoF variants.
-        if "lof" in annotation_name:
-            ht = compute_all_pLI_scores(ht, keys, annotation_name)
-
-        # Compute the 90% confidence interval around the observed:expected ratio and z
-        # scores.
-        if annotation_name in ["lof", "mis", "syn"]:
-            oe_ci = oe_confidence_interval(
+    # Compute the observed:expected ratio. Will not compute per pop for "mis_pphen".
+    ht = ht.group_by(*keys).aggregate(
+        **{
+            ann: oe_aggregation_expr(
                 ht,
-                ht[f"obs_{annotation_name}"],
-                ht[f"exp_{annotation_name}"],
-                prefix=f"oe_{annotation_name}",
+                filter_expr,
+                pops=() if ann == "mis_pphen" else pops,
+                exclude_mu_sum=True if ann == "mis_pphen" else False,
             )
-            ht = ht.annotate(**oe_ci[ht.key])
-            ht = calculate_all_z_scores(ht)
+            for ann, filter_expr in annotation_dict.items()
+        }
+    )
+    # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
+    ht = ht.filter(
+        hl.sum(
+            [
+                hl.or_else(ht[ann].obs, 0) + hl.or_else(ht[ann].exp, 0)
+                for ann in annotation_dict
+            ]
+        )
+        > 0
+    )
+    ht = ht.checkpoint(
+        new_temp_file(prefix="compute_constraint_metrics", extension="ht")
+    )
 
-        # Combine all the metrics annotations.
-        if not all_ht:
-            all_ht = ht
-        else:
-            all_ht = all_ht.annotate(**ht[all_ht.key])
+    # Compute the pLI scores for LoF variants.
+    ann_expr = {
+        ann: ht[ann].annotate(
+            **compute_pli(
+                ht,
+                obs_expr=ht[ann].obs,
+                exp_expr=ht[ann].exp,
+                expected_values=expected_values,
+                min_diff_convergence=min_diff_convergence,
+            )
+        )
+        for ann in lof_ann
+    }
 
-    return all_ht
+    # Add a 'no_variants' flag indicating that there are zero observed variants summed
+    # across pLoF, missense, and synonymous variants.
+    constraint_flags_expr = {
+        "no_variants": hl.sum([hl.or_else(ht[ann].obs, 0) for ann in oe_ann]) == 0
+    }
+    constraint_flags = {}
+    for ann in oe_ann:
+        obs_expr = ht[ann].obs
+        exp_expr = ht[ann].exp
+        # Compute the 90% confidence interval around the observed:expected ratio.
+        oe_ci_expr = oe_confidence_interval(obs_expr, exp_expr)
+        # Compute raw z-scores.
+        raw_z_expr = calculate_raw_z_score(obs_expr, exp_expr)
+        # Add flags that define why constraint will not be calculated.
+        ann_constraint_flags_expr = get_constraint_flags(
+            exp_expr=exp_expr,
+            raw_z_expr=raw_z_expr,
+            raw_z_lower_threshold=-raw_z_outlier_threshold,
+            raw_z_upper_threshold=raw_z_outlier_threshold if ann == "syn" else None,
+            flag_postfix=ann,
+        )
+        constraint_flags_expr.update(ann_constraint_flags_expr)
+        # The constraint_flags dict is used to filter the final ht.constraint_flags
+        # annotation to the flags that should be considered in the z-score 'sd'
+        # computation of the specified ann.
+        constraint_flags[ann] = hl.set(
+            ann_constraint_flags_expr.keys() | {"no_variants"}
+        )
+        # Add initial ann to ann_expr if it isn't present.
+        # The ann_expr dict will already have all ann in lof_ann.
+        if ann not in ann_expr:
+            ann_expr[ann] = ht[ann]
+
+        ann_expr[ann] = ann_expr[ann].annotate(
+            oe_ci=oe_ci_expr,
+            z_raw=raw_z_expr,
+        )
+
+    ann_expr["constraint_flags"] = add_filters_expr(filters=constraint_flags_expr)
+    ht = ht.annotate(**ann_expr)
+    ht = ht.checkpoint(
+        new_temp_file(prefix="compute_constraint_metrics", extension="ht")
+    )
+
+    # Add z-score 'sd' annotation to globals.
+    ht = ht.annotate_globals(
+        sd_raw_z=ht.aggregate(
+            hl.struct(
+                **{
+                    ann: calculate_raw_z_score_sd(
+                        raw_z_expr=ht[ann].z_raw,
+                        flag_expr=ht.constraint_flags.intersection(
+                            constraint_flags[ann]
+                        ),
+                        mirror_neg_raw_z=(ann != "syn"),
+                    )
+                    for ann in oe_ann
+                }
+            )
+        )
+    )
+
+    # Compute z-score from raw z-score and standard deviations.
+    ht = ht.annotate(
+        **{
+            ann: ht[ann].annotate(z_score=ht[ann].z_raw / ht.sd_raw_z[ann])
+            for ann in oe_ann
+        }
+    )
+
+    return ht
 
 
 def split_context_ht(
