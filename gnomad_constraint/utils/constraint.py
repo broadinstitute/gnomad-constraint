@@ -433,7 +433,7 @@ def calculate_mu_by_downsampling(
             'intergenic_variant'.
         - variants with the GERP score between the 5th and 95th percentile of the
             genomewide distribution.
-        - high-quality variants: `exome_ht.pass_filters`
+        - high-quality variants: `exome_ht.pass_filters`.
         - Variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`
 
     The returned Table includes the following annotations:
