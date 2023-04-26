@@ -491,7 +491,7 @@ def calculate_mu_by_downsampling(
     context_ht = context_ht.select(*keep_annotations)
     genome_ht = genome_ht.select(*list(keep_annotations) + ["freq", "pass_filters"])
 
-    # Get the frequency index of dowsampling with size of `downsampling_level`.
+    # Get the frequency index of downsampling with size of `downsampling_level`.
     downsampling_meta = get_downsampling_freq_indices(genome_ht.freq_meta)
     downsampling_idx = hl.eval(
         downsampling_meta.filter(
@@ -500,8 +500,8 @@ def calculate_mu_by_downsampling(
     )
     freq_expr = genome_ht.freq[downsampling_idx]
 
-    # Set up the criteria to filtered out low quality sites, and sites found in
-    # greater than ac_cutoff copies in the downsampled set.
+    # Set up the criteria to filter out low-quality sites, and sites found in greater 
+    # than 'ac_cutoff' copies in the downsampled set.
     keep_criteria = (freq_expr.AC <= ac_cutoff) & genome_ht.pass_filters
 
     # Count the observed variants in the genome sites Table.
@@ -513,8 +513,8 @@ def calculate_mu_by_downsampling(
         use_table_group_by=True,
     )
 
-    # Count possible variants in context Table, only keeping variants not in the genome dataset,
-    # or with AC <= ac_cutoff and passing filters.
+    # Count possible variants in context Table, only keeping variants not in the genome 
+    # dataset, or with AC <= 'ac_cutoff' and passing filters.
     all_possible_ht = count_variants_by_group(
         context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False)).select(
             *keep_annotations
@@ -535,10 +535,9 @@ def calculate_mu_by_downsampling(
             omit_methylation=omit_methylation,
             use_table_group_by=True,
         )
-        all_possible_unfiltered_ht = all_possible_unfiltered_ht.filter(
+        all_possible_unfiltered_ht.filter(
             hl.is_defined(all_possible_unfiltered_ht.context)
-        )
-        all_possible_unfiltered_ht = all_possible_unfiltered_ht.checkpoint(
+        ).write(
             get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered"),
             _read_if_exists=not recalculate_all_possible_unfiltered_summary,
             overwrite=recalculate_all_possible_unfiltered_summary,
@@ -577,7 +576,7 @@ def calculate_mu_by_downsampling(
     )
 
     # Compute the proportion observed, which represents the relative mutability of each
-    # variant class
+    # variant class.
     ann_expr = {
         "proportion_observed": ht.variant_count / ht.possible_variants,
         f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[
@@ -605,7 +604,7 @@ def calculate_mu_by_downsampling(
         ] = downsamplings_mu_expr[downsampling_idx]
 
     ht = ht.annotate(**ann_expr).checkpoint(
-        new_temp_file(prefix="constraint", extension="ht")
+        new_temp_file(prefix="calculate_mu_by_downsampling", extension="ht")
     )
 
     return annotate_mutation_type(ht)
@@ -845,7 +844,7 @@ def find_gerp_percentiles(ht: hl.Table) -> Tuple[float, float]:
     Find GERP cutoffs determined by the 5% and 95% percentiles.
 
     :param ht: Input Table.
-    :return: Tuple containing values determining the 5-95th percentile of the gerp score.
+    :return: Tuple containing values determining the 5-95th percentile of the GERP score.
     """
     summary_hist = ht.aggregate(
         hl.struct(gerp=hl.agg.hist(ht["gerp"], -12.3, 6.17, 100))
