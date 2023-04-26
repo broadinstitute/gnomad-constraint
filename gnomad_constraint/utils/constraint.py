@@ -434,17 +434,17 @@ def calculate_mu_by_downsampling(
         - variants with the GERP score between the 5th and 95th percentile of the
             genomewide distribution.
         - high-quality variants: `exome_ht.pass_filters`.
-        - Variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`
+        - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
 
     The returned Table includes the following annotations:
-        - context - trinucleotide genomic context
-        - ref - the reference allele
-        - alt - the alternate base
-        - methylation_level - methylation_level
+        - context - trinucleotide genomic context.
+        - ref - the reference allele.
+        - alt - the alternate base.
+        - methylation_level - methylation_level.
         - downsampling_counts_{pop} - variant counts in downsamplings for populations
-          in `pops`
-        - mu_snp - SNP mutation rate
-        - annotations added by `annotate_mutation_type`
+          in `pops`.
+        - mu_snp - SNP mutation rate.
+        - annotations added by `annotate_mutation_type`.
 
     :param genome_ht: Genome sites Table.
     :param raw_context_ht: Context Table with locus that is on an autosome or in a
@@ -482,9 +482,10 @@ def calculate_mu_by_downsampling(
         )
     )
 
-    # Filter the Table so that the most severe annotation is intron_variant or
-    # intergenic_variant, and that the GERP score is between gerp_lower_cutoff and gerp_higher_cutoff (ideally these values will define the 5th and 95th
-    # percentile of the genomewide distribution).
+    # Filter the Table so that the most severe annotation is 'intron_variant' or
+    # 'intergenic_variant', and that the GERP score is between 'gerp_lower_cutoff' and 
+    # 'gerp_higher_cutoff' (ideally these values will define the 5th and 95th
+    # percentile of the genome-wide distribution).
     context_ht = filter_for_mu(context_ht, gerp_lower_cutoff, gerp_higher_cutoff)
     genome_ht = filter_for_mu(genome_ht)
 
@@ -539,8 +540,7 @@ def calculate_mu_by_downsampling(
             hl.is_defined(all_possible_unfiltered_ht.context)
         ).write(
             get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered"),
-            _read_if_exists=not recalculate_all_possible_unfiltered_summary,
-            overwrite=recalculate_all_possible_unfiltered_summary,
+            overwrite=True,
         )
 
     all_possible_unfiltered_ht = hl.read_table(
