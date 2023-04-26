@@ -29,7 +29,7 @@ from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
-from gnomad_qc import check_resource_existence  # TODO: fix throughout code
+from gnomad_qc.resource_utils import check_resource_existence  # TODO: fix throughout code
 from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
@@ -457,7 +457,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--calculate-mutation-rate",
-        help="Calculate mutation rate",
+        help="Calculate mutation rate.",
         action="store_true",
     )
     parser.add_argument(
@@ -481,7 +481,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--gerp-lower-cutoff",
         help=(
-            "Minimum gerp score for variant to be included when calculating the"
+            "Minimum GERP score for variant to be included when calculating the"
             " mutation rate. Default is -3.9885."
         ),
         type=float,
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--gerp-higher-cutoff",
         help=(
-            "Maximum gerp score for variant to be included when calculating the"
+            "Maximum GERP score for variant to be included when calculating the"
             " mutation rate. Default is 2.6607."
         ),
         type=float,

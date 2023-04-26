@@ -14,7 +14,7 @@ from gnomad.utils.constraint import (
     compute_pli,
     count_variants_by_group,
     get_constraint_flags,
-    get_downsamplings,
+    get_downsampling_freq_indices,
     oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
@@ -23,7 +23,6 @@ from gnomad.utils.filtering import (
     add_filters_expr,
     filter_for_mu,
     filter_to_autosomes,
-    remove_coverage_outliers,
 )
 from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
