@@ -429,8 +429,8 @@ def calculate_mu_by_downsampling(
 
     Prior to computing mutation rate the only following variants are kept:
         - variants with the mean coverage in the gnomAD genomes was between 15X and 60X.
-        - variants whoes the most severe annotation was intron_variant or
-            intergenic_variant
+        - variants where the most severe consequence was 'intron_variant' or
+            'intergenic_variant'.
         - variants with the GERP score between the 5th and 95th percentile of the
             genomewide distribution.
         - high-quality variants: `exome_ht.pass_filters`
