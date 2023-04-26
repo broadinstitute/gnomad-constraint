@@ -260,7 +260,7 @@ def main(args):
                 min_cov=args.min_cov,
                 max_cov=args.max_cov,
                 gerp_lower_cutoff=args.gerp_lower_cutoff,
-                gerp_higher_cutoff=args.gerp_higher_cutoff,
+                gerp_upper_cutoff=args.gerp_upper_cutoff,
             ).write(mutation_rate_resource.path, overwrite=overwrite)
 
         # Create training datasets that include possible and observed variant counts
@@ -438,14 +438,7 @@ if __name__ == "__main__":
         type=float,
         default=0.001,
     )
-    parser.add_argument(
-        "--prepare-context-ht",
-        help=(
-            "Whether to split multiallelic sites and add 'methylation', 'coverage', and"
-            " 'gerp' annotation to context Table with VEP annotation."
-        ),
-        action="store_true",
-    )
+    
     parser.add_argument(
         "--preprocess-data",
         help=(
@@ -455,12 +448,22 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    parser.add_argument(
-        "--calculate-mutation-rate",
-        help="Calculate mutation rate.",
+    preprocess_data_args = parser.add_argument_group("Preprocess data args", "Arguments used for preprocessing the data.")
+    preprocess_data_args.add_argument(
+        "--prepare-context-ht",
+        help=(
+            "Whether to split multiallelic sites and add 'methylation', 'coverage', and"
+            " 'gerp' annotation to context Table with VEP annotation."
+        ),
         action="store_true",
     )
     parser.add_argument(
+        "--calculate-mutation-rate",
+        help="Calculate baseline mutation rate for each substitution and context using downsampling data.",
+        action="store_true",
+    )
+    mutation_rate_args = parser.add_argument_group("Calcualte mutation rate args", "Arguments used for calculating the muataion rate.")
+    mutation_rate_args.add_argument(
         "--min-cov",
         help=(
             "Minimum coverage required to keep a site when calculating the mutation"
@@ -469,7 +472,7 @@ if __name__ == "__main__":
         type=int,
         default=15,
     )
-    parser.add_argument(
+    mutation_rate_args.add_argument(
         "--max-cov",
         help=(
             "Maximum coverage required to keep a site when calculating the mutation"
@@ -478,7 +481,7 @@ if __name__ == "__main__":
         type=int,
         default=60,
     )
-    parser.add_argument(
+    mutation_rate_args.add_argument(
         "--gerp-lower-cutoff",
         help=(
             "Minimum GERP score for variant to be included when calculating the"
@@ -487,8 +490,8 @@ if __name__ == "__main__":
         type=float,
         default=-3.9885,
     )
-    parser.add_argument(
-        "--gerp-higher-cutoff",
+    mutation_rate_args.add_argument(
+        "--gerp-upper-cutoff",
         help=(
             "Maximum GERP score for variant to be included when calculating the"
             " mutation rate. Default is 2.6607."
@@ -504,7 +507,8 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    parser.add_argument(
+    training_set_args = parser.add_argument_group("Training set args", "Arguments used for creating the training set.")
+    training_set_args.add_argument(
         "--training-set-partition-hint",
         help=(
             "Target number of partitions for aggregation when counting variants for"
@@ -518,7 +522,8 @@ if __name__ == "__main__":
         help="Build plateau and coverage models.",
         action="store_true",
     )
-    parser.add_argument(
+    build_models_args = parser.add_argument_group("Build models args", "Arguments used for building models.")
+    build_models_args.add_argument(
         "--use-weights",
         help=(
             "Whether to generalize the models to weighted least squares using"
@@ -534,7 +539,8 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    parser.add_argument(
+    apply_models_args = parser.add_argument_group("Apply models args", "Arguments used for applying the plateau and coverage models.")
+    apply_models_args.add_argument(
         "--apply-obs-pos-count-partition-hint",
         help=(
             "Target number of partitions for aggregation when counting observed and"
@@ -543,7 +549,7 @@ if __name__ == "__main__":
         type=int,
         default=2000,
     )
-    parser.add_argument(
+    apply_models_args.add_argument(
         "--apply-expected-variant-partition-hint",
         help=(
             "Target number of partitions for sum aggregators after applying models to"
@@ -552,7 +558,7 @@ if __name__ == "__main__":
         type=int,
         default=1000,
     )
-    parser.add_argument(
+    apply_models_args.add_argument(
         "--custom-vep-annotation",
         help=(
             "Custom VEP annotation to be used to annotate transcript when"
@@ -562,7 +568,8 @@ if __name__ == "__main__":
         default="transcript_consequences",
         choices=CUSTOM_VEP_ANNOTATIONS,
     )
-    parser.add_argument(
+    compute_constraint_args = parser.add_argument_group("Computate constraint metrics args", "Arguments used for computing constraint metrics.")
+    compute_constraint_args.add_argument(
         "--compute-constraint-metrics",
         help=(
             "Compute constraint metrics including pLI scores, z scores, oe ratio, and"
@@ -570,7 +577,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    parser.add_argument(
+    compute_constraint_args.add_argument(
         "--compute-constraint-metrics-partitions",
         help=(
             "Number of partitions to which the unioned Table of expected variant counts"
@@ -581,7 +588,7 @@ if __name__ == "__main__":
         default=1000,
     )
 
-    parser.add_argument(
+    compute_constraint_args.add_argument(
         "--min-diff-convergence",
         help=(
             "Minimum iteration change in pLI (Probability of loss-of-function"
@@ -593,7 +600,7 @@ if __name__ == "__main__":
         default=0.001,
     )
 
-    parser.add_argument(
+    compute_constraint_args.add_argument(
         "--expectation-null",
         help=(
             "Expected observed/expected rate of truncating variation for genes where"
@@ -603,7 +610,7 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
     )
-    parser.add_argument(
+    compute_constraint_args.add_argument(
         "--expectation-rec",
         help=(
             "Expected observed/expected rate of truncating variation for recessive"
@@ -612,7 +619,7 @@ if __name__ == "__main__":
         type=float,
         default=0.463,
     )
-    parser.add_argument(
+    compute_constraint_args.add_argument(
         "--expectation-li",
         help=(
             "Expected observed/expected rate of truncating variation for severe"
@@ -621,7 +628,7 @@ if __name__ == "__main__":
         type=float,
         default=0.089,
     )
-    parser.add_argument(
+    compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold",
         help=(
             "Value at which the raw z-score is considered an outlier. Values below the"

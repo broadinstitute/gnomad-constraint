@@ -21,6 +21,7 @@ from gnomad.utils.constraint import (
 )
 from gnomad.utils.filtering import (
     add_filters_expr,
+    filter_by_numeric_expr_range,
     filter_for_mu,
     filter_to_autosomes,
 )
@@ -30,7 +31,7 @@ from gnomad.utils.vep import (
 )
 from hail.utils.misc import new_temp_file
 
-from gnomad_constraint.resources.resource_utils import COVERAGE_CUTOFF, mutation_rate_ht
+from gnomad_constraint.resources.resource_utils import COVERAGE_CUTOFF, get_mutation_ht
 
 
 def add_vep_context_annotations(
@@ -422,17 +423,18 @@ def calculate_mu_by_downsampling(
     min_cov: int = 15,
     max_cov: int = 60,
     gerp_lower_cutoff: float = -3.9885,
-    gerp_higher_cutoff: float = 2.6607,
+    gerp_upper_cutoff: float = 2.6607,
 ) -> hl.Table:
     """
     Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
 
     Prior to computing mutation rate the only following variants are kept:
-        - variants with the mean coverage in the gnomAD genomes was between 15X and 60X.
+        - variants with the mean coverage in the gnomAD genomes between `min_cov` and `max_cov`.
         - variants where the most severe consequence was 'intron_variant' or
             'intergenic_variant'.
-        - variants with the GERP score between the 5th and 95th percentile of the
-            genomewide distribution.
+        - variants with the GERP score between `gerp_lower_cutoff` and `gerp_upper_cutoff` (these default to -3.9885 and
+        2.6607, respectively - these values were precalculated on the GRCh37 context
+        table and define the 5th and 95th percentiles).
         - high-quality variants: `exome_ht.pass_filters`.
         - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
 
@@ -467,26 +469,26 @@ def calculate_mu_by_downsampling(
     :param min_cov: Minimum coverage required to keep a site when calculating the mutation rate. Default is 15.
     :param max_cov: Maximum coverage required to keep a site when calculating the mutation rate. Default is 60.
     :param gerp_lower_cutoff: Minimum gerp score for variant to be included when calculating the mutation rate. Default is -3.9885.
-    :param gerp_higher_cutoff: Maximum gerp score for variant to be included when calculating the mutation rate. Default is 2.6607.
+    :param gerp_upper_cutoff: Maximum gerp score for variant to be included when calculating the mutation rate. Default is 2.6607.
     :return: Mutation rate Table.
     """
     # Filter to autosomes and sites between min_cov and max_cov.
     context_ht = filter_to_autosomes(
         filter_by_numeric_expr_range(
-            genome_ht, genome_ht.coverage.genomes.mean, (min_cov, max_cov)
+            context_ht, context_ht.coverage.genomes.mean, (min_cov, max_cov)
         )
     )
     genome_ht = filter_to_autosomes(
-        ilter_by_numeric_expr_range(
+        filter_by_numeric_expr_range(
             genome_ht, genome_ht.coverage.genomes.mean, (min_cov, max_cov)
         )
     )
 
     # Filter the Table so that the most severe annotation is 'intron_variant' or
     # 'intergenic_variant', and that the GERP score is between 'gerp_lower_cutoff' and 
-    # 'gerp_higher_cutoff' (ideally these values will define the 5th and 95th
+    # 'gerp_upper_cutoff' (ideally these values will define the 5th and 95th
     # percentile of the genome-wide distribution).
-    context_ht = filter_for_mu(context_ht, gerp_lower_cutoff, gerp_higher_cutoff)
+    context_ht = filter_for_mu(context_ht, gerp_lower_cutoff, gerp_upper_cutoff)
     genome_ht = filter_for_mu(genome_ht)
 
     context_ht = context_ht.select(*keep_annotations)
@@ -547,10 +549,11 @@ def calculate_mu_by_downsampling(
         get_checkpoint_path(checkpoint_prefix + ".all_possible_summary_unfiltered")
     )
 
-    old_mu_data = mutation_rate_ht.ht()
+    # TODO: CHECK IF NEED OLD DATA
+    v2_mu_data = get_mutation_ht.ht(use_v2_release_mutation_ht = args.use_v2_release_mutation_ht)
     ht = observed_ht.annotate(
         possible_variants=all_possible_ht[observed_ht.key].variant_count,
-        old_mu_snp=old_mu_data[
+        old_mu_snp=v2_mu_data[
             hl.struct(
                 context=observed_ht.context, ref=observed_ht.ref, alt=observed_ht.alt
             )
