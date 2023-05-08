@@ -115,7 +115,6 @@ def main(args):
     # For genomes need a preprocessed ht for autosome_par.
     # For exomes need a preprocessed ht for autosome_par, chrX, and chrY.
     # For context need a preprocessed ht for autosome_par, chrX, chrY.
-
     for data_type in DATA_TYPES:
         preprocess_resources[("autosome_par", data_type)] = get_preprocessed_ht(
             data_type, version, "autosome_par", test
@@ -236,7 +235,7 @@ def main(args):
 
             logger.warn(
                 "Calculating new GERP cutoffs, defaults for '--gerp-lower-cutoff' and"
-                " '-gerp-upper-cutoff' will be overwritten"
+                " '-gerp-upper-cutoff' will be overwritten."
             )
             gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
                 preprocess_resources[("autosome_par", "context")].ht()
