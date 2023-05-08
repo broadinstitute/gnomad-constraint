@@ -24,7 +24,7 @@ VERSIONS = ["2.1.1"]
 CURRENT_VERSION = "2.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
-GENOMIC_REGIONS = ["full", "autosome_par", "chrx_nonpar", "chry_nonpar"]
+GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
 
 CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
 """
@@ -75,6 +75,22 @@ gerp_ht = VersionedTableResource(
         ),
     },
 )
+
+
+def get_constraint_root(
+    version: str = CURRENT_VERSION, test: bool = False, data_type="exomes"
+) -> str:
+    """
+    Return path to constraint root folder.
+    :param version: Version of constraint path to return.
+    :param test: Whether to use a tmp path.
+    :return: Root to constraint. path
+    """
+    return (
+        f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
+        if test
+        else f"gs://gnomad/v{version}/constraint"
+    )
 
 
 def get_sites_resource(
@@ -131,7 +147,7 @@ def get_mutation_ht(
     else:
         check_param_scope(version)
         return TableResource(
-            f"{constraint_tmp_prefix if test else get_constraint_release_prefix(version)}/gnomad.v{version}.constraint.mutation_rate{'.test' if test else ''}.ht"
+            f"{get_constraint_root(version, test)}/mutation_rate/gnomad.v{version}.mutation_rate.ht"
         )
 
 
@@ -154,7 +170,7 @@ def get_annotated_context_ht(
 
     check_param_scope(version)
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/preprocessed_data/annotated_context.ht"
+        f"{get_constraint_root(version)}/preprocessed_data/annotated_context.ht"
     )
 
 
@@ -177,14 +193,14 @@ def get_preprocessed_ht(
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :param genomic_region: The genomic region of the resource. One of "autosome_par",
-        "chrx_non_par", "chry_non_par", or "full". Default is "autosome_par".
+        "chrx_non_par", "chry_non_par". Default is "autosome_par".
     :param test: Whether the Table is for testing purposes and only contains sites in
         chr20, chrX, and chrY. Default is False.
     :return: TableResource of processed genomes, exomes, or context Table.
     """
     check_param_scope(version, genomic_region, data_type)
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/preprocessed_data/{data_type}_processed.{genomic_region}{'.test' if test else ''}.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}_processed.{genomic_region}.ht"
     )
 
 
@@ -206,7 +222,7 @@ def get_training_dataset(
     """
     check_param_scope(version, genomic_region)
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/training_data/constraint_training.{genomic_region}{'.test' if test else ''}.ht"
+        f"{get_constraint_root(version, test)}/training_data/gnomad.v{version}.constraint_training.{genomic_region}.ht"
     )
 
 
@@ -232,7 +248,7 @@ def get_models(
         version=version, genomic_region=genomic_region, model_type=model_type
     )
     return ExpressionResource(
-        f"{constraint_tmp_prefix}/{version}/models/{model_type}.{genomic_region}{'.test' if test else ''}.he"
+        f"{get_constraint_root(version, test)}/models/gnomad.v{version}.{model_type}.{genomic_region}.ht"
     )
 
 
@@ -261,7 +277,7 @@ def get_predicted_proportion_observed_dataset(
         custom_vep_annotation=custom_vep_annotation,
     )
     return TableResource(
-        f"{constraint_tmp_prefix}/{version}/predicted_proportion_observed/{custom_vep_annotation}/predicted_proportion_observed.{genomic_region}{'.test' if test else ''}.ht"
+        f"{get_constraint_root(version, test)}/predicted_proportion_observed/{custom_vep_annotation}/gnomad.v{version}.predicted_proportion_observed.{genomic_region}.ht"
     )
 
 
@@ -281,7 +297,7 @@ def get_constraint_metrics_dataset(
     check_param_scope(version=version)
 
     return TableResource(
-        f"gs://gnomad/{version}/constraint/metrics/constraint_metrics{'.test' if test else ''}.ht"
+        f"{get_constraint_root(version, test)}/metrics/gnomad.v{version}.constraint_metrics.ht"
     )
 
 
@@ -373,3 +389,19 @@ def get_logging_path(name: str) -> str:
     :return: Output log path.
     """
     return f"{constraint_tmp_prefix}/{name}.log"
+
+
+def get_checkpoint_path(
+    name: str, version: str = CURRENT_VERSION, mt: bool = False
+) -> str:
+    """
+    Create a checkpoint path for Table or MatrixTable.
+
+    :param str name: Name of intermediate Table/MatrixTable.
+    :param version: Version of path to return.
+    :param bool mt: Whether path is for a MatrixTable, default is False.
+    :return: Output checkpoint path.
+    """
+    return (
+        f'{constraint_tmp_prefix}/{version}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
+    )

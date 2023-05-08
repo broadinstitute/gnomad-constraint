@@ -29,7 +29,9 @@ from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
-from gnomad_qc.resource_utils import check_resource_existence  # TODO: fix throughout code
+from gnomad_qc.resource_utils import (
+    check_resource_existence,
+)  # TODO: fix throughout code
 from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
@@ -57,6 +59,7 @@ from gnomad_constraint.resources.resource_utils import (
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
     apply_models,
+    calculate_gerp_cutoffs,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     create_observed_and_possible_ht,
@@ -90,6 +93,8 @@ def main(args):
     use_weights = args.use_weights
     use_v2_release_mutation_ht = args.use_v2_release_mutation_ht
     custom_vep_annotation = args.custom_vep_annotation
+    gerp_lower_cutoff = args.gerp_lower_cutoff
+    gerp_upper_cutoff = args.gerp_upper_cutoff
 
     pops = POPS if use_pops else ()  # TODO: fix throughout code
 
@@ -109,40 +114,36 @@ def main(args):
 
     # For genomes need a preprocessed ht for autosome_par.
     # For exomes need a preprocessed ht for autosome_par, chrX, and chrY.
-    # For context need a preprocessed ht for autosome_par, chrX, chrY, and
-    # full (autosome_par + chrX + chrY).
+    # For context need a preprocessed ht for autosome_par, chrX, chrY.
+
     for data_type in DATA_TYPES:
+        preprocess_resources[("autosome_par", data_type)] = get_preprocessed_ht(
+            data_type, version, "autosome_par", test
+        )
         if data_type != "genomes":
-            for region in GENOMIC_REGIONS:
+            for region in ["chrx_nonpar", "chry_nonpar"]:
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
                     data_type, version, region, test
                 )
-        else:
-            preprocess_resources[(region, data_type)] = get_preprocessed_ht(
-                data_type, autosome_par, "autosome_par", test
-            )
-
-        if data_type == "context":
-            preprocess_resources[(region, data_type)] = get_preprocessed_ht(
-                data_type, version, "full", test
-            )
 
     for region in GENOMIC_REGIONS:
-        if region != "full":
-            # Save a TableResource with a path to `training_resources`
-            training_resources[region] = get_training_dataset(version, region, test)
+        # Save a TableResource with a path to `training_resources`
+        training_resources[region] = get_training_dataset(version, region, test)
 
-            # Save a TableResource with a path to `applying_resources`
-            applying_resources[region] = get_predicted_proportion_observed_dataset(
-                custom_vep_annotation, version, region, test
-            )
-            # Save a path to `models`
-            for model_type in MODEL_TYPES:
-                models[(region, model_type)] = get_models(
-                    model_type, version, region, test
-                )
+        # Save a TableResource with a path to `applying_resources`
+        applying_resources[region] = get_predicted_proportion_observed_dataset(
+            custom_vep_annotation, version, region, test
+        )
+        # Save a path to `models`
+        for model_type in MODEL_TYPES:
+            models[(region, model_type)] = get_models(model_type, version, region, test)
 
     # Save a TableResource with a path to mutation rate Table.
+    if use_v2_release_mutation_ht and args.calculate_mutation_rate:
+        raise ValueError(
+            "Only one of '--use-v2-release-mutation-ht' or '--calculate-mutation-rate'"
+            " can be specified."
+        )
     mutation_rate_resource = get_mutation_ht(version, test, use_v2_release_mutation_ht)
     # Save a TableResource with a path to `constraint_metrics_ht`.
     constraint_metrics_ht = get_constraint_metrics_dataset(version, test)
@@ -204,14 +205,6 @@ def main(args):
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(ht)
 
-                # Checkpoint the full preprocessed context ht containing autsome_par,
-                # chrX, and chrY.
-                if data_type == "context":
-                    ht = ht.checkpoint(
-                        preprocess_resources[("full", data_type)].path,
-                        overwrite=overwrite,
-                    )
-
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
                     preprocess_resources[("autosome_par", data_type)].path,
@@ -231,10 +224,26 @@ def main(args):
                     )
             logger.info("Done with preprocessing genome and exome Table.")
 
+        if args.calculate_gerp_cutoffs:
+            # Check if the input/output resources exist.
+            check_resource_existence(
+                input_step_resources={
+                    "--preprocess-data": [
+                        preprocess_resources[("autosome_par", "context")]
+                    ]
+                },
+            )
+
+            logger.warn(
+                "Calculating new GERP cutoffs, defaults for '--gerp-lower-cutoff' and"
+                " '-gerp-upper-cutoff' will be overwritten"
+            )
+            gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
+                preprocess_resources[("autosome_par", "context")].ht()
+            )
+
         # Calculate mutation rate Table.
         if args.calculate_mutation_rate:
-            # Save a TableResource with a path to mutation rate Table.
-            mutation_rate_resource = get_mutation_ht(version, test)
             logger.info("Calculating mutation rate...")
             # Check if the input/output resources exist.
             check_resource_existence(
@@ -251,16 +260,14 @@ def main(args):
             # genome site Table.
             calculate_mu_by_downsampling(
                 preprocess_resources[("autosome_par", "genomes")].ht(),
-                preprocess_resources[
-                    ("autosome_par", "context")
-                ].ht(),  # TODO: check why this was 'full' before (doesn't exist and immediately filtered to autosomes)
+                preprocess_resources[("autosome_par", "context")].ht(),
                 recalculate_all_possible_summary=True,
                 recalculate_all_possible_summary_unfiltered=False,
                 pops=pops,
                 min_cov=args.min_cov,
                 max_cov=args.max_cov,
-                gerp_lower_cutoff=args.gerp_lower_cutoff,
-                gerp_upper_cutoff=args.gerp_upper_cutoff,
+                gerp_lower_cutoff=gerp_lower_cutoff,
+                gerp_upper_cutoff=gerp_upper_cutoff,
             ).write(mutation_rate_resource.path, overwrite=overwrite)
 
         # Create training datasets that include possible and observed variant counts
@@ -287,7 +294,7 @@ def main(args):
                     preprocess_resources[(region, "context")].ht(),
                     mutation_rate_resource.ht().select("mu_snp"),
                     max_af=max_af,
-                    pops=POPS if use_pops else (),
+                    pops=pops,
                     partition_hint=training_set_partition_hint,
                     filter_to_canonical_synonymous=True,
                     global_annotation="training_dataset_params",
@@ -312,7 +319,7 @@ def main(args):
                 coverage_model, plateau_models = build_models(
                     training_resources[region].ht(),
                     weighted=use_weights,
-                    pops=POPS if use_pops else (),
+                    pops=pops,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -354,7 +361,7 @@ def main(args):
                     models[(region, "plateau")].he(),
                     models[(region, "coverage")].he(),
                     max_af=max_af,
-                    pops=POPS if use_pops else (),
+                    pops=pops,
                     obs_pos_count_partition_hint=apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
@@ -388,7 +395,7 @@ def main(args):
             # Compute constraint metrics
             compute_constraint_metrics(
                 union_ht,
-                pops=POPS if use_pops else (),
+                pops=pops,
                 expected_values={
                     "Null": args.expectation_null,
                     "Rec": args.expectation_rec,
@@ -427,18 +434,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    parser.add_argument(
-        "--use-pops",
-        help="Whether to apply models on each population.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--max-af",
-        help="Maximum variant allele frequency to keep.",
-        type=float,
-        default=0.001,
-    )
-    
+
     parser.add_argument(
         "--preprocess-data",
         help=(
@@ -448,7 +444,9 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    preprocess_data_args = parser.add_argument_group("Preprocess data args", "Arguments used for preprocessing the data.")
+    preprocess_data_args = parser.add_argument_group(
+        "Preprocess data args", "Arguments used for preprocessing the data."
+    )
     preprocess_data_args.add_argument(
         "--prepare-context-ht",
         help=(
@@ -458,11 +456,27 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--calculate-mutation-rate",
-        help="Calculate baseline mutation rate for each substitution and context using downsampling data.",
+        "--calculate-gerp-cutoffs",
+        help=(
+            "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
+            " of GERP scores in the context Table. Note that if"
+            " '--calculate-gerp-cutoffs' is specified, the default values in"
+            " --gerp-lower-cutoff and --gerp-upper-cutoff will be overwritten."
+        ),
         action="store_true",
     )
-    mutation_rate_args = parser.add_argument_group("Calcualte mutation rate args", "Arguments used for calculating the muataion rate.")
+    parser.add_argument(
+        "--calculate-mutation-rate",
+        help=(
+            "Calculate baseline mutation rate for each substitution and context using"
+            " downsampling data."
+        ),
+        action="store_true",
+    )
+    mutation_rate_args = parser.add_argument_group(
+        "Calculate mutation rate args",
+        "Arguments used for calculating the muataion rate.",
+    )
     mutation_rate_args.add_argument(
         "--min-cov",
         help=(
@@ -485,7 +499,8 @@ if __name__ == "__main__":
         "--gerp-lower-cutoff",
         help=(
             "Minimum GERP score for variant to be included when calculating the"
-            " mutation rate. Default is -3.9885."
+            " mutation rate. Default is -3.9885 (precalculated on the GRCh37 context"
+            " Table to define the 95th percentile)."
         ),
         type=float,
         default=-3.9885,
@@ -494,7 +509,8 @@ if __name__ == "__main__":
         "--gerp-upper-cutoff",
         help=(
             "Maximum GERP score for variant to be included when calculating the"
-            " mutation rate. Default is 2.6607."
+            " mutation rate. Default is 2.6607 (precalculated on the GRCh37 context"
+            " Table to define the 5th percentile)."
         ),
         type=float,
         default=2.6607,
@@ -507,7 +523,9 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    training_set_args = parser.add_argument_group("Training set args", "Arguments used for creating the training set.")
+    training_set_args = parser.add_argument_group(
+        "Training set args", "Arguments used for creating the training set."
+    )
     training_set_args.add_argument(
         "--training-set-partition-hint",
         help=(
@@ -517,12 +535,39 @@ if __name__ == "__main__":
         type=int,
         default=100,
     )
+
+    # `max-af` is an arg for both `--create-training-set` and `--apply-models`
+    maximum_af = training_set_args.add_argument(
+        "--max-af",
+        help="Maximum variant allele frequency to keep.",
+        type=float,
+        default=0.001,
+    )
+
+    # `use_populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
+    use_populations = training_set_args.add_argument(
+        "--use-pops",
+        help=(
+            "Whether to apply models on each population. If not specified, will use"
+            " 'global'."
+        ),
+        action="store_true",
+    )
+
+    use_v2_release_mutation_rate = training_set_args.add_argument(
+        "--use-v2-release-mutation-ht",
+        help="Whether to use the mutatation rate computed for the v2 release.",
+        action="store_true",
+    )
+
     parser.add_argument(
         "--build-models",
         help="Build plateau and coverage models.",
         action="store_true",
     )
-    build_models_args = parser.add_argument_group("Build models args", "Arguments used for building models.")
+    build_models_args = parser.add_argument_group(
+        "Build models args", "Arguments used for building models."
+    )
     build_models_args.add_argument(
         "--use-weights",
         help=(
@@ -531,6 +576,8 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    build_models_args._group_actions.append(use_populations)
+
     parser.add_argument(
         "--apply-models",
         help=(
@@ -539,7 +586,10 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    apply_models_args = parser.add_argument_group("Apply models args", "Arguments used for applying the plateau and coverage models.")
+    apply_models_args = parser.add_argument_group(
+        "Apply models args",
+        "Arguments used for applying the plateau and coverage models.",
+    )
     apply_models_args.add_argument(
         "--apply-obs-pos-count-partition-hint",
         help=(
@@ -568,7 +618,14 @@ if __name__ == "__main__":
         default="transcript_consequences",
         choices=CUSTOM_VEP_ANNOTATIONS,
     )
-    compute_constraint_args = parser.add_argument_group("Computate constraint metrics args", "Arguments used for computing constraint metrics.")
+    apply_models_args._group_actions.append(maximum_af)
+    apply_models_args._group_actions.append(use_populations)
+    apply_models_args._group_actions.append(use_v2_release_mutation_rate)
+
+    compute_constraint_args = parser.add_argument_group(
+        "Computate constraint metrics args",
+        "Arguments used for computing constraint metrics.",
+    )
     compute_constraint_args.add_argument(
         "--compute-constraint-metrics",
         help=(
@@ -641,6 +698,8 @@ if __name__ == "__main__":
         type=int,
         default=5,
     )
+
+    compute_constraint_args._group_actions.append(use_populations)
 
     args = parser.parse_args()
     main(args)
