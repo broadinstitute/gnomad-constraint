@@ -823,6 +823,7 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range 
     # of GERP values where 6.17 is the most conserved).
     summary_hist = ht.aggregate(hl.struct(gerp=hl.agg.hist(ht.gerp, -12.3, 6.17, 100)))
+
     # Get cumulative sum of the hist array and add value of n_smaller to every value in the cumulative sum array
     cumulative_data = (
         np.cumsum(summary_hist.gerp.bin_freq) + summary_hist.gerp.n_smaller
