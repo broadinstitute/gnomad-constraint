@@ -824,15 +824,19 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     # of GERP values where 6.17 is the most conserved).
     summary_hist = ht.aggregate(hl.struct(gerp=hl.agg.hist(ht.gerp, -12.3, 6.17, 100)))
 
-    # Get cumulative sum of the hist array and add value of n_smaller to every value in the cumulative sum array
+
+    # Get cumulative sum of the hist array and add value of n_smaller to every value in
+    # the cumulative sum array.
     cumulative_data = (
         np.cumsum(summary_hist.gerp.bin_freq) + summary_hist.gerp.n_smaller
     )
 
-    # Append final value to the cumulative sum array (value added is last value of the array plus n_larger)
+    # Append final value to the cumulative sum array (value added is last value of the 
+    # array plus n_larger).
     np.append(cumulative_data, [cumulative_data[-1] + summary_hist.gerp.n_larger])
 
-    # Getzip of (bin_edge, value in cumulative sum array divided by max value in cumulative sum array)
+    # Get zip of (bin_edge, value in cumulative sum array divided by max value in 
+    # cumulative sum array).
     zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
 
     # Define lower and upper GERP cutoffs based on 5th and 95th percentiles
