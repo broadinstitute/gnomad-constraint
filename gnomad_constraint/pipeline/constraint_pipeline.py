@@ -42,7 +42,6 @@ from gnomad_constraint.resources.resource_utils import (
     MODEL_TYPES,
     POPS,
     VERSIONS,
-    constraint_tmp_prefix,
     gerp_ht,
     get_annotated_context_ht,
     get_constraint_metrics_dataset,
@@ -113,8 +112,7 @@ def main(args):
     applying_resources = {}
 
     # For genomes need a preprocessed ht for autosome_par.
-    # For exomes need a preprocessed ht for autosome_par, chrX, and chrY.
-    # For context need a preprocessed ht for autosome_par, chrX, chrY.
+    # For exomes and context need a preprocessed ht for autosome_par, chrX, and chrY.
 
     for data_type in DATA_TYPES:
         preprocess_resources[("autosome_par", data_type)] = get_preprocessed_ht(
@@ -234,7 +232,7 @@ def main(args):
                 },
             )
 
-            logger.warn(
+            logger.warning(
                 "Calculating new GERP cutoffs, defaults for '--gerp-lower-cutoff' and"
                 " '-gerp-upper-cutoff' will be overwritten"
             )
@@ -262,7 +260,6 @@ def main(args):
                 preprocess_resources[("autosome_par", "genomes")].ht(),
                 preprocess_resources[("autosome_par", "context")].ht(),
                 recalculate_all_possible_summary=True,
-                recalculate_all_possible_summary_unfiltered=False,
                 pops=pops,
                 min_cov=args.min_cov,
                 max_cov=args.max_cov,
@@ -460,8 +457,7 @@ if __name__ == "__main__":
         help=(
             "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
             " of GERP scores in the context Table. Note that if"
-            " '--calculate-gerp-cutoffs' is specified, the default values in"
-            " --gerp-lower-cutoff and --gerp-upper-cutoff will be overwritten."
+            " '--calculate-gerp-cutoffs' is specified, the computed values will be used in all downstream steps of the constraint pipeline instead of the values defined by --gerp-lower-cutoff and --gerp-upper-cutoff."
         ),
         action="store_true",
     )
