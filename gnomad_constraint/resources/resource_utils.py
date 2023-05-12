@@ -397,9 +397,9 @@ def get_checkpoint_path(
 
     :param str name: Name of intermediate Table/MatrixTable.
     :param version: Version of path to return.
-    :param bool mt: Whether path is for a MatrixTable, default is False.
+    :param bool mt: Whether path is for a MatrixTable. Default is False.
     :return: Output checkpoint path.
     """
     return (
-        f'{constraint_tmp_prefix}/{version}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
+        f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
     )

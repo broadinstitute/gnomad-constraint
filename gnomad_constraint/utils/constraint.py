@@ -431,12 +431,14 @@ def calculate_mu_by_downsampling(
     Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
 
     Prior to computing mutation rate the only following variants are kept:
-        - variants with the mean coverage in the gnomAD genomes between `min_cov` and `max_cov`.
+        - variants with the mean coverage in the gnomAD genomes between `min_cov` and 
+          `max_cov`.
         - variants where the most severe consequence was 'intron_variant' or
-            'intergenic_variant'.
-        - variants with the GERP score between `gerp_lower_cutoff` and `gerp_upper_cutoff` (these default to -3.9885 and
-        2.6607, respectively - these values were precalculated on the GRCh37 context
-        Table and define the 5th and 95th percentiles).
+          'intergenic_variant'.
+        - variants with the GERP score between `gerp_lower_cutoff` and 
+          `gerp_upper_cutoff` (these default to -3.9885 and 2.6607, respectively - 
+          these values were precalculated on the GRCh37 context Table and define the 
+          5th and 95th percentiles).
         - high-quality variants: `exome_ht.pass_filters`.
         - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
 
@@ -466,8 +468,8 @@ def calculate_mu_by_downsampling(
     :param pops: List of populations to use for downsampling counts. If empty Tuple is supplied, will default to '['global']'.
     :param min_cov: Minimum coverage required to keep a site when calculating the mutation rate. Default is 15.
     :param max_cov: Maximum coverage required to keep a site when calculating the mutation rate. Default is 60.
-    :param gerp_lower_cutoff: Minimum gerp score for variant to be included when calculating the mutation rate. Default is -3.9885.
-    :param gerp_upper_cutoff: Maximum gerp score for variant to be included when calculating the mutation rate. Default is 2.6607.
+    :param gerp_lower_cutoff: Minimum GERP score for variant to be included when calculating the mutation rate. Default is -3.9885.
+    :param gerp_upper_cutoff: Maximum GERP score for variant to be included when calculating the mutation rate. Default is 2.6607.
     :return: Mutation rate Table.
     """
     if not pops:
@@ -532,7 +534,6 @@ def calculate_mu_by_downsampling(
         overwrite=recalculate_all_possible_summary,
     )
 
-    # TODO: CHECK IF NEED OLD DATA
     ht = observed_ht.annotate(
         possible_variants=all_possible_ht[observed_ht.key].variant_count
     )
@@ -819,7 +820,8 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     :param ht: Input Table.
     :return: Tuple containing values determining the 5-95th percentile of the GERP score.
     """
-    # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range of GERP values where 6.17 is the most conserved).
+    # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range 
+    # of GERP values where 6.17 is the most conserved).
     summary_hist = ht.aggregate(hl.struct(gerp=hl.agg.hist(ht.gerp, -12.3, 6.17, 100)))
     # Get cumulative sum of the hist array and add value of n_smaller to every value in the cumulative sum array
     cumulative_data = (
