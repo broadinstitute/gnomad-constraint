@@ -66,7 +66,9 @@ def add_vep_context_annotations(
     return ht.annotate(**context_ht[ht.key])
 
 
-def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
+def prepare_ht_for_constraint_calculations(
+    ht: hl.Table, require_exome_coverage: bool = True
+) -> hl.Table:
     """
     Filter input Table and add annotations used in constraint calculations.
 
@@ -83,6 +85,7 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
           `add_most_severe_csq_to_tc_within_vep_root()`
 
     :param ht: Input Table to be annotated.
+    :param require_exome_coverage: Filter to sites where exome coverage is defined. Default is True.
     :return: Table with annotations.
     """
     ht = trimer_from_heptamer(ht)
@@ -112,8 +115,9 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     # vep root annotation.
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
 
-    # Filter out locus with undefined exome coverage
-    ht = ht.filter(hl.is_defined(ht.exome_coverage))
+    if require_exome_coverage:
+        # Filter out locus with undefined exome coverage
+        ht = ht.filter(hl.is_defined(ht.exome_coverage))
     return ht
 
 
@@ -200,6 +204,9 @@ def create_observed_and_possible_ht(
 
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
+
+    # Filter context ht to sites with defined exome coverage
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
     # If requested keep only variants that are synonymous, canonical
     if filter_to_canonical_synonymous:
@@ -336,6 +343,9 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
+    # Filter context ht to sites with defined exome coverage
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+
     # Add necessary constraint annotations for grouping
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
@@ -431,13 +441,13 @@ def calculate_mu_by_downsampling(
     Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
 
     Prior to computing mutation rate the only following variants are kept:
-        - variants with the mean coverage in the gnomAD genomes between `min_cov` and 
+        - variants with the mean coverage in the gnomAD genomes between `min_cov` and
           `max_cov`.
         - variants where the most severe consequence was 'intron_variant' or
           'intergenic_variant'.
-        - variants with the GERP score between `gerp_lower_cutoff` and 
-          `gerp_upper_cutoff` (these default to -3.9885 and 2.6607, respectively - 
-          these values were precalculated on the GRCh37 context Table and define the 
+        - variants with the GERP score between `gerp_lower_cutoff` and
+          `gerp_upper_cutoff` (these default to -3.9885 and 2.6607, respectively -
+          these values were precalculated on the GRCh37 context Table and define the
           5th and 95th percentiles).
         - high-quality variants: `exome_ht.pass_filters`.
         - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
@@ -454,22 +464,29 @@ def calculate_mu_by_downsampling(
 
     :param genome_ht: Genome sites Table for autosome/pseudoautosomal regions.
     :param context_ht: Context Table for autosome/pseudoautosomal regions.
-    :param recalculate_all_possible_summary: Whether to calculate possible variants
-        using context Table with locus that is only on an autosome or in a
-        pseudoautosomal region. Default is True.
-    :param omit_methylation: Whether to omit 'methylation_level' from the grouping when
-        counting variants. Default is False.
+    :param recalculate_all_possible_summary: Whether to calculate possible
+        variants using context Table with locus that is only on an autosome or
+        in a pseudoautosomal region. Default is True.
+    :param omit_methylation: Whether to omit 'methylation_level' from the
+        grouping when counting variants. Default is False.
     :param count_singletons: Whether to count singletons. Default is False.
-    :param keep_annotations: Annotations to keep in the context Table and genome sites
-        Table.
-    :param ac_cutoff: The cutoff of allele count when filtering context Table and genome sites Table.
-    :param downsampling_level: The size of downsamplings will be used to count variants. Default is 1000.
+    :param keep_annotations: Annotations to keep in the context Table and genome
+        sites Table.
+    :param ac_cutoff: The cutoff of allele count when filtering context Table
+        and genome sites Table.
+    :param downsampling_level: The size of downsamplings will be used to count
+        variants. Default is 1000.
     :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
-    :param pops: List of populations to use for downsampling counts. If empty Tuple is supplied, will default to '['global']'.
-    :param min_cov: Minimum coverage required to keep a site when calculating the mutation rate. Default is 15.
-    :param max_cov: Maximum coverage required to keep a site when calculating the mutation rate. Default is 60.
-    :param gerp_lower_cutoff: Minimum GERP score for variant to be included when calculating the mutation rate. Default is -3.9885.
-    :param gerp_upper_cutoff: Maximum GERP score for variant to be included when calculating the mutation rate. Default is 2.6607.
+    :param pops: List of populations to use for downsampling counts. If empty
+        Tuple is supplied, will default to '['global']'.
+    :param min_cov: Minimum coverage required to keep a site when calculating
+        the mutation rate. Default is 15.
+    :param max_cov: Maximum coverage required to keep a site when calculating
+        the mutation rate. Default is 60.
+    :param gerp_lower_cutoff: Minimum GERP score for variant to be included
+        when calculating the mutation rate. Default is -3.9885.
+    :param gerp_upper_cutoff: Maximum GERP score for variant to be included
+        when calculating the mutation rate. Default is 2.6607.
     :return: Mutation rate Table.
     """
     if not pops:
@@ -492,7 +509,7 @@ def calculate_mu_by_downsampling(
     # 'gerp_upper_cutoff' (ideally these values will define the 5th and 95th
     # percentile of the genome-wide distribution).
     context_ht = filter_for_mu(context_ht, gerp_lower_cutoff, gerp_upper_cutoff)
-    genome_ht = filter_for_mu(genome_ht)
+    genome_ht = filter_for_mu(genome_ht, gerp_lower_cutoff, gerp_upper_cutoff)
 
     context_ht = context_ht.select(*keep_annotations)
     genome_ht = genome_ht.select(*list(keep_annotations) + ["freq", "pass_filters"])
@@ -541,6 +558,9 @@ def calculate_mu_by_downsampling(
     ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     total_bases = ht.aggregate(hl.agg.sum(ht.possible_variants)) // 3
+    logger.info(
+        "Total bases to use when calculating correction_factors: %f", total_bases
+    )
 
     # Get the index of dowsampling with size of `downsampling_level`.
     downsampling_idx = hl.eval(
@@ -579,6 +599,16 @@ def calculate_mu_by_downsampling(
 
     ht = ht.annotate(**ann_expr).checkpoint(
         new_temp_file(prefix="calculate_mu_by_downsampling", extension="ht")
+    )
+
+    ht = ht.annotate_globals(
+        ac_cutoff=ac_cutoff,
+        downsampling_level=downsampling_level,
+        total_mu=total_mu,
+        min_cov=min_cov,
+        max_cov=max_cov,
+        gerp_lower_cutoff=gerp_lower_cutoff,
+        gerp_upper_cutoff=gerp_upper_cutoff,
     )
 
     return annotate_mutation_type(ht)
@@ -813,17 +843,15 @@ def split_context_ht(
 
 
 def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
-
     """
     Find GERP cutoffs determined by the 5% and 95% percentiles.
 
     :param ht: Input Table.
     :return: Tuple containing values determining the 5-95th percentile of the GERP score.
     """
-    # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range 
+    # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range
     # of GERP values where 6.17 is the most conserved).
     summary_hist = ht.aggregate(hl.struct(gerp=hl.agg.hist(ht.gerp, -12.3, 6.17, 100)))
-
 
     # Get cumulative sum of the hist array and add value of n_smaller to every value in
     # the cumulative sum array.
@@ -831,11 +859,11 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
         np.cumsum(summary_hist.gerp.bin_freq) + summary_hist.gerp.n_smaller
     )
 
-    # Append final value to the cumulative sum array (value added is last value of the 
+    # Append final value to the cumulative sum array (value added is last value of the
     # array plus n_larger).
     np.append(cumulative_data, [cumulative_data[-1] + summary_hist.gerp.n_larger])
 
-    # Get zip of (bin_edge, value in cumulative sum array divided by max value in 
+    # Get zip of (bin_edge, value in cumulative sum array divided by max value in
     # cumulative sum array).
     zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
 

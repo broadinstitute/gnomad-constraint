@@ -74,12 +74,10 @@ gerp_ht = VersionedTableResource(
 )
 
 
-def get_constraint_root(
-    version: str = CURRENT_VERSION, test: bool = False
-) -> str:
+def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
     """
     Return path to constraint root folder.
-    
+
     :param version: Version of constraint path to return.
     :param test: Whether to use a tmp path.
     :return: Root path to constraint resources.
@@ -151,24 +149,27 @@ def get_mutation_ht(
 
 def get_annotated_context_ht(
     version: str = CURRENT_VERSION,
-    use_old_data: bool = False,
+    test: bool = False,
+    use_v2_context_ht: bool = False,
 ) -> TableResource:
     """
     Return TableResource of annotated context Table.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
-    :param use_old_data: Whether to use old annotated context Table. Default is False.
+    :param test: Whether the Table is for testing purposes and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :param use_v2_context_ht: Whether to use annotated context Table that produced for gnomAD v2. Default is False.
     :return: TableResource of annotated context Table.
     """
-    if use_old_data:
+    if use_v2_context_ht:
         return TableResource(
             "gs://gcp-public-data--gnomad/papers/2019-flagship-lof/v1.0/context/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht"
         )
 
     check_param_scope(version)
     return TableResource(
-        f"{get_constraint_root(version)}/preprocessed_data/annotated_context.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/annotated_context.ht"
     )
 
 
@@ -379,11 +380,13 @@ def check_param_scope(
         )
 
 
-def get_logging_path(name: str) -> str:
+def get_logging_path(name: str, version: str = CURRENT_VERSION) -> str:
     """
     Create a path for Hail log files.
 
     :param name: Name of log file.
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
     :return: Output log path.
     """
     return f"{get_constraint_root(version, test=True)}/logging/{name}.log"

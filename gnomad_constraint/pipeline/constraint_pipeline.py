@@ -31,7 +31,7 @@ from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_qc.resource_utils import (
     check_resource_existence,
-)  # TODO: fix throughout code
+)
 from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
@@ -95,7 +95,7 @@ def main(args):
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
 
-    pops = POPS if use_pops else ()  # TODO: fix throughout code
+    pops = POPS if use_pops else ()
 
     # TODO: gnomAD v4 is still in production, for now this will only use 2.1.1.
     version = args.version
@@ -113,35 +113,26 @@ def main(args):
 
     # For genomes need a preprocessed ht for autosome_par.
     # For exomes and context need a preprocessed ht for autosome_par, chrX, and chrY.
-
-    for data_type in DATA_TYPES:
-        preprocess_resources[("autosome_par", data_type)] = get_preprocessed_ht(
-            data_type, version, "autosome_par", test
-        )
-        if data_type != "genomes":
-            for region in ["chrx_nonpar", "chry_nonpar"]:
+    for region in GENOMIC_REGIONS:
+        for data_type in DATA_TYPES:
+            if (region == "autosome_par") | (data_type != "genomes"):
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
                     data_type, version, region, test
                 )
 
-    for region in GENOMIC_REGIONS:
         # Save a TableResource with a path to `training_resources`
         training_resources[region] = get_training_dataset(version, region, test)
+
+        # Save a path to `models`
+        for model_type in MODEL_TYPES:
+            models[(region, model_type)] = get_models(model_type, version, region, test)
 
         # Save a TableResource with a path to `applying_resources`
         applying_resources[region] = get_predicted_proportion_observed_dataset(
             custom_vep_annotation, version, region, test
         )
-        # Save a path to `models`
-        for model_type in MODEL_TYPES:
-            models[(region, model_type)] = get_models(model_type, version, region, test)
 
     # Save a TableResource with a path to mutation rate Table.
-    if use_v2_release_mutation_ht and args.calculate_mutation_rate:
-        raise ValueError(
-            "Only one of '--use-v2-release-mutation-ht' or '--calculate-mutation-rate'"
-            " can be specified."
-        )
     mutation_rate_resource = get_mutation_ht(version, test, use_v2_release_mutation_ht)
     # Save a TableResource with a path to `constraint_metrics_ht`.
     constraint_metrics_ht = get_constraint_metrics_dataset(version, test)
@@ -154,6 +145,7 @@ def main(args):
             )
             # Annotates methylation, coverage, and gerp in the vep context Table.
             if prepare_context_ht:
+                # TODO: add version arg and default to 105
                 split_context_ht(
                     vep_context.versions["101"].ht(),
                     {
@@ -165,7 +157,8 @@ def main(args):
                 ).write(get_annotated_context_ht(version).path, overwrite)
                 context_ht = get_annotated_context_ht(version).ht()
             else:
-                context_ht = get_annotated_context_ht(use_old_data=True).ht()
+                # TODO: restructure get_annotated_context_ht, add filter for the test option
+                context_ht = get_annotated_context_ht(use_v2_context_ht=True).ht()
             # Raise error if any of the output resources exist and --overwrite is not
             # used.
             check_resource_existence(
@@ -199,9 +192,13 @@ def main(args):
                 if data_type != "context":
                     ht = add_vep_context_annotations(ht, context_ht)
 
-                # Filter input Table and add annotations used in constraint
-                # calculations.
-                ht = prepare_ht_for_constraint_calculations(ht)
+                    # Filter input Table and add annotations used in constraint
+                    # calculations.
+                    ht = prepare_ht_for_constraint_calculations(ht)
+                else:
+                    ht = prepare_ht_for_constraint_calculations(
+                        ht, require_exome_coverage=False
+                    )
 
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
@@ -233,11 +230,18 @@ def main(args):
             )
 
             logger.warning(
-                "Calculating new GERP cutoffs, defaults for '--gerp-lower-cutoff' and"
-                " '-gerp-upper-cutoff' will be overwritten"
+                "Calculating new GERP cutoffs to be used instead of"
+                " '--gerp-lower-cutoff' and '-gerp-upper-cutoff' defaults."
             )
             gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
                 preprocess_resources[("autosome_par", "context")].ht()
+            )
+
+            logger.info(
+                "Calculated new GERP cutoffs: using a lower GERP cutoff of %f and an"
+                " upper GERP cutoff of %f.",
+                gerp_lower_cutoff,
+                gerp_upper_cutoff,
             )
 
         # Calculate mutation rate Table.
@@ -295,7 +299,13 @@ def main(args):
                     partition_hint=training_set_partition_hint,
                     filter_to_canonical_synonymous=True,
                     global_annotation="training_dataset_params",
-                ).write(training_resources[region].path, overwrite=overwrite)
+                ).annotate_globals(
+                    use_v2_release_mutation_ht=True
+                    if use_v2_release_mutation_ht
+                    else False
+                ).write(
+                    training_resources[region].path, overwrite=overwrite
+                )
             logger.info("Done with creating training dataset.")
 
         # Build plateau and coverage models for autosomes/pseudoautosomal regions,
@@ -362,7 +372,13 @@ def main(args):
                     obs_pos_count_partition_hint=apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
-                ).write(applying_resources[region].path, overwrite=overwrite)
+                ).annotate_globals(
+                    use_v2_release_mutation_ht=True
+                    if use_v2_release_mutation_ht
+                    else False
+                ).write(
+                    applying_resources[region].path, overwrite=overwrite
+                )
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
@@ -405,7 +421,7 @@ def main(args):
 
     finally:
         logger.info("Copying log to logging bucket...")
-        hl.copy_log(get_logging_path("constraint_pipeline"))
+        hl.copy_log(get_logging_path("constraint_pipeline", version))
 
 
 if __name__ == "__main__":
@@ -414,6 +430,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--overwrite", help="Whether to overwrite output files.", action="store_true"
     )
+
     parser.add_argument(
         "--version",
         help=(
@@ -423,6 +440,7 @@ if __name__ == "__main__":
         type=str,
         default=CURRENT_VERSION,
     )
+
     parser.add_argument(
         "--test",
         help=(
@@ -432,7 +450,11 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    parser.add_argument(
+    preprocess_data_args = parser.add_argument_group(
+        "Preprocess data args", "Arguments used for preprocessing the data."
+    )
+
+    preprocess_data_args.add_argument(
         "--preprocess-data",
         help=(
             "Whether to prepare the exome, genome, and context Table for constraint"
@@ -441,9 +463,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    preprocess_data_args = parser.add_argument_group(
-        "Preprocess data args", "Arguments used for preprocessing the data."
-    )
+
     preprocess_data_args.add_argument(
         "--prepare-context-ht",
         help=(
@@ -457,11 +477,19 @@ if __name__ == "__main__":
         help=(
             "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
             " of GERP scores in the context Table. Note that if"
-            " '--calculate-gerp-cutoffs' is specified, the computed values will be used in all downstream steps of the constraint pipeline instead of the values defined by --gerp-lower-cutoff and --gerp-upper-cutoff."
+            " '--calculate-gerp-cutoffs' is specified, the computed values will be used"
+            " in all downstream steps of the constraint pipeline instead of the values"
+            " defined by --gerp-lower-cutoff and --gerp-upper-cutoff."
         ),
         action="store_true",
     )
-    parser.add_argument(
+
+    mutation_rate_args = parser.add_argument_group(
+        "Calculate mutation rate args",
+        "Arguments used for calculating the muataion rate.",
+    )
+
+    recalculate_mutation_rate = mutation_rate_args.add_argument(
         "--calculate-mutation-rate",
         help=(
             "Calculate baseline mutation rate for each substitution and context using"
@@ -469,10 +497,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    mutation_rate_args = parser.add_argument_group(
-        "Calculate mutation rate args",
-        "Arguments used for calculating the muataion rate.",
-    )
+
     mutation_rate_args.add_argument(
         "--min-cov",
         help=(
@@ -511,7 +536,12 @@ if __name__ == "__main__":
         type=float,
         default=2.6607,
     )
-    parser.add_argument(
+
+    training_set_args = parser.add_argument_group(
+        "Training set args", "Arguments used for creating the training set."
+    )
+
+    training_set_args.add_argument(
         "--create-training-set",
         help=(
             "Count the observed variants and possible variants by exome coverage at"
@@ -519,9 +549,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    training_set_args = parser.add_argument_group(
-        "Training set args", "Arguments used for creating the training set."
-    )
+
     training_set_args.add_argument(
         "--training-set-partition-hint",
         help=(
@@ -556,14 +584,20 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    parser.add_argument(
+    mutation_rate_parser = parser.add_mutually_exclusive_group(required=False)
+    mutation_rate_parser._group_actions.append(use_v2_release_mutation_rate)
+    mutation_rate_parser._group_actions.append(recalculate_mutation_rate)
+
+    build_models_args = parser.add_argument_group(
+        "Build models args", "Arguments used for building models."
+    )
+
+    build_models_args.add_argument(
         "--build-models",
         help="Build plateau and coverage models.",
         action="store_true",
     )
-    build_models_args = parser.add_argument_group(
-        "Build models args", "Arguments used for building models."
-    )
+
     build_models_args.add_argument(
         "--use-weights",
         help=(
@@ -572,9 +606,15 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+
     build_models_args._group_actions.append(use_populations)
 
-    parser.add_argument(
+    apply_models_args = parser.add_argument_group(
+        "Apply models args",
+        "Arguments used for applying the plateau and coverage models.",
+    )
+
+    apply_models_args.add_argument(
         "--apply-models",
         help=(
             "Apply plateau and coverage models to variants in exome sites Table and"
@@ -582,10 +622,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    apply_models_args = parser.add_argument_group(
-        "Apply models args",
-        "Arguments used for applying the plateau and coverage models.",
-    )
+
     apply_models_args.add_argument(
         "--apply-obs-pos-count-partition-hint",
         help=(
