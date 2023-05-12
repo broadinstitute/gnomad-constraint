@@ -82,7 +82,7 @@ def get_constraint_root(
     
     :param version: Version of constraint path to return.
     :param test: Whether to use a tmp path.
-    :return: Root to constraint. path
+    :return: Root path to constraint resources.
     """
     return (
         f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
@@ -198,7 +198,7 @@ def get_preprocessed_ht(
     """
     check_param_scope(version, genomic_region, data_type)
     return TableResource(
-        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}_processed.{genomic_region}.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}.pre_processed.{genomic_region}.ht"
     )
 
 
@@ -246,7 +246,7 @@ def get_models(
         version=version, genomic_region=genomic_region, model_type=model_type
     )
     return ExpressionResource(
-        f"{get_constraint_root(version, test)}/models/gnomad.v{version}.{model_type}.{genomic_region}.ht"
+        f"{get_constraint_root(version, test)}/models/gnomad.v{version}.{model_type}.{genomic_region}.he"
     )
 
 
@@ -386,7 +386,7 @@ def get_logging_path(name: str) -> str:
     :param name: Name of log file.
     :return: Output log path.
     """
-    return f"{constraint_tmp_prefix}/{name}.log"
+    return f"{get_constraint_root(version, test=True)}/logging/{name}.log"
 
 
 def get_checkpoint_path(
