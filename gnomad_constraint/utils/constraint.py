@@ -839,7 +839,7 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     # cumulative sum array).
     zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
 
-    # Define lower and upper GERP cutoffs based on 5th and 95th percentiles
+    # Define lower and upper GERP cutoffs based on 5th and 95th percentiles.
     cutoff_lower = list(filter(lambda i: i[1] > 0.05, zipped))[0][0]
 
     zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
