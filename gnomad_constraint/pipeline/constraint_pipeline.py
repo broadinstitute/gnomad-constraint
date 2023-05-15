@@ -25,7 +25,6 @@ import argparse
 import logging
 
 import hail as hl
-from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -115,14 +114,14 @@ def main(args):
                     data_type, version, region, test
                 )
 
-        # Save a TableResource with a path to `training_resources`
+        # Save a TableResource with a path to `training_resources`.
         training_resources[region] = get_training_dataset(version, region, test)
 
         # Save a path to `models`.
         for model_type in MODEL_TYPES:
             models[(region, model_type)] = get_models(model_type, version, region, test)
 
-        # Save a TableResource with a path to `applying_resources`
+        # Save a TableResource with a path to `applying_resources`.
         applying_resources[region] = get_predicted_proportion_observed_dataset(
             custom_vep_annotation, version, region, test
         )
@@ -179,7 +178,7 @@ def main(args):
                 # Filter input Table and add annotations used in constraint
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(
-                    ht, require_exome_coverage=False if data_type != "exomes" else True
+                    ht, require_exome_coverage=True if data_type == "exomes" else False
                 )
 
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
