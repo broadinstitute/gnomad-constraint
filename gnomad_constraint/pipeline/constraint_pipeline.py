@@ -111,9 +111,11 @@ def main(args):
     models = {}
     applying_resources = {}
 
-    # For genomes need a preprocessed ht for autosome_par.
-    # For exomes and context need a preprocessed ht for autosome_par, chrX, and chrY.
+
     for region in GENOMIC_REGIONS:
+        # Save a TableResource with a path to `preprocess_resources`
+        # For genomes need a preprocessed ht for autosome_par.
+        # For exomes and context need a preprocessed ht for autosome_par, chrX, and chrY.
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
                 preprocess_resources[(region, data_type)] = get_preprocessed_ht(
