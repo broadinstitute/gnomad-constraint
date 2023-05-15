@@ -110,7 +110,7 @@ def main(args):
     applying_resources = {}
 
     for region in GENOMIC_REGIONS:
-        # Save a TableResource with a path to `preprocess_resources`
+        # Save a TableResource with a path to `preprocess_resources`.
         # For genomes need a preprocessed ht for autosome_par.
         # For exomes and context need a preprocessed ht for autosome_par, chrX, and chrY.
         for data_type in DATA_TYPES:
@@ -193,12 +193,9 @@ def main(args):
 
                 # Filter input Table and add annotations used in constraint
                 # calculations.
-                if data_type != "exomes":
-                    ht = prepare_ht_for_constraint_calculations(
-                        ht, require_exome_coverage=False
-                    )
-                else:
-                    ht = prepare_ht_for_constraint_calculations(ht)
+                ht = prepare_ht_for_constraint_calculations(
+                    ht, require_exome_coverage=False if data_type != "exomes" else True
+                )
 
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
