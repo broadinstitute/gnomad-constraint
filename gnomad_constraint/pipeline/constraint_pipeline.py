@@ -112,7 +112,7 @@ def main(args):
     for region in GENOMIC_REGIONS:
         # Save a TableResource with a path to `preprocess_resources`.
         # For genomes need a preprocessed ht for autosome_par.
-        # For exomes and context need a preprocessed ht for autosome_par, chrX, 
+        # For exomes and context need a preprocessed ht for autosome_par, chrX,
         # and chrY.
         for data_type in DATA_TYPES:
             if (region == "autosome_par") | (data_type != "genomes"):
@@ -157,7 +157,7 @@ def main(args):
                 ).write(get_annotated_context_ht(version).path, overwrite)
                 context_ht = get_annotated_context_ht(version).ht()
             else:
-                # TODO: restructure get_annotated_context_ht, add filter for the test 
+                # TODO: restructure get_annotated_context_ht, add filter for the test
                 # option.
                 context_ht = get_annotated_context_ht(use_v2_context_ht=True).ht()
             # Raise error if any of the output resources exist and --overwrite is not
