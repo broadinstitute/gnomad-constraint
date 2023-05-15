@@ -37,7 +37,6 @@ from gnomad_constraint.resources.resource_utils import (
     get_checkpoint_path,
 )
 
-
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
