@@ -1,4 +1,6 @@
 """Script containing utility functions used in the constraint pipeline."""
+import logging
+
 from typing import Dict, Optional, Tuple
 
 import hail as hl
@@ -36,6 +38,13 @@ from gnomad_constraint.resources.resource_utils import (
     get_checkpoint_path,
     get_mutation_ht,
 )
+
+logging.basicConfig(
+    format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
+logger = logging.getLogger("constraint_utils")
+logger.setLevel(logging.INFO)
 
 
 def add_vep_context_annotations(

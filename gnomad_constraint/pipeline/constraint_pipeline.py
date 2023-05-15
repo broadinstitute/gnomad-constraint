@@ -109,7 +109,6 @@ def main(args):
     models = {}
     applying_resources = {}
 
-
     for region in GENOMIC_REGIONS:
         # Save a TableResource with a path to `preprocess_resources`
         # For genomes need a preprocessed ht for autosome_par.
@@ -192,13 +191,14 @@ def main(args):
                 if data_type != "context":
                     ht = add_vep_context_annotations(ht, context_ht)
 
-                    # Filter input Table and add annotations used in constraint
-                    # calculations.
-                    ht = prepare_ht_for_constraint_calculations(ht)
-                else:
+                # Filter input Table and add annotations used in constraint
+                # calculations.
+                if data_type != "exomes":
                     ht = prepare_ht_for_constraint_calculations(
                         ht, require_exome_coverage=False
                     )
+                else:
+                    ht = prepare_ht_for_constraint_calculations(ht)
 
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
@@ -290,7 +290,7 @@ def main(args):
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
             for region in GENOMIC_REGIONS:
-                create_observed_and_possible_ht(
+                op_ht = create_observed_and_possible_ht(
                     preprocess_resources[(region, "exomes")].ht(),
                     preprocess_resources[(region, "context")].ht(),
                     mutation_rate_resource.ht().select("mu_snp"),
@@ -299,13 +299,10 @@ def main(args):
                     partition_hint=training_set_partition_hint,
                     filter_to_canonical_synonymous=True,
                     global_annotation="training_dataset_params",
-                ).annotate_globals(
-                    use_v2_release_mutation_ht=True
-                    if use_v2_release_mutation_ht
-                    else False
-                ).write(
-                    training_resources[region].path, overwrite=overwrite
                 )
+                if use_v2_release_mutation_ht:
+                    op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
+                op_ht.write(training_resources[region].path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
         # Build plateau and coverage models for autosomes/pseudoautosomal regions,
@@ -361,7 +358,7 @@ def main(args):
                     " variant count and observed:expected ratio...",
                     region,
                 )
-                apply_models(
+                oe_ht = apply_models(
                     preprocess_resources[(region, "exomes")].ht(),
                     preprocess_resources[(region, "context")].ht(),
                     mutation_rate_resource.ht().select("mu_snp"),
@@ -372,13 +369,10 @@ def main(args):
                     obs_pos_count_partition_hint=apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
-                ).annotate_globals(
-                    use_v2_release_mutation_ht=True
-                    if use_v2_release_mutation_ht
-                    else False
-                ).write(
-                    applying_resources[region].path, overwrite=overwrite
                 )
+                if use_v2_release_mutation_ht:
+                    oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
+                oe_ht.write(applying_resources[region].path, overwrite=overwrite)
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
