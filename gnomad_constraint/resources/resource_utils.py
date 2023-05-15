@@ -105,23 +105,6 @@ def get_sites_resource(
         return public_release_grch38(data_type).versions[version]
 
 
-def get_coverage_ht(
-    data_type: str,
-    version: str = CURRENT_VERSION,
-) -> TableResource:
-    """
-    Return TableResource of coverage Table.
-
-    :param data_type: One of "exomes", "genomes" or "context.
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :return: TableResource of coverage Table.
-    """
-    check_param_scope(version, data_type)
-    # TODO: decide path to coverage Table
-    return TableResource("")
-
-
 def get_mutation_ht(
     version: str = CURRENT_VERSION,
     test: bool = False,
