@@ -499,7 +499,8 @@ def calculate_mu_by_downsampling(
     if not pops:
         pops = ["global"]
 
-    # Filter to autosomal sites (remove pseudoautosomal regions) between min_cov and max_cov.
+    # Filter to autosomal sites (remove pseudoautosomal regions) between 
+    # min_cov and max_cov.
     context_ht = filter_to_autosomes(
         filter_by_numeric_expr_range(
             context_ht, context_ht.coverage.genomes.mean, (min_cov, max_cov)
