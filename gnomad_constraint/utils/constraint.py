@@ -1,8 +1,9 @@
 """Script containing utility functions used in the constraint pipeline."""
-
+import logging
 from typing import Dict, Optional, Tuple
 
 import hail as hl
+import numpy as np
 from gnomad.utils.constraint import (
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
@@ -14,18 +15,34 @@ from gnomad.utils.constraint import (
     compute_pli,
     count_variants_by_group,
     get_constraint_flags,
+    get_downsampling_freq_indices,
     oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
 )
-from gnomad.utils.filtering import add_filters_expr
+from gnomad.utils.filtering import (
+    add_filters_expr,
+    filter_by_numeric_expr_range,
+    filter_for_mu,
+    filter_to_autosomes,
+)
 from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
 from hail.utils.misc import new_temp_file
 
-from gnomad_constraint.resources.resource_utils import COVERAGE_CUTOFF
+from gnomad_constraint.resources.resource_utils import (
+    COVERAGE_CUTOFF,
+    get_checkpoint_path,
+)
+
+logging.basicConfig(
+    format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
+logger = logging.getLogger("constraint_utils")
+logger.setLevel(logging.INFO)
 
 
 def add_vep_context_annotations(
@@ -56,7 +73,9 @@ def add_vep_context_annotations(
     return ht.annotate(**context_ht[ht.key])
 
 
-def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
+def prepare_ht_for_constraint_calculations(
+    ht: hl.Table, require_exome_coverage: bool = True
+) -> hl.Table:
     """
     Filter input Table and add annotations used in constraint calculations.
 
@@ -73,6 +92,7 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
           `add_most_severe_csq_to_tc_within_vep_root()`
 
     :param ht: Input Table to be annotated.
+    :param require_exome_coverage: Filter to sites where exome coverage is defined. Default is True.
     :return: Table with annotations.
     """
     ht = trimer_from_heptamer(ht)
@@ -102,8 +122,9 @@ def prepare_ht_for_constraint_calculations(ht: hl.Table) -> hl.Table:
     # vep root annotation.
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
 
-    # Filter out locus with undefined exome coverage
-    ht = ht.filter(hl.is_defined(ht.exome_coverage))
+    if require_exome_coverage:
+        # Filter out locus with undefined exome coverage
+        ht = ht.filter(hl.is_defined(ht.exome_coverage))
     return ht
 
 
@@ -190,6 +211,9 @@ def create_observed_and_possible_ht(
 
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
+
+    # Filter context ht to sites with defined exome coverage
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
     # If requested keep only variants that are synonymous, canonical
     if filter_to_canonical_synonymous:
@@ -326,6 +350,9 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
+    # Filter context ht to sites with defined exome coverage
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+
     # Add necessary constraint annotations for grouping
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
@@ -394,6 +421,205 @@ def apply_models(
     )
     # Compute the observed:expected ratio.
     return ht.annotate(obs_exp=ht.observed_variants / ht.expected_variants)
+
+
+def calculate_mu_by_downsampling(
+    genome_ht: hl.Table,
+    context_ht: hl.Table,
+    recalculate_all_possible_summary: bool = True,
+    omit_methylation: bool = False,
+    count_singletons: bool = False,
+    keep_annotations: Tuple[str] = (
+        "context",
+        "ref",
+        "alt",
+        "methylation_level",
+    ),
+    ac_cutoff: int = 5,
+    downsampling_level: int = 1000,
+    total_mu: float = 1.2e-08,
+    pops: Tuple[str] = (),
+    min_cov: int = 15,
+    max_cov: int = 60,
+    gerp_lower_cutoff: float = -3.9885,
+    gerp_upper_cutoff: float = 2.6607,
+) -> hl.Table:
+    """
+    Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
+
+    Prior to computing mutation rate the only following variants are kept:
+        - variants with the mean coverage in the gnomAD genomes between `min_cov` and
+          `max_cov`.
+        - variants where the most severe consequence was 'intron_variant' or
+          'intergenic_variant'.
+        - variants with the GERP score between `gerp_lower_cutoff` and
+          `gerp_upper_cutoff` (these default to -3.9885 and 2.6607, respectively -
+          these values were precalculated on the GRCh37 context Table and define the
+          5th and 95th percentiles).
+        - high-quality variants: `exome_ht.pass_filters`.
+        - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
+
+    The returned Table includes the following annotations:
+        - context - trinucleotide genomic context.
+        - ref - the reference allele.
+        - alt - the alternate base.
+        - methylation_level - methylation_level.
+        - downsampling_counts_{pop} - variant counts in downsamplings for populations
+          in `pops`.
+        - mu_snp - SNP mutation rate.
+        - annotations added by `annotate_mutation_type`.
+
+    :param genome_ht: Genome sites Table for autosome/pseudoautosomal regions.
+    :param context_ht: Context Table for autosome/pseudoautosomal regions.
+    :param recalculate_all_possible_summary: Whether to calculate possible
+        variants using context Table with locus that is only on an autosome or
+        in a pseudoautosomal region. Default is True.
+    :param omit_methylation: Whether to omit 'methylation_level' from the
+        grouping when counting variants. Default is False.
+    :param count_singletons: Whether to count singletons. Default is False.
+    :param keep_annotations: Annotations to keep in the context Table and genome
+        sites Table.
+    :param ac_cutoff: The cutoff of allele count when filtering context Table
+        and genome sites Table.
+    :param downsampling_level: The size of downsamplings will be used to count
+        variants. Default is 1000.
+    :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
+    :param pops: List of populations to use for downsampling counts. If empty
+        Tuple is supplied, will default to '['global']'.
+    :param min_cov: Minimum coverage required to keep a site when calculating
+        the mutation rate. Default is 15.
+    :param max_cov: Maximum coverage required to keep a site when calculating
+        the mutation rate. Default is 60.
+    :param gerp_lower_cutoff: Minimum GERP score for variant to be included
+        when calculating the mutation rate. Default is -3.9885.
+    :param gerp_upper_cutoff: Maximum GERP score for variant to be included
+        when calculating the mutation rate. Default is 2.6607.
+    :return: Mutation rate Table.
+    """
+    if not pops:
+        pops = ["global"]
+
+    # Filter to autosomal sites (remove pseudoautosomal regions) between
+    # min_cov and max_cov.
+    context_ht = filter_to_autosomes(
+        filter_by_numeric_expr_range(
+            context_ht, context_ht.coverage.genomes.mean, (min_cov, max_cov)
+        )
+    )
+    genome_ht = filter_to_autosomes(
+        filter_by_numeric_expr_range(
+            genome_ht, genome_ht.coverage.genomes.mean, (min_cov, max_cov)
+        )
+    )
+
+    # Filter the Table so that the most severe annotation is 'intron_variant' or
+    # 'intergenic_variant', and that the GERP score is between 'gerp_lower_cutoff' and
+    # 'gerp_upper_cutoff' (ideally these values will define the 5th and 95th
+    # percentile of the genome-wide distribution).
+    context_ht = filter_for_mu(context_ht, gerp_lower_cutoff, gerp_upper_cutoff)
+    genome_ht = filter_for_mu(genome_ht, gerp_lower_cutoff, gerp_upper_cutoff)
+
+    context_ht = context_ht.select(*keep_annotations)
+    genome_ht = genome_ht.select(*list(keep_annotations) + ["freq", "pass_filters"])
+
+    # Get the frequency index of downsampling with size of `downsampling_level`.
+    downsampling_meta = get_downsampling_freq_indices(genome_ht.freq_meta)
+    downsampling_idx = hl.eval(
+        downsampling_meta.filter(
+            lambda x: x[1]["downsampling"] == str(downsampling_level)
+        )[0][0]
+    )
+    freq_expr = genome_ht.freq[downsampling_idx]
+
+    # Set up the criteria to filter out low-quality sites, and sites found in greater
+    # than 'ac_cutoff' copies in the downsampled set.
+    keep_criteria = (freq_expr.AC <= ac_cutoff) & genome_ht.pass_filters
+
+    # Count the observed variants in the genome sites Table.
+    observed_ht = count_variants_by_group(
+        genome_ht.filter(keep_criteria).select(*list(keep_annotations) + ["freq"]),
+        count_downsamplings=pops,
+        count_singletons=count_singletons,
+        omit_methylation=omit_methylation,
+        use_table_group_by=True,
+    )
+
+    # Count possible variants in context Table, only keeping variants not in the genome
+    # dataset, or with AC <= 'ac_cutoff' and passing filters.
+    all_possible_ht = count_variants_by_group(
+        context_ht.anti_join(genome_ht.filter(keep_criteria, keep=False)).select(
+            *keep_annotations
+        ),
+        omit_methylation=omit_methylation,
+        use_table_group_by=True,
+    )
+    all_possible_ht = all_possible_ht.checkpoint(
+        get_checkpoint_path("all_possible_summary"),
+        _read_if_exists=not recalculate_all_possible_summary,
+        overwrite=recalculate_all_possible_summary,
+    )
+
+    ht = observed_ht.annotate(
+        possible_variants=all_possible_ht[observed_ht.key].variant_count
+    )
+
+    ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
+
+    total_bases = ht.aggregate(hl.agg.sum(ht.possible_variants)) // 3
+    logger.info(
+        "Total bases to use when calculating correction_factors: %f", total_bases
+    )
+
+    # Get the index of dowsampling with size of `downsampling_level`.
+    downsampling_idx = hl.eval(
+        downsampling_meta.map(lambda x: hl.int(x[1]["downsampling"])).index(
+            downsampling_level
+        )
+    )
+
+    # Compute the proportion observed, which represents the relative mutability of each
+    # variant class.
+    ann_expr = {
+        "proportion_observed": ht.variant_count / ht.possible_variants,
+        f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[
+            downsampling_idx
+        ]
+        / ht.possible_variants,
+        "downsamplings_frac_observed": ht.downsampling_counts_global
+        / ht.possible_variants,
+    }
+
+    for pop in pops:
+        pop_counts_expr = ht[f"downsampling_counts_{pop}"]
+        correction_factors = ht.aggregate(
+            total_mu / (hl.agg.array_sum(pop_counts_expr) / total_bases),
+            _localize=False,
+        )
+        downsamplings_mu_expr = (
+            correction_factors * pop_counts_expr / ht.possible_variants
+        )
+        ann_expr[
+            f"downsamplings_mu_{'snp' if pop == 'global' else pop}"
+        ] = downsamplings_mu_expr
+        ann_expr[
+            f"mu_snp{'' if pop == 'global' else f'_{pop}'}"
+        ] = downsamplings_mu_expr[downsampling_idx]
+
+    ht = ht.annotate(**ann_expr).checkpoint(
+        new_temp_file(prefix="calculate_mu_by_downsampling", extension="ht")
+    )
+
+    ht = ht.annotate_globals(
+        ac_cutoff=ac_cutoff,
+        downsampling_level=downsampling_level,
+        total_mu=total_mu,
+        min_cov=min_cov,
+        max_cov=max_cov,
+        gerp_lower_cutoff=gerp_lower_cutoff,
+        gerp_upper_cutoff=gerp_upper_cutoff,
+    )
+
+    return annotate_mutation_type(ht)
 
 
 def compute_constraint_metrics(
@@ -581,3 +807,37 @@ def compute_constraint_metrics(
     )
 
     return ht
+
+
+def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
+    """
+    Find GERP cutoffs determined by the 5% and 95% percentiles.
+
+    :param ht: Input Table.
+    :return: Tuple containing values determining the 5-95th percentile of the GERP score.
+    """
+    # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range
+    # of GERP values where 6.17 is the most conserved).
+    summary_hist = ht.aggregate(hl.struct(gerp=hl.agg.hist(ht.gerp, -12.3, 6.17, 100)))
+
+    # Get cumulative sum of the hist array and add value of n_smaller to every value in
+    # the cumulative sum array.
+    cumulative_data = (
+        np.cumsum(summary_hist.gerp.bin_freq) + summary_hist.gerp.n_smaller
+    )
+
+    # Append final value to the cumulative sum array (value added is last value of the
+    # array plus n_larger).
+    np.append(cumulative_data, [cumulative_data[-1] + summary_hist.gerp.n_larger])
+
+    # Get zip of (bin_edge, value in cumulative sum array divided by max value in
+    # cumulative sum array).
+    zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
+
+    # Define lower and upper GERP cutoffs based on 5th and 95th percentiles.
+    cutoff_lower = list(filter(lambda i: i[1] > 0.05, zipped))[0][0]
+
+    zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
+    cutoff_upper = list(filter(lambda i: i[1] < 0.95, zipped))[-1][0]
+
+    return (cutoff_lower, cutoff_upper)
