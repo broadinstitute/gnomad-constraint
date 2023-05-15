@@ -133,7 +133,8 @@ def get_mutation_ht(
     :param version: The version of the Table. Default is CURRENT_VERSION.
     :param test: Whether the Table is for testing purposes and only contains sites in
         chr20, chrX, and chrY. Default is False.
-    :param use_v2_release_mutation_ht: Whether to use the precomputed gnomAD v2.1.1 released mutation rate table.
+    :param use_v2_release_mutation_ht: Whether to use the precomputed gnomAD v2.1.1 
+        released mutation rate table.
     :return: Mutation rate Table.
     """
     if use_v2_release_mutation_ht:
