@@ -30,12 +30,12 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
+from hail.utils.misc import new_temp_file
+
 from gnomad_constraint.resources.resource_utils import (
     COVERAGE_CUTOFF,
     get_checkpoint_path,
-    get_mutation_ht,
 )
-from hail.utils.misc import new_temp_file
 
 
 logging.basicConfig(
