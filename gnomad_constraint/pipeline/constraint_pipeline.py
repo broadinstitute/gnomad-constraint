@@ -29,9 +29,7 @@ from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
-from gnomad_qc.resource_utils import (
-    check_resource_existence,
-)
+from gnomad_qc.resource_utils import check_resource_existence
 from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
@@ -125,7 +123,7 @@ def main(args):
         # Save a TableResource with a path to `training_resources`
         training_resources[region] = get_training_dataset(version, region, test)
 
-        # Save a path to `models`
+        # Save a path to `models`.
         for model_type in MODEL_TYPES:
             models[(region, model_type)] = get_models(model_type, version, region, test)
 
@@ -147,7 +145,7 @@ def main(args):
             )
             # Annotates methylation, coverage, and gerp in the vep context Table.
             if prepare_context_ht:
-                # TODO: add version arg and default to 105
+                # TODO: add version arg and default to 105.
                 split_context_ht(
                     vep_context.versions["101"].ht(),
                     {
@@ -159,7 +157,7 @@ def main(args):
                 ).write(get_annotated_context_ht(version).path, overwrite)
                 context_ht = get_annotated_context_ht(version).ht()
             else:
-                # TODO: restructure get_annotated_context_ht, add filter for the test option
+                # TODO: restructure get_annotated_context_ht, add filter for the test option.
                 context_ht = get_annotated_context_ht(use_v2_context_ht=True).ht()
             # Raise error if any of the output resources exist and --overwrite is not
             # used.

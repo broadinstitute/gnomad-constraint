@@ -159,7 +159,8 @@ def get_annotated_context_ht(
         `CURRENT_VERSION`.
     :param test: Whether the Table is for testing purposes and only contains sites in
         chr20, chrX, and chrY. Default is False.
-    :param use_v2_context_ht: Whether to use annotated context Table that produced for gnomAD v2. Default is False.
+    :param use_v2_context_ht: Whether to use annotated context Table that was produced 
+        for gnomAD v2. Default is False.
     :return: TableResource of annotated context Table.
     """
     if use_v2_context_ht:
@@ -199,7 +200,7 @@ def get_preprocessed_ht(
     """
     check_param_scope(version, genomic_region, data_type)
     return TableResource(
-        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}.pre_processed.{genomic_region}.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}.preprocessed.{genomic_region}.ht"
     )
 
 
