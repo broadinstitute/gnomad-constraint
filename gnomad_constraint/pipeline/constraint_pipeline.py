@@ -145,7 +145,7 @@ def main(args):
             )
             # TODO: restructure get_annotated_context_ht, add filter for the test
             #  option.
-            # Annotates methylation, coverage, and gerp in the vep context Table.
+            # Annotates methylation, coverage, and gerp on the VEP context Table.
             if prepare_context_ht:
                 split_context_ht(
                     vep_context.versions["101"].ht(),

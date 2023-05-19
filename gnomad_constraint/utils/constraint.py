@@ -840,7 +840,7 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
     cutoff_upper = list(filter(lambda i: i[1] < 0.95, zipped))[-1][0]
 
-    return (cutoff_lower, cutoff_upper)
+    return cutoff_lower, cutoff_upper
 
 
 def split_context_ht(
@@ -856,12 +856,11 @@ def split_context_ht(
     :param coverage_hts: A Dictionary with key as one of 'exomes' or 'genomes' and
         values as corresponding coverage Tables.
     :param methylation_ht: Methylation Table.
-    :param gerp_ht: Table with gerp annotation.
-    :return: Table with splitted sites and necessary annotations.
+    :param gerp_ht: Table with GERP annotation.
+    :return: Table with sites split and necessary annotations.
     """
     # Split multiallelic sites in context Table.
-    split_context_ht = hl.split_multi_hts(vep_context_ht)
-    # raw_context_ht = raw_context_ht.checkpoint(f'{raw_context_ht_path}.temp_split.ht', overwrite)
+    vep_context_ht = hl.split_multi_hts(vep_context_ht)
 
     # Drop unnecessary annotations in coverage Table.
     coverage_hts = {
@@ -872,14 +871,14 @@ def split_context_ht(
     }
 
     # Add 'methylation', 'coverage', and 'gerp' annotation.
-    annotated_context_ht = split_context_ht.annotate(
-        methylation=methylation_ht[split_context_ht.locus],
+    vep_context_ht = vep_context_ht.annotate(
+        methylation=methylation_ht[vep_context_ht.locus],
         coverage=hl.struct(
             **{
-                loc: coverage_ht[split_context_ht.locus]
+                loc: coverage_ht[vep_context_ht.locus]
                 for loc, coverage_ht in coverage_hts.items()
             }
         ),
-        gerp=gerp_ht[split_context_ht.locus].S,
+        gerp=gerp_ht[vep_context_ht.locus].S,
     )
-    return split_context_ht, annotated_context_ht
+    return vep_context_ht
