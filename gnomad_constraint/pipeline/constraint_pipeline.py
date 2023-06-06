@@ -25,7 +25,6 @@ import argparse
 import logging
 
 import hail as hl
-from gnomad.resources.grch38.reference_data import vep_context
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -52,16 +51,17 @@ from gnomad_constraint.resources.resource_utils import (
     get_sites_resource,
     get_training_dataset,
     methylation_ht,
+    vep_context_ht,
 )
 from gnomad_constraint.utils.constraint import (
     add_vep_context_annotations,
+    annotate_context_ht,
     apply_models,
     calculate_gerp_cutoffs,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     create_observed_and_possible_ht,
     prepare_ht_for_constraint_calculations,
-    split_context_ht,
 )
 
 logging.basicConfig(
@@ -83,6 +83,7 @@ def main(args):
     overwrite = args.overwrite
     max_af = args.max_af
     prepare_context_ht = args.prepare_context_ht
+    use_v2_release_context_ht = args.use_v2_release_context_ht
     training_set_partition_hint = args.training_set_partition_hint
     apply_obs_pos_count_partition_hint = args.apply_obs_pos_count_partition_hint
     apply_expected_variant_partition_hint = args.apply_expected_variant_partition_hint
@@ -104,6 +105,7 @@ def main(args):
             " v2.1.1 as default."
         )
     # Construct resources with paths for intermediate Tables generated in the pipeline.
+
     preprocess_resources = {}
     training_resources = {}
     models = {}
@@ -132,6 +134,10 @@ def main(args):
             custom_vep_annotation, version, region, test
         )
 
+    # Save a TableResource with a path to annotated context Table.
+    annotated_context_resource = get_annotated_context_ht(
+        version, use_v2_release_context_ht
+    )
     # Save a TableResource with a path to mutation rate Table.
     mutation_rate_resource = get_mutation_ht(version, test, use_v2_release_mutation_ht)
     # Save a TableResource with a path to `constraint_metrics_ht`.
@@ -143,30 +149,37 @@ def main(args):
                 "Adding VEP context annotations and preparing tables for constraint"
                 " calculations..."
             )
-            # TODO: restructure get_annotated_context_ht, add filter for the test
-            #  option.
             # Annotates methylation, coverage, and gerp on the VEP context Table.
             if prepare_context_ht:
-                split_context_ht(
-                    vep_context.versions["101"].ht(),
+                check_resource_existence(
+                    output_step_resources={
+                        "--prepare-context-ht": [annotated_context_resource],
+                    },
+                    overwrite=overwrite,
+                )
+                context_ht = vep_context_ht.versions[version].ht()
+                annotate_context_ht(
+                    context_ht,
                     {
                         "exomes": get_coverage_ht("exomes").ht(),
                         "genomes": get_coverage_ht("genomes").ht(),
                     },
                     methylation_ht.versions[version].ht(),
-                    gerp_ht.versions[version].ht(),
-                ).write(get_annotated_context_ht(version).path, overwrite)
-                context_ht = get_annotated_context_ht(version).ht()
-            else:
-                context_ht = get_annotated_context_ht(use_v2_context_ht=True).ht()
+                    gerp_ht(get_reference_genome(context_ht.locus).name),
+                ).write(annotated_context_resource.path, overwrite)
+
             # Raise error if any of the output resources exist and --overwrite is not
             # used.
             check_resource_existence(
+                input_step_resources={
+                    "--prepare-context-ht": [annotated_context_resource],
+                },
                 output_step_resources={
                     "--preprocess-data": preprocess_resources.values(),
                 },
                 overwrite=overwrite,
             )
+            context_ht = annotated_context_resource.ht()
             # Add annotations used in constraint calculations.
             for data_type in DATA_TYPES:
                 if data_type != "context":
@@ -451,6 +464,11 @@ if __name__ == "__main__":
             "Whether to split multiallelic sites and add 'methylation', 'coverage', and"
             " 'gerp' annotation to context Table with VEP annotation."
         ),
+        action="store_true",
+    )
+    preprocess_data_args.add_argument(
+        "--use-v2-release-context-ht",
+        help="Whether to use the annotated context Table for the v2 release.",
         action="store_true",
     )
     preprocess_data_args.add_argument(

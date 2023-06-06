@@ -3,8 +3,11 @@
 import logging
 from typing import Dict, Optional, Tuple
 
-from gnomad.resources.grch37.gnomad import public_release as public_release_grch37
-from gnomad.resources.grch38.gnomad import public_release as public_release_grch38
+import gnomad.resources.grch37.gnomad as gnomad_grch37
+import gnomad.resources.grch37.reference_data as ref_grch37
+import gnomad.resources.grch38.gnomad as gnomad_grch38
+import gnomad.resources.grch38.reference_data as ref_grch38
+import hail as hl
 from gnomad.resources.resource_utils import (
     ExpressionResource,
     GnomadPublicTableResource,
@@ -52,24 +55,18 @@ Minimum median exome coverage differentiating high coverage sites from low cover
 Low coverage sites require an extra calibration when computing the proportion of expected variation.
 """
 
-# Methylation Table
+# Methylation Table.
 # TODO: decide path to methylation Table
 methylation_ht = VersionedTableResource(
-    CURRENT_VERSION,
-    versions={
-        "2.1.1": TableResource(
-            path="",
-        ),
-    },
+    CURRENT_VERSION, versions={"2.1.1": ref_grch37.methylation_sites}
 )
-# Gerp Table
-# TODO: decide path to Gerp Table
-gerp_ht = VersionedTableResource(
+
+# VEP context Table.
+vep_context_ht = VersionedTableResource(
     CURRENT_VERSION,
     versions={
-        "2.1.1": TableResource(
-            path="",
-        ),
+        "2.1.1": ref_grch37.vep_context.versions["85"],
+        "4.0": ref_grch38.vep_context.versions["105"],
     },
 )
 
@@ -100,9 +97,21 @@ def get_sites_resource(
     :return: Genome or exomes sites Table.
     """
     if version == "2.1.1":
-        return public_release_grch37(data_type).versions[version]
+        return gnomad_grch37.public_release(data_type).versions[version]
     else:
-        return public_release_grch38(data_type).versions[version]
+        return gnomad_grch38.public_release(data_type).versions[version]
+
+
+def gerp_ht(build: str) -> hl.Table:
+    """
+    Retrieve publicly released GERP scores.
+
+    :param build: Build of the reference genomes to use. One of "GRCh37" or "GRCh38".
+    :return: Table of GERP scores stored in 'S' annotation for the specified build.
+    """
+    return hl.experimental.load_dataset(
+        name="gerp_scores", version="hg19", reference_genome=build
+    )
 
 
 def get_coverage_ht(
@@ -112,14 +121,16 @@ def get_coverage_ht(
     """
     Return TableResource of coverage Table.
 
-    :param data_type: One of "exomes", "genomes" or "context.
+    :param data_type: One of "exomes", "genomes".
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
     :return: TableResource of coverage Table.
     """
-    check_param_scope(version, data_type)
-    # TODO: decide path to coverage Table
-    return TableResource("")
+    check_param_scope(version=version, data_type=data_type)
+    if version.startswith("2"):
+        return gnomad_grch37.coverage(data_type).versions["2.1"]
+    else:
+        return gnomad_grch38.coverage(data_type).versions[version]
 
 
 def get_mutation_ht(
@@ -150,7 +161,6 @@ def get_mutation_ht(
 
 def get_annotated_context_ht(
     version: str = CURRENT_VERSION,
-    test: bool = False,
     use_v2_context_ht: bool = False,
 ) -> TableResource:
     """
@@ -158,8 +168,6 @@ def get_annotated_context_ht(
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purposes and only contains sites in
-        chr20, chrX, and chrY. Default is False.
     :param use_v2_context_ht: Whether to use annotated context Table that was produced
         for gnomAD v2. Default is False.
     :return: TableResource of annotated context Table.
@@ -171,7 +179,7 @@ def get_annotated_context_ht(
 
     check_param_scope(version)
     return TableResource(
-        f"{get_constraint_root(version, test)}/preprocessed_data/annotated_context.ht"
+        f"{get_constraint_root(version)}/preprocessed_data/annotated_context.ht"
     )
 
 

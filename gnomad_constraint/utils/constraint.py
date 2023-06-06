@@ -843,7 +843,7 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     return cutoff_lower, cutoff_upper
 
 
-def split_context_ht(
+def annotate_context_ht(
     vep_context_ht: str,
     coverage_hts: Dict[str, hl.Table],
     methylation_ht: str,
@@ -863,12 +863,7 @@ def split_context_ht(
     vep_context_ht = hl.split_multi_hts(vep_context_ht)
 
     # Drop unnecessary annotations in coverage Table.
-    coverage_hts = {
-        loc: coverage_ht.drop("#chrom", "pos")
-        if "#chrom" in list(coverage_ht.row)
-        else coverage_ht
-        for loc, coverage_ht in coverage_hts.items()
-    }
+    coverage_hts = {loc: coverage_ht for loc, coverage_ht in coverage_hts.items()}
 
     # Add 'methylation', 'coverage', and 'gerp' annotation.
     vep_context_ht = vep_context_ht.annotate(
