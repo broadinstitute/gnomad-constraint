@@ -56,9 +56,12 @@ Low coverage sites require an extra calibration when computing the proportion of
 """
 
 # Methylation Table.
-# TODO: decide path to methylation Table
 methylation_ht = VersionedTableResource(
-    CURRENT_VERSION, versions={"2.1.1": ref_grch37.methylation_sites}
+    CURRENT_VERSION,
+    versions={
+        "2.1.1": ref_grch37.methylation_sites,
+        "4.0": ref_grch38.methylation_sites,
+    },
 )
 
 # VEP context Table.

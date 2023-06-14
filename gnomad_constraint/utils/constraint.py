@@ -26,6 +26,7 @@ from gnomad.utils.filtering import (
     filter_for_mu,
     filter_to_autosomes,
 )
+from gnomad.utils.reference_genome import get_reference_genome
 from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
@@ -92,7 +93,8 @@ def prepare_ht_for_constraint_calculations(
           `add_most_severe_csq_to_tc_within_vep_root()`
 
     :param ht: Input Table to be annotated.
-    :param require_exome_coverage: Filter to sites where exome coverage is defined. Default is True.
+    :param require_exome_coverage: Filter to sites where exome coverage is defined.
+        Default is True.
     :return: Table with annotations.
     """
     ht = trimer_from_heptamer(ht)
@@ -100,31 +102,55 @@ def prepare_ht_for_constraint_calculations(
     if "filters" in ht.row_value.keys():
         ht = ht.annotate(pass_filters=hl.len(ht.filters) == 0)
 
-    # Add annotations for 'ref' and 'alt'
+    # Add annotations for 'ref' and 'alt'.
     ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
-    # Filter to SNPs and context fields where the bases are either A, T, C, or G
+
+    # Filter to SNPs and context fields where the bases are either A, T, C, or G.
     ht = ht.filter(hl.is_snp(ht.ref, ht.alt) & ht.context.matches(f"[ATCG]{{{3}}}"))
+
     # Annotate mutation type (such as "CpG", "non-CpG transition", "transversion") and
-    # collapse strands to deduplicate the context
+    # collapse strands to deduplicate the context.
     ht = annotate_mutation_type(collapse_strand(ht))
-    # Add annotation for the methylation level
-    annotation = {
-        "methylation_level": hl.case()
-        .when(ht.cpg & (ht.methylation.MEAN > 0.6), 2)
-        .when(ht.cpg & (ht.methylation.MEAN > 0.2), 1)
-        .default(0)
-    }
-    # Add annotation for the median exome coverage
-    annotation["exome_coverage"] = ht.coverage.exomes.median
-    ht = ht.annotate(**annotation)
+
+    # Define methylation level cutoffs based on fields present in the 'methylation'
+    # annotation.
+    if "MEAN" in ht.methylation:
+        # The GRCh37 methylation resource provides a MEAN score ranging from 0-1.
+        methylation_expr = ht.methylation.MEAN
+        methylation_cutoffs = (0.2, 0.6)
+    elif "methylation_level" in ht.methylation:
+        # The GRCh38 methylation resource provides a score ranging from 0-15. The
+        # determination of this score is described in Chen et al:
+        # https://www.biorxiv.org/content/10.1101/2022.03.20.485034v2.full
+        # Cutoffs to translate this to the 0-2 methylation level were determined by
+        # correlating this score with the GRCh37 liftover score. Proposed cutoffs are:
+        # 0, 1-5, 6+.
+        methylation_expr = ht.methylation.methylation_level
+        methylation_cutoffs = (5, 0)
+    else:
+        raise ValueError(
+            "No 'methylation_level' or 'MEAN' found in 'methylation' annotation."
+        )
+
+    # Add annotations for methylation level and median exome coverage.
+    ht = ht.annotate(
+        methylation_level=(
+            hl.case()
+            .when(ht.cpg & (methylation_expr > methylation_cutoffs[0]), 2)
+            .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
+            .default(0)
+        ),
+        # exome_coverage=ht.coverage.exomes.median
+    )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
     # vep root annotation.
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
 
     if require_exome_coverage:
-        # Filter out locus with undefined exome coverage
+        # Filter out locus with undefined exome coverage.
         ht = ht.filter(hl.is_defined(ht.exome_coverage))
+
     return ht
 
 
@@ -200,7 +226,7 @@ def create_observed_and_possible_ht(
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, variants with allele frequency above the `max_af` cutoff, and variants
-    # with exome coverage larger then 0 if requested.
+    # with exome coverage larger than 0 if requested.
     keep_criteria = (
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
@@ -844,7 +870,7 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
 
 
 def annotate_context_ht(
-    vep_context_ht: str,
+    ht: str,
     coverage_hts: Dict[str, hl.Table],
     methylation_ht: str,
     gerp_ht: str,
@@ -852,7 +878,7 @@ def annotate_context_ht(
     """
     Split multiallelic sites and add 'methylation', 'coverage', and 'gerp' annotation to context Table with VEP annotation.
 
-    :param vep_context_ht: Input Table with VEP annotation.
+    :param ht: Input context Table with VEP annotation.
     :param coverage_hts: A Dictionary with key as one of 'exomes' or 'genomes' and
         values as corresponding coverage Tables.
     :param methylation_ht: Methylation Table.
@@ -860,20 +886,23 @@ def annotate_context_ht(
     :return: Table with sites split and necessary annotations.
     """
     # Split multiallelic sites in context Table.
-    vep_context_ht = hl.split_multi_hts(vep_context_ht)
+    ht = hl.split_multi_hts(ht)
+
+    # Filter Table to only contigs 1-22, X, Y.
+    ref = get_reference_genome(ht.locus)
+    ht = hl.filter_intervals(
+        ht, [hl.parse_locus_interval(c, ref.name) for c in ref.contigs[:24]]
+    )
 
     # Drop unnecessary annotations in coverage Table.
     coverage_hts = {loc: coverage_ht for loc, coverage_ht in coverage_hts.items()}
 
     # Add 'methylation', 'coverage', and 'gerp' annotation.
-    vep_context_ht = vep_context_ht.annotate(
-        methylation=methylation_ht[vep_context_ht.locus],
+    ht = ht.annotate(
+        methylation=methylation_ht[ht.locus],
         coverage=hl.struct(
-            **{
-                loc: coverage_ht[vep_context_ht.locus]
-                for loc, coverage_ht in coverage_hts.items()
-            }
+            **{loc: coverage_ht[ht.locus] for loc, coverage_ht in coverage_hts.items()}
         ),
-        gerp=gerp_ht[vep_context_ht.locus].S,
+        gerp=gerp_ht[ht.locus].S,
     )
-    return vep_context_ht
+    return ht
