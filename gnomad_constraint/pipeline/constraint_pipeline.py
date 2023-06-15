@@ -39,18 +39,18 @@ from gnomad_constraint.resources.resource_utils import (
     MODEL_TYPES,
     POPS,
     VERSIONS,
-    gerp_ht,
     get_annotated_context_ht,
     get_constraint_metrics_dataset,
     get_coverage_ht,
+    get_gerp_ht,
     get_logging_path,
+    get_methylation_ht,
     get_models,
     get_mutation_ht,
     get_predicted_proportion_observed_dataset,
     get_preprocessed_ht,
     get_sites_resource,
     get_training_dataset,
-    methylation_ht,
     vep_context_ht,
 )
 from gnomad_constraint.utils.constraint import (
@@ -158,14 +158,15 @@ def main(args):
                     overwrite=overwrite,
                 )
                 context_ht = vep_context_ht.versions[version].ht()
+                context_build = get_reference_genome(context_ht.locus).name
                 annotate_context_ht(
                     context_ht,
                     {
                         "exomes": get_coverage_ht("exomes").ht(),
                         "genomes": get_coverage_ht("genomes").ht(),
                     },
-                    methylation_ht.versions[version].ht(),
-                    gerp_ht(get_reference_genome(context_ht.locus).name),
+                    get_methylation_ht(context_build).ht(),
+                    get_gerp_ht(context_build),
                 ).write(annotated_context_resource.path, overwrite)
 
             # Raise error if any of the output resources exist and --overwrite is not
@@ -242,7 +243,7 @@ def main(args):
 
             logger.warning(
                 "Calculating new GERP cutoffs to be used instead of"
-                " '--gerp-lower-cutoff' and '-gerp-upper-cutoff' defaults."
+                " '--gerp-lower-cutoff' and '--gerp-upper-cutoff' defaults."
             )
             gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
                 preprocess_resources[("autosome_par", "context")].ht()
