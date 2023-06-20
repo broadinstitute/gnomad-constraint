@@ -14,7 +14,6 @@ from gnomad.resources.resource_utils import (
     TableResource,
     VersionedTableResource,
 )
-from gnomad.utils.file_utils import check_file_exists_raise_error
 from gnomad_qc.v4.resources.release import release_coverage, release_sites
 
 logging.basicConfig(

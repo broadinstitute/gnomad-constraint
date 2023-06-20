@@ -142,11 +142,13 @@ def get_constraint_resources(
             "gnomAD sites resources": {
                 f"{d}_sites_ht": constraint_res.get_sites_resource(d, version)
                 for d in data_types
+                if d != "context"
             }
         },
     )
     calculate_gerp_cutoffs = PipelineStepResourceCollection(
         "--calculate-gerp-cutoffs",
+        output_resources={},
         pipeline_input_steps=[preprocess_data],
     )
     calculate_mutation_rate = PipelineStepResourceCollection(
@@ -250,7 +252,7 @@ def main(args):
             logger.info(
                 "Annotating methylation, coverage, and GERP on the VEP context Table..."
             )
-            res = resources.prepare_context_ht
+            res = resources.prepare_context
             res.check_resource_existence()
             context_ht = res.context_ht.ht()
             coverage_hts = {
@@ -276,7 +278,7 @@ def main(args):
             # Add annotations used in constraint calculations.
             for data_type in constraint_res.DATA_TYPES:
                 if data_type != "context":
-                    ht = res[f"{data_type}_sites_ht"].ht()
+                    ht = getattr(res, f"{data_type}_sites_ht").ht()
                 else:
                     ht = context_ht
 
@@ -294,18 +296,18 @@ def main(args):
                 )
                 # Filter to locus that is on an autosome or in a pseudoautosomal region.
                 ht.filter(ht.locus.in_autosome_or_par()).write(
-                    res[f"preprocessed_autosome_par_{data_type}_ht"].path,
+                    getattr(res, f"preprocessed_autosome_par_{data_type}_ht").path,
                     overwrite=overwrite,
                 )
                 # Sex chromosomes are analyzed separately, since they are biologically
                 # different from the autosomes.
                 if data_type != "genomes":
                     filter_x_nonpar(ht).write(
-                        res[f"preprocessed_chrx_nonpar_{data_type}_ht"].path,
+                        getattr(res, f"preprocessed_chrx_nonpar_{data_type}_ht").path,
                         overwrite=overwrite,
                     )
                     filter_y_nonpar(ht).write(
-                        res[f"preprocessed_chry_nonpar_{data_type}_ht"].path,
+                        getattr(res, f"preprocessed_chry_nonpar_{data_type}_ht").path,
                         overwrite=overwrite,
                     )
             logger.info("Done with preprocessing genome and exome Table.")
@@ -356,8 +358,8 @@ def main(args):
             # chromosome X, and chromosome Y.
             for r in regions:
                 op_ht = create_observed_and_possible_ht(
-                    res[f"preprocessed_{r}_exomes_ht"].ht(),
-                    res[f"preprocessed_{r}_context_ht"].ht(),
+                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
+                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     res.mutation_ht.ht().select("mu_snp"),
                     max_af=max_af,
                     pops=pops,
@@ -367,7 +369,7 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                op_ht.write(res[f"train_{r}_ht"].path, overwrite=overwrite)
+                op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
             logger.info("Done with creating training dataset.")
 
         if args.build_models:
@@ -379,16 +381,18 @@ def main(args):
             for r in regions:
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
-                    res[f"train_{r}_ht"].ht(), weighted=args.use_weights, pops=pops
+                    getattr(res, f"train_{r}_ht").ht(),
+                    weighted=args.use_weights,
+                    pops=pops,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
-                    res[f"model_{r}_plateau_ht"].path,
+                    getattr(res, f"model_{r}_plateau_ht").path,
                     overwrite=overwrite,
                 )
                 hl.experimental.write_expression(
                     coverage_model,
-                    res[f"model_{r}_coverage_ht"].path,
+                    getattr(res, f"model_{r}_coverage_ht").path,
                     overwrite=overwrite,
                 )
                 logger.info("Done building %s plateau and coverage models.", r)
@@ -406,11 +410,11 @@ def main(args):
                     r,
                 )
                 oe_ht = apply_models(
-                    res[f"preprocessed_{r}_exomes_ht"].ht(),
-                    res[f"preprocessed_{r}_context_ht"].ht(),
+                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
+                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     res.mutation_ht.ht().select("mu_snp"),
-                    res[f"model_{r}_plateau_ht"].he(),
-                    res[f"model_{r}_coverage_ht"].he(),
+                    getattr(res, f"model_{r}_plateau_ht").he(),
+                    getattr(res, f"model_{r}_coverage_ht").he(),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
@@ -419,7 +423,7 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                oe_ht.write(res[f"apply_{r}_ht"].path, overwrite=overwrite)
+                oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
@@ -434,7 +438,7 @@ def main(args):
 
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
-            hts = [res[f"apply_{r}_ht"].ht() for r in regions]
+            hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
             union_ht = hts[0].union(*hts[1:])
             union_ht = union_ht.repartition(args.compute_constraint_metrics_partitions)
             union_ht = union_ht.checkpoint(

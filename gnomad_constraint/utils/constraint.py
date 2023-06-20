@@ -140,7 +140,7 @@ def prepare_ht_for_constraint_calculations(
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
         ),
-        # exome_coverage=ht.coverage.exomes.median
+        exome_coverage=ht.coverage.exomes.median,
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
@@ -893,9 +893,6 @@ def annotate_context_ht(
     ht = hl.filter_intervals(
         ht, [hl.parse_locus_interval(c, ref.name) for c in ref.contigs[:24]]
     )
-
-    # Drop unnecessary annotations in coverage Table.
-    coverage_hts = {loc: coverage_ht for loc, coverage_ht in coverage_hts.items()}
 
     # Add 'methylation', 'coverage', and 'gerp' annotation.
     ht = ht.annotate(
