@@ -495,7 +495,7 @@ if __name__ == "__main__":
         "--prepare-context-ht",
         help=(
             "Prepare the context Table by splitting multiallelic sites and adding "
-            "'methylation', 'coverage', and 'gerp' annotation to context Table with "
+            "'methylation', 'coverage', and 'gerp' annotations to context Table with "
             "VEP annotation."
         ),
         action="store_true",
