@@ -14,7 +14,6 @@ from gnomad.resources.resource_utils import (
     TableResource,
     VersionedTableResource,
 )
-from gnomad.utils.file_utils import check_file_exists_raise_error
 from gnomad_qc.v4.resources.release import release_coverage, release_sites
 
 logging.basicConfig(
@@ -334,53 +333,6 @@ def get_constraint_metrics_dataset(
     return TableResource(
         f"{get_constraint_root(version, test)}/metrics/gnomad.v{version}.constraint_metrics.ht"
     )
-
-
-def check_resource_existence(
-    input_step_resources: Optional[Dict[str, Tuple]] = None,
-    output_step_resources: Optional[Dict[str, Tuple]] = None,
-    overwrite: bool = False,
-) -> None:
-    """
-    Check whether all the input files exist and the overwrite parameter is set to True when writing the output files.
-
-    If no parameters are passed to the function, nothing is done.
-
-    :param input_step_resources: A dictionary with keys as pipeline steps that generate
-        input files and the value as the input files to check the existence of. Default
-        is None.
-    :param output_step_resources: A dictionary with keys as pipeline step that generates
-        output files and the value as the output files to check the existence of.
-        Default is None.
-    :param overwrite: The overwrite parameter used when writing the output files.
-        Default is None.
-    :return: None.
-    """
-    # Check if the input resources exist.
-    if input_step_resources:
-        for step, input_resources in input_step_resources.items():
-            check_file_exists_raise_error(
-                [r if isinstance(r, str) else r.path for r in input_resources],
-                error_if_not_exists=True,
-                error_if_not_exists_msg=(
-                    f"Not all input resources exist. Please add {step} to "
-                    "the command line. The following files are missing: "
-                ),
-            )
-
-    # Check if the output resources exist when `overwrite` is False.
-    if not overwrite and output_step_resources:
-        for step, output_resources in output_step_resources.items():
-            check_file_exists_raise_error(
-                [r if isinstance(r, str) else r.path for r in output_resources],
-                error_if_exists=True,
-                error_if_exists_msg=(
-                    "Some of the output resources that will be created by "
-                    f"{step} already exist and the --overwrite argument "
-                    f"was not set. Please rerun {step} with --overwrite. "
-                    "The following files already exist: "
-                ),
-            )
 
 
 def check_param_scope(
