@@ -876,7 +876,11 @@ def annotate_context_ht(
     gerp_ht: str,
 ) -> hl.Table:
     """
-    Split multiallelic sites and add 'methylation', 'coverage', and 'gerp' annotation to context Table with VEP annotation.
+    Split multiallelic sites if needed and add 'methylation', 'coverage', and 'gerp' annotation to context Table with VEP annotation.
+
+    .. note::
+        Checks for 'was_split' annotation in Table. If not present, splits
+        multiallelic sites.
 
     :param ht: Input context Table with VEP annotation.
     :param coverage_hts: A Dictionary with key as one of 'exomes' or 'genomes' and
@@ -885,8 +889,9 @@ def annotate_context_ht(
     :param gerp_ht: Table with GERP annotation.
     :return: Table with sites split and necessary annotations.
     """
-    # Split multiallelic sites in context Table.
-    ht = hl.split_multi_hts(ht)
+    # Check if context Table is split, and if not, split multiallelic sites.
+    if "was_split" not in list(ht.row):
+        ht = hl.split_multi_hts(ht)
 
     # Filter Table to only contigs 1-22, X, Y.
     ref = get_reference_genome(ht.locus)
