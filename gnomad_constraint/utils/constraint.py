@@ -870,10 +870,10 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
 
 
 def annotate_context_ht(
-    ht: str,
+    ht: hl.Table,
     coverage_hts: Dict[str, hl.Table],
-    methylation_ht: str,
-    gerp_ht: str,
+    methylation_ht: hl.Table,
+    gerp_ht: hl.Table,
 ) -> hl.Table:
     """
     Split multiallelic sites if needed and add 'methylation', 'coverage', and 'gerp' annotation to context Table with VEP annotation.
