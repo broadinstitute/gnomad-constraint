@@ -907,4 +907,7 @@ def annotate_context_ht(
         ),
         gerp=gerp_ht[ht.locus].S,
     )
+
+    ht  = ht.annotate(gerp = hl.if_else(hl.is_missing(ht.gerp), 0, new.gerp))
+    
     return ht
