@@ -117,7 +117,7 @@ def prepare_ht_for_constraint_calculations(
     if "MEAN" in ht.methylation:
         # The GRCh37 methylation resource provides a MEAN score ranging from 0-1.
         methylation_expr = ht.methylation.MEAN
-        methylation_cutoffs = (0.2, 0.6)
+        methylation_cutoffs = (0.6, 0.2)
     elif "methylation_level" in ht.methylation:
         # The GRCh38 methylation resource provides a score ranging from 0-15. The
         # determination of this score is described in Chen et al:
