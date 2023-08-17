@@ -345,7 +345,9 @@ def main(args):
                 max_cov=args.max_cov,
                 gerp_lower_cutoff=gerp_lower_cutoff,
                 gerp_upper_cutoff=gerp_upper_cutoff,
-            ).write(res.mutation_ht.path, overwrite=overwrite)
+            ).repartition(args.mutation_rate_partitions).write(
+                res.mutation_ht.path, overwrite=overwrite
+            )
 
         # Create training datasets that include possible and observed variant counts
         # for building models.
@@ -582,6 +584,15 @@ if __name__ == "__main__":
         ),
         type=float,
         default=2.6607,
+    )
+    mutation_rate_args.add_argument(
+        "--mutation-rate-partitions",
+        help=(
+            "Number of partitions to which the mutation rate Table should be"
+            " repartitioned."
+        ),
+        type=int,
+        default=1,
     )
 
     training_set_args = parser.add_argument_group(
