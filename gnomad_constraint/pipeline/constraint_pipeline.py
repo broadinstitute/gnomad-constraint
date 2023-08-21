@@ -405,20 +405,26 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
-            # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
-            # regions, chromosome X, and chromosome Y.
+            mutation_ht = res.mutation_ht.ht().select("mu_snp")
+            mutation_ht = mutation_ht = mutation_ht.repartition(1)
+
+            # Apply separate plateau models for sites on autosomes/pseudoautosomal
+            # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
+            # coverage models for all contigs (Note: should test separate coverage models
+            # for XX/XY in the future).
             for r in regions:
                 logger.info(
-                    "Applying %s plateau and coverage models and computing expected"
-                    " variant count and observed:expected ratio...",
+                    "Applying %s plateau and autosome coverage models and computing"
+                    " expected variant count and observed:expected ratio...",
                     r,
                 )
                 oe_ht = apply_models(
                     getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
-                    res.mutation_ht.ht().select("mu_snp"),
+                    mutation_ht,
+                    # res.mutation_ht.ht().select("mu_snp"),
                     getattr(res, f"model_{r}_plateau_ht").he(),
-                    getattr(res, f"model_{r}_coverage_ht").he(),
+                    getattr(res, "model_autosome_par_coverage_ht").he(),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
