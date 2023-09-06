@@ -494,7 +494,7 @@ def calculate_mu_by_downsampling(
     ),
     ac_cutoff: int = 5,
     downsampling_level: int = 1000,
-    total_mu: float = 1.2e-08,
+    total_mu: float = x,
     pops: Tuple[str] = (),
     min_cov: int = 15,
     max_cov: int = 60,
@@ -504,7 +504,7 @@ def calculate_mu_by_downsampling(
     """
     Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
 
-    Prior to computing mutation rate the only following variants are kept:
+    Prior to computing mutation rate, only the following variants are kept:
         - variants with the mean coverage in the gnomAD genomes between `min_cov` and
           `max_cov`.
         - variants where the most severe consequence was 'intron_variant' or
@@ -513,7 +513,7 @@ def calculate_mu_by_downsampling(
           `gerp_upper_cutoff` (these default to -3.9885 and 2.6607, respectively -
           these values were precalculated on the GRCh37 context Table and define the
           5th and 95th percentiles).
-        - high-quality variants: `exome_ht.pass_filters`.
+        - high-quality variants: `genome_ht.pass_filters`.
         - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
 
     The returned Table includes the following annotations:
