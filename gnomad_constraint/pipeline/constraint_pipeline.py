@@ -389,12 +389,12 @@ def main(args):
                 )
                 hl.experimental.write_expression(
                     plateau_models,
-                    getattr(res, f"model_{r}_plateau_ht").path,
+                    getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
                 hl.experimental.write_expression(
                     coverage_model,
-                    getattr(res, f"model_{r}_coverage_ht").path,
+                    getattr(res, f"model_{r}_coverage").path,
                     overwrite=overwrite,
                 )
                 logger.info("Done building %s plateau and coverage models.", r)
@@ -403,8 +403,8 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
-            #mutation_ht = res.mutation_ht.ht().select("mu_snp")
-            #mutation_ht = mutation_ht = mutation_ht.repartition(1)
+            # mutation_ht = res.mutation_ht.ht().select("mu_snp")
+            # mutation_ht = mutation_ht = mutation_ht.repartition(1)
 
             # Apply separate plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
@@ -419,10 +419,10 @@ def main(args):
                 oe_ht = apply_models(
                     getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
-                    #mutation_ht,
+                    # mutation_ht,
                     res.mutation_ht.ht().select("mu_snp"),
-                    getattr(res, f"model_{r}_plateau_ht").he(),
-                    getattr(res, "model_autosome_par_coverage_ht").he(),
+                    getattr(res, f"model_{r}_plateau").he(),
+                    getattr(res, "model_autosome_par_coverage").he(),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,

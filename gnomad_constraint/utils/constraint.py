@@ -463,7 +463,7 @@ def calculate_mu_by_downsampling(
     ),
     ac_cutoff: int = 5,
     downsampling_level: int = 1000,
-    total_mu: float = 1.2e-08,
+    total_mu: float = x,
     pops: Tuple[str] = (),
     min_cov: int = 15,
     max_cov: int = 60,
@@ -473,7 +473,7 @@ def calculate_mu_by_downsampling(
     """
     Calculate mutation rate using the downsampling with size specified by `downsampling_level` in genome sites Table.
 
-    Prior to computing mutation rate the only following variants are kept:
+    Prior to computing mutation rate, only the following variants are kept:
         - variants with the mean coverage in the gnomAD genomes between `min_cov` and
           `max_cov`.
         - variants where the most severe consequence was 'intron_variant' or
@@ -482,7 +482,7 @@ def calculate_mu_by_downsampling(
           `gerp_upper_cutoff` (these default to -3.9885 and 2.6607, respectively -
           these values were precalculated on the GRCh37 context Table and define the
           5th and 95th percentiles).
-        - high-quality variants: `exome_ht.pass_filters`.
+        - high-quality variants: `genome_ht.pass_filters`.
         - variants with allele count below `ac_cutoff`: `(freq_expr.AC <= ac_cutoff)`.
 
     The returned Table includes the following annotations:
@@ -607,12 +607,12 @@ def calculate_mu_by_downsampling(
     # variant class.
     ann_expr = {
         "proportion_observed": ht.variant_count / ht.possible_variants,
-        f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[
-            downsampling_idx
-        ]
-        / ht.possible_variants,
-        "downsamplings_frac_observed": ht.downsampling_counts_global
-        / ht.possible_variants,
+        f"proportion_observed_{downsampling_level}": (
+            ht.downsampling_counts_global[downsampling_idx] / ht.possible_variants
+        ),
+        "downsamplings_frac_observed": (
+            ht.downsampling_counts_global / ht.possible_variants
+        ),
     }
 
     for pop in pops:
@@ -624,12 +624,12 @@ def calculate_mu_by_downsampling(
         downsamplings_mu_expr = (
             correction_factors * pop_counts_expr / ht.possible_variants
         )
-        ann_expr[
-            f"downsamplings_mu_{'snp' if pop == 'global' else pop}"
-        ] = downsamplings_mu_expr
-        ann_expr[
-            f"mu_snp{'' if pop == 'global' else f'_{pop}'}"
-        ] = downsamplings_mu_expr[downsampling_idx]
+        ann_expr[f"downsamplings_mu_{'snp' if pop == 'global' else pop}"] = (
+            downsamplings_mu_expr
+        )
+        ann_expr[f"mu_snp{'' if pop == 'global' else f'_{pop}'}"] = (
+            downsamplings_mu_expr[downsampling_idx]
+        )
 
     ht = ht.annotate(**ann_expr).checkpoint(
         new_temp_file(prefix="calculate_mu_by_downsampling", extension="ht")
@@ -702,8 +702,9 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
-        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
+            ht.annotation
+        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
         # Filter to LoF annotations with LOFTEE HC.
