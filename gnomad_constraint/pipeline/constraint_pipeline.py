@@ -416,7 +416,6 @@ def main(args):
                 oe_ht = apply_models(
                     getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
-                    # mutation_ht,
                     res.mutation_ht.ht().select("mu_snp"),
                     getattr(res, f"model_{r}_plateau").he(),
                     getattr(res, "model_autosome_par_coverage").he(),
