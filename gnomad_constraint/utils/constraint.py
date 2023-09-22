@@ -180,7 +180,7 @@ def create_observed_and_possible_ht(
         - Low-quality variants: `exome_ht.pass_filters`
         - Variants with allele frequency above `max_af` cutoff: `(freq_expr.AF <=
           max_af)`
-        - Variants that are not synonymous or in the canonical/mane transcript if specified
+        - Variants that are not synonymous or in the canonical/MANE Select transcript if specified
 
     For each substitution, context, methylation level, and exome coverage, the rest of
     variants in `exome_ht` are counted and annotated as `observed_variants`, and the
