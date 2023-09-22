@@ -258,7 +258,7 @@ def create_observed_and_possible_ht(
                 " 'canonical' or 'mane_select'"
             )
         filtered_exome_ht = filter_vep_transcript_csqs(
-            exome_ht.filter(keep_criteria), canonical=canonical, mane=mane
+            exome_ht.filter(keep_criteria), canonical=canonical, mane_select=mane_select
         )
         context_ht = filter_vep_transcript_csqs(
             context_ht, canonical=canonical, mane=mane
