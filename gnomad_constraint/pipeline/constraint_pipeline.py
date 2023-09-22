@@ -405,9 +405,6 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
-            # mutation_ht = res.mutation_ht.ht().select("mu_snp")
-            # mutation_ht = mutation_ht = mutation_ht.repartition(1)
-
             # Apply separate plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
             # coverage models for all contigs (Note: should test separate coverage models
