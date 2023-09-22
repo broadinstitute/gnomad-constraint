@@ -463,7 +463,7 @@ def calculate_mu_by_downsampling(
     ),
     ac_cutoff: int = 5,
     downsampling_level: int = 1000,
-    total_mu: float = x,
+    total_mu: float = 1.2e-08,
     pops: Tuple[str] = (),
     min_cov: int = 15,
     max_cov: int = 60,

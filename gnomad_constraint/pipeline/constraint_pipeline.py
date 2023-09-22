@@ -171,7 +171,7 @@ def get_constraint_resources(
     build_models = PipelineStepResourceCollection(
         "--build-models",
         output_resources={
-            f"model_{r}_{m}_ht": constraint_res.get_models(m, version, r, test)
+            f"model_{r}_{m}": constraint_res.get_models(m, version, r, test)
             for m in constraint_res.MODEL_TYPES
             for r in regions
         },
