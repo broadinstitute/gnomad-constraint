@@ -456,7 +456,13 @@ def main(args):
             compute_constraint_metrics(
                 union_ht,
                 pops=pops,
-                keys=keys,  # TODO: edits keys here for mane vs canonical
+                keys=tuple(
+                    [
+                        i
+                        for i in list(union_ht.key)
+                        if i in ["gene", "transcript", "canonical", "mane"]
+                    ]
+                ),
                 expected_values={
                     "Null": args.expectation_null,
                     "Rec": args.expectation_rec,
