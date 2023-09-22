@@ -391,7 +391,9 @@ def apply_models(
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
         Default is `COVERAGE_CUTOFF`.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canoncial grouping. Only used when `vep_annotation` is set to 'transcript_consequences'.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical 
+        grouping. Only used when `custom_vep_annotation` is set to 
+        'transcript_consequences'.
 
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
