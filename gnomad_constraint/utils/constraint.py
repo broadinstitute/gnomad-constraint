@@ -251,7 +251,7 @@ def create_observed_and_possible_ht(
         if transcript_for_synonymous_filter == "canonical":
             canonical, mane_select = True, False
         elif transcript_for_synonymous_filter == "mane_select":
-            canonical, mane = False, True
+            canonical, mane_select = False, True
         else:
             raise ValueError(
                 "If transcript_for_synonymous_filter is not None, must be either"
