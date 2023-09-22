@@ -425,7 +425,7 @@ def main(args):
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
                     use_mane_select_instead_of_canonical=(
-                        True if int(version[0]) >= 4 else "canonical"
+                        True if int(version[0]) >= 4 else False
                     ),  ## Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions
                 )
                 if use_v2_release_mutation_ht:
