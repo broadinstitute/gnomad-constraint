@@ -169,7 +169,7 @@ def create_observed_and_possible_ht(
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
-    filter_to_canonical_synonymous: bool = False,
+    transcript_for_synonymous_filter: str = None,
     global_annotation: Optional[str] = None,
 ) -> hl.Table:
     """
@@ -180,7 +180,7 @@ def create_observed_and_possible_ht(
         - Low-quality variants: `exome_ht.pass_filters`
         - Variants with allele frequency above `max_af` cutoff: `(freq_expr.AF <=
           max_af)`
-        - Variants that are not synonymous or in the canonical transcript
+        - Variants that are not synonymous or in the canonical/mane transcript if specified
 
     For each substitution, context, methylation level, and exome coverage, the rest of
     variants in `exome_ht` are counted and annotated as `observed_variants`, and the
@@ -213,8 +213,7 @@ def create_observed_and_possible_ht(
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :param filter_coverage_over_0: Whether to filter the exome Table and context Table
         to variants with coverage larger than 0. Default is False.
-    :param filter_to_canonical_synonymous: Whether to keep only canonical synonymous
-        variants in the exome Table. Default is False.
+    :param transcript_for_synonymous_filter: Transcript to use when filtering to synonymous transcripts. Choices: ["mane", "canonical", None]. If "canonical", will filter to  ensembl canonical transcripts with synonymous consequence. If "mane", will use use MANE select transcript with synonymous consequence. If None, no transcript/synonymous filter will be applied. Default is None.
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
         global annotation will not be added. Default is None.
@@ -241,10 +240,23 @@ def create_observed_and_possible_ht(
     # Filter context ht to sites with defined exome coverage
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
-    # If requested keep only variants that are synonymous, canonical
-    if filter_to_canonical_synonymous:
-        filtered_exome_ht = filter_vep_transcript_csqs(exome_ht.filter(keep_criteria))
-        context_ht = filter_vep_transcript_csqs(context_ht)
+    # If requested keep only variants that are synonymous in either MANE and canonical transcripts
+    if transcript_for_synonymous_filter is not None:
+        if transcript_for_synonymous_filter == "canonical":
+            canonical, mane = True, False
+        elif transcript_for_synonymous_filter == "mane":
+            canonical, mane = False, True
+        else:
+            raise ValueError(
+                "If transcript_for_synonymous_filter is not None, must be either"
+                " 'canonical' or 'mane'"
+            )
+        filtered_exome_ht = filter_vep_transcript_csqs(
+            exome_ht.filter(keep_criteria), canonical=canonical, mane=mane
+        )
+        context_ht = filter_vep_transcript_csqs(
+            context_ht, canonical=canonical, mane=mane
+        )
     # Count the observed variants in the entire Table and in each downsampling grouped
     # by `keep_annotations`.
     observed_ht = count_variants_by_group(
@@ -308,6 +320,7 @@ def apply_models(
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
     cov_cutoff: int = COVERAGE_CUTOFF,
+    preferred_transcript_group: str = None,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -373,6 +386,9 @@ def apply_models(
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
         Default is `COVERAGE_CUTOFF`.
+    :param preferred_transcript_group Preferred transcript grouping to use if also grouping by preferred transcript. Choices: ["mane", "canonical", None]. Default is None.
+
+
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
@@ -389,7 +405,7 @@ def apply_models(
         context_ht, vep_annotation
     )
     exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
-        exome_ht, vep_annotation
+        exome_ht, vep_annotation, preferred_transcript_group
     )
 
     # Compute observed and possible variant counts
@@ -403,7 +419,7 @@ def apply_models(
         grouping,
         obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
-        filter_to_canonical_synonymous=False,
+        transcript_for_synonymous_filter=None,
     )
 
     mu_expr = ht.mu_snp * ht.possible_variants
@@ -607,12 +623,12 @@ def calculate_mu_by_downsampling(
     # variant class.
     ann_expr = {
         "proportion_observed": ht.variant_count / ht.possible_variants,
-        f"proportion_observed_{downsampling_level}": ht.downsampling_counts_global[
-            downsampling_idx
-        ]
-        / ht.possible_variants,
-        "downsamplings_frac_observed": ht.downsampling_counts_global
-        / ht.possible_variants,
+        f"proportion_observed_{downsampling_level}": (
+            ht.downsampling_counts_global[downsampling_idx] / ht.possible_variants
+        ),
+        "downsamplings_frac_observed": (
+            ht.downsampling_counts_global / ht.possible_variants
+        ),
     }
 
     for pop in pops:
@@ -624,12 +640,12 @@ def calculate_mu_by_downsampling(
         downsamplings_mu_expr = (
             correction_factors * pop_counts_expr / ht.possible_variants
         )
-        ann_expr[
-            f"downsamplings_mu_{'snp' if pop == 'global' else pop}"
-        ] = downsamplings_mu_expr
-        ann_expr[
-            f"mu_snp{'' if pop == 'global' else f'_{pop}'}"
-        ] = downsamplings_mu_expr[downsampling_idx]
+        ann_expr[f"downsamplings_mu_{'snp' if pop == 'global' else pop}"] = (
+            downsamplings_mu_expr
+        )
+        ann_expr[f"mu_snp{'' if pop == 'global' else f'_{pop}'}"] = (
+            downsamplings_mu_expr[downsampling_idx]
+        )
 
     ht = ht.annotate(**ann_expr).checkpoint(
         new_temp_file(prefix="calculate_mu_by_downsampling", extension="ht")
@@ -702,8 +718,9 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
-        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
+            ht.annotation
+        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC or OS.
         "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
         # Filter to LoF annotations with LOFTEE HC.

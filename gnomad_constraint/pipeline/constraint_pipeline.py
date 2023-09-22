@@ -366,7 +366,9 @@ def main(args):
                     max_af=max_af,
                     pops=pops,
                     partition_hint=args.training_set_partition_hint,
-                    filter_to_canonical_synonymous=True,
+                    transcript_for_synonymous_filter=(
+                        "mane" if int(version[0]) >= 4 else "canonical"
+                    ),
                     global_annotation="training_dataset_params",
                 )
                 if use_v2_release_mutation_ht:
@@ -422,6 +424,9 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    preferred_transcript_group=(
+                        "mane" if int(version[0]) >= 4 else "canonical"
+                    ),
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
@@ -451,6 +456,7 @@ def main(args):
             compute_constraint_metrics(
                 union_ht,
                 pops=pops,
+                keys=keys,  # TODO: edits keys here for mane vs canonical
                 expected_values={
                     "Null": args.expectation_null,
                     "Rec": args.expectation_rec,
