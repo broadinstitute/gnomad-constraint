@@ -245,7 +245,8 @@ def create_observed_and_possible_ht(
     # Filter context ht to sites with defined exome coverage
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
-    # If requested keep only variants that are synonymous in either MANE and canonical transcripts.
+    # If requested keep only variants that are synonymous in either MANE Select or 
+    # canonical transcripts.
     if transcript_for_synonymous_filter is not None:
         if transcript_for_synonymous_filter == "canonical":
             canonical, mane = True, False
