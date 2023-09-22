@@ -216,8 +216,8 @@ def create_observed_and_possible_ht(
     :param transcript_for_synonymous_filter: Transcript to use when filtering to
         synonymous variants. Choices: ["mane_select", "canonical", None]. If "canonical", will
         filter to variants with a synonymous consequence in Ensembl canonical
-        transcripts. If "mane", will filter to variants with a synonymous consequence
-        in MANE select transcripts. If None, no transcript/synonymous filter will be
+        transcripts. If "mane_select", will filter to variants with a synonymous consequence
+        in MANE Select transcripts. If None, no transcript/synonymous filter will be
         applied. Default is None.
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
