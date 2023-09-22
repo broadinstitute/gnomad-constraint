@@ -249,7 +249,7 @@ def create_observed_and_possible_ht(
     # canonical transcripts.
     if transcript_for_synonymous_filter is not None:
         if transcript_for_synonymous_filter == "canonical":
-            canonical, mane = True, False
+            canonical, mane_select = True, False
         elif transcript_for_synonymous_filter == "mane_select":
             canonical, mane = False, True
         else:
