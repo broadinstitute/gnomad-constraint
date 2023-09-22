@@ -127,6 +127,8 @@ def get_constraint_resources(
     # For genomes need a preprocessed ht for autosome_par.
     # For exomes and context need a preprocessed ht for autosome_par, chrX,
     # and chrY.
+    from gnomad.resources.resource_utils import TableResource
+
     preprocess_data = PipelineStepResourceCollection(
         "--preprocess-data",
         output_resources={
@@ -140,9 +142,12 @@ def get_constraint_resources(
         pipeline_input_steps=[prepare_context],
         add_input_resources={
             "gnomAD sites resources": {
-                f"{d}_sites_ht": constraint_res.get_sites_resource(d, version)
-                for d in data_types
-                if d != "context"
+                "genomes_sites_ht": constraint_res.get_sites_resource(
+                    "genomes", version
+                ),
+                "exomes_sites_ht": TableResource(
+                    "gs://gnomad-tmp/julia/constraint/v4_test_release_sites_remove_AS_lowqual_raw_AC0.ht"
+                ),
             }
         },
     )
