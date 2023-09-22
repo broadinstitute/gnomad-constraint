@@ -368,7 +368,7 @@ def main(args):
                     partition_hint=args.training_set_partition_hint,
                     transcript_for_synonymous_filter=(
                         "mane_select" if int(version[0]) >= 4 else "canonical"
-                    ),  ## Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions
+                    ),  # Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
                     global_annotation="training_dataset_params",
                 )
                 if use_v2_release_mutation_ht:
