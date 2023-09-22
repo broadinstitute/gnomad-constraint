@@ -245,7 +245,7 @@ def create_observed_and_possible_ht(
     # Filter context ht to sites with defined exome coverage
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
-    # If requested keep only variants that are synonymous in either MANE Select or 
+    # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.
     if transcript_for_synonymous_filter is not None:
         if transcript_for_synonymous_filter == "canonical":
@@ -392,8 +392,8 @@ def apply_models(
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
         Default is `COVERAGE_CUTOFF`.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical 
-        grouping. Only used when `custom_vep_annotation` is set to 
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical
+        grouping. Only used when `custom_vep_annotation` is set to
         'transcript_consequences'.
 
 
