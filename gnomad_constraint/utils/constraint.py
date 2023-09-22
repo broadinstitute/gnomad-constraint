@@ -261,7 +261,7 @@ def create_observed_and_possible_ht(
             exome_ht.filter(keep_criteria), canonical=canonical, mane_select=mane_select
         )
         context_ht = filter_vep_transcript_csqs(
-            context_ht, canonical=canonical, mane=mane
+            context_ht, canonical=canonical, mane_select=mane_select
         )
     # Count the observed variants in the entire Table and in each downsampling grouped
     # by `keep_annotations`.
