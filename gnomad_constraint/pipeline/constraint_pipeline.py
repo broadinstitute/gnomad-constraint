@@ -368,7 +368,7 @@ def main(args):
                     partition_hint=args.training_set_partition_hint,
                     transcript_for_synonymous_filter=(
                         "mane" if int(version[0]) >= 4 else "canonical"
-                    ),
+                    ),  ## Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions
                     global_annotation="training_dataset_params",
                 )
                 if use_v2_release_mutation_ht:
@@ -424,9 +424,9 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
-                    preferred_transcript_group=(
-                        "mane" if int(version[0]) >= 4 else "canonical"
-                    ),
+                    use_mane_select_instead_of_canonical=(
+                        True if int(version[0]) >= 4 else "canonical"
+                    ),  ## Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)

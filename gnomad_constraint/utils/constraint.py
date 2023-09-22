@@ -213,7 +213,12 @@ def create_observed_and_possible_ht(
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :param filter_coverage_over_0: Whether to filter the exome Table and context Table
         to variants with coverage larger than 0. Default is False.
-    :param transcript_for_synonymous_filter: Transcript to use when filtering to synonymous transcripts. Choices: ["mane", "canonical", None]. If "canonical", will filter to  ensembl canonical transcripts with synonymous consequence. If "mane", will use use MANE select transcript with synonymous consequence. If None, no transcript/synonymous filter will be applied. Default is None.
+    :param transcript_for_synonymous_filter: Transcript to use when filtering to
+        synonymous variants. Choices: ["mane_select", "canonical", None]. If "canonical", will
+        filter to variants with a synonymous consequence in Ensembl canonical
+        transcripts. If "mane", will filter to variants with a synonymous consequence
+        in MANE select transcripts. If None, no transcript/synonymous filter will be
+        applied. Default is None.
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
         global annotation will not be added. Default is None.
@@ -240,16 +245,16 @@ def create_observed_and_possible_ht(
     # Filter context ht to sites with defined exome coverage
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
-    # If requested keep only variants that are synonymous in either MANE and canonical transcripts
+    # If requested keep only variants that are synonymous in either MANE and canonical transcripts.
     if transcript_for_synonymous_filter is not None:
         if transcript_for_synonymous_filter == "canonical":
             canonical, mane = True, False
-        elif transcript_for_synonymous_filter == "mane":
+        elif transcript_for_synonymous_filter == "mane_select":
             canonical, mane = False, True
         else:
             raise ValueError(
                 "If transcript_for_synonymous_filter is not None, must be either"
-                " 'canonical' or 'mane'"
+                " 'canonical' or 'mane_select'"
             )
         filtered_exome_ht = filter_vep_transcript_csqs(
             exome_ht.filter(keep_criteria), canonical=canonical, mane=mane
@@ -320,7 +325,7 @@ def apply_models(
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
     cov_cutoff: int = COVERAGE_CUTOFF,
-    preferred_transcript_group: str = None,
+    use_mane_select_instead_of_canonical: bool = False,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -386,7 +391,7 @@ def apply_models(
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
         Default is `COVERAGE_CUTOFF`.
-    :param preferred_transcript_group Preferred transcript grouping to use if also grouping by preferred transcript. Choices: ["mane", "canonical", None]. Default is None.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canoncial grouping. Only used when `vep_annotation` is set to 'transcript_consequences'.
 
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
@@ -400,12 +405,19 @@ def apply_models(
         vep_annotation = "worst_csq_by_gene"
     else:
         vep_annotation = "transcript_consequences"
+        if use_mane_select_instead_of_canonical:
+            include_canonical_group, include_mane_select_group = False, True
+        else:
+            include_canonical_group, include_mane_select_group = True, False
 
     context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
         context_ht, vep_annotation
     )
     exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
-        exome_ht, vep_annotation, preferred_transcript_group
+        ht=exome_ht,
+        vep_annotation=vep_annotation,
+        include_canonical_group=include_canonical_group,
+        include_mane_select_group=include_mane_select_group,
     )
 
     # Compute observed and possible variant counts
