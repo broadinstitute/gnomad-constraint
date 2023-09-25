@@ -385,7 +385,7 @@ def main(args):
             for r in regions:
                 # TODO: Remove repartition once partition_hint bugs are resolved
                 training_ht = getattr(res, f"train_{r}_ht").ht()
-                training_ht = training_ht.repartition(training_set_partition_hint)
+                training_ht = training_ht.repartition(args.training_set_partition_hint)
 
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
