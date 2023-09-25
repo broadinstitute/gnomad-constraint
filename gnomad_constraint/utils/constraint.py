@@ -272,6 +272,9 @@ def create_observed_and_possible_ht(
         count_downsamplings=pops,
         use_table_group_by=True,
     )
+
+    # TODO: Remove repartition once partition_hint bugs are resolved.
+    observed_ht = observed_ht.repartition(partition_hint)
     observed_ht = observed_ht.transmute(observed_variants=observed_ht.variant_count)
 
     # Filter the `exome_ht` to rows that don’t match the criteria above.
@@ -466,6 +469,9 @@ def apply_models(
         .partition_hint(expected_variant_partition_hint)
         .aggregate(**agg_expr)
     )
+
+    # TODO: Remove repartition once partition_hint bugs are resolved.
+    ht = ht.repartition(expected_variant_partition_hint)
 
     # Annotate global annotations.
     ht = ht.annotate_globals(
