@@ -470,7 +470,7 @@ def apply_models(
         .aggregate(**agg_expr)
     )
 
-    # TODO: Remove repartition once partition_hint bugs are resolved
+    # TODO: Remove repartition once partition_hint bugs are resolved.
     ht = ht.repartition(expected_variant_partition_hint)
 
     # Annotate global annotations.
