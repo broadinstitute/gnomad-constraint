@@ -171,7 +171,7 @@ def get_constraint_resources(
     build_models = PipelineStepResourceCollection(
         "--build-models",
         output_resources={
-            f"model_{r}_{m}_ht": constraint_res.get_models(m, version, r, test)
+            f"model_{r}_{m}": constraint_res.get_models(m, version, r, test)
             for m in constraint_res.MODEL_TYPES
             for r in regions
         },
@@ -389,12 +389,12 @@ def main(args):
                 )
                 hl.experimental.write_expression(
                     plateau_models,
-                    getattr(res, f"model_{r}_plateau_ht").path,
+                    getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
                 hl.experimental.write_expression(
                     coverage_model,
-                    getattr(res, f"model_{r}_coverage_ht").path,
+                    getattr(res, f"model_{r}_coverage").path,
                     overwrite=overwrite,
                 )
                 logger.info("Done building %s plateau and coverage models.", r)
@@ -403,20 +403,22 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
-            # Apply coverage and plateau models for sites on autosomes/pseudoautosomal
-            # regions, chromosome X, and chromosome Y.
+            # Apply separate plateau models for sites on autosomes/pseudoautosomal
+            # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
+            # coverage models for all contigs (Note: should test separate coverage models
+            # for XX/XY in the future).
             for r in regions:
                 logger.info(
-                    "Applying %s plateau and coverage models and computing expected"
-                    " variant count and observed:expected ratio...",
+                    "Applying %s plateau and autosome coverage models and computing"
+                    " expected variant count and observed:expected ratio...",
                     r,
                 )
                 oe_ht = apply_models(
                     getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     res.mutation_ht.ht().select("mu_snp"),
-                    getattr(res, f"model_{r}_plateau_ht").he(),
-                    getattr(res, f"model_{r}_coverage_ht").he(),
+                    getattr(res, f"model_{r}_plateau").he(),
+                    getattr(res, "model_autosome_par_coverage").he(),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
