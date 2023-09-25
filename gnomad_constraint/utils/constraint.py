@@ -273,7 +273,7 @@ def create_observed_and_possible_ht(
         use_table_group_by=True,
     )
 
-    # TODO: Remove repartition once partition_hint bugs are resolved
+    # TODO: Remove repartition once partition_hint bugs are resolved.
     observed_ht = observed_ht.repartition(partition_hint)
     observed_ht = observed_ht.transmute(observed_variants=observed_ht.variant_count)
 
