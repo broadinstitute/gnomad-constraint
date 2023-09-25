@@ -118,8 +118,10 @@ def get_constraint_resources(
         input_resources={
             "gnomAD resources": {
                 "context_ht": context_res,
-                "exomes_coverage_ht": constraint_res.get_coverage_ht("exomes"),
-                "genomes_coverage_ht": constraint_res.get_coverage_ht("genomes"),
+                "exomes_coverage_ht": constraint_res.get_coverage_ht("exomes", version),
+                "genomes_coverage_ht": constraint_res.get_coverage_ht(
+                    "genomes", version
+                ),
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
             },
         },
