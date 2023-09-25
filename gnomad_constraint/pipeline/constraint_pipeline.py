@@ -383,7 +383,7 @@ def main(args):
             # Build plateau and coverage models for autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y
             for r in regions:
-                # TODO: Remove repartition once partition_hint bugs are resolved
+                # TODO: Remove repartition once partition_hint bugs are resolved.
                 training_ht = getattr(res, f"train_{r}_ht").ht()
                 training_ht = training_ht.repartition(args.training_set_partition_hint)
 
