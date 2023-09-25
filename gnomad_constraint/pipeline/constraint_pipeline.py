@@ -409,7 +409,7 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
-            # TODO: Remove repartition once partition write bugs are resolved
+            # TODO: Remove repartition once partition write bugs are resolved.
             mutation_ht = res.mutation_ht.ht().select("mu_snp")
             mutation_ht = mutation_ht = mutation_ht.repartition(
                 args.mutation_rate_partitions
