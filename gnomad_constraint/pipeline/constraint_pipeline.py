@@ -383,9 +383,13 @@ def main(args):
             # Build plateau and coverage models for autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y
             for r in regions:
+                # TODO: Remove repartition once partition_hint bugs are resolved
+                training_ht = getattr(res, f"train_{r}_ht").ht()
+                training_ht = training_ht.repartition(training_set_partition_hint)
+
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
-                    getattr(res, f"train_{r}_ht").ht(),
+                    training_ht,
                     weighted=args.use_weights,
                     pops=pops,
                 )
@@ -405,6 +409,12 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
+            # TODO: Remove repartition once partition write bugs are resolved
+            mutation_ht = res.mutation_ht.ht().select("mu_snp")
+            mutation_ht = mutation_ht = mutation_ht.repartition(
+                args.mutation_rate_partitions
+            )
+
             # Apply separate plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
             # coverage models for all contigs (Note: should test separate coverage models
@@ -418,7 +428,7 @@ def main(args):
                 oe_ht = apply_models(
                     getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
-                    res.mutation_ht.ht().select("mu_snp"),
+                    mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
                     getattr(res, "model_autosome_par_coverage").he(),
                     max_af=max_af,
