@@ -366,7 +366,9 @@ def main(args):
                     max_af=max_af,
                     pops=pops,
                     partition_hint=args.training_set_partition_hint,
-                    filter_to_canonical_synonymous=True,
+                    transcript_for_synonymous_filter=(
+                        "mane_select" if int(version[0]) >= 4 else "canonical"
+                    ),  # Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
                     global_annotation="training_dataset_params",
                 )
                 if use_v2_release_mutation_ht:
@@ -424,6 +426,9 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    use_mane_select_instead_of_canonical=(
+                        True if int(version[0]) >= 4 else False
+                    ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
@@ -453,6 +458,13 @@ def main(args):
             compute_constraint_metrics(
                 union_ht,
                 pops=pops,
+                keys=tuple(
+                    [
+                        i
+                        for i in list(union_ht.key)
+                        if i in ["gene", "transcript", "canonical", "mane_select"]
+                    ]
+                ),
                 expected_values={
                     "Null": args.expectation_null,
                     "Rec": args.expectation_rec,

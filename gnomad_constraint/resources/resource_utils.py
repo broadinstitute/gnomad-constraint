@@ -34,7 +34,7 @@ CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
 VEP annotations used when applying models.
 
 "transcript_consequences" option will annotate the Table with 'annotation', 'gene',
-'coverage', 'transcript', and 'canonical' annotations using 'transcript_consequences'
+'coverage', 'transcript', and either 'canonical' or 'mane_select' annotations using 'transcript_consequences'
 VEP annotation.
 
 "worst_csq_by_gene" option will annotate the Table with 'annotation', 'gene', and
