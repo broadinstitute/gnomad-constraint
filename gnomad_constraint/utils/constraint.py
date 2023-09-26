@@ -112,6 +112,11 @@ def prepare_ht_for_constraint_calculations(
     # collapse strands to deduplicate the context.
     ht = annotate_mutation_type(collapse_strand(ht))
 
+    # Obtain field name for median exome coverage.
+    exome_median_cov_field = (
+        "median_approx" if "median_approx" in ht.coverage.exomes else "median"
+    )
+
     # Define methylation level cutoffs based on fields present in the 'methylation'
     # annotation.
     if "MEAN" in ht.methylation:
@@ -140,7 +145,7 @@ def prepare_ht_for_constraint_calculations(
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
         ),
-        exome_coverage=ht.coverage.exomes.median_approx,
+        exome_coverage=ht.coverage.exomes[exome_median_cov_field],
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
