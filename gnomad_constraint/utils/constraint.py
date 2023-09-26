@@ -140,7 +140,7 @@ def prepare_ht_for_constraint_calculations(
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
         ),
-        exome_coverage=ht.coverage.exomes.median,
+        exome_coverage=ht.coverage.exomes.median_approx,
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
