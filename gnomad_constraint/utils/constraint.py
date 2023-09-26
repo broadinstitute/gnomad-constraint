@@ -112,7 +112,7 @@ def prepare_ht_for_constraint_calculations(
     # collapse strands to deduplicate the context.
     ht = annotate_mutation_type(collapse_strand(ht))
 
-    # Obtain field name for median exome coverage
+    # Obtain field name for median exome coverage.
     exome_median_cov_field = (
         "median_approx" if "median_approx" in ht.coverage.exomes else "median"
     )
