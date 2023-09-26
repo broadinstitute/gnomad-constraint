@@ -100,7 +100,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
                 default_version="4.0",
                 versions={
                     release: TableResource(
-                        path="gs://gnomad-tmp/julia/constraint/v4_test_release_sites_remove_AS_lowqual_raw_AC0.ht"
+                        path="gs://gnomad-tmp-30day/constraint/v4_test_release_sites_remove_AS_lowqual_raw_AC0.ht"
                     )
                     for release in ["4.0"]
                 },
