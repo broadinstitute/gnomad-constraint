@@ -247,7 +247,7 @@ def create_observed_and_possible_ht(
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
-    # Filter context ht to sites with defined exome coverage
+    # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
     # If requested keep only variants that are synonymous in either MANE Select or
