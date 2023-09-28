@@ -140,7 +140,7 @@ def prepare_ht_for_constraint_calculations(
     # Add annotations for methylation level and median exome coverage.
     ht = ht.annotate(
         methylation_level=(
-            hl.case()
+            hl.case(missing_false=True)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[0]), 2)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
@@ -408,7 +408,7 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
-    # Filter context ht to sites with defined exome coverage
+    # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
     # Add necessary constraint annotations for grouping
