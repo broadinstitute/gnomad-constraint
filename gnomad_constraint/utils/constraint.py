@@ -140,6 +140,8 @@ def prepare_ht_for_constraint_calculations(
     # Add annotations for methylation level and median exome coverage.
     ht = ht.annotate(
         methylation_level=(
+            # TODO: Need to look into this, is adding `missing_false=True` actually
+            # right?
             hl.case(missing_false=True)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[0]), 2)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
@@ -422,7 +424,10 @@ def apply_models(
             include_canonical_group, include_mane_select_group = True, False
 
     context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
-        context_ht, vep_annotation
+        ht=context_ht,
+        vep_annotation=vep_annotation,
+        include_canonical_group=include_canonical_group,
+        include_mane_select_group=include_mane_select_group,
     )
     exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
         ht=exome_ht,

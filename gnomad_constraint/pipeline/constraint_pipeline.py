@@ -360,10 +360,20 @@ def main(args):
 
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
-            for r in regions:
+            # TODO: Adding for testing because current methylation file has no values
+            #  for chrX or chrY.
+            for r in ["autosome_par"]:  # regions:
+                exomes_ht = getattr(res, f"preprocessed_{r}_exomes_ht").ht()
+                context_ht = getattr(res, f"preprocessed_{r}_context_ht").ht()
+                exomes_ht = hl.filter_intervals(
+                    exomes_ht, [hl.parse_locus_interval("chrX")], keep=False
+                )
+                context_ht = hl.filter_intervals(
+                    context_ht, [hl.parse_locus_interval("chrX")], keep=False
+                )
                 op_ht = create_observed_and_possible_ht(
-                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
-                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    exomes_ht,
+                    context_ht,
                     res.mutation_ht.ht().select("mu_snp"),
                     max_af=max_af,
                     pops=pops,
@@ -380,11 +390,15 @@ def main(args):
 
         if args.build_models:
             res = resources.build_models
-            res.check_resource_existence()
+            # TODO: Commenting out for testing because current methylation file has no
+            #  values for chrX or chrY.
+            # res.check_resource_existence()
 
             # Build plateau and coverage models for autosomes/pseudoautosomal regions,
-            # chromosome X, and chromosome Y
-            for r in regions:
+            # chromosome X, and chromosome Y.
+            # TODO: Adding for testing because current methylation file has no values
+            #  for chrX or chrY.
+            for r in ["autosome_par"]:  # regions:
                 # TODO: Remove repartition once partition_hint bugs are resolved.
                 training_ht = getattr(res, f"train_{r}_ht").ht()
                 training_ht = training_ht.repartition(args.training_set_partition_hint)
@@ -409,7 +423,9 @@ def main(args):
 
         if args.apply_models:
             res = resources.apply_models
-            res.check_resource_existence()
+            # TODO: Commenting out for testing because current methylation file has no
+            #  values for chrX or chrY.
+            # res.check_resource_existence()
 
             # TODO: Remove repartition once partition write bugs are resolved.
             mutation_ht = res.mutation_ht.ht().select("mu_snp")
@@ -421,7 +437,9 @@ def main(args):
             # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
             # coverage models for all contigs (Note: should test separate coverage models
             # for XX/XY in the future).
-            for r in regions:
+            # TODO: Adding for testing because current methylation file has no values
+            #  for chrX or chrY.
+            for r in ["autosome_par"]:  # regions:
                 logger.info(
                     "Applying %s plateau and autosome coverage models and computing"
                     " expected variant count and observed:expected ratio...",
