@@ -479,7 +479,9 @@ def main(args):
 
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
-            hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
+            hts = [
+                getattr(res, f"apply_{r}_ht").ht() for r in ["autosome_par"]
+            ]  # regions]
             union_ht = hts[0].union(*hts[1:])
             union_ht = union_ht.repartition(args.compute_constraint_metrics_partitions)
             union_ht = union_ht.checkpoint(
