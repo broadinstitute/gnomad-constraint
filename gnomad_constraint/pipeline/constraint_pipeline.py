@@ -473,7 +473,9 @@ def main(args):
                 " ratio, and confidence interval around oe ratio..."
             )
             res = resources.compute_constraint_metrics
-            res.check_resource_existence()
+            # TODO: Adding for testing because current methylation file has no values
+            #  for chrX or chrY.
+            # res.check_resource_existence()
 
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
