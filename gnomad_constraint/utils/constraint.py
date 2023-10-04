@@ -141,8 +141,9 @@ def prepare_ht_for_constraint_calculations(
     ht = ht.annotate(
         methylation_level=(
             # TODO: Need to look into this, is adding `missing_false=True` actually
-            # right?
-            hl.case(missing_false=True)
+            #  what we want. After more thought I think this should stay as is, we
+            #  just need to get chrX methylation and exclude chrY for v4.0.
+            hl.case()
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[0]), 2)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
@@ -242,7 +243,7 @@ def create_observed_and_possible_ht(
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
     if filter_coverage_over_0:
-        keep_criteria &= exome_ht.coverage > 0
+        keep_criteria &= exome_ht.exome_coverage > 0
 
     keep_annotations += grouping
 
@@ -299,6 +300,8 @@ def create_observed_and_possible_ht(
         partition_hint=partition_hint,
         use_table_group_by=True,
     )
+    # TODO: Remove when done testing.
+    possible_ht.filter(hl.is_missing(possible_ht.methylation_level)).show(20)
     possible_ht = annotate_with_mu(possible_ht, mutation_ht)
     possible_ht = possible_ht.transmute(possible_variants=possible_ht.variant_count)
 

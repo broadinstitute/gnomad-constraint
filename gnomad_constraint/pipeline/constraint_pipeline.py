@@ -249,6 +249,14 @@ def main(args):
         test,
     )
 
+    # TODO: Clean up if we decide to add in the interval filtering.
+    from gnomad_qc.v4.resources.basics import calling_intervals
+
+    interval_ht = calling_intervals(
+        interval_name="intersection",
+        calling_interval_padding=50,
+    ).ht()
+
     try:
         if args.prepare_context_ht:
             logger.info(
@@ -261,6 +269,15 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
+            # TODO: Remove when we have chrX methylation.
+            context_ht = hl.filter_intervals(
+                context_ht,
+                [
+                    hl.parse_locus_interval("chrX", reference_genome="GRCh38"),
+                    hl.parse_locus_interval("chrY", reference_genome="GRCh38"),
+                ],
+                keep=False,
+            )
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
@@ -281,6 +298,12 @@ def main(args):
             for data_type in constraint_res.DATA_TYPES:
                 if data_type != "context":
                     ht = getattr(res, f"{data_type}_sites_ht").ht()
+                    # TODO: Remove when we have chrX methylation.
+                    ht = hl.filter_intervals(
+                        ht,
+                        [hl.parse_locus_interval("chrX", reference_genome="GRCh38")],
+                        keep=False,
+                    )
                 else:
                     ht = context_ht
 
@@ -321,9 +344,9 @@ def main(args):
             )
             res = resources.calculate_gerp_cutoffs
             res.check_resource_existence()
-            gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
-                res.preprocessed_autosome_par_context_ht.ht()
-            )
+            ht = res.preprocessed_autosome_par_context_ht.ht()
+
+            gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(ht)
             logger.info(
                 "Calculated new GERP cutoffs: using a lower GERP cutoff of %f and an"
                 " upper GERP cutoff of %f.",
@@ -365,11 +388,12 @@ def main(args):
             for r in ["autosome_par"]:  # regions:
                 exomes_ht = getattr(res, f"preprocessed_{r}_exomes_ht").ht()
                 context_ht = getattr(res, f"preprocessed_{r}_context_ht").ht()
-                exomes_ht = hl.filter_intervals(
-                    exomes_ht, [hl.parse_locus_interval("chrX")], keep=False
+                # TODO: Clean up if we decide to add in the interval filtering.
+                exomes_ht = exomes_ht.filter(
+                    hl.is_defined(interval_ht[exomes_ht.locus])
                 )
-                context_ht = hl.filter_intervals(
-                    context_ht, [hl.parse_locus_interval("chrX")], keep=False
+                context_ht = context_ht.filter(
+                    hl.is_defined(interval_ht[context_ht.locus])
                 )
                 op_ht = create_observed_and_possible_ht(
                     exomes_ht,
@@ -429,9 +453,7 @@ def main(args):
 
             # TODO: Remove repartition once partition write bugs are resolved.
             mutation_ht = res.mutation_ht.ht().select("mu_snp")
-            mutation_ht = mutation_ht = mutation_ht.repartition(
-                args.mutation_rate_partitions
-            )
+            mutation_ht = mutation_ht.repartition(args.mutation_rate_partitions)
 
             # Apply separate plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
@@ -445,9 +467,28 @@ def main(args):
                     " expected variant count and observed:expected ratio...",
                     r,
                 )
+                exomes_ht = getattr(res, f"preprocessed_{r}_exomes_ht").ht()
+                exomes_ht = hl.filter_intervals(
+                    exomes_ht,
+                    [hl.parse_locus_interval("chrX", reference_genome="GRCh38")],
+                    keep=False,
+                )
+                context_ht = getattr(res, f"preprocessed_{r}_context_ht").ht()
+                context_ht = hl.filter_intervals(
+                    context_ht,
+                    [hl.parse_locus_interval("chrX", reference_genome="GRCh38")],
+                    keep=False,
+                )
+                # TODO: Clean up if we decide to add in the interval filtering.
+                exomes_ht = exomes_ht.filter(
+                    hl.is_defined(interval_ht[exomes_ht.locus])
+                )
+                context_ht = context_ht.filter(
+                    hl.is_defined(interval_ht[context_ht.locus])
+                )
                 oe_ht = apply_models(
-                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
-                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    exomes_ht,
+                    context_ht,
                     mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
                     getattr(res, "model_autosome_par_coverage").he(),

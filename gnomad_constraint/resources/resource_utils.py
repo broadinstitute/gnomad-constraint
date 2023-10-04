@@ -96,7 +96,10 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
-            return release_sites().versions[version]
+            # TODO: Remove when we have final release HT.
+            return TableResource(
+                "gs://gnomad-tmp/julia/constraint/v4_test_release_sites_remove_AS_lowqual_raw_AC0.vqsr.ht"
+            )  # release_sites().versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
@@ -179,8 +182,9 @@ def get_mutation_ht(
         )
     else:
         check_param_scope(version)
+        # TODO: Change back when we are done testing.
         return TableResource(
-            f"{get_constraint_root(version, test)}/mutation_rate/gnomad.v{version}.mutation_rate.ht"
+            f"{get_constraint_root(version, test)}/mutation_rate/gnomad.v{version}.mutation_rate.interval_filtered.ht"
         )
 
 
@@ -233,8 +237,9 @@ def get_preprocessed_ht(
     :return: TableResource of processed genomes, exomes, or context Table.
     """
     check_param_scope(version, genomic_region, data_type)
+    # TODO: Change back when we are done testing.
     return TableResource(
-        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}.preprocessed.{genomic_region}.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/gnomad.v{version}.{data_type}.preprocessed.{genomic_region}.vqsr_filter.ht"
     )
 
 
@@ -255,8 +260,9 @@ def get_training_dataset(
     :return: TableResource of training dataset.
     """
     check_param_scope(version, genomic_region)
+    # TODO: Change back when we are done testing.
     return TableResource(
-        f"{get_constraint_root(version, test)}/training_data/gnomad.v{version}.constraint_training.{genomic_region}.ht"
+        f"{get_constraint_root(version, test)}/training_data/gnomad.v{version}.constraint_training.{genomic_region}.interval_filtered.vqsr_filter.ht"
     )
 
 
@@ -281,8 +287,9 @@ def get_models(
     check_param_scope(
         version=version, genomic_region=genomic_region, model_type=model_type
     )
+    # TODO: Change back when we are done testing.
     return ExpressionResource(
-        f"{get_constraint_root(version, test)}/models/gnomad.v{version}.{model_type}.{genomic_region}.he"
+        f"{get_constraint_root(version, test)}/models/gnomad.v{version}.{model_type}.{genomic_region}.interval_filtered.vqsr_filter.he"
     )
 
 
@@ -310,8 +317,9 @@ def get_predicted_proportion_observed_dataset(
         genomic_region=genomic_region,
         custom_vep_annotation=custom_vep_annotation,
     )
+    # TODO: Change back when we are done testing.
     return TableResource(
-        f"{get_constraint_root(version, test)}/predicted_proportion_observed/{custom_vep_annotation}/gnomad.v{version}.predicted_proportion_observed.{genomic_region}.ht"
+        f"{get_constraint_root(version, test)}/predicted_proportion_observed/{custom_vep_annotation}/gnomad.v{version}.predicted_proportion_observed.{genomic_region}.interval_filtered.vqsr_filter.ht"
     )
 
 
@@ -329,9 +337,9 @@ def get_constraint_metrics_dataset(
     :return: TableResource of constraint metrics.
     """
     check_param_scope(version=version)
-
+    # TODO: Change back when we are done testing.
     return TableResource(
-        f"{get_constraint_root(version, test)}/metrics/gnomad.v{version}.constraint_metrics.ht"
+        f"{get_constraint_root(version, test)}/metrics/gnomad.v{version}.constraint_metrics.interval_filtered.vqsr_filter.ht"
     )
 
 
