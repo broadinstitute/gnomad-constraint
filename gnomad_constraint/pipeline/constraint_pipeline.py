@@ -239,6 +239,11 @@ def main(args):
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
+    # Drop chromosome Y from version v4.0 (can add back in when obtain chrY methylation data)
+    if int(version[0]) >= 4:
+        regions.remove("chry_nonpar")
+        # TODO: check why there is no Y-par in the context_ht
+
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
         version,
