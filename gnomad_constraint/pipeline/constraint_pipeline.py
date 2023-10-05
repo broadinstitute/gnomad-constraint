@@ -489,6 +489,8 @@ def main(args):
                 },
                 min_diff_convergence=args.min_diff_convergence,
                 raw_z_outlier_threshold=args.raw_z_outlier_threshold,
+                include_os=int(version[0])
+                < 4,  # OS (other splice) is not implemented for build 38
             ).write(res.constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 

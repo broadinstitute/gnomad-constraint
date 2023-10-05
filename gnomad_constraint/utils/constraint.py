@@ -702,6 +702,7 @@ def compute_constraint_metrics(
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
     raw_z_outlier_threshold: float = 5.0,
+    include_os: bool = False,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -735,6 +736,7 @@ def compute_constraint_metrics(
         variants), whereas values either above '--raw-z-outlier-threshold' or below
         the negative of '--raw-z-outlier-threshold' will be considered outliers for
         synonymous varaint counts (indicating too few or too many variants).
+    :param include_os: Whether or not to include OS (other splice) as a grouping when stratifiying calculations by lof HC.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -747,8 +749,6 @@ def compute_constraint_metrics(
         "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
             ht.annotation
         ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
-        # Filter to LoF annotations with LOFTEE HC or OS.
-        "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
         # Filter to LoF annotations with LOFTEE HC.
         "lof": ht.modifier == "HC",
         # Filter to missense variants.
@@ -763,7 +763,14 @@ def compute_constraint_metrics(
     # The 90% CI around obs:exp and z-scores are only computed for lof, mis, and syn.
     oe_ann = ["lof", "mis", "syn"]
     # pLI scores are only computed for LoF variants.
-    lof_ann = ["lof_hc_lc", "lof_hc_os", "lof"]
+    lof_ann = ["lof_hc_lc", "lof"]
+
+    if include_os:
+        # Filter to LoF annotations with LOFTEE HC or OS.
+        annotation_dict.update(
+            {"lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS")}
+        )
+        lof_ann.append("lof_hc_os")
 
     # Compute the observed:expected ratio. Will not compute per pop for "mis_pphen".
     ht = ht.group_by(*keys).aggregate(
