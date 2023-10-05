@@ -399,6 +399,7 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
+                    upper_cov_cutoff=args.upper_cov_cutoff,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -696,6 +697,16 @@ if __name__ == "__main__":
             "'possible_variants'."
         ),
         action="store_true",
+    )
+    build_models_args.add_argument(
+        "--upper-cov-cutoff",
+        help=(
+            "Upper median coverage cutoff. Sites with coverage above this cutoff are"
+            " excluded from the high coverage Table when building the models. Default"
+            " is None."
+        ),
+        type=int,
+        default=None,
     )
 
     build_models_args._group_actions.append(use_populations)
