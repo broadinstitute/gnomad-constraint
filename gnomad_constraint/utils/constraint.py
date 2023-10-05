@@ -140,7 +140,7 @@ def prepare_ht_for_constraint_calculations(
     # Add annotations for methylation level and median exome coverage.
     ht = ht.annotate(
         methylation_level=(
-            hl.case(missing_false=True)
+            hl.case(missing_false=True) # TODO: Remove after obtain chrX methylation bed
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[0]), 2)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
