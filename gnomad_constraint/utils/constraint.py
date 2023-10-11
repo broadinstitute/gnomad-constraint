@@ -124,14 +124,16 @@ def prepare_ht_for_constraint_calculations(
         methylation_expr = ht.methylation.MEAN
         methylation_cutoffs = (0.6, 0.2)
     elif "methylation_level" in ht.methylation:
-        # The GRCh38 methylation resource provides a score ranging from 0-15. The
+        # The GRCh38 methylation resource provides a score ranging from 0-15 for autosomes. The
         # determination of this score is described in Chen et al:
         # https://www.biorxiv.org/content/10.1101/2022.03.20.485034v2.full
-        # Cutoffs to translate this to the 0-2 methylation level were determined by
-        # correlating this score with the GRCh37 liftover score. Proposed cutoffs are:
-        # 0, 1-5, 6+.
+        # For chrX, methylation scores reange from 0-12, but these scores are not directly comparable
+        # to the autosome scores (chrX and autosomes were analyzed separately and levels are relative).
+        # Cutoffs to translate these scores to the 0-2 methylation level were determined by
+        # correlating these scores with the GRCh37 liftover scores. Proposed cutoffs are:
+        # 0, 1-5, 6+ for autosomes, and 0, 1-3, 4+ for chrX.
         methylation_expr = ht.methylation.methylation_level
-        methylation_cutoffs = (5, 0)
+        methylation_cutoffs = hl.if_else(ht.locus.contig != "chrX", (5, 0), (3, 0))
     else:
         raise ValueError(
             "No 'methylation_level' or 'MEAN' found in 'methylation' annotation."
@@ -140,7 +142,7 @@ def prepare_ht_for_constraint_calculations(
     # Add annotations for methylation level and median exome coverage.
     ht = ht.annotate(
         methylation_level=(
-            hl.case(missing_false=True) # TODO: Remove after obtain chrX methylation bed
+            hl.case()
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[0]), 2)
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
