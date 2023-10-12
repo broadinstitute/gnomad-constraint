@@ -113,6 +113,7 @@ def prepare_ht_for_constraint_calculations(
     ht = annotate_mutation_type(collapse_strand(ht))
 
     # Obtain field name for median exome coverage.
+    # TODO: Edit coverage field once decide what to use for v4.
     exome_median_cov_field = (
         "median_approx" if "median_approx" in ht.coverage.exomes else "median"
     )
@@ -738,7 +739,7 @@ def compute_constraint_metrics(
         variants), whereas values either above '--raw-z-outlier-threshold' or below
         the negative of '--raw-z-outlier-threshold' will be considered outliers for
         synonymous varaint counts (indicating too few or too many variants).
-    :param include_os: Whether or not to include OS (other splice) as a grouping when 
+    :param include_os: Whether or not to include OS (other splice) as a grouping when
         stratifying calculations by lof HC.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
