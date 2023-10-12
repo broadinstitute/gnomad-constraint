@@ -96,16 +96,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
-            return VersionedTableResource(
-                default_version="4.0",
-                versions={
-                    release: TableResource(
-                        path="gs://gnomad-tmp-30day/constraint/v4_test_release_sites_remove_AS_lowqual_raw_AC0.ht"
-                    )
-                    for release in ["4.0"]
-                },
-            )
-            # return release_sites().versions[version]
+            return release_sites().versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
