@@ -128,10 +128,9 @@ def get_methylation_ht(build: str) -> TableResource:
         methylation_chrx = methylation_sites_chrx.ht()
         methylation_autosomes = methylation_sites.ht()
         methylation_ht = methylation_autosomes.union(methylation_chrx)
-        methylation_ht = methylation_ht.checkpoint("gs://gnomad-tmp/methylation_ht.ht")
-        return TableResource(
-            path="gs://gnomad-tmp/methylation_ht.ht",
-        )
+        tmp_path = get_constraint_root(version=build, test=True)
+        methylation_ht = methylation_ht.checkpoint(tmp_path, overwrite=True)
+        return TableResource(path=tmp_path)
     else:
         raise ValueError("Build must be one of 'GRCh37' or 'GRCh38'.")
 
