@@ -738,7 +738,8 @@ def compute_constraint_metrics(
         variants), whereas values either above '--raw-z-outlier-threshold' or below
         the negative of '--raw-z-outlier-threshold' will be considered outliers for
         synonymous varaint counts (indicating too few or too many variants).
-    :param include_os: Whether or not to include OS (other splice) as a grouping when stratifiying calculations by lof HC.
+    :param include_os: Whether or not to include OS (other splice) as a grouping when 
+        stratifying calculations by lof HC.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
