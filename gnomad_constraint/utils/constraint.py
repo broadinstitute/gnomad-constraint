@@ -245,6 +245,9 @@ def create_observed_and_possible_ht(
     if filter_coverage_over_0:
         keep_criteria &= exome_ht.coverage > 0
 
+    # TODO: For testing, may remove
+    keep_criteria &= exome_ht.coverage >= 30
+
     keep_annotations += grouping
 
     # Keep variants that satisfy the criteria above.
