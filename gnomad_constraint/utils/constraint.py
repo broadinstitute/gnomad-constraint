@@ -112,6 +112,12 @@ def prepare_ht_for_constraint_calculations(
     # collapse strands to deduplicate the context.
     ht = annotate_mutation_type(collapse_strand(ht))
 
+    # Obtain field name for median exome coverage.
+    # TODO: Edit coverage field once decide what to use for v4.
+    exome_median_cov_field = (
+        "median_approx" if "median_approx" in ht.coverage.exomes else "median"
+    )
+
     # Define methylation level cutoffs based on fields present in the 'methylation'
     # annotation.
     if "MEAN" in ht.methylation:
@@ -119,14 +125,16 @@ def prepare_ht_for_constraint_calculations(
         methylation_expr = ht.methylation.MEAN
         methylation_cutoffs = (0.6, 0.2)
     elif "methylation_level" in ht.methylation:
-        # The GRCh38 methylation resource provides a score ranging from 0-15. The
+        # The GRCh38 methylation resource provides a score ranging from 0-15 for autosomes. The
         # determination of this score is described in Chen et al:
         # https://www.biorxiv.org/content/10.1101/2022.03.20.485034v2.full
-        # Cutoffs to translate this to the 0-2 methylation level were determined by
-        # correlating this score with the GRCh37 liftover score. Proposed cutoffs are:
-        # 0, 1-5, 6+.
+        # For chrX, methylation scores reange from 0-12, but these scores are not directly comparable
+        # to the autosome scores (chrX and autosomes were analyzed separately and levels are relative).
+        # Cutoffs to translate these scores to the 0-2 methylation level were determined by
+        # correlating these scores with the GRCh37 liftover scores. Proposed cutoffs are:
+        # 0, 1-5, 6+ for autosomes, and 0, 1-3, 4+ for chrX.
         methylation_expr = ht.methylation.methylation_level
-        methylation_cutoffs = (5, 0)
+        methylation_cutoffs = hl.if_else(ht.locus.contig != "chrX", (5, 0), (3, 0))
     else:
         raise ValueError(
             "No 'methylation_level' or 'MEAN' found in 'methylation' annotation."
@@ -140,7 +148,7 @@ def prepare_ht_for_constraint_calculations(
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
         ),
-        exome_coverage=ht.coverage.exomes.median,
+        exome_coverage=ht.coverage.exomes[exome_median_cov_field],
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
@@ -242,7 +250,7 @@ def create_observed_and_possible_ht(
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
-    # Filter context ht to sites with defined exome coverage
+    # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
     # If requested keep only variants that are synonymous in either MANE Select or
@@ -403,7 +411,7 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
-    # Filter context ht to sites with defined exome coverage
+    # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
     # Add necessary constraint annotations for grouping
@@ -697,6 +705,7 @@ def compute_constraint_metrics(
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
     raw_z_outlier_threshold: float = 5.0,
+    include_os: bool = False,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -730,6 +739,8 @@ def compute_constraint_metrics(
         variants), whereas values either above '--raw-z-outlier-threshold' or below
         the negative of '--raw-z-outlier-threshold' will be considered outliers for
         synonymous varaint counts (indicating too few or too many variants).
+    :param include_os: Whether or not to include OS (other splice) as a grouping when
+        stratifying calculations by lof HC.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -742,8 +753,6 @@ def compute_constraint_metrics(
         "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
             ht.annotation
         ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
-        # Filter to LoF annotations with LOFTEE HC or OS.
-        "lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS"),
         # Filter to LoF annotations with LOFTEE HC.
         "lof": ht.modifier == "HC",
         # Filter to missense variants.
@@ -758,7 +767,14 @@ def compute_constraint_metrics(
     # The 90% CI around obs:exp and z-scores are only computed for lof, mis, and syn.
     oe_ann = ["lof", "mis", "syn"]
     # pLI scores are only computed for LoF variants.
-    lof_ann = ["lof_hc_lc", "lof_hc_os", "lof"]
+    lof_ann = ["lof_hc_lc", "lof"]
+
+    if include_os:
+        # Filter to LoF annotations with LOFTEE HC or OS.
+        annotation_dict.update(
+            {"lof_hc_os": (ht.modifier == "HC") | (ht.modifier == "OS")}
+        )
+        lof_ann.append("lof_hc_os")
 
     # Compute the observed:expected ratio. Will not compute per pop for "mis_pphen".
     ht = ht.group_by(*keys).aggregate(

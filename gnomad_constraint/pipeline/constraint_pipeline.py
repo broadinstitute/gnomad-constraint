@@ -239,6 +239,12 @@ def main(args):
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
+    # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
+    # methylation data)
+    if int(version[0]) >= 4:
+        regions.remove("chry_nonpar")
+        # TODO: check why there is no Y-par in the context_ht
+
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
         version,
@@ -394,6 +400,7 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
+                    upper_cov_cutoff=args.upper_cov_cutoff,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -484,6 +491,8 @@ def main(args):
                 },
                 min_diff_convergence=args.min_diff_convergence,
                 raw_z_outlier_threshold=args.raw_z_outlier_threshold,
+                include_os=int(version[0])
+                < 4,  # OS (other splice) is not implemented for build 38.
             ).write(res.constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 
@@ -689,6 +698,16 @@ if __name__ == "__main__":
             "'possible_variants'."
         ),
         action="store_true",
+    )
+    build_models_args.add_argument(
+        "--upper-cov-cutoff",
+        help=(
+            "Upper median coverage cutoff. Sites with coverage above this cutoff are"
+            " excluded from the high coverage Table when building the models. Default"
+            " is None."
+        ),
+        type=int,
+        default=None,
     )
 
     build_models_args._group_actions.append(use_populations)

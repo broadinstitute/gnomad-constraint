@@ -125,7 +125,12 @@ def get_methylation_ht(build: str) -> TableResource:
     if build == "GRCh37":
         return ref_grch37.methylation_sites
     elif build == "GRCh38":
-        return ref_grch38.methylation_sites
+        methylation_chrx = ref_grch38.methylation_sites_chrx.ht()
+        methylation_autosomes = ref_grch38.methylation_sites.ht()
+        methylation_ht = methylation_autosomes.union(methylation_chrx)
+        tmp_path = get_constraint_root(version=build, test=True)
+        methylation_ht = methylation_ht.checkpoint(tmp_path, overwrite=True)
+        return TableResource(path=tmp_path)
     else:
         raise ValueError("Build must be one of 'GRCh37' or 'GRCh38'.")
 
