@@ -251,7 +251,7 @@ def create_observed_and_possible_ht(
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
     if filter_coverage_over_0:
-        keep_criteria &= exome_ht.coverage > 0
+        keep_criteria &= exome_ht.exome_coverage > 0
 
     # TODO: For testing, may remove.
     keep_criteria &= exome_ht.exome_coverage >= 30
@@ -429,6 +429,14 @@ def apply_models(
     # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
+    # TODO: Temporary change, may remove.
+    exome_ht = exome_ht.filter(
+        exome_ht.exome_coverage.coverage_stats[0].median_approx >= 30
+    )
+    context_ht = context_ht.filter(
+        context_ht.exome_coverage.coverage_stats[0].median_approx >= 30
+    )
+
     # Add necessary constraint annotations for grouping
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
@@ -448,6 +456,9 @@ def apply_models(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
+
+    exome_ht = exome_ht.annotate(coverage=hl.struct(exomes=exome_ht.coverage))
+    context_ht = context_ht.annotate(coverage=hl.struct(exomes=context_ht.coverage))
 
     # Compute observed and possible variant counts
     ht = create_observed_and_possible_ht(
