@@ -234,6 +234,14 @@ def create_observed_and_possible_ht(
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
+
+    exome_ht = exome_ht.annotate(
+        exome_coverage=exome_ht.coverage.exomes.coverage_stats[0].median_approx
+    )
+    context_ht = context_ht.annotate(
+        exome_coverage=context_ht.coverage.exomes.coverage_stats[0].median_approx
+    )
+
     freq_expr = exome_ht.freq[0]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
@@ -245,8 +253,10 @@ def create_observed_and_possible_ht(
     if filter_coverage_over_0:
         keep_criteria &= exome_ht.coverage > 0
 
-    # TODO: For testing, may remove
-    keep_criteria &= exome_ht.coverage >= 30
+    # TODO: For testing, may remove.
+    keep_criteria &= exome_ht.exome_coverage >= 30
+
+    # keep_criteria &= exome_ht.coverage.exomes.coverage_stats[0].median_approx >= 30
 
     keep_annotations += grouping
 
@@ -254,7 +264,9 @@ def create_observed_and_possible_ht(
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
     # Filter context ht to sites with defined exome coverage.
+    # TODO: Temp cov change.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+    # context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage.coverage_stats[0].median_approx))
 
     # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.

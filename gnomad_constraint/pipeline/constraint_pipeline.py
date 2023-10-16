@@ -243,6 +243,7 @@ def main(args):
     # methylation data)
     if int(version[0]) >= 4:
         regions.remove("chry_nonpar")
+        regions.remove("chrx_nonpar")
         # TODO: check why there is no Y-par in the context_ht
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
@@ -400,6 +401,7 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
+                    lower_cov_cutoff=30,  # TODO: Temporary change, may remove
                     upper_cov_cutoff=args.upper_cov_cutoff,
                 )
                 hl.experimental.write_expression(
