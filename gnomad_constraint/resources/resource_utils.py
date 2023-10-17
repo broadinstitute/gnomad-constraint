@@ -76,7 +76,9 @@ def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> s
     return (
         f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
         if test
-        else f"gs://gnomad/v{version}/constraint"
+        else (  # TODO: change back after testing
+            f"gs://gnomad/v{version}/constraint_liftover"
+        )
     )
 
 
@@ -159,7 +161,10 @@ def get_coverage_ht(
         if data_type == "genomes":
             return gnomad_grch38.coverage(data_type)
         elif version == "4.0":
-            return release_coverage().versions[version]
+            return TableResource(
+                "gs://gnomad/v2.1.1/coverage/exomes/gnomad.exomes.r2.1.coverage.liftover_grch38.ht"
+            )
+            # return release_coverage().versions[version]
         else:
             raise ValueError(
                 "The coverage Table resource has not been defined for exomes of "
