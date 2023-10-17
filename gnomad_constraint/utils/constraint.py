@@ -242,6 +242,9 @@ def create_observed_and_possible_ht(
         exome_coverage=context_ht.coverage.exomes.coverage_stats[0].median_approx
     )
 
+    exome_ht = exome_ht.annotate(coverage=exome_ht.exome_coverage)
+    context_ht = context_ht.annotate(coverage=context_ht.exome_coverage)
+
     freq_expr = exome_ht.freq[0]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
@@ -260,6 +263,8 @@ def create_observed_and_possible_ht(
 
     keep_annotations += grouping
 
+    print(keep_annotations)
+    print(grouping)
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
