@@ -337,15 +337,16 @@ def main(args):
                 )
                 # Sex chromosomes are analyzed separately, since they are biologically
                 # different from the autosomes.
-                if data_type != "genomes":
-                    filter_x_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chrx_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
-                    filter_y_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chry_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
+                # TODO: undo
+                # if data_type != "genomes":
+                # filter_x_nonpar(ht).write(
+                #    getattr(res, f"preprocessed_chrx_nonpar_{data_type}_ht").path,
+                #    overwrite=overwrite,
+                # )
+                # filter_y_nonpar(ht).write(
+                #    getattr(res, f"preprocessed_chry_nonpar_{data_type}_ht").path,
+                #    overwrite=overwrite,
+                # )
             logger.info("Done with preprocessing genome and exome Table.")
 
         if args.calculate_gerp_cutoffs:
@@ -355,9 +356,9 @@ def main(args):
             )
             res = resources.calculate_gerp_cutoffs
             res.check_resource_existence()
-            #gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
+            # gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
             #    res.preprocessed_autosome_par_context_ht.ht()
-            #)
+            # )
             # TODO: Check edits
             ht = res.preprocessed_autosome_par_context_ht.ht()
             gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(ht)
@@ -432,7 +433,6 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
-                    lower_cov_cutoff=30,  # TODO: Temporary change, may remove
                     upper_cov_cutoff=args.upper_cov_cutoff,
                 )
                 hl.experimental.write_expression(
@@ -453,8 +453,10 @@ def main(args):
 
             # TODO: Remove repartition once partition write bugs are resolved.
             mutation_ht = res.mutation_ht.ht().select("mu_snp")
-            mutation_ht = mutation_ht.repartition( #TODO: add tremove dup text o main pipeline
-                args.mutation_rate_partitions
+            mutation_ht = (
+                mutation_ht.repartition(  # TODO: add tremove dup text o main pipeline
+                    args.mutation_rate_partitions
+                )
             )
 
             # Apply separate plateau models for sites on autosomes/pseudoautosomal
@@ -486,8 +488,8 @@ def main(args):
                 oe_ht = apply_models(
                     exomes_ht,
                     context_ht,
-                    #getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
-                    #getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    # getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
+                    # getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
                     getattr(res, "model_autosome_par_coverage").he(),

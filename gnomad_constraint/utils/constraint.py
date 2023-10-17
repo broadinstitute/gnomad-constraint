@@ -140,6 +140,7 @@ def prepare_ht_for_constraint_calculations(
             "No 'methylation_level' or 'MEAN' found in 'methylation' annotation."
         )
 
+    ht.describe()
     # Add annotations for methylation level and median exome coverage.
     ht = ht.annotate(
         methylation_level=(
@@ -148,7 +149,9 @@ def prepare_ht_for_constraint_calculations(
             .when(ht.cpg & (methylation_expr > methylation_cutoffs[1]), 1)
             .default(0)
         ),
-        exome_coverage=ht.coverage.exomes[exome_median_cov_field],
+        # TODO: Fix
+        exome_coverage=ht.coverage.exomes.coverage_stats.median,
+        # exome_coverage=ht.coverage.exomes[exome_median_cov_field],
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
