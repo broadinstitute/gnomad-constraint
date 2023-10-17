@@ -239,10 +239,10 @@ def create_observed_and_possible_ht(
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
 
     exome_ht = exome_ht.annotate(
-        exome_coverage=exome_ht.coverage.exomes.coverage_stats[0].median_approx
+        exome_coverage=exome_ht.coverage.exomes.coverage_stats[0].median
     )
     context_ht = context_ht.annotate(
-        exome_coverage=context_ht.coverage.exomes.coverage_stats[0].median_approx
+        exome_coverage=context_ht.coverage.exomes.coverage_stats[0].median
     )
 
     exome_ht = exome_ht.annotate(coverage=exome_ht.exome_coverage)
