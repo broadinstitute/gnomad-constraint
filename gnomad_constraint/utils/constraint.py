@@ -957,7 +957,8 @@ def annotate_context_ht(
     )
 
     # If neccessary, pull out first element of coverage statistics (which includes all samples). Relevant to v4, where
-    # coverage stats include additional elements to stratify by ukb subset and platforms.
+    # coverage stats include additional elements to stratify by ukb subset and 
+    # platforms.
     if "coverage_stats" in coverage_hts["exomes"].row:
         coverage_hts["exomes"] = coverage_hts["exomes"].transmute(
             **coverage_hts["exomes"].coverage_stats[0]
