@@ -237,13 +237,9 @@ def create_observed_and_possible_ht(
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
-
-    exome_ht = exome_ht.annotate(
-        exome_coverage=exome_ht.coverage.exomes.coverage_stats[0].median
-    )
-    context_ht = context_ht.annotate(
-        exome_coverage=context_ht.coverage.exomes.coverage_stats[0].median
-    )
+    exome_ht.describe()
+    exome_ht = exome_ht.annotate(exome_coverage=exome_ht.exome_coverage[0])
+    context_ht = context_ht.annotate(exome_coverage=context_ht.exome_coverage[0])
 
     exome_ht = exome_ht.annotate(coverage=exome_ht.exome_coverage)
     context_ht = context_ht.annotate(coverage=context_ht.exome_coverage)
