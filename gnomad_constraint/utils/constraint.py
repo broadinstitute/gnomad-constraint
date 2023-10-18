@@ -425,7 +425,10 @@ def apply_models(
             include_canonical_group, include_mane_select_group = True, False
 
     context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
-        context_ht, vep_annotation
+        ht=context_ht,
+        vep_annotation=vep_annotation,
+        include_canonical_group=include_canonical_group,
+        include_mane_select_group=include_mane_select_group,
     )
     exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
         ht=exome_ht,
