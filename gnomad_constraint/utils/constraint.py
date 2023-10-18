@@ -956,8 +956,8 @@ def annotate_context_ht(
         ht, [hl.parse_locus_interval(c, ref.name) for c in ref.contigs[:24]]
     )
 
-    # If neccessary, pull out first element of coverage statistics (relevant to v4 where coverage stats include additional elements
-    # to stratify by ukb subset and platforms).
+    # If neccessary, pull out first element of coverage statistics (which includes all samples). Relevant to v4, where
+    # coverage stats include additional elements to stratify by ukb subset and platforms.
     if "coverage_stats" in coverage_hts["exomes"].row:
         coverage_hts["exomes"] = coverage_hts["exomes"].transmute(
             **coverage_hts["exomes"].coverage_stats[0]
