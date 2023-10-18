@@ -414,7 +414,7 @@ def apply_models(
     # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
 
-    # Add necessary constraint annotations for grouping
+    # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
     else:
@@ -437,7 +437,7 @@ def apply_models(
         include_mane_select_group=include_mane_select_group,
     )
 
-    # Compute observed and possible variant counts
+    # Compute observed and possible variant counts.
     ht = create_observed_and_possible_ht(
         exome_ht,
         context_ht,
@@ -955,6 +955,13 @@ def annotate_context_ht(
     ht = hl.filter_intervals(
         ht, [hl.parse_locus_interval(c, ref.name) for c in ref.contigs[:24]]
     )
+
+    # If neccessary, pull out first element of coverage statistics (relevant to v4 where coverage stats include additional elements
+    # to stratify by ukb subset and platforms).
+    if "coverage_stats" in coverage_hts["exomes"].row:
+        coverage_hts["exomes"] = coverage_hts["exomes"].transmute(
+            **coverage_hts["exomes"].coverage_stats[0]
+        )
 
     # Add 'methylation', 'coverage', and 'gerp' annotation.
     ht = ht.annotate(
