@@ -402,6 +402,7 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
+                    lower_cov_cutoff=30,  # TODO: Temporary change, may remove
                     upper_cov_cutoff=args.upper_cov_cutoff,
                 )
                 hl.experimental.write_expression(
@@ -447,6 +448,7 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    cov_cutoff=30,  # TODO: Temp change, may remove
                     use_mane_select_instead_of_canonical=(
                         True if int(version[0]) >= 4 else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.

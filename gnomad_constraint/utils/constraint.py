@@ -234,6 +234,10 @@ def create_observed_and_possible_ht(
     """
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
+    # TODO: Temporary change, may remove.
+    context_ht = context_ht.filter(context_ht.exome_coverage >= 30)
+    exome_ht = exome_ht.filter(exome_ht.exome_coverage >= 30)
+
     freq_expr = exome_ht.freq[0]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
@@ -413,6 +417,10 @@ def apply_models(
     """
     # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+
+    # TODO: Temporary change, may remove.
+    context_ht = context_ht.filter(context_ht.exome_coverage >= 30)
+    exome_ht = exome_ht.filter(exome_ht.exome_coverage >= 30)
 
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
