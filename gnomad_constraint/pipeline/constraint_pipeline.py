@@ -240,10 +240,12 @@ def main(args):
         raise ValueError("The requested version of resource Tables is not available.")
 
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
-    # methylation data)
+    # methylation data).
     if int(version[0]) >= 4:
+        # TODO: check why there is no Y-par in the context_ht.
         regions.remove("chry_nonpar")
-        # TODO: check why there is no Y-par in the context_ht
+        # TODO: Add chromosome X back in after complete evaluation for autosome_par.
+        regions.remove("chrx_nonpar")
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
@@ -389,7 +391,7 @@ def main(args):
             res.check_resource_existence()
 
             # Build plateau and coverage models for autosomes/pseudoautosomal regions,
-            # chromosome X, and chromosome Y
+            # chromosome X, and chromosome Y.
             for r in regions:
                 # TODO: Remove repartition once partition_hint bugs are resolved.
                 training_ht = getattr(res, f"train_{r}_ht").ht()
@@ -473,7 +475,7 @@ def main(args):
                 new_temp_file(prefix="constraint_apply_union", extension="ht")
             )
 
-            # Compute constraint metrics
+            # Compute constraint metrics.
             compute_constraint_metrics(
                 union_ht,
                 pops=pops,
