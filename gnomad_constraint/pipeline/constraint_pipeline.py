@@ -269,6 +269,17 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
+
+            # TODO: Remove when we have chrX methylation.
+            context_ht = hl.filter_intervals(
+                context_ht,
+                [
+                    hl.parse_locus_interval("chrX", reference_genome="GRCh38"),
+                    hl.parse_locus_interval("chrY", reference_genome="GRCh38"),
+                ],
+                keep=False,
+            )
+
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
@@ -289,6 +300,12 @@ def main(args):
             for data_type in constraint_res.DATA_TYPES:
                 if data_type != "context":
                     ht = getattr(res, f"{data_type}_sites_ht").ht()
+                    # TODO: Remove when we have chrX methylation.
+                    ht = hl.filter_intervals(
+                        ht,
+                        [hl.parse_locus_interval("chrX", reference_genome="GRCh38")],
+                        keep=False,
+                    )
                 else:
                     ht = context_ht
 
@@ -444,9 +461,25 @@ def main(args):
                     " expected variant count and observed:expected ratio...",
                     r,
                 )
+
+                exomes_ht = getattr(res, f"preprocessed_{r}_exomes_ht").ht()
+                exomes_ht = hl.filter_intervals(
+                    exomes_ht,
+                    [hl.parse_locus_interval("chrX", reference_genome="GRCh38")],
+                    keep=False,
+                )
+                context_ht = getattr(res, f"preprocessed_{r}_context_ht").ht()
+                context_ht = hl.filter_intervals(
+                    context_ht,
+                    [hl.parse_locus_interval("chrX", reference_genome="GRCh38")],
+                    keep=False,
+                )
+
                 oe_ht = apply_models(
-                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
-                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    # getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
+                    # getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    exomes_ht,
+                    context_ht,
                     mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
                     getattr(res, "model_autosome_par_coverage").he(),
