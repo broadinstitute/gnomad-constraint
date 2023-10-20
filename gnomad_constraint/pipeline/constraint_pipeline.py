@@ -311,15 +311,22 @@ def main(args):
                 )
                 # Sex chromosomes are analyzed separately, since they are biologically
                 # different from the autosomes.
+                # TODO: Uncomment for chrX.
                 if data_type != "genomes":
-                    filter_x_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chrx_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
-                    filter_y_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chry_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
+                    if "chrx_nonpar" in regions:
+                        filter_x_nonpar(ht).write(
+                            getattr(
+                                res, f"preprocessed_chrx_nonpar_{data_type}_ht"
+                            ).path,
+                            overwrite=overwrite,
+                        )
+                    if "chry_nonpar" in regions:
+                        filter_y_nonpar(ht).write(
+                            getattr(
+                                res, f"preprocessed_chry_nonpar_{data_type}_ht"
+                            ).path,
+                            overwrite=overwrite,
+                        )
             logger.info("Done with preprocessing genome and exome Table.")
 
         if args.calculate_gerp_cutoffs:
