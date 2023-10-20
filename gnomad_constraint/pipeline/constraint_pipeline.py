@@ -434,16 +434,16 @@ def main(args):
                     getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
-                hl.experimental.write_expression(
-                    coverage_model,
-                    getattr(res, f"model_{r}_coverage").path,
-                    overwrite=overwrite,
-                )
+                # hl.experimental.write_expression(
+                #   coverage_model,
+                #    getattr(res, f"model_{r}_coverage").path,
+                #    overwrite=overwrite,
+                # )
                 logger.info("Done building %s plateau and coverage models.", r)
 
         if args.apply_models:
             res = resources.apply_models
-            res.check_resource_existence()
+            # res.check_resource_existence()
 
             # TODO: Remove repartition once partition write bugs are resolved.
             mutation_ht = res.mutation_ht.ht().select("mu_snp")
@@ -482,7 +482,10 @@ def main(args):
                     context_ht,
                     mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
-                    getattr(res, "model_autosome_par_coverage").he(),
+                    hl.experimental.read_expression(
+                        "gs://gnomad/v4.0/constraint/models/gnomad.v4.0.coverage.autosome_par.he"
+                    ),
+                    # getattr(res, "model_autosome_par_coverage").he(),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
