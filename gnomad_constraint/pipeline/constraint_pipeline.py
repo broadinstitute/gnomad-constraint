@@ -308,7 +308,8 @@ def main(args):
                     ht, require_exome_coverage=(data_type == "exomes")
                 )
                 # Filter to locus that is on an autosome.
-                # TODO: Add back in pseudoautosomal regions once have X/Y methylation data.
+                # TODO: Add back in pseudoautosomal regions once have X/Y methylation
+                # data.
                 ht.filter(ht.locus.in_autosome()).write(
                     getattr(res, f"preprocessed_autosome_par_{data_type}_ht").path,
                     overwrite=overwrite,
