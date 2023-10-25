@@ -222,8 +222,9 @@ def create_observed_and_possible_ht(
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :param filter_coverage_over_0: Whether to filter the exome Table and context Table
         to variants with coverage larger than 0. Default is False.
-    :param low_coverage_filter: Lower median coverage cutoff for coverage filter. Sites with coverage n below this cutoff will
-        removed from `exome_ht` and 'context_ht'.
+    :param low_coverage_filter: Lower median coverage cutoff for coverage filter. Sites 
+        with coverage below this cutoff will be removed from the `exome_ht` and 
+        'context_ht'.
     :param transcript_for_synonymous_filter: Transcript to use when filtering to
         synonymous variants. Choices: ["mane_select", "canonical", None]. If "canonical", will
         filter to variants with a synonymous consequence in Ensembl canonical
