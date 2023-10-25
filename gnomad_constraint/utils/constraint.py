@@ -411,8 +411,9 @@ def apply_models(
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
         Default is `COVERAGE_CUTOFF`.
-    :param low_coverage_filter: Lower median coverage cutoff for coverage filter. Sites with coverage n below this cutoff will
-        removed from `exome_ht` and 'context_ht'.
+    :param low_coverage_filter: Lower median coverage cutoff for coverage filter. 
+        Sites with coverage below this cutoff will be removed from`exome_ht` and 
+        'context_ht'.
     :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical
         grouping. Only used when `custom_vep_annotation` is set to
         'transcript_consequences'.
