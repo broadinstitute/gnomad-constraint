@@ -23,6 +23,7 @@ The constraint pipeline consists of the following parts:
 
 import argparse
 import logging
+from typing import List
 
 import hail as hl
 from gnomad.utils.constraint import build_models
@@ -83,6 +84,7 @@ def get_constraint_resources(
     custom_vep_annotation: str,
     overwrite: bool,
     test: bool,
+    models: List[str] = ["plateau", "coverage"],
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -94,6 +96,7 @@ def get_constraint_resources(
         resources.
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
+    :param models: List of models to use. Default is ["plateau", "coverage"].
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -174,7 +177,7 @@ def get_constraint_resources(
         "--build-models",
         output_resources={
             f"model_{r}_{m}": constraint_res.get_models(m, version, r, test)
-            for m in constraint_res.MODEL_TYPES
+            for m in models
             for r in regions
         },
         pipeline_input_steps=[create_training_set],
@@ -247,6 +250,10 @@ def main(args):
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
 
+    # Generate both "plateau" and "coverage" models unless specified to skip
+    # the coverage model.
+    models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
+
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
         version,
@@ -255,6 +262,7 @@ def main(args):
         custom_vep_annotation,
         overwrite,
         test,
+        models,
     )
 
     try:
@@ -304,22 +312,30 @@ def main(args):
                 ht = prepare_ht_for_constraint_calculations(
                     ht, require_exome_coverage=(data_type == "exomes")
                 )
-                # Filter to locus that is on an autosome or in a pseudoautosomal region.
-                ht.filter(ht.locus.in_autosome_or_par()).write(
+                # Filter to locus that is on an autosome.
+                # TODO: Add back in pseudoautosomal regions once have X/Y methylation
+                # data.
+                ht.filter(ht.locus.in_autosome()).write(
                     getattr(res, f"preprocessed_autosome_par_{data_type}_ht").path,
                     overwrite=overwrite,
                 )
                 # Sex chromosomes are analyzed separately, since they are biologically
                 # different from the autosomes.
                 if data_type != "genomes":
-                    filter_x_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chrx_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
-                    filter_y_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chry_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
+                    if "chrx_nonpar" in regions:
+                        filter_x_nonpar(ht).write(
+                            getattr(
+                                res, f"preprocessed_chrx_nonpar_{data_type}_ht"
+                            ).path,
+                            overwrite=overwrite,
+                        )
+                    if "chry_nonpar" in regions:
+                        filter_y_nonpar(ht).write(
+                            getattr(
+                                res, f"preprocessed_chry_nonpar_{data_type}_ht"
+                            ).path,
+                            overwrite=overwrite,
+                        )
             logger.info("Done with preprocessing genome and exome Table.")
 
         if args.calculate_gerp_cutoffs:
@@ -376,6 +392,7 @@ def main(args):
                     max_af=max_af,
                     pops=pops,
                     partition_hint=args.training_set_partition_hint,
+                    low_coverage_filter=args.pipeline_low_coverage_filter,
                     transcript_for_synonymous_filter=(
                         "mane_select" if int(version[0]) >= 4 else "canonical"
                     ),  # Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
@@ -402,19 +419,22 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
+                    high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
+                    skip_coverage_model=True if args.skip_coverage_model else False,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
                     getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
-                hl.experimental.write_expression(
-                    coverage_model,
-                    getattr(res, f"model_{r}_coverage").path,
-                    overwrite=overwrite,
-                )
-                logger.info("Done building %s plateau and coverage models.", r)
+                if not args.skip_coverage_model:
+                    hl.experimental.write_expression(
+                        coverage_model,
+                        getattr(res, f"model_{r}_coverage").path,
+                        overwrite=overwrite,
+                    )
+                logger.info("Done building %s models.", r)
 
         if args.apply_models:
             res = resources.apply_models
@@ -432,8 +452,9 @@ def main(args):
             # for XX/XY in the future).
             for r in regions:
                 logger.info(
-                    "Applying %s plateau and autosome coverage models and computing"
-                    " expected variant count and observed:expected ratio...",
+                    "Applying %s plateau and autosome coverage models (if specified)"
+                    " and computing expected variant count and observed:expected"
+                    " ratio...",
                     r,
                 )
                 oe_ht = apply_models(
@@ -441,12 +462,18 @@ def main(args):
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
-                    getattr(res, "model_autosome_par_coverage").he(),
+                    (
+                        getattr(res, "model_autosome_par_coverage").he()
+                        if not args.skip_coverage_model
+                        else None
+                    ),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    high_cov_definition=args.high_cov_definition,
+                    low_coverage_filter=args.pipeline_low_coverage_filter,
                     use_mane_select_instead_of_canonical=(
                         True if int(version[0]) >= 4 else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
@@ -570,9 +597,20 @@ if __name__ == "__main__":
         action="store_true",
     )
 
+    parser.add_argument(
+        "--pipeline-low-coverage-filter",
+        help=(
+            "Lower median coverage cutoff to use throughout the pipeline. Sites with"
+            " coverage below this cutoff will be excluded when creating the training"
+            " set, building and applying models, and computing constraint metrics."
+        ),
+        type=int,
+        default=None,
+    )
+
     mutation_rate_args = parser.add_argument_group(
         "Calculate mutation rate args",
-        "Arguments used for calculating the muataion rate.",
+        "Arguments used for calculating the mutation rate.",
     )
 
     recalculate_mutation_rate = mutation_rate_args.add_argument(
@@ -710,6 +748,23 @@ if __name__ == "__main__":
         ),
         type=int,
         default=None,
+    )
+
+    build_models_args.add_argument(
+        "--high-cov-definition",
+        help=(
+            "Lower median coverage cutoff to use to define high coverage sites. Sites"
+            " with coverage below this cutoff are excluded from the high coverage Table"
+            " when building and applying the models. Default is 30."
+        ),
+        type=int,
+        default=30,
+    )
+
+    build_models_args.add_argument(
+        "--skip-coverage-model",
+        help="Omit computing and applying the coverage model.",
+        action="store_true",
     )
 
     build_models_args._group_actions.append(use_populations)
