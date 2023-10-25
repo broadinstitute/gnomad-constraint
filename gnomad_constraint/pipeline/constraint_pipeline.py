@@ -250,7 +250,8 @@ def main(args):
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
 
-    # Generate both "plateau" and "coverage" models unless specified to skip the coverage model.
+    # Generate both "plateau" and "coverage" models unless specified to skip
+    # the coverage model.
     models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
