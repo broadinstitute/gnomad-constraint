@@ -233,7 +233,7 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
-    low_coverage_filter = args.low_coverage_filter
+    pipeline_low_coverage_filter = args.pipeline_low_coverage_filter
 
     pops = constraint_res.POPS if use_pops else ()
 
@@ -413,7 +413,7 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
-                    lower_cov_cutoff=args.lower_cov_cutoff,
+                    high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
                 )
@@ -466,8 +466,8 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
-                    cov_cutoff=args.lower_cov_cutoff,
-                    low_coverage_filter=low_coverage_filter,
+                    high_cov_definition=args.high_cov_definition,
+                    low_coverage_filter=pipeline_low_coverage_filter,
                     use_mane_select_instead_of_canonical=(
                         True if int(version[0]) >= 4 else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
@@ -592,11 +592,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--low-coverage-filter",
+        "--pipeline-low-coverage-filter",
         help=(
-            "Lower median coverage cutoff. Sites with coverage below this cutoff will"
-            " be excluded when building and applying models and computing constraint"
-            " metrics."
+            "Lower median coverage cutoff to use throughout the pipeline. Sites with"
+            " coverage below this cutoff will be excluded when building and applying "
+            " models and computing constraint metrics."
         ),
         type=int,
         default=None,
@@ -745,11 +745,11 @@ if __name__ == "__main__":
     )
 
     build_models_args.add_argument(
-        "--lower-cov-cutoff",
+        "--high-cov-definition",
         help=(
-            "Lower median coverage cutoff. Sites with coverage above this cutoff are"
-            " excluded from the high coverage Table when building the models. Default"
-            " is 30."
+            "Lower median coverage cutoff to use to define high coverage sites. Sites"
+            " with coverage below this cutoff are excluded from the high coverage Table"
+            " when building and applying the models. Default is 30."
         ),
         type=int,
         default=30,
