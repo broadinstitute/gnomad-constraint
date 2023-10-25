@@ -174,7 +174,7 @@ def get_constraint_resources(
         "--build-models",
         output_resources={
             f"model_{r}_{m}": constraint_res.get_models(m, version, r, test)
-            for m in constraint_res.MODEL_TYPES
+            for m in MODEL_TYPES
             for r in regions
         },
         pipeline_input_steps=[create_training_set],
@@ -247,6 +247,7 @@ def main(args):
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
 
+    MODEL_TYPES = constraint_res.MODEL_TYPES
     if args.skip_coverage_model:
         MODEL_TYPES.remove("coverage")
 
