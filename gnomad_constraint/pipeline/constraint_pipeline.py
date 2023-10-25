@@ -594,7 +594,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--low-coverage-filter",
         help=(
-            "Lower median coverage cutoff. Sites with coverage n below this cutoff will"
+            "Lower median coverage cutoff. Sites with coverage below this cutoff will"
             " be excluded when building and applying models and computing constraint"
             " metrics."
         ),
