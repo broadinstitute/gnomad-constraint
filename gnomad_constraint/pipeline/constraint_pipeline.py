@@ -233,7 +233,6 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
-    pipeline_low_coverage_filter = args.pipeline_low_coverage_filter
 
     pops = constraint_res.POPS if use_pops else ()
 
@@ -387,6 +386,7 @@ def main(args):
                     max_af=max_af,
                     pops=pops,
                     partition_hint=args.training_set_partition_hint,
+                    low_coverage_filter=args.pipeline_low_coverage_filter,
                     transcript_for_synonymous_filter=(
                         "mane_select" if int(version[0]) >= 4 else "canonical"
                     ),  # Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
@@ -467,7 +467,7 @@ def main(args):
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
                     high_cov_definition=args.high_cov_definition,
-                    low_coverage_filter=pipeline_low_coverage_filter,
+                    low_coverage_filter=args.pipeline_low_coverage_filter,
                     use_mane_select_instead_of_canonical=(
                         True if int(version[0]) >= 4 else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
@@ -595,8 +595,8 @@ if __name__ == "__main__":
         "--pipeline-low-coverage-filter",
         help=(
             "Lower median coverage cutoff to use throughout the pipeline. Sites with"
-            " coverage below this cutoff will be excluded when building and applying "
-            " models and computing constraint metrics."
+            " coverage below this cutoff will be excluded when creating the training"
+            " set, building and applying models ,and computing constraint metrics."
         ),
         type=int,
         default=None,
@@ -604,7 +604,7 @@ if __name__ == "__main__":
 
     mutation_rate_args = parser.add_argument_group(
         "Calculate mutation rate args",
-        "Arguments used for calculating the muataion rate.",
+        "Arguments used for calculating the mutation rate.",
     )
 
     recalculate_mutation_rate = mutation_rate_args.add_argument(
