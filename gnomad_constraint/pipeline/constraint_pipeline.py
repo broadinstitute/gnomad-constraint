@@ -598,7 +598,7 @@ if __name__ == "__main__":
         help=(
             "Lower median coverage cutoff to use throughout the pipeline. Sites with"
             " coverage below this cutoff will be excluded when creating the training"
-            " set, building and applying models ,and computing constraint metrics."
+            " set, building and applying models, and computing constraint metrics."
         ),
         type=int,
         default=None,
