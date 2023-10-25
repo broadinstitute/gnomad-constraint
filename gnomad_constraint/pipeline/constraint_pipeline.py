@@ -233,6 +233,7 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
+    low_coverage_filter = args.low_coverage_filter
 
     pops = constraint_res.POPS if use_pops else ()
 
@@ -246,6 +247,9 @@ def main(args):
         regions.remove("chry_nonpar")
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
+
+    if args.skip_coverage_model:
+        MODEL_TYPES.remove("coverage")
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
@@ -304,22 +308,29 @@ def main(args):
                 ht = prepare_ht_for_constraint_calculations(
                     ht, require_exome_coverage=(data_type == "exomes")
                 )
-                # Filter to locus that is on an autosome or in a pseudoautosomal region.
-                ht.filter(ht.locus.in_autosome_or_par()).write(
+                # Filter to locus that is on an autosome.
+                # TODO: Add back in pseudoautosomal regions once have X/Y methylation data.
+                ht.filter(ht.locus.in_autosome()).write(
                     getattr(res, f"preprocessed_autosome_par_{data_type}_ht").path,
                     overwrite=overwrite,
                 )
                 # Sex chromosomes are analyzed separately, since they are biologically
                 # different from the autosomes.
                 if data_type != "genomes":
-                    filter_x_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chrx_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
-                    filter_y_nonpar(ht).write(
-                        getattr(res, f"preprocessed_chry_nonpar_{data_type}_ht").path,
-                        overwrite=overwrite,
-                    )
+                    if "chrx_nonpar" in regions:
+                        filter_x_nonpar(ht).write(
+                            getattr(
+                                res, f"preprocessed_chrx_nonpar_{data_type}_ht"
+                            ).path,
+                            overwrite=overwrite,
+                        )
+                    if "chry_nonpar" in regions:
+                        filter_y_nonpar(ht).write(
+                            getattr(
+                                res, f"preprocessed_chry_nonpar_{data_type}_ht"
+                            ).path,
+                            overwrite=overwrite,
+                        )
             logger.info("Done with preprocessing genome and exome Table.")
 
         if args.calculate_gerp_cutoffs:
@@ -402,19 +413,22 @@ def main(args):
                     training_ht,
                     weighted=args.use_weights,
                     pops=pops,
+                    lower_cov_cutoff=args.lower_cov_cutoff,
                     upper_cov_cutoff=args.upper_cov_cutoff,
+                    skip_coverage_model=True if args.skip_coverage_model else False,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
                     getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
-                hl.experimental.write_expression(
-                    coverage_model,
-                    getattr(res, f"model_{r}_coverage").path,
-                    overwrite=overwrite,
-                )
-                logger.info("Done building %s plateau and coverage models.", r)
+                if not args.skip_coverage_model:
+                    hl.experimental.write_expression(
+                        coverage_model,
+                        getattr(res, f"model_{r}_coverage").path,
+                        overwrite=overwrite,
+                    )
+                logger.info("Done building %s models.", r)
 
         if args.apply_models:
             res = resources.apply_models
@@ -432,8 +446,9 @@ def main(args):
             # for XX/XY in the future).
             for r in regions:
                 logger.info(
-                    "Applying %s plateau and autosome coverage models and computing"
-                    " expected variant count and observed:expected ratio...",
+                    "Applying %s plateau and autosome coverage models (if specified)"
+                    " and computing expected variant count and observed:expected"
+                    " ratio...",
                     r,
                 )
                 oe_ht = apply_models(
@@ -441,12 +456,17 @@ def main(args):
                     getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     mutation_ht,
                     getattr(res, f"model_{r}_plateau").he(),
-                    getattr(res, "model_autosome_par_coverage").he(),
+                    (
+                        getattr(res, "model_autosome_par_coverage").he()
+                        if not args.skip_coverage_model
+                        else None
+                    ),
                     max_af=max_af,
                     pops=pops,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    cov_cutoff=args.lower_cov_cutoff,
                     use_mane_select_instead_of_canonical=(
                         True if int(version[0]) >= 4 else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
@@ -568,6 +588,17 @@ if __name__ == "__main__":
             " defined by --gerp-lower-cutoff and --gerp-upper-cutoff."
         ),
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--low-coverage-filter",
+        help=(
+            "Lower median coverage cutoff. Sites with coverage n below this cutoff will"
+            " be excluded when building and applying models and computing constraint"
+            " metrics."
+        ),
+        type=int,
+        default=None,
     )
 
     mutation_rate_args = parser.add_argument_group(
@@ -710,6 +741,23 @@ if __name__ == "__main__":
         ),
         type=int,
         default=None,
+    )
+
+    build_models_args.add_argument(
+        "--lower-cov-cutoff",
+        help=(
+            "Lower median coverage cutoff. Sites with coverage above this cutoff are"
+            " excluded from the high coverage Table when building the models. Default"
+            " is 30."
+        ),
+        type=int,
+        default=30,
+    )
+
+    build_models_args.add_argument(
+        "--skip-coverage-model",
+        help="Omit computing and applying the coverage model.",
+        action="store_true",
     )
 
     build_models_args._group_actions.append(use_populations)

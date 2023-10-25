@@ -177,6 +177,7 @@ def create_observed_and_possible_ht(
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
+    low_coverage_filter: int = None,
     transcript_for_synonymous_filter: str = None,
     global_annotation: Optional[str] = None,
 ) -> hl.Table:
@@ -221,6 +222,8 @@ def create_observed_and_possible_ht(
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :param filter_coverage_over_0: Whether to filter the exome Table and context Table
         to variants with coverage larger than 0. Default is False.
+    :param low_coverage_filter: Lower median coverage cutoff for coverage filter. Sites with coverage n below this cutoff will
+        removed from `exome_ht` and 'context_ht'.
     :param transcript_for_synonymous_filter: Transcript to use when filtering to
         synonymous variants. Choices: ["mane_select", "canonical", None]. If "canonical", will
         filter to variants with a synonymous consequence in Ensembl canonical
@@ -235,6 +238,10 @@ def create_observed_and_possible_ht(
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
     freq_expr = exome_ht.freq[0]
+
+    if low_coverage_filter is not None:
+        context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht.exome_coverage >= low_coverage_filter)
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, variants with allele frequency above the `max_af` cutoff, and variants
@@ -337,6 +344,7 @@ def apply_models(
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
     cov_cutoff: int = COVERAGE_CUTOFF,
+    low_coverage_filter: int = None,
     use_mane_select_instead_of_canonical: bool = False,
 ) -> hl.Table:
     """
@@ -403,6 +411,8 @@ def apply_models(
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
         Default is `COVERAGE_CUTOFF`.
+    :param low_coverage_filter: Lower median coverage cutoff for coverage filter. Sites with coverage n below this cutoff will
+        removed from `exome_ht` and 'context_ht'.
     :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical
         grouping. Only used when `custom_vep_annotation` is set to
         'transcript_consequences'.
@@ -413,6 +423,10 @@ def apply_models(
     """
     # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+
+    if low_coverage_filter is not None:
+        context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht.exome_coverage >= low_coverage_filter)
 
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
