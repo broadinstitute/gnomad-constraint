@@ -469,6 +469,7 @@ def main(args):
                     ),
                     max_af=max_af,
                     pops=pops,
+                    exome_ht_partitions=args.apply_input_exome_partition_hint,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
@@ -782,12 +783,21 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    apply_models_args.add_argument(
+        "--apply-input-exome-partition-hint",
+        help=(
+            "Number of partitions to which the exome Table input to apply models"
+            " should be repartitioned."
+        ),
+        type=int,
+        default=50000,
+    )
 
     apply_models_args.add_argument(
         "--apply-obs-pos-count-partition-hint",
         help=(
             "Target number of partitions for aggregation when counting observed and"
-            " expected variants for model application"
+            " expected variants for model application."
         ),
         type=int,
         default=2000,
@@ -832,7 +842,7 @@ if __name__ == "__main__":
         help=(
             "Number of partitions to which the unioned Table of expected variant counts"
             " for autosomes/pseudoautosomal regions, chromosome X, and chromosome Y "
-            " should be reaprtitioned."
+            " should be repartitioned."
         ),
         type=int,
         default=1000,
