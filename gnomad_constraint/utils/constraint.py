@@ -332,7 +332,7 @@ def apply_models(
     context_ht: hl.Table,
     mutation_ht: hl.Table,
     plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
+    coverage_model: Optional[Tuple[float, float]] = None,
     max_af: float = 0.001,
     keep_annotations: Tuple[str] = (
         "context",
@@ -468,12 +468,17 @@ def apply_models(
     )
 
     mu_expr = ht.mu_snp * ht.possible_variants
-    # Determine coverage correction to use based on coverage value.
+    # Determine coverage correction to use based on coverage value. If no
+    # coverage model is provided, set to 1 as long as coverage > 0.
     cov_corr_expr = (
         hl.case()
         .when(ht.coverage == 0, 0)
         .when(ht.coverage >= high_cov_definition, 1)
-        .default(coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
+        .default(
+            (coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
+            if coverage_model is not None
+            else 1
+        )
     )
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
@@ -501,12 +506,13 @@ def apply_models(
     ht = ht.repartition(expected_variant_partition_hint)
 
     # Annotate global annotations.
+    coverage_model_global = coverage_model if coverage_model else "None"
     ht = ht.annotate_globals(
         apply_model_params=hl.struct(
             max_af=max_af,
             pops=pops,
             plateau_models=plateau_models,
-            coverage_model=coverage_model,
+            coverage_model=coverage_model_global,
         )
     )
     # Compute the observed:expected ratio.
