@@ -468,7 +468,8 @@ def apply_models(
     )
 
     mu_expr = ht.mu_snp * ht.possible_variants
-    # Determine coverage correction to use based on coverage value.
+    # Determine coverage correction to use based on coverage value. If no
+    # coverage model is provided, set to 1 as long as coverage > 0.
     cov_corr_expr = (
         hl.case()
         .when(ht.coverage == 0, 0)
@@ -505,12 +506,13 @@ def apply_models(
     ht = ht.repartition(expected_variant_partition_hint)
 
     # Annotate global annotations.
+    coverage_model_global = coverage_model if coverage_model else "None"
     ht = ht.annotate_globals(
         apply_model_params=hl.struct(
             max_af=max_af,
             pops=pops,
             plateau_models=plateau_models,
-            coverage_model=coverage_model,
+            coverage_model=coverage_model_global,
         )
     )
     # Compute the observed:expected ratio.
