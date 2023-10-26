@@ -332,7 +332,7 @@ def apply_models(
     context_ht: hl.Table,
     mutation_ht: hl.Table,
     plateau_models: hl.StructExpression,
-    coverage_model: Optional[Tuple[float, float]],
+    coverage_model: Optional[Tuple[float, float]] = None,
     max_af: float = 0.001,
     keep_annotations: Tuple[str] = (
         "context",
