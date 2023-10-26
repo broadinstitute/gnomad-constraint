@@ -341,6 +341,7 @@ def apply_models(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
+    exome_ht_partitions: int = 50000,
     obs_pos_count_partition_hint: int = 2000,
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
@@ -402,6 +403,8 @@ def apply_models(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
+    :param exome_ht_partitions: Number of partitions to which the exome Table should
+        be repartitioned.
     :param obs_pos_count_partition_hint: Target number of partitions for
         aggregation when counting variants. Default is 2000.
     :param expected_variant_partition_hint: Target number of partitions for sum
@@ -425,6 +428,9 @@ def apply_models(
     """
     # Filter context ht to sites with defined exome coverage.
     context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+
+    # Repartition the exome Table.
+    exome_ht = exome_ht.repartition(exome_ht_partitions)
 
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
