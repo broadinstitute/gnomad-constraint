@@ -909,8 +909,8 @@ if __name__ == "__main__":
             "Value at which the raw z-score is considered an outlier for lof variants."
             " Values below this threshold will be considered outliers."
         ),
-        type=int,
-        default=-5,
+        type=float,
+        default=-5.0,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-lower-missense",
@@ -918,8 +918,8 @@ if __name__ == "__main__":
             "Value at which the raw z-score is considered an outlier for missense"
             " variants. Values below this threshold will be considered outliers."
         ),
-        type=int,
-        default=-5,
+        type=float,
+        default=-5.0,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-lower-syn",
@@ -928,8 +928,8 @@ if __name__ == "__main__":
             " synonymous variants. Values below this threshold will be considered"
             " outliers."
         ),
-        type=int,
-        default=-5,
+        type=float,
+        default=-5.0,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-upper-syn",
@@ -938,8 +938,8 @@ if __name__ == "__main__":
             " synonymous variants. Values above this threshold will be considered"
             " outliers."
         ),
-        type=int,
-        default=5,
+        type=float,
+        default=5.0,
     )
     parser.add_argument(
         "--export-tsv",
