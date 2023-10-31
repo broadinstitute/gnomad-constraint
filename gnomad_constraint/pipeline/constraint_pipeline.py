@@ -541,8 +541,9 @@ def main(args):
         if args.export_tsv:
             res = resources.export_tsv
             res.check_resource_existence()
+            logger.info("Exporting constraint tsv...")
 
-            ht = res.compute_constraint_metrics.ht()
+            ht = res.constraint_metrics_ht.ht()
             ht = ht.flatten()
             ht.export(res.constraint_metrics_tsv, overwrite=overwrite)
 
