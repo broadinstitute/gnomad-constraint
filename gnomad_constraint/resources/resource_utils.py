@@ -343,7 +343,7 @@ def get_constraint_metrics_dataset(
 def get_constraint_tsv_path(
     version: str = CURRENT_VERSION,
     test: bool = False,
-) -> TableResource:
+) -> str:
     """
     Return tsv path of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
 
