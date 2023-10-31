@@ -795,7 +795,8 @@ def compute_constraint_metrics(
     # pLI scores are only computed for LoF variants.
     lof_ann = ["lof_hc_lc", "lof"]
 
-    # Create dictionary with outlier z-score thresholds with annotation as key and list of thresholds [lower, upper] as values.
+    # Create dictionary with outlier z-score thresholds with annotation as key
+    # and list of thresholds [lower, upper] as values.
     z_score_outlier_dict = {
         "lof": [raw_z_outlier_threshold_lof, None],
         "mis": [raw_z_outlier_threshold_missense, None],
