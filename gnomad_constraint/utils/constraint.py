@@ -729,8 +729,8 @@ def compute_constraint_metrics(
     pops: Tuple[str] = (),
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
-    raw_z_outlier_threshold_lof: float = -5.0,
-    raw_z_outlier_threshold_missense: float = -5.0,
+    raw_z_outlier_threshold_lower_lof: float = -5.0,
+    raw_z_outlier_threshold_lower_missense: float = -5.0,
     raw_z_outlier_threshold_lower_syn: float = -5.0,
     raw_z_outlier_threshold_upper_syn: float = 5.0,
     include_os: bool = False,
@@ -761,8 +761,8 @@ def compute_constraint_metrics(
         'Rec', and 'LI' to use as starting values.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
         model convergence criteria as met. Default is 0.001.
-    :param raw_z_outlier_threshold_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -5.0.
-    :param raw_z_outlier_threshold_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -5.0.
+    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -5.0.
+    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -5.0.
     :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is considered an outlier for synonymous variants. Values below this threshold will be considered outliers. Default is -5.0.
     :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  5.0.
     :param include_os: Whether or not to include OS (other splice) as a grouping when
@@ -798,8 +798,8 @@ def compute_constraint_metrics(
     # Create dictionary with outlier z-score thresholds with annotation as key
     # and list of thresholds [lower, upper] as values.
     z_score_outlier_dict = {
-        "lof": [raw_z_outlier_threshold_lof, None],
-        "mis": [raw_z_outlier_threshold_missense, None],
+        "lof": [raw_z_outlier_threshold_lower_lof, None],
+        "mis": [raw_z_outlier_threshold_lower_missense, None],
         "syn": [raw_z_outlier_threshold_lower_syn, raw_z_outlier_threshold_upper_syn],
     }
 

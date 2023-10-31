@@ -530,8 +530,8 @@ def main(args):
                     "LI": args.expectation_li,
                 },
                 min_diff_convergence=args.min_diff_convergence,
-                raw_z_outlier_threshold_lof=args.raw_z_outlier_threshold_lof,
-                raw_z_outlier_threshold_missense=args.raw_z_outlier_threshold_missense,
+                raw_z_outlier_threshold_lower_lof=args.raw_z_outlier_threshold_lower_lof,
+                raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
                 raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
                 include_os=int(version[0])
@@ -904,7 +904,7 @@ if __name__ == "__main__":
         default=0.089,
     )
     compute_constraint_args.add_argument(
-        "--raw-z-outlier-threshold-lof",
+        "--raw-z-outlier-threshold-lower-lof",
         help=(
             "Value at which the raw z-score is considered an outlier for lof variants."
             " Values below this threshold will be considered outliers."
@@ -913,7 +913,7 @@ if __name__ == "__main__":
         default=-5,
     )
     compute_constraint_args.add_argument(
-        "--raw-z-outlier-threshold-missense",
+        "--raw-z-outlier-threshold-lower-missense",
         help=(
             "Value at which the raw z-score is considered an outlier for missense"
             " variants. Values below this threshold will be considered outliers."
