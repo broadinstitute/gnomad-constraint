@@ -354,7 +354,7 @@ def get_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return TableResource(
+    return (
         f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
     )
 

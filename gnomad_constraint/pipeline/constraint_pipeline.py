@@ -545,7 +545,7 @@ def main(args):
 
             ht = res.constraint_metrics_ht.ht()
             ht = ht.flatten()
-            ht.export(res.constraint_metrics_tsv, overwrite=overwrite)
+            ht.export(res.constraint_metrics_tsv)
 
     finally:
         logger.info("Copying log to logging bucket...")
