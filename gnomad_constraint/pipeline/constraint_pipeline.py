@@ -202,6 +202,16 @@ def get_constraint_resources(
         pipeline_input_steps=[apply_models],
     )
 
+    export_tsv = PipelineStepResourceCollection(
+        "--export-tsv",
+        output_resources={
+            "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
+                version, test
+            )
+        },
+        pipeline_input_steps=[compute_constraint_metrics],
+    )
+
     # Add all steps to the constraint pipeline resource collection.
     constraint_pipeline.add_steps(
         {
@@ -213,6 +223,7 @@ def get_constraint_resources(
             "build_models": build_models,
             "apply_models": apply_models,
             "compute_constraint_metrics": compute_constraint_metrics,
+            "export_tsv": export_tsv,
         }
     )
 
@@ -522,8 +533,19 @@ def main(args):
                 raw_z_outlier_threshold=args.raw_z_outlier_threshold,
                 include_os=int(version[0])
                 < 4,  # OS (other splice) is not implemented for build 38.
-            ).write(res.constraint_metrics_ht.path, overwrite=overwrite)
+            ).select_globals("version", "apply_model_params", "sd_raw_z").write(
+                res.constraint_metrics_ht.path, overwrite=overwrite
+            )
             logger.info("Done with computing constraint metrics.")
+
+        if args.export_tsv:
+            res = resources.export_tsv
+            res.check_resource_existence()
+            logger.info("Exporting constraint tsv...")
+
+            ht = res.constraint_metrics_ht.ht()
+            ht = ht.flatten()
+            ht.export(res.constraint_metrics_tsv)
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -890,6 +912,11 @@ if __name__ == "__main__":
         ),
         type=int,
         default=5,
+    )
+    parser.add_argument(
+        "--export-tsv",
+        help="Export constraint metrics to tsv file.",
+        action="store_true",
     )
 
     compute_constraint_args._group_actions.append(use_populations)

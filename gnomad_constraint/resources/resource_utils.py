@@ -340,6 +340,25 @@ def get_constraint_metrics_dataset(
     )
 
 
+def get_constraint_tsv_path(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> str:
+    """
+    Return tsv path of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param test: Whether the Table is for testing purposes. Default is False.
+    :return: TSV path of constraint metrics.
+    """
+    check_param_scope(version=version)
+
+    return (
+        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
+    )
+
+
 def check_param_scope(
     version: Optional[str] = None,
     genomic_region: Optional[str] = None,
