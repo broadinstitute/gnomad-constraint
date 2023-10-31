@@ -533,7 +533,7 @@ def main(args):
                 raw_z_outlier_threshold_lof=args.raw_z_outlier_threshold_lof,
                 raw_z_outlier_threshold_missense=args.raw_z_outlier_threshold_missense,
                 raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
-                raw_z_outlier_threshold_upper_syn=arg.raw_z_outlier_threshold_upper_syn,
+                raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
                 include_os=int(version[0])
                 < 4,  # OS (other splice) is not implemented for build 38.
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
