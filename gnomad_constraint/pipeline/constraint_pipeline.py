@@ -530,7 +530,10 @@ def main(args):
                     "LI": args.expectation_li,
                 },
                 min_diff_convergence=args.min_diff_convergence,
-                raw_z_outlier_threshold=args.raw_z_outlier_threshold,
+                raw_z_outlier_threshold_lower_lof=args.raw_z_outlier_threshold_lower_lof,
+                raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
+                raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
+                raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
                 include_os=int(version[0])
                 < 4,  # OS (other splice) is not implemented for build 38.
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
@@ -901,14 +904,39 @@ if __name__ == "__main__":
         default=0.089,
     )
     compute_constraint_args.add_argument(
-        "--raw-z-outlier-threshold",
+        "--raw-z-outlier-threshold-lower-lof",
         help=(
-            "Value at which the raw z-score is considered an outlier. Values below the"
-            " negative of '--raw-z-outlier-threshold' will be considered outliers for"
-            " lof and missense varaint counts (indicating too many variants), whereas"
-            " values either above '--raw-z-outlier-threshold' or below the negative of"
-            " '--raw-z-outlier-threshold' will be considered outliers for synonymous"
-            " varaint counts (indicating too few or too many variants)."
+            "Value at which the raw z-score is considered an outlier for lof variants."
+            " Values below this threshold will be considered outliers."
+        ),
+        type=int,
+        default=-5,
+    )
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-lower-missense",
+        help=(
+            "Value at which the raw z-score is considered an outlier for missense"
+            " variants. Values below this threshold will be considered outliers."
+        ),
+        type=int,
+        default=-5,
+    )
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-lower-syn",
+        help=(
+            "Lower value at which the raw z-score is considered an outlier for"
+            " synonymous variants. Values below this threshold will be considered"
+            " outliers."
+        ),
+        type=int,
+        default=-5,
+    )
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-upper-syn",
+        help=(
+            "Upper value at which the raw z-score is considered an outlier for"
+            " synonymous variants. Values above this threshold will be considered"
+            " outliers."
         ),
         type=int,
         default=5,
