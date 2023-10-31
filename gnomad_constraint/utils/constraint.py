@@ -239,6 +239,7 @@ def create_observed_and_possible_ht(
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
         exome_ht = exome_ht.filter(exome_ht.exome_coverage >= low_coverage_filter)
+    exome_ht = exome_ht.distinct()
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
