@@ -250,8 +250,8 @@ def create_observed_and_possible_ht(
     keep_criteria = (
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
-    if filter_coverage_over_0:
-        keep_criteria &= exome_ht.coverage > 0
+    # if filter_coverage_over_0:
+    #    keep_criteria &= exome_ht.coverage > 0
 
     keep_annotations += grouping
 
@@ -452,6 +452,8 @@ def apply_models(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
+    print("GROUPINGS:")
+    print(grouping)
 
     # Compute observed and possible variant counts.
     ht = create_observed_and_possible_ht(
@@ -470,16 +472,17 @@ def apply_models(
     mu_expr = ht.mu_snp * ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
-    cov_corr_expr = (
-        hl.case()
-        .when(ht.coverage == 0, 0)
-        .when(ht.coverage >= high_cov_definition, 1)
-        .default(
-            (coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
-            if coverage_model is not None
-            else 1
-        )
-    )
+    cov_corr_expr = 1
+    # cov_corr_expr = (
+    #    hl.case()
+    #    .when(ht.coverage == 0, 0)
+    #    .when(ht.coverage >= high_cov_definition, 1)
+    #    .default(
+    #        (coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
+    #        if coverage_model is not None
+    #        else 1
+    #    )
+    # )
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
     agg_expr.update(
@@ -493,7 +496,8 @@ def apply_models(
         )
 
     grouping = list(grouping)
-    grouping.remove("coverage")
+    print(grouping)
+    # grouping.remove("coverage")
 
     # Aggregate the sum aggregators grouped by `grouping`.
     ht = (
