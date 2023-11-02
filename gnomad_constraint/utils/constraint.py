@@ -313,7 +313,10 @@ def create_observed_and_possible_ht(
 
     # Outer join the Tables with possible variant counts and observed variant counts.
     ht = observed_ht.join(possible_ht, "outer")
-    ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
+    ht = ht.checkpoint(
+        "gs://gnomad-tmp/gnomad_v4.0_testing/constraint/op.ht", overwrite=True
+    )
+    # ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
 
     # Annotate the Table with 'cpg' and 'mutation_type' (one of "CpG", "non-CpG
     # transition", or "transversion").
@@ -466,6 +469,8 @@ def apply_models(
         filter_coverage_over_0=True,
         transcript_for_synonymous_filter=None,
     )
+
+    raise ValueError("stopping")
 
     mu_expr = ht.mu_snp * ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
