@@ -469,11 +469,11 @@ def main(args):
                     r,
                 )
                 oe_ht = apply_models(
-                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
-                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
-                    mutation_ht,
-                    getattr(res, f"model_{r}_plateau").he(),
-                    (
+                    exome_ht=getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
+                    context_ht=getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    mutation_ht=mutation_ht,
+                    plateau_models=getattr(res, f"model_{r}_plateau").he(),
+                    coverage_model=(
                         getattr(res, "model_autosome_par_coverage").he()
                         if not args.skip_coverage_model
                         else None
@@ -488,6 +488,9 @@ def main(args):
                     use_mane_select_instead_of_canonical=(
                         True if int(version[0]) >= 4 else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
+                    poss_after_regression=(
+                        True if int(version[0]) >= 4 else False
+                    ),  # Multiple by possible variants after rather than before the regression for gnomAD v4 and later versions.
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
