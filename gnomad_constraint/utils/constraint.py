@@ -347,7 +347,6 @@ def apply_models(
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
     use_mane_select_instead_of_canonical: bool = False,
-    poss_after_regression: bool = False,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -419,9 +418,6 @@ def apply_models(
     :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical
         grouping. Only used when `custom_vep_annotation` is set to
         'transcript_consequences'.
-    :param poss_after_regression: Whether to multiply by the possible number of variants after
-        rather than before applying the regression.
-
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
@@ -470,12 +466,10 @@ def apply_models(
         transcript_for_synonymous_filter=None,
     )
 
-    if poss_after_regression:
-        mu_expr = ht.mu_snp
-        poss_post_reggression = True
-    else:
-        mu_expr = ht.mu_snp * ht.possible_variants
-        poss_post_reggression = False  # TODO: test on v2
+    # In v2 ht.mu_snp was multiplied here by possible_variants, but theis multiplication has now been moved
+    # so that it is applied after the regression within compute_expected_variants.
+    mu_expr = ht.mu_snp
+    poss_expr = ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
     cov_corr_expr = (
@@ -493,19 +487,24 @@ def apply_models(
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
     agg_expr.update(
         compute_expected_variants(
-            ht, plateau_models, mu_expr, cov_corr_expr, poss_post_reggression, ht.cpg
+            ht=ht,
+            plateau_models_expr=plateau_models,
+            mu_expr=mu_expr,
+            cov_corr_expr=cov_corr_expr,
+            poss_expr=poss_expr,
+            cpg_expr=ht.cpg,
         )
     )
     for pop in pops:
         agg_expr.update(
             compute_expected_variants(
-                ht,
-                plateau_models,
-                mu_expr,
-                cov_corr_expr,
-                poss_post_reggression,
-                ht.cpg,
-                pop,
+                ht=ht,
+                plateau_models_expr=plateau_models,
+                mu_expr=mu_expr,
+                cov_corr_expr=cov_corr_expr,
+                poss_expr=poss_expr,
+                cpg_expr=ht.cpg,
+                pop=pop,
             )
         )
 
