@@ -491,7 +491,7 @@ def apply_models(
             plateau_models_expr=plateau_models,
             mu_expr=mu_expr,
             cov_corr_expr=cov_corr_expr,
-            poss_expr=poss_expr,
+            possible_variants_expr=poss_expr,
             cpg_expr=ht.cpg,
         )
     )
