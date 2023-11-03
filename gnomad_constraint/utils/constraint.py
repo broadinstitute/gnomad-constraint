@@ -419,7 +419,6 @@ def apply_models(
         grouping. Only used when `custom_vep_annotation` is set to
         'transcript_consequences'.
 
-
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
@@ -467,7 +466,10 @@ def apply_models(
         transcript_for_synonymous_filter=None,
     )
 
-    mu_expr = ht.mu_snp * ht.possible_variants
+    # NOTE: In v2 ht.mu_snp was incorrectly multiplied here by possible_variants, but this multiplication has now been moved,
+    # so that it is applied after the regression within compute_expected_variants.
+    mu_expr = ht.mu_snp
+    poss_expr = ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
     cov_corr_expr = (
@@ -480,15 +482,29 @@ def apply_models(
             else 1
         )
     )
+
     # Generate sum aggregators for 'mu' on the entire dataset.
     agg_expr = {"mu": hl.agg.sum(mu_expr * cov_corr_expr)}
     agg_expr.update(
-        compute_expected_variants(ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg)
+        compute_expected_variants(
+            ht=ht,
+            plateau_models_expr=plateau_models,
+            mu_expr=mu_expr,
+            cov_corr_expr=cov_corr_expr,
+            possible_variants_expr=poss_expr,
+            cpg_expr=ht.cpg,
+        )
     )
     for pop in pops:
         agg_expr.update(
             compute_expected_variants(
-                ht, plateau_models, mu_expr, cov_corr_expr, ht.cpg, pop
+                ht=ht,
+                plateau_models_expr=plateau_models,
+                mu_expr=mu_expr,
+                cov_corr_expr=cov_corr_expr,
+                possible_variants_expr=poss_expr,
+                cpg_expr=ht.cpg,
+                pop=pop,
             )
         )
 

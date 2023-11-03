@@ -469,11 +469,11 @@ def main(args):
                     r,
                 )
                 oe_ht = apply_models(
-                    getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
-                    getattr(res, f"preprocessed_{r}_context_ht").ht(),
-                    mutation_ht,
-                    getattr(res, f"model_{r}_plateau").he(),
-                    (
+                    exome_ht=getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
+                    context_ht=getattr(res, f"preprocessed_{r}_context_ht").ht(),
+                    mutation_ht=mutation_ht,
+                    plateau_models=getattr(res, f"model_{r}_plateau").he(),
+                    coverage_model=(
                         getattr(res, "model_autosome_par_coverage").he()
                         if not args.skip_coverage_model
                         else None
