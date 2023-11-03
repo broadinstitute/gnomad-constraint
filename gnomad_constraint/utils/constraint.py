@@ -466,7 +466,7 @@ def apply_models(
         transcript_for_synonymous_filter=None,
     )
 
-    # In v2 ht.mu_snp was multiplied here by possible_variants, but theis multiplication has now been moved
+    # NOTE: In v2 ht.mu_snp was incorrectly multiplied here by possible_variants, but this multiplication has now been moved,
     # so that it is applied after the regression within compute_expected_variants.
     mu_expr = ht.mu_snp
     poss_expr = ht.possible_variants
