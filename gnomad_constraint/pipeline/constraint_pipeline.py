@@ -521,7 +521,8 @@ def main(args):
                     [
                         i
                         for i in list(union_ht.key)
-                        if i in ["gene", "transcript", "canonical", "mane_select"]
+                        if i
+                        in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
                     ]
                 ),
                 expected_values={
