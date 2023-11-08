@@ -492,7 +492,7 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 oe_ht.write(
-                    "gs://gnomad-kristen/constraint/ensg_apply.ht", overwrite=overwrite
+                    oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
                 )
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
@@ -508,9 +508,8 @@ def main(args):
 
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
-            # hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
-            # union_ht = hts[0].union(*hts[1:])
-            union_ht = hl.read_table("gs://gnomad-kristen/constraint/ensg_apply.ht")
+            hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
+            union_ht = hts[0].union(*hts[1:])
             union_ht = union_ht.repartition(args.compute_constraint_metrics_partitions)
             union_ht = union_ht.checkpoint(
                 new_temp_file(prefix="constraint_apply_union", extension="ht")
@@ -541,7 +540,7 @@ def main(args):
                 include_os=int(version[0])
                 < 4,  # OS (other splice) is not implemented for build 38.
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
-                "gs://gnomad-kristen/constraint/ensg_metrics.ht", overwrite=overwrite
+                res.constraint_metrics_ht.path, overwrite=overwrite
             )
             logger.info("Done with computing constraint metrics.")
 
