@@ -492,7 +492,6 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
-
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
