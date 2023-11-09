@@ -984,7 +984,8 @@ def compute_constraint_metrics(
         }
     )
 
-    # Compute the rank, decile, and sextile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
+    # Compute the rank, decile, and sextile of the lof oe upper confidence
+    # interval for MANE Select or canonical ensembl transcripts.
     ht = add_oe_lof_upper_rank_and_bin(
         ht, use_mane_select_instead_of_canonical=use_mane_select_instead_of_canonical
     )
