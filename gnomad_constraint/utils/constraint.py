@@ -734,6 +734,52 @@ def calculate_mu_by_downsampling(
     return annotate_mutation_type(ht)
 
 
+def add_oe_lof_upper_rank_and_bin(
+    ht: hl.Table, use_mane_select_instead_of_canonical: bool = False
+) -> hl.Table:
+    """
+    Compute the rank, decile, and sextile of the lof oe upper confidence interval for MANE Select ensembl transcripts.
+
+    :param ht: Input Table with the value for the lof oe upper confidence interval stored in ht.lof.oe_ci.upper.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table.
+    :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile', and 'upper_bin_sextile'.
+    """
+    if use_mane_select_instead_of_canonical:
+        transcript_filter = ht.mane_select
+    else:
+        transcript_filter = ht.canonical
+
+    # Filter to only ensembl transcripts of the specified transcript_filter.
+    ms_ht = ht.filter((transcript_filter) & (ht.transcript.startswith("ENST")))
+
+    # Rank lof.oe_ci.upper in ascending order.
+    ms_ht = ms_ht.order_by(ms_ht.lof.oe_ci.upper).add_index(name="upper_rank")
+
+    # Determine decile and sextile bins.
+    n_transcripts = ms_ht.count()
+    ms_ht = ms_ht.annotate(
+        upper_bin_decile=hl.int(ms_ht.upper_rank * 10 / n_transcripts)
+    )
+    ms_ht = ms_ht.annotate(
+        upper_bin_sextile=hl.int(ms_ht.upper_rank * 6 / n_transcripts)
+    )
+
+    # Add rank and bin annotations back to original Table.
+    ms_ht = ms_ht.key_by(*list(ht.key))
+    ms_index = ms_ht[ht.key]
+    ht = ht.annotate(
+        lof=ht.lof.annotate(
+            oe_ci=ht.lof.oe_ci.annotate(
+                upper_rank=ms_index.upper_rank,
+                upper_bin_decile=ms_index.upper_bin_decile,
+                upper_bin_sextile=ms_index.upper_bin_sextile,
+            )
+        )
+    )
+
+    return ht
+
+
 def compute_constraint_metrics(
     ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
@@ -750,6 +796,7 @@ def compute_constraint_metrics(
     raw_z_outlier_threshold_lower_syn: float = -5.0,
     raw_z_outlier_threshold_upper_syn: float = 5.0,
     include_os: bool = False,
+    use_mane_select_instead_of_canonical: bool = False,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -783,6 +830,7 @@ def compute_constraint_metrics(
     :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  5.0.
     :param include_os: Whether or not to include OS (other splice) as a grouping when
         stratifying calculations by lof HC.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when deterimining ranks for the lof oe upper condfidence interval.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -934,6 +982,11 @@ def compute_constraint_metrics(
             ann: ht[ann].annotate(z_score=ht[ann].z_raw / ht.sd_raw_z[ann])
             for ann in oe_ann
         }
+    )
+
+    # Compute the rank, decile, and sextile of the lof oe upper confidence interval for MANE Select ensembl transcripts.
+    ht = add_oe_lof_upper_rank_and_bin(
+        ht, use_mane_select_instead_of_canonical=use_mane_select_instead_of_canonical
     )
 
     return ht

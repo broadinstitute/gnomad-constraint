@@ -537,6 +537,7 @@ def main(args):
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
                 include_os=int(version[0])
                 < 4,  # OS (other splice) is not implemented for build 38.
+                use_mane_select_instead_of_canonical=int(version[0]) >= 4,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
                 res.constraint_metrics_ht.path, overwrite=overwrite
             )
