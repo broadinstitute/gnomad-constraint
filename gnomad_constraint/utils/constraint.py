@@ -830,7 +830,7 @@ def compute_constraint_metrics(
     :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  5.0.
     :param include_os: Whether or not to include OS (other splice) as a grouping when
         stratifying calculations by lof HC.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when deterimining ranks for the lof oe upper condfidence interval.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
