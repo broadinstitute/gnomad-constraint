@@ -741,7 +741,7 @@ def add_oe_lof_upper_rank_and_bin(
     Compute the rank, decile, and sextile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
 
     :param ht: Input Table with the value for the lof oe upper confidence interval stored in ht.lof.oe_ci.upper.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table. Default is False.
     :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile', and 'upper_bin_sextile'.
     """
     if use_mane_select_instead_of_canonical:
