@@ -738,11 +738,11 @@ def add_oe_lof_upper_rank_and_bin(
     ht: hl.Table, use_mane_select_instead_of_canonical: bool = False
 ) -> hl.Table:
     """
-    Compute the rank, decile, and sextile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
+    Compute the rank and decile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
 
     :param ht: Input Table with the value for the lof oe upper confidence interval stored in ht.lof.oe_ci.upper.
     :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table. Default is False.
-    :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile', and 'upper_bin_sextile'.
+    :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile'.
     """
     if use_mane_select_instead_of_canonical:
         transcript_filter = ht.mane_select
@@ -755,13 +755,10 @@ def add_oe_lof_upper_rank_and_bin(
     # Rank lof.oe_ci.upper in ascending order.
     ms_ht = ms_ht.order_by(ms_ht.lof.oe_ci.upper).add_index(name="upper_rank")
 
-    # Determine decile and sextile bins.
+    # Determine decile bins.
     n_transcripts = ms_ht.count()
     ms_ht = ms_ht.annotate(
         upper_bin_decile=hl.int(ms_ht.upper_rank * 10 / n_transcripts)
-    )
-    ms_ht = ms_ht.annotate(
-        upper_bin_sextile=hl.int(ms_ht.upper_rank * 6 / n_transcripts)
     )
 
     # Add rank and bin annotations back to original Table.
@@ -772,7 +769,6 @@ def add_oe_lof_upper_rank_and_bin(
             oe_ci=ht.lof.oe_ci.annotate(
                 upper_rank=ms_index.upper_rank,
                 upper_bin_decile=ms_index.upper_bin_decile,
-                upper_bin_sextile=ms_index.upper_bin_sextile,
             )
         )
     )
@@ -984,7 +980,7 @@ def compute_constraint_metrics(
         }
     )
 
-    # Compute the rank, decile, and sextile of the lof oe upper confidence
+    # Compute the rank and decile of the lof oe upper confidence
     # interval for MANE Select or canonical ensembl transcripts.
     ht = add_oe_lof_upper_rank_and_bin(
         ht, use_mane_select_instead_of_canonical=use_mane_select_instead_of_canonical
