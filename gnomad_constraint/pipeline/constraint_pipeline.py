@@ -260,6 +260,10 @@ def main(args):
         regions.remove("chry_nonpar")
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
+        # Define variable indicating wherether or not the gnomAD v4 is greater than or equal to v4.
+        version_4_and_above = True
+    else:
+        version_4_and_above = False
 
     # Generate both "plateau" and "coverage" models unless specified to skip
     # the coverage model.
@@ -405,7 +409,7 @@ def main(args):
                     partition_hint=args.training_set_partition_hint,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     transcript_for_synonymous_filter=(
-                        "mane_select" if int(version[0]) >= 4 else "canonical"
+                        "mane_select" if version_4_and_above else "canonical"
                     ),  # Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
                     global_annotation="training_dataset_params",
                 )
@@ -486,7 +490,7 @@ def main(args):
                     high_cov_definition=args.high_cov_definition,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     use_mane_select_instead_of_canonical=(
-                        True if int(version[0]) >= 4 else False
+                        True if version_4_and_above else False
                     ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
                 )
                 if use_v2_release_mutation_ht:
@@ -535,9 +539,8 @@ def main(args):
                 raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
                 raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
-                include_os=int(version[0])
-                < 4,  # OS (other splice) is not implemented for build 38.
-                use_mane_select_instead_of_canonical=int(version[0]) >= 4,
+                include_os=not version_4_and_above,  # OS (other splice) is not implemented for build 38.
+                use_mane_select_instead_of_canonical=version_4_and_above,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
                 res.constraint_metrics_ht.path, overwrite=overwrite
             )
@@ -630,9 +633,10 @@ if __name__ == "__main__":
             "Lower median coverage cutoff to use throughout the pipeline. Sites with"
             " coverage below this cutoff will be excluded when creating the training"
             " set, building and applying models, and computing constraint metrics."
+            "  Default is 30."
         ),
         type=int,
-        default=None,
+        default=30,
     )
 
     mutation_rate_args = parser.add_argument_group(
@@ -771,10 +775,10 @@ if __name__ == "__main__":
         help=(
             "Upper median coverage cutoff. Sites with coverage above this cutoff are"
             " excluded from the high coverage Table when building the models. Default"
-            " is None."
+            " is 100."
         ),
         type=int,
-        default=None,
+        default=100,
     )
 
     build_models_args.add_argument(
@@ -882,7 +886,7 @@ if __name__ == "__main__":
         help=(
             "Expected observed/expected rate of truncating variation for genes where"
             " protein truncating variation is completely tolerated by natural"
-            " selection."
+            " selection. Default is 1.0"
         ),
         type=float,
         default=1.0,
@@ -891,57 +895,59 @@ if __name__ == "__main__":
         "--expectation-rec",
         help=(
             "Expected observed/expected rate of truncating variation for recessive"
-            " disease genes."
+            " disease genes. Default is 0.706. Note that v2 used a value of 0.463."
         ),
         type=float,
-        default=0.463,
+        default=0.706,
     )
     compute_constraint_args.add_argument(
         "--expectation-li",
         help=(
             "Expected observed/expected rate of truncating variation for severe"
-            " haploinsufficient genes."
+            " haploinsufficient genes. Default is 0.207. Note that v2 used a value of"
+            " 0.089."
         ),
         type=float,
-        default=0.089,
+        default=0.207,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-lower-lof",
         help=(
             "Value at which the raw z-score is considered an outlier for lof variants."
-            " Values below this threshold will be considered outliers."
+            " Values below this threshold will be considered outliers. Defualt is -8.0."
         ),
         type=float,
-        default=-5.0,
+        default=-8.0,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-lower-missense",
         help=(
             "Value at which the raw z-score is considered an outlier for missense"
             " variants. Values below this threshold will be considered outliers."
+            " Defualt is -8.0."
         ),
         type=float,
-        default=-5.0,
+        default=-8.0,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-lower-syn",
         help=(
             "Lower value at which the raw z-score is considered an outlier for"
             " synonymous variants. Values below this threshold will be considered"
-            " outliers."
+            " outliers. Defualt is -8.0."
         ),
         type=float,
-        default=-5.0,
+        default=-8.0,
     )
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-upper-syn",
         help=(
             "Upper value at which the raw z-score is considered an outlier for"
             " synonymous variants. Values above this threshold will be considered"
-            " outliers."
+            " outliers. Defualt is 8.0."
         ),
         type=float,
-        default=5.0,
+        default=8.0,
     )
     parser.add_argument(
         "--export-tsv",

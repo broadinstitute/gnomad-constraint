@@ -762,7 +762,7 @@ def add_oe_lof_upper_rank_and_bin(
     )
 
     # Add rank and bin annotations back to original Table.
-    ms_ht = ms_ht.key_by(*list(ht.key))
+    ms_ht = ms_ht._key_by_assert_sorted(*list(ht.key))
     ms_index = ms_ht[ht.key]
     ht = ht.annotate(
         lof=ht.lof.annotate(
