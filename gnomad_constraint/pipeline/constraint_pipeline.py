@@ -260,7 +260,8 @@ def main(args):
         regions.remove("chry_nonpar")
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
-        # Define variable indicating whether or not the gnomAD version is greater than or equal to v4.
+        # Define variable indicating whether or not the gnomAD version is greater
+        # than or equal to v4.
         version_4_and_above = True
     else:
         version_4_and_above = False
@@ -539,7 +540,8 @@ def main(args):
                 raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
                 raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
-                include_os=not version_4_and_above,  # OS (other splice) is not implemented for build 38.
+                include_os=not version_4_and_above,
+                # OS (other splice) is not implemented for build 38.
                 use_mane_select_instead_of_canonical=version_4_and_above,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
                 res.constraint_metrics_ht.path, overwrite=overwrite
