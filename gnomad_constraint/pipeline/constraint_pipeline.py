@@ -260,7 +260,7 @@ def main(args):
         regions.remove("chry_nonpar")
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
         regions.remove("chrx_nonpar")
-        # Define variable indicating wherether or not the gnomAD v4 is greater than or equal to v4.
+        # Define variable indicating whether or not the gnomAD version is greater than or equal to v4.
         version_4_and_above = True
     else:
         version_4_and_above = False
