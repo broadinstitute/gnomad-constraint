@@ -346,7 +346,7 @@ def apply_models(
     custom_vep_annotation: str = None,
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
-    use_mane_select_instead_of_canonical: bool = False,
+    use_mane_select_instead_of_canonical: bool = True,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -417,7 +417,7 @@ def apply_models(
         'context_ht'.
     :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical
         grouping. Only used when `custom_vep_annotation` is set to
-        'transcript_consequences'.
+        'transcript_consequences'. Default is True.
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
@@ -735,13 +735,13 @@ def calculate_mu_by_downsampling(
 
 
 def add_oe_lof_upper_rank_and_bin(
-    ht: hl.Table, use_mane_select_instead_of_canonical: bool = False
+    ht: hl.Table, use_mane_select_instead_of_canonical: bool = True
 ) -> hl.Table:
     """
     Compute the rank and decile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
 
     :param ht: Input Table with the value for the lof oe upper confidence interval stored in ht.lof.oe_ci.upper.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table. Default is False.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table. Default is True.
     :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile'.
     """
     if use_mane_select_instead_of_canonical:
@@ -792,7 +792,7 @@ def compute_constraint_metrics(
     raw_z_outlier_threshold_lower_syn: float = -5.0,
     raw_z_outlier_threshold_upper_syn: float = 5.0,
     include_os: bool = False,
-    use_mane_select_instead_of_canonical: bool = False,
+    use_mane_select_instead_of_canonical: bool = True,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -826,7 +826,7 @@ def compute_constraint_metrics(
     :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  5.0.
     :param include_os: Whether or not to include OS (other splice) as a grouping when
         stratifying calculations by lof HC.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
+    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval. Default is True.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
