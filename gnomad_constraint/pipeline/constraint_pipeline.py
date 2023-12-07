@@ -490,9 +490,9 @@ def main(args):
                     custom_vep_annotation=custom_vep_annotation,
                     high_cov_definition=args.high_cov_definition,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
-                    use_mane_select_instead_of_canonical=(
+                    use_mane_select=(
                         True if version_4_and_above else False
-                    ),  # Group by MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
+                    ),  # Group by MANE Select transcripts in addition canonical for gnomAD v4 and later versions.
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
