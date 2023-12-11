@@ -916,7 +916,7 @@ if __name__ == "__main__":
         "--raw-z-outlier-threshold-lower-lof",
         help=(
             "Value at which the raw z-score is considered an outlier for lof variants."
-            " Values below this threshold will be considered outliers. Defualt is -8.0."
+            " Values below this threshold will be considered outliers. Default is -8.0."
         ),
         type=float,
         default=-8.0,
