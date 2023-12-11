@@ -540,8 +540,8 @@ def main(args):
                 raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
                 raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
-                include_os=not version_4_and_above,
                 # OS (other splice) is not implemented for build 38.
+                include_os=not version_4_and_above,
                 use_mane_select_instead_of_canonical=version_4_and_above,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
                 res.constraint_metrics_ht.path, overwrite=overwrite
