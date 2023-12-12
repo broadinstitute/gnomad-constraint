@@ -491,7 +491,10 @@ def main(args):
                     high_cov_definition=args.high_cov_definition,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     use_mane_select=(
-                        True if version_4_and_above else False
+                        True
+                        if version_4_and_above
+                        and custom_vep_annotation != "worst_csq_by_gene"
+                        else False
                     ),  # Group by MANE Select transcripts in addition canonical for gnomAD v4 and later versions.
                 )
                 if use_v2_release_mutation_ht:
@@ -542,7 +545,7 @@ def main(args):
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
                 # OS (other splice) is not implemented for build 38.
                 include_os=not version_4_and_above,
-                use_mane_select_instead_of_canonical=version_4_and_above,
+                use_mane_select_over_canonical=version_4_and_above,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
                 res.constraint_metrics_ht.path, overwrite=overwrite
             )
@@ -921,6 +924,7 @@ if __name__ == "__main__":
         type=float,
         default=-8.0,
     )
+    # NOTE: gnomAD v2 used raw z thresholds of +/- 5.
     compute_constraint_args.add_argument(
         "--raw-z-outlier-threshold-lower-missense",
         help=(

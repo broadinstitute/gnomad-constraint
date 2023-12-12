@@ -407,7 +407,7 @@ def apply_models(
     :param expected_variant_partition_hint: Target number of partitions for sum
         aggregators when computation is done. Default is 1000.
     :param custom_vep_annotation: The customized model (one of
-        "transcript_consequences" or "worst_csq_by_gene"), Default is None.
+        "transcript_consequences" or "worst_csq_by_gene"). Default is None.
     :param high_cov_definition: Median coverage cutoff. Sites with coverage above this cutoff
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
@@ -432,6 +432,12 @@ def apply_models(
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
+        if use_mane_select:
+            raise ValueError(
+                "'mane_select' cannot be set to True when custom_vep_annotation is set"
+                " to 'worst_csq_by_gene'."
+            )
+
     else:
         vep_annotation = "transcript_consequences"
         include_canonical_group = True
@@ -733,19 +739,19 @@ def calculate_mu_by_downsampling(
 
 
 def add_oe_lof_upper_rank_and_bin(
-    ht: hl.Table, use_mane_select_instead_of_canonical: bool = True
+    ht: hl.Table, use_mane_select_over_canonical: bool = True
 ) -> hl.Table:
     """
     Compute the rank and decile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
 
     :param ht: Input Table with the value for the lof oe upper confidence interval stored in ht.lof.oe_ci.upper.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table.
         If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
     :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile'.
     """
     # Filter to only ensembl transcripts of the specified transcript filter. If MANE select is specified, and a gene
     # does not have a MANE select transcript, use canonical instead.
-    if use_mane_select_instead_of_canonical:
+    if use_mane_select_over_canonical:
         genes = ht.group_by(ht.gene_id).aggregate(
             mane_present=hl.agg.any(ht.mane_select),
             canonical_present=hl.agg.any(ht.canonical),
@@ -759,12 +765,19 @@ def add_oe_lof_upper_rank_and_bin(
             _only_canonical=genes[ht.gene_id].only_canonical,
             _mane_present=genes[ht.gene_id].mane_present,
         )
+        total_count = ms_ht.count()
         ms_ht = ms_ht.filter(
             (ms_ht.transcript.startswith("ENST"))
             & (
                 (ms_ht._mane_present & ms_ht.mane_select)
                 | (ms_ht._only_canonical & ms_ht.canonical)
             )
+        )
+        filtered_count = ms_ht.count()
+        logger.info(
+            "Retaining %d out of %d transcripts to use for rank annotations.",
+            filtered_count,
+            total_count,
         )
     else:
         ms_ht = ht.filter((ht.canonical) & (ht.transcript.startswith("ENST")))
@@ -809,7 +822,7 @@ def compute_constraint_metrics(
     raw_z_outlier_threshold_lower_syn: float = -8.0,
     raw_z_outlier_threshold_upper_syn: float = 8.0,
     include_os: bool = False,
-    use_mane_select_instead_of_canonical: bool = True,
+    use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -843,12 +856,11 @@ def compute_constraint_metrics(
     :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  8.0.
     :param include_os: Whether or not to include OS (other splice) as a grouping when
         stratifying calculations by lof HC.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
         If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
-    ht.describe()
     if expected_values is None:
         expected_values = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
@@ -1004,7 +1016,7 @@ def compute_constraint_metrics(
     # Compute the rank and decile of the lof oe upper confidence
     # interval for MANE Select or canonical ensembl transcripts.
     ht = add_oe_lof_upper_rank_and_bin(
-        ht, use_mane_select_instead_of_canonical=use_mane_select_instead_of_canonical
+        ht, use_mane_select_over_canonical=use_mane_select_over_canonical
     )
 
     return ht
