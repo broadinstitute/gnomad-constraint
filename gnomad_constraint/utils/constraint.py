@@ -346,7 +346,7 @@ def apply_models(
     custom_vep_annotation: str = None,
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
-    use_mane_select_instead_of_canonical: bool = False,
+    use_mane_select: bool = True,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -407,7 +407,7 @@ def apply_models(
     :param expected_variant_partition_hint: Target number of partitions for sum
         aggregators when computation is done. Default is 1000.
     :param custom_vep_annotation: The customized model (one of
-        "transcript_consequences" or "worst_csq_by_gene"), Default is None.
+        "transcript_consequences" or "worst_csq_by_gene"). Default is None.
     :param high_cov_definition: Median coverage cutoff. Sites with coverage above this cutoff
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
@@ -415,9 +415,9 @@ def apply_models(
     :param low_coverage_filter: Lower median coverage cutoff for coverage filter.
         Sites with coverage below this cutoff will be removed from`exome_ht` and
         'context_ht'.
-    :param use_mane_select_instead_of_canonical: Use MANE Select rather than canonical
-        grouping. Only used when `custom_vep_annotation` is set to
-        'transcript_consequences'.
+    :param use_mane_select: Use MANE Select transcripts in grouping.
+        Only used when `custom_vep_annotation` is set to 'transcript_consequences'.
+        Default is True.
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
@@ -432,12 +432,16 @@ def apply_models(
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
+        if use_mane_select:
+            raise ValueError(
+                "'mane_select' cannot be set to True when custom_vep_annotation is set"
+                " to 'worst_csq_by_gene'."
+            )
+
     else:
         vep_annotation = "transcript_consequences"
-        if use_mane_select_instead_of_canonical:
-            include_canonical_group, include_mane_select_group = False, True
-        else:
-            include_canonical_group, include_mane_select_group = True, False
+        include_canonical_group = True
+        include_mane_select_group = use_mane_select
 
     context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
         ht=context_ht,
@@ -734,6 +738,74 @@ def calculate_mu_by_downsampling(
     return annotate_mutation_type(ht)
 
 
+def add_oe_lof_upper_rank_and_bin(
+    ht: hl.Table, use_mane_select_over_canonical: bool = True
+) -> hl.Table:
+    """
+    Compute the rank and decile of the lof oe upper confidence interval for MANE Select or canonical ensembl transcripts.
+
+    :param ht: Input Table with the value for the lof oe upper confidence interval stored in ht.lof.oe_ci.upper.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table.
+        If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
+    :return: Table with anntotations added for 'upper_rank', 'upper_bin_decile'.
+    """
+    # Filter to only ensembl transcripts of the specified transcript filter. If MANE select is specified, and a gene
+    # does not have a MANE select transcript, use canonical instead.
+    if use_mane_select_over_canonical:
+        genes = ht.group_by(ht.gene_id).aggregate(
+            mane_present=hl.agg.any(ht.mane_select),
+            canonical_present=hl.agg.any(ht.canonical),
+        )
+
+        genes = genes.annotate(
+            only_canonical=~(genes.mane_present) & (genes.canonical_present)
+        )
+
+        ms_ht = ht.annotate(
+            _only_canonical=genes[ht.gene_id].only_canonical,
+            _mane_present=genes[ht.gene_id].mane_present,
+        )
+        total_count = ms_ht.count()
+        ms_ht = ms_ht.filter(
+            (ms_ht.transcript.startswith("ENST"))
+            & (
+                (ms_ht._mane_present & ms_ht.mane_select)
+                | (ms_ht._only_canonical & ms_ht.canonical)
+            )
+        )
+        filtered_count = ms_ht.count()
+        logger.info(
+            "Retaining %d out of %d transcripts to use for rank annotations.",
+            filtered_count,
+            total_count,
+        )
+    else:
+        ms_ht = ht.filter((ht.canonical) & (ht.transcript.startswith("ENST")))
+
+    # Rank lof.oe_ci.upper in ascending order.
+    ms_ht = ms_ht.order_by(ms_ht.lof.oe_ci.upper).add_index(name="upper_rank")
+
+    # Determine decile bins.
+    n_transcripts = ms_ht.count()
+    ms_ht = ms_ht.annotate(
+        upper_bin_decile=hl.int(ms_ht.upper_rank * 10 / n_transcripts)
+    )
+
+    # Add rank and bin annotations back to original Table.
+    ms_ht = ms_ht.key_by(*list(ht.key))
+    ms_index = ms_ht[ht.key]
+    ht = ht.annotate(
+        lof=ht.lof.annotate(
+            oe_ci=ht.lof.oe_ci.annotate(
+                upper_rank=ms_index.upper_rank,
+                upper_bin_decile=ms_index.upper_bin_decile,
+            )
+        )
+    )
+
+    return ht
+
+
 def compute_constraint_metrics(
     ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
@@ -745,11 +817,12 @@ def compute_constraint_metrics(
     pops: Tuple[str] = (),
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
-    raw_z_outlier_threshold_lower_lof: float = -5.0,
-    raw_z_outlier_threshold_lower_missense: float = -5.0,
-    raw_z_outlier_threshold_lower_syn: float = -5.0,
-    raw_z_outlier_threshold_upper_syn: float = 5.0,
+    raw_z_outlier_threshold_lower_lof: float = -8.0,
+    raw_z_outlier_threshold_lower_missense: float = -8.0,
+    raw_z_outlier_threshold_lower_syn: float = -8.0,
+    raw_z_outlier_threshold_upper_syn: float = 8.0,
     include_os: bool = False,
+    use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
     """
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
@@ -777,17 +850,19 @@ def compute_constraint_metrics(
         'Rec', and 'LI' to use as starting values.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
         model convergence criteria as met. Default is 0.001.
-    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -5.0.
-    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -5.0.
-    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is considered an outlier for synonymous variants. Values below this threshold will be considered outliers. Default is -5.0.
-    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  5.0.
+    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is considered an outlier for synonymous variants. Values below this threshold will be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  8.0.
     :param include_os: Whether or not to include OS (other splice) as a grouping when
         stratifying calculations by lof HC.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
+        If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
     if expected_values is None:
-        expected_values = {"Null": 1.0, "Rec": 0.463, "LI": 0.089}
+        expected_values = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X.
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
@@ -934,6 +1009,14 @@ def compute_constraint_metrics(
             ann: ht[ann].annotate(z_score=ht[ann].z_raw / ht.sd_raw_z[ann])
             for ann in oe_ann
         }
+    )
+
+    ht = ht.checkpoint(new_temp_file(prefix="z_scores", extension="ht"))
+
+    # Compute the rank and decile of the lof oe upper confidence
+    # interval for MANE Select or canonical ensembl transcripts.
+    ht = add_oe_lof_upper_rank_and_bin(
+        ht, use_mane_select_over_canonical=use_mane_select_over_canonical
     )
 
     return ht
