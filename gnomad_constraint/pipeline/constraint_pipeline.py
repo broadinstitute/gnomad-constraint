@@ -930,7 +930,7 @@ if __name__ == "__main__":
         help=(
             "Value at which the raw z-score is considered an outlier for missense"
             " variants. Values below this threshold will be considered outliers."
-            " Defualt is -8.0."
+            " Default is -8.0."
         ),
         type=float,
         default=-8.0,
