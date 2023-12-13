@@ -950,7 +950,7 @@ if __name__ == "__main__":
         help=(
             "Upper value at which the raw z-score is considered an outlier for"
             " synonymous variants. Values above this threshold will be considered"
-            " outliers. Defualt is 8.0."
+            " outliers. Default is 8.0."
         ),
         type=float,
         default=8.0,
