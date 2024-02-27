@@ -259,7 +259,7 @@ def main(args):
         # TODO: check why there is no Y-par in the context_ht.
         regions.remove("chry_nonpar")
         # TODO: Add chromosome X back in after complete evaluation for autosome_par.
-        regions.remove("chrx_nonpar")
+        #regions.remove("chrx_nonpar")
         # Define variable indicating whether or not the gnomAD version is greater
         # than or equal to v4.
         version_4_and_above = True
@@ -331,10 +331,10 @@ def main(args):
                 # Filter to locus that is on an autosome.
                 # TODO: Add back in pseudoautosomal regions once have X/Y methylation
                 # data.
-                ht.filter(ht.locus.in_autosome()).write(
-                    getattr(res, f"preprocessed_autosome_par_{data_type}_ht").path,
-                    overwrite=overwrite,
-                )
+               # ht.filter(ht.locus.in_autosome()).write(
+               #     getattr(res, f"preprocessed_autosome_par_{data_type}_ht").path,
+               #     overwrite=overwrite,
+               # )
                 # Sex chromosomes are analyzed separately, since they are biologically
                 # different from the autosomes.
                 if data_type != "genomes":
@@ -397,6 +397,8 @@ def main(args):
             logger.info("Counting possible and observed variant counts...")
             res = resources.create_training_set
             res.check_resource_existence()
+
+            regions.remove("autosome_par")
 
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
