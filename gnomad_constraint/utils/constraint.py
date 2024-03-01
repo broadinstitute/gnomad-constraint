@@ -808,6 +808,7 @@ def add_oe_lof_upper_rank_and_bin(
 
 def compute_constraint_metrics(
     ht: hl.Table,
+    gencode_ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
     classic_lof_annotations: Tuple[str] = (
         "stop_gained",
@@ -858,6 +859,7 @@ def compute_constraint_metrics(
         stratifying calculations by lof HC.
     :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
         If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
+    :param gencode_ht: Table containing GENCODE annotations.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -1018,6 +1020,63 @@ def compute_constraint_metrics(
     ht = add_oe_lof_upper_rank_and_bin(
         ht, use_mane_select_over_canonical=use_mane_select_over_canonical
     )
+
+    # Add annotations from GENCODE.
+    ht = add_gencode_annotations(ht, gencode_ht)
+
+    return ht
+
+
+def add_gencode_annotations(
+    ht: hl.Table,
+    gencode_ht: hl.Table,
+) -> hl.Table:
+    """
+    Add GENCODE annotations to Table based on transcript id.
+
+    .. note::
+        Added annotations are:
+        - chromosome
+        - level
+        - transcript_type
+        - cds_length
+        - num_coding_exomes
+
+    :param ht: Input Table.
+    :param gencode_ht: Table with GENCODE annotations.
+    :return: Table with annotations from GENCODE added.
+    """
+    gencode_ht = gencode_ht.annotate(
+        length=gencode_ht.interval.end.position
+        - gencode_ht.interval.start.position
+        + 1,
+        chromosome=gencode_ht.interval.start.contig,
+    )
+
+    # Obtain transcript annotations from GENCODE file.
+    gencode_transcript = (
+        gencode_ht.filter(gencode_ht.feature == "transcript")
+        .select("chromosome", "transcript_id", "level", "transcript_type")
+        .key_by("transcript_id")
+        .drop("interval")
+    )
+
+    # Obtain CDS annotations from GENCODE file and calculate CDS length and number of exons.
+    gencode_cds = gencode_ht.filter(gencode_ht.feature == "CDS").select(
+        "transcript_id", "length"
+    )
+
+    gencode_cds = (
+        gencode_cds.group_by("transcript_id")
+        .aggregate(
+            cds_length=hl.agg.sum(gencode_cds.length), num_coding_exons=hl.agg.count()
+        )
+        .key_by("transcript_id")
+    )
+
+    # Add GENCODE annotations to input Table.
+    ht = ht.annotate(**gencode_transcript[ht.transcript])
+    ht = ht.annotate(**gencode_cds[ht.transcript])
 
     return ht
 
