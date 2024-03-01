@@ -1061,7 +1061,8 @@ def add_gencode_annotations(
         .drop("interval")
     )
 
-    # Obtain CDS annotations from GENCODE file and calculate CDS length and number of exons.
+    # Obtain CDS annotations from GENCODE file and calculate CDS length and
+    # number of exons.
     gencode_cds = gencode_ht.filter(gencode_ht.feature == "CDS").select(
         "transcript_id", "length"
     )
