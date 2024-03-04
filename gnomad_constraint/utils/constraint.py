@@ -1022,7 +1022,7 @@ def compute_constraint_metrics(
         ht, use_mane_select_over_canonical=use_mane_select_over_canonical
     )
 
-    # Add annotations from GENCODE.
+    # Add transcript annotations from GENCODE.
     ht = add_gencode_annotations(ht, gencode_ht)
 
     return ht
