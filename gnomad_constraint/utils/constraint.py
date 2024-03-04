@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple
 import hail as hl
 import numpy as np
 from gnomad.utils.constraint import (
-    add_gencode_annotations,
+    add_gencode_transcript_annotations,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
