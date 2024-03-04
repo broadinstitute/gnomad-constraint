@@ -437,12 +437,6 @@ def get_gencode_ht(version: str) -> hl.Table:
     if int(version[0]) == 2:
         return ref_grch37.gencode.ht()
     elif int(version[0]) == 4:
-        return ref_grch38.gencode.import_func(
-            ref_grch38.gencode.versions["v39"].import_args["gtf_path"],
-            force=True,
-            reference_genome="GRCh38",
-            skip_invalid_contigs=True,
-            min_partitions=12,
-        )
+        return ref_grch38.gencode.ht()
     else:
         raise ValueError("Version must be within gnomAD v2 or v4.")
