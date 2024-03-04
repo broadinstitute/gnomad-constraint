@@ -431,7 +431,7 @@ def get_gencode_ht(version: str) -> hl.Table:
     """
     Retrieve GENCODE Table.
 
-    :param version: Version of gnomAD. If version 2, GENCODE v19 be will  loaded. If version 4, GENCODE v39 will be loaded.
+    :param version: gnomAD version. If version 2, GENCODE v19 will be loaded. If version 4, GENCODE v39 will be loaded.
     :return: Table of GENCODE data for the specified build.
     """
     if int(version[0]) == 2:
