@@ -1023,7 +1023,7 @@ def compute_constraint_metrics(
     )
 
     # Add transcript annotations from GENCODE.
-    ht = add_gencode_annotations(ht, gencode_ht)
+    ht = add_gencode_transcript_annotations(ht, gencode_ht)
 
     return ht
 
