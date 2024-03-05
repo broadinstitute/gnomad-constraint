@@ -425,3 +425,18 @@ def get_checkpoint_path(
     return (
         f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
     )
+
+
+def get_gencode_ht(version: str) -> hl.Table:
+    """
+    Retrieve GENCODE Table.
+
+    :param version: gnomAD version. If version 2, GENCODE v19 will be loaded. If version 4, GENCODE v39 will be loaded.
+    :return: Table of GENCODE data for the specified build.
+    """
+    if int(version[0]) == 2:
+        return ref_grch37.gencode.ht()
+    elif int(version[0]) == 4:
+        return ref_grch38.gencode.ht()
+    else:
+        raise ValueError("Version must be within gnomAD v2 or v4.")

@@ -523,7 +523,8 @@ def main(args):
 
             # Compute constraint metrics.
             compute_constraint_metrics(
-                union_ht,
+                ht=union_ht,
+                gencode_ht=constraint_res.get_gencode_ht(version),
                 pops=pops,
                 keys=tuple(
                     [

@@ -5,6 +5,7 @@ from typing import Dict, Optional, Tuple
 import hail as hl
 import numpy as np
 from gnomad.utils.constraint import (
+    add_gencode_transcript_annotations,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
@@ -808,6 +809,7 @@ def add_oe_lof_upper_rank_and_bin(
 
 def compute_constraint_metrics(
     ht: hl.Table,
+    gencode_ht: hl.Table,
     keys: Tuple[str] = ("gene", "transcript", "canonical"),
     classic_lof_annotations: Tuple[str] = (
         "stop_gained",
@@ -858,6 +860,7 @@ def compute_constraint_metrics(
         stratifying calculations by lof HC.
     :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
         If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
+    :param gencode_ht: Table containing GENCODE annotations.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -1018,6 +1021,9 @@ def compute_constraint_metrics(
     ht = add_oe_lof_upper_rank_and_bin(
         ht, use_mane_select_over_canonical=use_mane_select_over_canonical
     )
+
+    # Add transcript annotations from GENCODE.
+    ht = add_gencode_transcript_annotations(ht, gencode_ht)
 
     return ht
 
