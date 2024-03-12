@@ -55,14 +55,23 @@ Minimum median exome coverage differentiating high coverage sites from low cover
 Low coverage sites require an extra calibration when computing the proportion of expected variation.
 """
 
+
 # VEP context Table.
-vep_context_ht = VersionedTableResource(
-    CURRENT_VERSION,
-    versions={
-        "2.1.1": ref_grch37.vep_context.versions["85"],
-        "4.0": ref_grch38.vep_context.versions["105"],
-    },
-)
+def get_vep_context_ht(version: str) -> TableResource:
+    """
+    Return VEP context Table corresponding to specified gnomAD version.
+
+    gnomAD version 2.1.1 uses build GRCh37 and VEP version 85. gnomAD v4 versions use GRCh38 and VEP version 105.
+
+    :param version: Version of gnomAD.
+    :return:VEP context Table Resource.
+    """
+    if version == "2.1.1":
+        return (ref_grch37.vep_context.versions["85"],)
+    elif int(version[0]) == 4:
+        return ref_grch38.vep_context.versions["105"]
+    else:
+        raise ValueError("The requested version for the context Table does not exist!")
 
 
 def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> str:

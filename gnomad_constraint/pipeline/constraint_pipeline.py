@@ -109,7 +109,7 @@ def get_constraint_resources(
     )
 
     # Create resource collection for each step of the constraint pipeline.
-    context_res = constraint_res.vep_context_ht(version)
+    context_res = constraint_res.get_vep_context_ht(version)
     context_build = get_reference_genome(context_res.ht().locus).name
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
