@@ -71,7 +71,7 @@ def get_vep_context_ht(version: str) -> TableResource:
     elif int(version[0]) == 4:
         return ref_grch38.vep_context.versions["105"]
     else:
-        raise ValueError("The requested version for the context Table does not exist!")
+        raise ValueError("Not a valid gnomAD version -- must be either 2.1.1 or 4.x!")
 
 
 def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
