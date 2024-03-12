@@ -100,7 +100,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     build = check_param_scope(version=version, data_type=data_type)
     if build == "GRCh37":
         return gnomad_grch37.public_release(data_type).versions[version]
-    elif version == "4.0":
+    elif build == "GRCh38":
         return release_sites(data_type).versions[version]
     else:
         raise ValueError(
