@@ -23,8 +23,8 @@ logging.basicConfig(
 logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
 
-VERSIONS = ["2.1.1", "4.0"]
-CURRENT_VERSION = "4.0"
+VERSIONS = ["2.1.1", "4.0", "4.1"]
+CURRENT_VERSION = "4.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
@@ -92,11 +92,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     if build == "GRCh37":
         return gnomad_grch37.public_release(data_type).versions[version]
     elif version == "4.0":
-        # TODO: This can change when gnomAD v4.0 is publicly released.
-        if data_type == "genomes":
-            return gnomad_grch38.public_release(data_type).versions["3.1.2"]
-        else:
-            return release_sites().versions[version]
+        return release_sites(data_type).versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
@@ -151,16 +147,7 @@ def get_coverage_ht(
     if build == "GRCh37":
         return gnomad_grch37.coverage(data_type)
     else:
-        # TODO: This can change when gnomAD v4.0 is publicly released.
-        if data_type == "genomes":
-            return gnomad_grch38.coverage(data_type)
-        elif version == "4.0":
-            return release_coverage().versions[version]
-        else:
-            raise ValueError(
-                "The coverage Table resource has not been defined for exomes of "
-                f"version: {version}!"
-            )
+        return gnomad_grch38.coverage(data_type)
 
 
 def get_mutation_ht(
