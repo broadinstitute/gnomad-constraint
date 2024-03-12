@@ -64,7 +64,7 @@ def get_vep_context_ht(version: str) -> TableResource:
     gnomAD version 2.1.1 uses build GRCh37 and VEP version 85. gnomAD v4 versions use build GRCh38 and VEP version 105.
 
     :param version: Version of gnomAD.
-    :return:VEP context Table Resource.
+    :return: VEP context Table Resource.
     """
     if version == "2.1.1":
         return ref_grch37.vep_context.versions["85"]
