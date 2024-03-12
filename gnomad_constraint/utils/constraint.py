@@ -361,7 +361,7 @@ def apply_models(
 
     A brief view of how to get the expected number of variants:
         mu_agg = the number of possible variants * the mutation rate (all variants)
-        predicted_proportion_observed = sum(plateau model slop * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
+        predicted_proportion_observed = sum(plateau model slope * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
         if 0 < coverage < coverage cutoff:
             coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
             expected_variants = sum(predicted_proportion_observed * coverage_correction)

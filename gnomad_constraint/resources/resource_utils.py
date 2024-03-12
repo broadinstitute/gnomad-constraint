@@ -23,8 +23,8 @@ logging.basicConfig(
 logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
 
-VERSIONS = ["2.1.1", "4.0"]
-CURRENT_VERSION = "4.0"
+VERSIONS = ["2.1.1", "4.0", "4.1"]
+CURRENT_VERSION = "4.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
@@ -55,14 +55,23 @@ Minimum median exome coverage differentiating high coverage sites from low cover
 Low coverage sites require an extra calibration when computing the proportion of expected variation.
 """
 
+
 # VEP context Table.
-vep_context_ht = VersionedTableResource(
-    CURRENT_VERSION,
-    versions={
-        "2.1.1": ref_grch37.vep_context.versions["85"],
-        "4.0": ref_grch38.vep_context.versions["105"],
-    },
-)
+def get_vep_context_ht(version: str) -> TableResource:
+    """
+    Return VEP context Table corresponding to specified gnomAD version.
+
+    gnomAD version 2.1.1 uses build GRCh37 and VEP version 85. gnomAD v4 versions use build GRCh38 and VEP version 105.
+
+    :param version: Version of gnomAD.
+    :return: VEP context Table Resource.
+    """
+    if version == "2.1.1":
+        return ref_grch37.vep_context.versions["85"]
+    elif int(version[0]) == 4:
+        return ref_grch38.vep_context.versions["105"]
+    else:
+        raise ValueError("Not a valid gnomAD version -- must be either 2.1.1 or 4.x!")
 
 
 def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
@@ -91,12 +100,8 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     build = check_param_scope(version=version, data_type=data_type)
     if build == "GRCh37":
         return gnomad_grch37.public_release(data_type).versions[version]
-    elif version == "4.0":
-        # TODO: This can change when gnomAD v4.0 is publicly released.
-        if data_type == "genomes":
-            return gnomad_grch38.public_release(data_type).versions["3.1.2"]
-        else:
-            return release_sites().versions[version]
+    elif build == "GRCh38":
+        return release_sites(data_type).versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
@@ -151,16 +156,7 @@ def get_coverage_ht(
     if build == "GRCh37":
         return gnomad_grch37.coverage(data_type)
     else:
-        # TODO: This can change when gnomAD v4.0 is publicly released.
-        if data_type == "genomes":
-            return gnomad_grch38.coverage(data_type)
-        elif version == "4.0":
-            return release_coverage().versions[version]
-        else:
-            raise ValueError(
-                "The coverage Table resource has not been defined for exomes of "
-                f"version: {version}!"
-            )
+        return gnomad_grch38.coverage(data_type)
 
 
 def get_mutation_ht(
