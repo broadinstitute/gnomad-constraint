@@ -100,8 +100,12 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     build = check_param_scope(version=version, data_type=data_type)
     if build == "GRCh37":
         return gnomad_grch37.public_release(data_type).versions[version]
-    elif build == "GRCh38":
-        return release_sites(data_type).versions[version]
+    elif int(version[0]) == 4:
+        # TODO: This can change when gnomAD v4.0 is publicly released.
+        if data_type == "genomes":
+            return gnomad_grch38.public_release(data_type).versions["3.1.2"]
+        else:
+            return release_sites().versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
