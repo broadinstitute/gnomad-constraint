@@ -101,7 +101,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     if build == "GRCh37":
         return gnomad_grch37.public_release(data_type).versions[version]
     elif int(version[0]) == 4:
-        # TODO: This can change when gnomAD v4.0 is publicly released.
+        # Continue to use v3.1.2 for genomes as downsamplings are dropped in v4 versions.
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
