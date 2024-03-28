@@ -288,6 +288,7 @@ def create_observed_and_possible_ht(
         partition_hint=partition_hint,
         count_downsamplings=pops,
         use_table_group_by=True,
+        max_af=max_af,
     )
 
     # TODO: Remove repartition once partition_hint bugs are resolved.
