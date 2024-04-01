@@ -242,13 +242,13 @@ def main(args):
     overwrite = args.overwrite
 
     max_af = args.max_af
-    use_pops = args.use_pops
+    pops = args.pops
     use_v2_release_mutation_ht = args.use_v2_release_mutation_ht
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
 
-    pops = constraint_res.POPS if use_pops else ()
+    # pops = constraint_res.POPS if use_pops else ()
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -738,14 +738,17 @@ if __name__ == "__main__":
         default=0.001,
     )
 
-    # `use_populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
-    use_populations = training_set_args.add_argument(
-        "--use-pops",
+    # `populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
+    populations = training_set_args.add_argument(
+        "--pops",
+        nargs="+",
         help=(
-            "Whether to apply models on each population. If not specified, will use"
-            " 'global'."
+            "Populations on which to train models, build models, apply models, and or"
+            " compute metrics on. Downsamplings for the specified population will be"
+            " included."
         ),
-        action="store_true",
+        choices=["global", "afr", "amr", "eas", "nfe", "sas"],
+        default=None,
     )
 
     use_v2_release_mutation_rate = training_set_args.add_argument(
@@ -804,7 +807,7 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    build_models_args._group_actions.append(use_populations)
+    build_models_args._group_actions.append(populations)
 
     apply_models_args = parser.add_argument_group(
         "Apply models args",
@@ -849,7 +852,7 @@ if __name__ == "__main__":
         choices=constraint_res.CUSTOM_VEP_ANNOTATIONS,
     )
     apply_models_args._group_actions.append(maximum_af)
-    apply_models_args._group_actions.append(use_populations)
+    apply_models_args._group_actions.append(populations)
     apply_models_args._group_actions.append(use_v2_release_mutation_rate)
 
     compute_constraint_args = parser.add_argument_group(
@@ -962,7 +965,7 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    compute_constraint_args._group_actions.append(use_populations)
+    compute_constraint_args._group_actions.append(populations)
 
     args = parser.parse_args()
     main(args)
