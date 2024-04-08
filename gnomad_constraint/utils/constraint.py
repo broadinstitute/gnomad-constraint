@@ -33,12 +33,13 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
-from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.resource_utils import (
     COVERAGE_CUTOFF,
     get_checkpoint_path,
 )
+
+from hail.utils.misc import new_temp_file
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -465,15 +466,15 @@ def apply_models(
         include_mane_select_group=include_mane_select_group,
     )
 
-    context_ht = context_ht.filter(context_ht.locus.contig == "chr21")
-    exome_ht = exome_ht.filter(exome_ht.locus.contig == "chr21")
+    # context_ht = context_ht.filter(context_ht.locus.contig == "chr21")
+    # exome_ht = exome_ht.filter(exome_ht.locus.contig == "chr21")
 
-    context_ht = context_ht.checkpoint(
-        "gs://gnomad-kristen/constraint/test/context_21.ht", overwrite=True
-    )
-    exome_ht = exome_ht.checkpoint(
-        "gs://gnomad-kristen/constraint/test/exome_21.ht", overwrite=True
-    )
+    # context_ht = context_ht.checkpoint(
+    #    "gs://gnomad-kristen/constraint/test/context_21.ht", overwrite=True
+    # )
+    # exome_ht = exome_ht.checkpoint(
+    #    "gs://gnomad-kristen/constraint/test/exome_21.ht", overwrite=True
+    # )
 
     # Compute observed and possible variant counts.
     ht = create_observed_and_possible_ht(

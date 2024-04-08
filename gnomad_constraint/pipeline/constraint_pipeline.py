@@ -514,7 +514,7 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 oe_ht.write(
-                    "gs://gnomad-tmp-30day/kristen/constraint/apply_ds.ht",
+                    "gs://gnomad-tmp-30day/kristen/constraint/apply_ds2.ht",
                     overwrite=True,
                 )
                 # oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
@@ -535,7 +535,7 @@ def main(args):
             # hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
             # union_ht = hts[0].union(*hts[1:])
             union_ht = hl.read_table(
-                "gs://gnomad-tmp-30day/kristen/constraint/apply_ds.ht"
+                "gs://gnomad-tmp-30day/kristen/constraint/apply_ds2.ht"
             )
             union_ht = union_ht.repartition(args.compute_constraint_metrics_partitions)
             union_ht = union_ht.checkpoint(
@@ -569,7 +569,7 @@ def main(args):
                 include_os=not version_4_and_above,
                 use_mane_select_over_canonical=version_4_and_above,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
-                "gs://gnomad-tmp-30day/kristen/constraint/metrics_ds.ht",
+                "gs://gnomad-tmp-30day/kristen/constraint/metrics_ds2.ht",
                 overwrite=True,
                 # res.constraint_metrics_ht.path, overwrite=overwrite
             )
@@ -581,10 +581,12 @@ def main(args):
             logger.info("Exporting constraint tsv...")
 
             # ht = res.constraint_metrics_ht.ht()
-            ht = hl.read_table("gs://gnomad-tmp-30day/kristen/constraint/metrics_ds.ht")
+            ht = hl.read_table(
+                "gs://gnomad-tmp-30day/kristen/constraint/metrics_ds2.ht"
+            )
             ht = ht.flatten()
             # ht.export(res.constraint_metrics_tsv)
-            ht.export("gs://gnomad-tmp-30day/kristen/constraint/metrics_ds.tsv")
+            ht.export("gs://gnomad-tmp-30day/kristen/constraint/metrics_ds2.tsv")
 
     finally:
         logger.info("Copying log to logging bucket...")
