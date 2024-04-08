@@ -1,9 +1,10 @@
 """Script containing utility functions used in the constraint pipeline."""
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import hail as hl
 import numpy as np
+
 from gnomad.utils.constraint import (
     add_gencode_transcript_annotations,
     annotate_exploded_vep_for_constraint_groupings,
@@ -175,6 +176,7 @@ def create_observed_and_possible_ht(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
+    downsamplings: Optional[List[int]] = None,
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
@@ -217,6 +219,8 @@ def create_observed_and_possible_ht(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
+    :param downsamplings: Optional List of integers specifying what downsampling
+        indices to obtain. Default is None, which will return all downsampling counts.
     :param grouping: Annotations other than 'context', 'ref', 'alt', and
         `methylation_level` to group by when counting variants. Default is
         ('exome_coverage',).
@@ -343,6 +347,7 @@ def apply_models(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
+    downsamplings: Optional[List[int]] = None,
     obs_pos_count_partition_hint: int = 2000,
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
@@ -404,6 +409,8 @@ def apply_models(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
+    :param downsamplings: Optional List of integers specifying what downsampling
+        indices to obtain. Default is None, which will return all downsampling counts.
     :param obs_pos_count_partition_hint: Target number of partitions for
         aggregation when counting variants. Default is 2000.
     :param expected_variant_partition_hint: Target number of partitions for sum
@@ -458,19 +465,32 @@ def apply_models(
         include_mane_select_group=include_mane_select_group,
     )
 
+    context_ht = context_ht.filter(context_ht.locus.contig == "chr21")
+    exome_ht = exome_ht.filter(exome_ht.locus.contig == "chr21")
+
+    context_ht = context_ht.checkpoint(
+        "gs://gnomad-kristen/constraint/test/context_21.ht", overwrite=True
+    )
+    exome_ht = exome_ht.checkpoint(
+        "gs://gnomad-kristen/constraint/test/exome_21.ht", overwrite=True
+    )
+
     # Compute observed and possible variant counts.
     ht = create_observed_and_possible_ht(
-        exome_ht,
-        context_ht,
-        mutation_ht,
-        max_af,
-        keep_annotations,
-        pops,
-        grouping,
-        obs_pos_count_partition_hint,
+        exome_ht=exome_ht,
+        context_ht=context_ht,
+        mutation_ht=mutation_ht,
+        max_af=max_af,
+        keep_annotations=keep_annotations,
+        pops=pops,
+        downsamplings=downsamplings,
+        grouping=grouping,
+        partition_hint=obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         transcript_for_synonymous_filter=None,
     )
+
+    ht = ht.checkpoint(new_temp_file(prefix="oe_ht", extension="ht"))
 
     # NOTE: In v2 ht.mu_snp was incorrectly multiplied here by possible_variants, but this multiplication has now been moved,
     # so that it is applied after the regression within compute_expected_variants.

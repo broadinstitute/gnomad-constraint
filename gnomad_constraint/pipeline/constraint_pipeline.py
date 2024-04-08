@@ -26,6 +26,7 @@ import logging
 from typing import List
 
 import hail as hl
+from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
 from gnomad.utils.constraint import build_models
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -248,10 +249,13 @@ def main(args):
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
 
-    # pops = constraint_res.POPS if use_pops else ()
-
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+
+    # If "global" is the only population specified for v4 and above, use the parred down downsampling list.
+    downsamplings = (
+        DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) >= 4)) else None
+    )
 
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
@@ -416,7 +420,9 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
+                # op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
+                op_ht.write("gs://gnomad-tmp-30day/kristen/constraint/train_ds.ht")
+
             logger.info("Done with creating training dataset.")
 
         if args.build_models:
@@ -427,7 +433,10 @@ def main(args):
             # chromosome X, and chromosome Y.
             for r in regions:
                 # TODO: Remove repartition once partition_hint bugs are resolved.
-                training_ht = getattr(res, f"train_{r}_ht").ht()
+                training_ht = hl.read_table(
+                    "gs://gnomad-tmp-30day/kristen/constraint/train_ds.ht"
+                )
+                # training_ht = getattr(res, f"train_{r}_ht").ht()
                 training_ht = training_ht.repartition(args.training_set_partition_hint)
 
                 logger.info("Building %s plateau and coverage models...", r)
@@ -441,7 +450,8 @@ def main(args):
                 )
                 hl.experimental.write_expression(
                     plateau_models,
-                    getattr(res, f"model_{r}_plateau").path,
+                    "gs://gnomad-tmp-30day/kristen/constraint/plateau_models_ds.he",
+                    # getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
                 if not args.skip_coverage_model:
@@ -477,7 +487,10 @@ def main(args):
                     exome_ht=getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     context_ht=getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     mutation_ht=mutation_ht,
-                    plateau_models=getattr(res, f"model_{r}_plateau").he(),
+                    plateau_models=hl.experimental.read_expression(
+                        "gs://gnomad-tmp-30day/kristen/constraint/plateau_models_ds.he"
+                    ),
+                    # plateau_models=getattr(res, f"model_{r}_plateau").he(),
                     coverage_model=(
                         getattr(res, "model_autosome_par_coverage").he()
                         if not args.skip_coverage_model
@@ -485,6 +498,7 @@ def main(args):
                     ),
                     max_af=max_af,
                     pops=pops,
+                    downsamplings=downsamplings,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
@@ -499,7 +513,7 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                oe.write(
+                oe_ht.write(
                     "gs://gnomad-tmp-30day/kristen/constraint/apply_ds.ht",
                     overwrite=True,
                 )
