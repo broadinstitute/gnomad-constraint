@@ -556,6 +556,7 @@ def apply_models(
             pops=pops,
             plateau_models=plateau_models,
             coverage_model=coverage_model_global,
+            downsamplings=downsamplings if downsamplings else "None",
         )
     )
     # Compute the observed:expected ratio.
