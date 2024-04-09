@@ -4,7 +4,6 @@ from typing import Dict, List, Optional, Tuple
 
 import hail as hl
 import numpy as np
-
 from gnomad.utils.constraint import (
     add_gencode_transcript_annotations,
     annotate_exploded_vep_for_constraint_groupings,
@@ -33,13 +32,18 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
-
 from gnomad_constraint.resources.resource_utils import (
     COVERAGE_CUTOFF,
     get_checkpoint_path,
 )
-
 from hail.utils.misc import new_temp_file
+
+logging.basicConfig(
+    format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
+logger = logging.getLogger("constraint_utils")
+logger.setLevel(logging.INFO)
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
