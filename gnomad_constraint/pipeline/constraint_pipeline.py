@@ -421,7 +421,6 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
-
             logger.info("Done with creating training dataset.")
 
         if args.build_models:
