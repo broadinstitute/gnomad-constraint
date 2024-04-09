@@ -466,16 +466,6 @@ def apply_models(
         include_mane_select_group=include_mane_select_group,
     )
 
-    # context_ht = context_ht.filter(context_ht.locus.contig == "chr21")
-    # exome_ht = exome_ht.filter(exome_ht.locus.contig == "chr21")
-
-    # context_ht = context_ht.checkpoint(
-    #    "gs://gnomad-kristen/constraint/test/context_21.ht", overwrite=True
-    # )
-    # exome_ht = exome_ht.checkpoint(
-    #    "gs://gnomad-kristen/constraint/test/exome_21.ht", overwrite=True
-    # )
-
     # Compute observed and possible variant counts.
     ht = create_observed_and_possible_ht(
         exome_ht=exome_ht,
