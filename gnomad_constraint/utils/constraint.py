@@ -45,13 +45,6 @@ logging.basicConfig(
 logger = logging.getLogger("constraint_utils")
 logger.setLevel(logging.INFO)
 
-logging.basicConfig(
-    format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-)
-logger = logging.getLogger("constraint_utils")
-logger.setLevel(logging.INFO)
-
 
 def add_vep_context_annotations(
     ht: hl.Table, annotated_context_ht: hl.Table
