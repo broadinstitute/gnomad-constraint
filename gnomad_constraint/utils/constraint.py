@@ -525,10 +525,12 @@ def apply_models(
 
         # Store which downsamplings are obtained for each pop in a downsampling_meta dictionary.
         ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, pop=pop))
+        key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
+        genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
         downsampling_meta[pop] = [
             x[1]["downsampling"]
             for x in ds
-            if (x[1]["gen_anc"] == pop)
+            if (x[1][genetic_ancestry_label] == pop)
             & (
                 int(x[1]["downsampling"]) in downsamplings
                 if downsamplings is not None
