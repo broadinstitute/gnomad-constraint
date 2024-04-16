@@ -509,6 +509,7 @@ def apply_models(
             cpg_expr=ht.cpg,
         )
     )
+    downsampling_meta = {}
     for pop in pops:
         agg_expr.update(
             compute_expected_variants(
@@ -521,6 +522,19 @@ def apply_models(
                 pop=pop,
             )
         )
+
+        # Store which downsamplings are obtained for each pop in a downsampling_meta dictionary.
+        ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, pop=pop))
+        downsampling_meta[pop] = [
+            x[1]["downsampling"]
+            for x in ds
+            if (x[1]["gen_anc"] == pop)
+            & (
+                int(x[1]["downsampling"]) in downsamplings
+                if downsamplings is not None
+                else True
+            )
+        ]
 
     grouping = list(grouping)
     grouping.remove("coverage")
@@ -544,7 +558,7 @@ def apply_models(
             plateau_models=plateau_models,
             coverage_model=coverage_model_global,
             high_cov_definition=high_cov_definition,
-            downsamplings=downsamplings if downsamplings else "None",
+            downsamplings=downsampling_meta if downsampling_meta else "None",
         )
     )
     # Compute the observed:expected ratio.
