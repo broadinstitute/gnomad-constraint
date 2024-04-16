@@ -481,7 +481,10 @@ def main(args):
                     exome_ht=getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     context_ht=getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     mutation_ht=mutation_ht,
-                    plateau_models=getattr(res, f"model_{r}_plateau").he(),
+                    plateau_models=hl.experimental.read_expression(
+                        "gs://gnomad-tmp-30day/kristen/constraint/plateau_models_ds.he"
+                    ),
+                    # plateau_models=getattr(res, f"model_{r}_plateau").he(),
                     coverage_model=(
                         getattr(res, "model_autosome_par_coverage").he()
                         if not args.skip_coverage_model
@@ -504,7 +507,11 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
+                # oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
+                oe_ht.write(
+                    "gs://gnomad-tmp-30day/kristen/constraint/apply_ds3.ht",
+                    overwrite=True,
+                )
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
@@ -519,8 +526,11 @@ def main(args):
 
             # Combine Tables of expected variant counts at autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y sites.
-            hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
-            union_ht = hts[0].union(*hts[1:])
+            # hts = [getattr(res, f"apply_{r}_ht").ht() for r in regions]
+            # union_ht = hts[0].union(*hts[1:])
+            union_ht = hl.read_table(
+                "gs://gnomad-tmp-30day/kristen/constraint/apply_ds3.ht"
+            )
             union_ht = union_ht.repartition(args.compute_constraint_metrics_partitions)
             union_ht = union_ht.checkpoint(
                 new_temp_file(prefix="constraint_apply_union", extension="ht")
@@ -553,7 +563,9 @@ def main(args):
                 include_os=not version_4_and_above,
                 use_mane_select_over_canonical=version_4_and_above,
             ).select_globals("version", "apply_model_params", "sd_raw_z").write(
-                res.constraint_metrics_ht.path, overwrite=overwrite
+                "gs://gnomad-kristen/constraint/metrics_ds3.ht",
+                overwrite=True,
+                # res.constraint_metrics_ht.path, overwrite=overwrite
             )
             logger.info("Done with computing constraint metrics.")
 
@@ -561,10 +573,11 @@ def main(args):
             res = resources.export_tsv
             res.check_resource_existence()
             logger.info("Exporting constraint tsv...")
-
-            ht = res.constraint_metrics_ht.ht()
+            ht = hl.read_table("gs://gnomad-kristen/constraint/metrics_ds3.ht")
+            # ht = res.constraint_metrics_ht.ht()
             ht = ht.flatten()
-            ht.export(res.constraint_metrics_tsv)
+            # ht.export(res.constraint_metrics_tsv)
+            ht.export("gs://gnomad-kristen/constraint/metrics_ds3.tsv")
 
     finally:
         logger.info("Copying log to logging bucket...")
