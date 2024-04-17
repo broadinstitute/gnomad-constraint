@@ -27,7 +27,7 @@ from typing import List
 
 import hail as hl
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
-from gnomad.utils.constraint import build_models
+from gnomad.utils.constraint import build_models, explode_downsamplings
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_qc.resource_utils import (
@@ -45,7 +45,6 @@ from gnomad_constraint.utils.constraint import (
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     create_observed_and_possible_ht,
-    explode_downsamplings,
     prepare_ht_for_constraint_calculations,
 )
 
@@ -566,27 +565,29 @@ def main(args):
             res.check_resource_existence()
             logger.info("Exporting constraint tsv...")
 
-            ht = res.constraint_metrics_ht.ht()
+            # ht = res.constraint_metrics_ht.ht()
+            ht = hl.read_table("gs://gnomad-kristen/constraint/metrics_ds4.ht")
 
             # If downsamplings per genetic ancestry group are present, export downsamplings to a separate tsv and drop from the main metrics tsv.
             if pops:
                 downsampling_ht = explode_downsamplings(
                     ht,
-                    downsampling_meta=downsampling_meta,
+                    downsampling_meta=ht.downsampling_meta,
                     metrics=["syn", "lof", "mis"],
                 )
-                if int(version) >= 4:
-                    ht = ht.annotate(
-                        **{
-                            i: ht[i].drop(*["pop_exp", "pop_obs"])
-                            for i in ["lof_hc_lc", "lof", "syn", "mis"]
-                        }
-                    )
-                else:
-                    ht = ht.drop(*[i for i in ht.row if i.split("_")[-1] in pops])
+
+                # Drop downsampling annotations from the main metrics Table.
+                ht = ht.annotate(
+                    **{
+                        i: ht[i].drop(*["pop_exp", "pop_obs"])
+                        for i in ["lof_hc_lc", "lof", "syn", "mis"]
+                    }
+                )
+                # Export separate downsampling Table.
                 downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
             ht = ht.flatten()
-            ht.export(res.constraint_metrics_tsv)
+            # ht.export(res.constraint_metrics_tsv)
+            ht.export("gs://gnomad-kristen/constraint/metrics_ds4.tsv")
 
     finally:
         logger.info("Copying log to logging bucket...")
