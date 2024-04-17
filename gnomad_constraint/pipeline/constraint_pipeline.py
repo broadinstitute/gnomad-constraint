@@ -563,6 +563,19 @@ def main(args):
             logger.info("Exporting constraint tsv...")
 
             ht = res.constraint_metrics_ht.ht()
+            if pops:
+                downsampling_ht = explode_downsamplings(
+                    ht,
+                    downsampling_meta=downsampling_meta,
+                    metrics=["syn", "lof", "mis"],
+                )
+                ht = ht.annotate(
+                    **{
+                        i: ht[i].drop(*["pop_exp", "pop_obs"])
+                        for i in ["lof_hc_lc", "lof", "syn", "mis"]
+                    }
+                )
+                downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
             ht = ht.flatten()
             ht.export(res.constraint_metrics_tsv)
 
