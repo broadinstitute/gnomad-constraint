@@ -45,6 +45,7 @@ from gnomad_constraint.utils.constraint import (
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     create_observed_and_possible_ht,
+    explode_downsamplings,
     prepare_ht_for_constraint_calculations,
 )
 
@@ -208,7 +209,10 @@ def get_constraint_resources(
         output_resources={
             "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
                 version, test
-            )
+            ),
+            "downsampling_constraint_metrics_tsv": (
+                constraint_res.get_downsampling_constraint_tsv_path(version, test)
+            ),
         },
         pipeline_input_steps=[compute_constraint_metrics],
     )
@@ -563,6 +567,7 @@ def main(args):
             logger.info("Exporting constraint tsv...")
 
             ht = res.constraint_metrics_ht.ht()
+            # If downsamplings per genetic ancestry group are present, export downsamplings to a separate tsv and drop from the main metrics tsv.
             if pops:
                 downsampling_ht = explode_downsamplings(
                     ht,
