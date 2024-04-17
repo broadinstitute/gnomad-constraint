@@ -567,6 +567,7 @@ def main(args):
             logger.info("Exporting constraint tsv...")
 
             ht = res.constraint_metrics_ht.ht()
+
             # If downsamplings per genetic ancestry group are present, export downsamplings to a separate tsv and drop from the main metrics tsv.
             if pops:
                 downsampling_ht = explode_downsamplings(
@@ -574,12 +575,15 @@ def main(args):
                     downsampling_meta=downsampling_meta,
                     metrics=["syn", "lof", "mis"],
                 )
-                ht = ht.annotate(
-                    **{
-                        i: ht[i].drop(*["pop_exp", "pop_obs"])
-                        for i in ["lof_hc_lc", "lof", "syn", "mis"]
-                    }
-                )
+                if int(version) >= 4:
+                    ht = ht.annotate(
+                        **{
+                            i: ht[i].drop(*["pop_exp", "pop_obs"])
+                            for i in ["lof_hc_lc", "lof", "syn", "mis"]
+                        }
+                    )
+                else:
+                    ht = ht.drop(*[i for i in ht.row if i.split("_")[-1] in pops])
                 downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
             ht = ht.flatten()
             ht.export(res.constraint_metrics_tsv)
