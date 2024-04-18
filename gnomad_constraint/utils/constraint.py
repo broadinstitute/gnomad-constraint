@@ -556,7 +556,7 @@ def apply_models(
     ht = ht.annotate_globals(
         apply_model_params=hl.struct(
             max_af=max_af,
-            pops=pops,
+            genetic_ancestry_groups=pops,
             plateau_models=plateau_models,
             coverage_model=coverage_model_global,
             high_cov_definition=high_cov_definition,
