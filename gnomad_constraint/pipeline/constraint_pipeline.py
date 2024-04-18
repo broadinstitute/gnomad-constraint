@@ -508,6 +508,7 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
+
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
@@ -570,14 +571,14 @@ def main(args):
             if pops:
                 downsampling_ht = explode_downsamplings(
                     ht,
-                    downsampling_meta=hl.eval(ht.downsampling_meta),
+                    downsampling_meta=hl.eval(ht.apply_model_params.downsampling_meta),
                     metrics=["syn", "lof", "mis"],
                 )
 
                 # Drop downsampling annotations from the main metrics Table.
                 ht = ht.annotate(
                     **{
-                        i: ht[i].drop(*["pop_exp", "pop_obs"])
+                        i: ht[i].drop(*["gen_anc_exp", "gen_anc_obs"])
                         for i in ["lof_hc_lc", "lof", "syn", "mis"]
                     }
                 )

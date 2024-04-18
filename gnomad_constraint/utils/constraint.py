@@ -560,7 +560,7 @@ def apply_models(
             plateau_models=plateau_models,
             coverage_model=coverage_model_global,
             high_cov_definition=high_cov_definition,
-            downsamplings=downsampling_meta if downsampling_meta else "None",
+            downsampling_meta=downsampling_meta if downsampling_meta else "None",
         )
     )
     # Compute the observed:expected ratio.
