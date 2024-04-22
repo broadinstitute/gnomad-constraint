@@ -566,7 +566,8 @@ def main(args):
             res.check_resource_existence()
             logger.info("Exporting constraint tsv...")
 
-            ht = res.constraint_metrics_ht.ht()
+            # ht = res.constraint_metrics_ht.ht()
+            ht = hl.read_table("gs://gnomad-kristen/constraint/metrics_ds4.ht")
             # If downsamplings per genetic ancestry group are present, export downsamplings to a separate tsv and drop from the main metrics tsv.
             if pops:
                 downsampling_ht = explode_downsamplings(
@@ -585,7 +586,8 @@ def main(args):
                 # Export separate downsampling Table.
                 downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
             ht = ht.flatten()
-            ht.export(res.constraint_metrics_tsv)
+            # ht.export(res.constraint_metrics_tsv)
+            ht.export("gs://gnomad-kristen/constraint/metrics_ds5.tsv")
 
     finally:
         logger.info("Copying log to logging bucket...")
