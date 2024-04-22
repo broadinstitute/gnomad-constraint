@@ -252,3 +252,144 @@ plot_roc(constraint_data, "loeuf")
 plot_roc(constraint_data, "pli")
 
 
+####################################################################
+####################################################################
+# Plot downsampling projections
+####################################################################
+####################################################################
+# Load in downsampling data for v2 and v4
+options(scipen = 50)
+v2_ds <- read.delim("gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz")
+v4_ds <- read.delim("gnomad.v4.1.downsampling_constraint_metrics.txt.bgz")
+
+# Rename v4 columns
+v4_ds <- v4_ds %>%
+  rename(exp_syn = syn.exp,
+         exp_mis = mis.exp,
+         exp_lof = lof.exp,
+         obs_syn = syn.obs,
+         obs_mis = mis.obs,
+         obs_lof = lof.obs)
+
+####################################################################
+# Fit linear models for lof, mis, and syn
+####################################################################
+plot_projected_sample_size <- function(df, version) {
+  # Plot the percent of genes that have a variable expected number of variants across sample sizes
+  # 'df' is a dataframe consisting of downsampling data per specific genetic ancestry groups (has to include 'global')
+
+  # Filter to canoncial/MANE Select transcripts and fit linear models
+  if (version == "v2") {
+    df <- filter(df, (canonical == "true") & 
+                   (pop == 'global') &
+                   (downsampling >= 100))
+  } else {
+    df <- filter(df, (mane_select == "true") & 
+                   (grepl('^ENST', transcript)) &
+                   (gen_anc == 'global') &
+                   (downsampling > 100))}
+  
+  df <- df %>% 
+    group_by(gene) %>%  # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant within all its respective rows
+    filter(min(exp_lof) > 0 & min(exp_mis) > 0 & min(exp_syn) > 0) %>%
+    mutate(log_exp_lof = log10(exp_lof), # Convert expected counts and n downsamplings to log scale
+           log_exp_mis = log10(exp_mis),
+           log_exp_syn = log10(exp_syn),
+           log_n = log10(downsampling)) %>%
+    summarize(
+      lof_fit = list(lm(log_exp_lof ~ log_n)), # Fit linear models where expected counts are a function of downsampling size for each gene
+      mis_fit = list(lm(log_exp_mis ~ log_n)),
+      syn_fit = list(lm(log_exp_syn ~ log_n))
+    )
+
+  # Extract slope and intercept for lof variants
+  gene_lof_fit <- df %>%
+    mutate(
+      slope = purrr::map_dbl(lof_fit, ~.x$coefficients[2]), # Extract slope (coefficient for log_n)
+      intercept = purrr::map_dbl(lof_fit, ~.x$coefficients[1]) # Extract intercept
+    ) %>% group_by(gene) %>% # why need this step to sum?
+    summarize(
+      slope = sum(slope),
+      intercept = sum(intercept)
+    )
+  
+  # Extract slope and intercept for missense variants
+  gene_mis_fit <- df %>%
+    mutate(
+      slope = purrr::map_dbl(mis_fit, ~.x$coefficients[2]), # Extract slope (coefficient for log_n)
+      intercept = purrr::map_dbl(mis_fit, ~.x$coefficients[1]) # Extract intercept
+    ) %>%  group_by(gene) %>%
+    summarize(
+      slope = sum(slope),
+      intercept = sum(intercept)
+    )
+
+  ####################################################################
+  # Process predictions
+  ####################################################################
+  post_process_predictions <- function(data) {
+    # Transform predictions at specific points ('5', '10', '20', '50', '100') using fitted model coefficients
+    # 'data' is the dataframe to use (should contain columns 'gene', 'slope' and 'intercept')
+    data %>%
+      mutate(`5` = 10 ^ ((log10(5) - intercept) / slope),
+             `10` = 10 ^ ((log10(10) - intercept) / slope),
+             `20` = 10 ^ ((log10(20) - intercept) / slope),
+             `50` = 10 ^ ((log10(50) - intercept) / slope),
+             `100` = 10 ^ ((log10(100) - intercept) / slope)) %>%
+      select(-slope, -intercept) %>%
+      gather('n_variants', 'n_required', -gene) %>%
+      mutate(n_variants = as.numeric(n_variants)) %>%
+      group_by(n_variants) %>%
+      mutate(rank=percent_rank(n_required)) %>% ungroup # Calculates the percentile rank of each value in the n_required column within the respective n_variants group
+  }
+  
+  samples_required_lof = post_process_predictions(gene_lof_fit)
+  samples_required_mis = post_process_predictions(gene_mis_fit)
+  
+  ####################################################################
+  # Plot projections
+  ####################################################################
+  # Define the limits of the x-axis
+  xlimits=c(100, 1e8)
+  library(forcats , include.only = c("fct_recode", "fct_relevel"))
+  
+  # Create dataframe of ExAC, gnomAD v2, and gnomAD v4 sample sizes
+  lines <- data.frame(
+    intercepts = c(60706,141456,807162),
+    names = c('1', '2', '3')
+  )
+  
+  expected_projections = function(projection_df, label='pLoF') {
+    # Generate plot displaying the percent of genes that would be expected to have a certain number or variants based on sample size
+    # 'projection_df is the input dataframe with columns 'n_variants', 'n_required', and 'rank'
+    # 'label' is the text that will be included at the top of the plot
+    p = projection_df %>%
+      mutate(n_variants=forcats::fct_reorder(as.factor(n_variants), n_variants)) %>%
+      ggplot + aes(y = rank, x = n_required, color = n_variants) + 
+      geom_line(size=2) + theme_classic() + scale_x_log10(labels = scales::comma, limits=xlimits) + #label=comma,
+      xlab('Sample size required') + ylab('Percent of human genes') +
+      geom_vline(xintercept = 60706, linetype='dotted') + # Exac size
+      geom_vline(xintercept = 141456, linetype='dashed') + # gnomAD v2 size
+      geom_vline(xintercept = 807162, linetype='twodash') + # gnomAD v4 size
+      # Add manual linetype scale for legend
+      scale_linetype_manual(name = "Database sizes", 
+                            values = c("dotted", "dashed", "twodash"), 
+                            labels = c("ExAC", "gnomADv2", "gnomADv4"))+
+      geom_vline(
+        data=lines,
+        aes(xintercept = intercepts, linetype=names), key_glyph='path'
+      ) +
+      scale_color_discrete(name='>= N variants\nexpected', h = c(40, 120)) +
+      annotate('text', x = xlimits[1], y = 1, hjust = 0, vjust = 1, label = label)
+    return(p)
+  }
+
+  lof_projections <- expected_projections(samples_required_lof, "pLoF")
+  missense_projections <- expected_projections(samples_required_mis, "Missense")
+  
+  ggsave(lof_projections, filename = paste("lof_ds_projections_", version, ".png", sep=""), dpi = 300, width = 8, height = 6, units = "in")
+  ggsave(missense_projections, filename = paste("mis_ds_projections_", version, ".png", sep=""), dpi = 300, width = 8, height = 6, units = "in")
+}
+
+plot_projected_sample_size(v2_ds, "v2")
+plot_projected_sample_size(v4_ds, "v4")
