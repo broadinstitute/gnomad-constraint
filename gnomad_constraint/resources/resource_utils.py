@@ -375,7 +375,7 @@ def get_downsampling_constraint_tsv_path(
     check_param_scope(version=version)
 
     return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.txt.bgz"
+        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
     )
 
 
