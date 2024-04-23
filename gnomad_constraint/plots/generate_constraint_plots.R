@@ -287,7 +287,8 @@ plot_projected_sample_size <- function(df, version) {
     df <- filter(df, (mane_select == "true") & 
                    (grepl('^ENST', transcript)) &
                    (gen_anc == 'global') &
-                   (downsampling > 100))}
+                   (downsampling > 100) &
+                   (!is.na(gene)))} # Remove 8 genes with missing gene names
   
   df <- df %>% 
     group_by(gene) %>%  # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant within all its respective rows
@@ -372,7 +373,7 @@ plot_projected_sample_size <- function(df, version) {
       geom_vline(xintercept = 141456, linetype='dashed') + # gnomAD v2 size
       geom_vline(xintercept = 807162, linetype='twodash') + # gnomAD v4 size
       # Add manual linetype scale for legend
-      scale_linetype_manual(name = "Database sizes", 
+      scale_linetype_manual(name = "Database size", 
                             values = c("dotted", "dashed", "twodash"), 
                             labels = c("ExAC", "gnomADv2", "gnomADv4"))+
       geom_vline(
