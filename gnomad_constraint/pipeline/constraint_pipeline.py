@@ -257,8 +257,9 @@ def main(args):
 
     # If "global" is the only population specified for v4 and above, use the pared-down downsampling list.
     downsamplings = (
-        DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) >= 4)) else None
+        DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) == 4)) else None
     )
+    logger.info("The following downsamplings will be used: %s", downsamplings)
 
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
@@ -572,7 +573,6 @@ def main(args):
                 downsampling_ht = explode_downsamplings(
                     ht,
                     downsampling_meta=hl.eval(ht.apply_model_params.downsampling_meta),
-                    metrics=["syn", "lof", "mis"],
                 )
 
                 # Drop downsampling annotations from the main metrics Table.

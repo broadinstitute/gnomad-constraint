@@ -478,8 +478,6 @@ def apply_models(
         transcript_for_synonymous_filter=None,
     )
 
-    ht = ht.checkpoint(new_temp_file(prefix="oe_ht", extension="ht"))
-
     # NOTE: In v2 ht.mu_snp was incorrectly multiplied here by possible_variants, but this multiplication has now been moved,
     # so that it is applied after the regression within compute_expected_variants.
     mu_expr = ht.mu_snp
