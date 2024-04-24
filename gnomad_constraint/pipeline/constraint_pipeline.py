@@ -26,7 +26,8 @@ import logging
 from typing import List
 
 import hail as hl
-from gnomad.utils.constraint import build_models
+from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
+from gnomad.utils.constraint import build_models, explode_downsamplings_oe
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_qc.resource_utils import (
@@ -207,7 +208,10 @@ def get_constraint_resources(
         output_resources={
             "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
                 version, test
-            )
+            ),
+            "downsampling_constraint_metrics_tsv": (
+                constraint_res.get_downsampling_constraint_tsv_path(version, test)
+            ),
         },
         pipeline_input_steps=[compute_constraint_metrics],
     )
@@ -242,16 +246,21 @@ def main(args):
     overwrite = args.overwrite
 
     max_af = args.max_af
-    use_pops = args.use_pops
+    pops = args.pops
     use_v2_release_mutation_ht = args.use_v2_release_mutation_ht
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
 
-    pops = constraint_res.POPS if use_pops else ()
-
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+
+    # If "global" is the only population specified for v4, use the pared-down
+    # downsampling list.
+    downsamplings = (
+        DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) == 4)) else None
+    )
+    logger.info("The following downsamplings will be used: %s", downsamplings)
 
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
@@ -485,6 +494,7 @@ def main(args):
                     ),
                     max_af=max_af,
                     pops=pops,
+                    downsamplings=downsamplings,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
@@ -500,6 +510,7 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
+
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
@@ -558,6 +569,23 @@ def main(args):
             logger.info("Exporting constraint tsv...")
 
             ht = res.constraint_metrics_ht.ht()
+            # If downsamplings per genetic ancestry group are present, export
+            # downsamplings to a separate tsv and drop from the main metrics tsv.
+            if pops:
+                downsampling_ht = explode_downsamplings_oe(
+                    ht,
+                    downsampling_meta=hl.eval(ht.apply_model_params.downsampling_meta),
+                )
+
+                # Drop downsampling annotations from the main metrics Table.
+                ht = ht.annotate(
+                    **{
+                        i: ht[i].drop(*["gen_anc_exp", "gen_anc_obs"])
+                        for i in ["lof_hc_lc", "lof", "syn", "mis"]
+                    }
+                )
+                # Export separate downsampling Table.
+                downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
             ht = ht.flatten()
             ht.export(res.constraint_metrics_tsv)
 
@@ -738,14 +766,17 @@ if __name__ == "__main__":
         default=0.001,
     )
 
-    # `use_populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
-    use_populations = training_set_args.add_argument(
-        "--use-pops",
+    # `populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
+    populations = training_set_args.add_argument(
+        "--pops",
+        nargs="+",
         help=(
-            "Whether to apply models on each population. If not specified, will use"
-            " 'global'."
+            "Populations on which to train models, build models, apply models, and or"
+            " compute metrics on. Downsamplings for the specified population will be"
+            " included."
         ),
-        action="store_true",
+        choices=["global", "afr", "amr", "eas", "nfe", "sas"],
+        default=None,
     )
 
     use_v2_release_mutation_rate = training_set_args.add_argument(
@@ -804,7 +835,7 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    build_models_args._group_actions.append(use_populations)
+    build_models_args._group_actions.append(populations)
 
     apply_models_args = parser.add_argument_group(
         "Apply models args",
@@ -849,7 +880,7 @@ if __name__ == "__main__":
         choices=constraint_res.CUSTOM_VEP_ANNOTATIONS,
     )
     apply_models_args._group_actions.append(maximum_af)
-    apply_models_args._group_actions.append(use_populations)
+    apply_models_args._group_actions.append(populations)
     apply_models_args._group_actions.append(use_v2_release_mutation_rate)
 
     compute_constraint_args = parser.add_argument_group(
@@ -962,7 +993,7 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    compute_constraint_args._group_actions.append(use_populations)
+    compute_constraint_args._group_actions.append(populations)
 
     args = parser.parse_args()
     main(args)

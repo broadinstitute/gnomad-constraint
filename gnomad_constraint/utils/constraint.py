@@ -1,6 +1,6 @@
 """Script containing utility functions used in the constraint pipeline."""
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import hail as hl
 import numpy as np
@@ -175,6 +175,7 @@ def create_observed_and_possible_ht(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
+    downsamplings: Optional[List[int]] = None,
     grouping: Tuple[str] = ("exome_coverage",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
@@ -217,6 +218,8 @@ def create_observed_and_possible_ht(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
+    :param downsamplings: Optional List of integers specifying what downsampling
+        indices to obtain. Default is None, which will return all downsampling counts.
     :param grouping: Annotations other than 'context', 'ref', 'alt', and
         `methylation_level` to group by when counting variants. Default is
         ('exome_coverage',).
@@ -288,6 +291,7 @@ def create_observed_and_possible_ht(
         partition_hint=partition_hint,
         count_downsamplings=pops,
         use_table_group_by=True,
+        max_af=max_af,
     )
 
     # TODO: Remove repartition once partition_hint bugs are resolved.
@@ -342,6 +346,7 @@ def apply_models(
         "methylation_level",
     ),
     pops: Tuple[str] = (),
+    downsamplings: Optional[List[int]] = None,
     obs_pos_count_partition_hint: int = 2000,
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
@@ -403,6 +408,8 @@ def apply_models(
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
     :param pops: List of populations to use for downsampling counts. Default is ().
+    :param downsamplings: Optional List of integers specifying what downsampling
+        indices to obtain. Default is None, which will return all downsampling counts.
     :param obs_pos_count_partition_hint: Target number of partitions for
         aggregation when counting variants. Default is 2000.
     :param expected_variant_partition_hint: Target number of partitions for sum
@@ -459,14 +466,15 @@ def apply_models(
 
     # Compute observed and possible variant counts.
     ht = create_observed_and_possible_ht(
-        exome_ht,
-        context_ht,
-        mutation_ht,
-        max_af,
-        keep_annotations,
-        pops,
-        grouping,
-        obs_pos_count_partition_hint,
+        exome_ht=exome_ht,
+        context_ht=context_ht,
+        mutation_ht=mutation_ht,
+        max_af=max_af,
+        keep_annotations=keep_annotations,
+        pops=pops,
+        downsamplings=downsamplings,
+        grouping=grouping,
+        partition_hint=obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         transcript_for_synonymous_filter=None,
     )
@@ -500,6 +508,7 @@ def apply_models(
             cpg_expr=ht.cpg,
         )
     )
+    downsampling_meta = {}
     for pop in pops:
         agg_expr.update(
             compute_expected_variants(
@@ -512,6 +521,22 @@ def apply_models(
                 pop=pop,
             )
         )
+
+        # Store which downsamplings are obtained for each pop in a
+        # downsampling_meta dictionary.
+        ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, pop=pop))
+        key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
+        genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
+        downsampling_meta[pop] = [
+            x[1]["downsampling"]
+            for x in ds
+            if (x[1][genetic_ancestry_label] == pop)
+            & (
+                int(x[1]["downsampling"]) in downsamplings
+                if downsamplings is not None
+                else True
+            )
+        ]
 
     grouping = list(grouping)
     grouping.remove("coverage")
@@ -531,9 +556,11 @@ def apply_models(
     ht = ht.annotate_globals(
         apply_model_params=hl.struct(
             max_af=max_af,
-            pops=pops,
+            genetic_ancestry_groups=pops,
             plateau_models=plateau_models,
             coverage_model=coverage_model_global,
+            high_cov_definition=high_cov_definition,
+            downsampling_meta=downsampling_meta if downsampling_meta else "None",
         )
     )
     # Compute the observed:expected ratio.

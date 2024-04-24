@@ -360,6 +360,25 @@ def get_constraint_tsv_path(
     )
 
 
+def get_downsampling_constraint_tsv_path(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> str:
+    """
+    Return tsv path of downsampling observed and expected counts.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param test: Whether the Table is for testing purposes. Default is False.
+    :return: TSV path of constraint metrics.
+    """
+    check_param_scope(version=version)
+
+    return (
+        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
+    )
+
+
 def check_param_scope(
     version: Optional[str] = None,
     genomic_region: Optional[str] = None,
