@@ -32,11 +32,12 @@ from gnomad.utils.vep import (
     add_most_severe_csq_to_tc_within_vep_root,
     filter_vep_transcript_csqs,
 )
+from hail.utils.misc import new_temp_file
+
 from gnomad_constraint.resources.resource_utils import (
     COVERAGE_CUTOFF,
     get_checkpoint_path,
 )
-from hail.utils.misc import new_temp_file
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -521,7 +522,8 @@ def apply_models(
             )
         )
 
-        # Store which downsamplings are obtained for each pop in a downsampling_meta dictionary.
+        # Store which downsamplings are obtained for each pop in a
+        # downsampling_meta dictionary.
         ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, pop=pop))
         key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
         genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"

@@ -255,7 +255,8 @@ def main(args):
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
-    # If "global" is the only population specified for v4, use the pared-down downsampling list.
+    # If "global" is the only population specified for v4, use the pared-down
+    # downsampling list.
     downsamplings = (
         DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) == 4)) else None
     )
@@ -568,7 +569,8 @@ def main(args):
             logger.info("Exporting constraint tsv...")
 
             ht = res.constraint_metrics_ht.ht()
-            # If downsamplings per genetic ancestry group are present, export downsamplings to a separate tsv and drop from the main metrics tsv.
+            # If downsamplings per genetic ancestry group are present, export
+            # downsamplings to a separate tsv and drop from the main metrics tsv.
             if pops:
                 downsampling_ht = explode_downsamplings(
                     ht,
