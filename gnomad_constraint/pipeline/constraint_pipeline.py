@@ -255,7 +255,7 @@ def main(args):
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
-    # If "global" is the only population specified for v4 and above, use the pared-down downsampling list.
+    # If "global" is the only population specified for v4, use the pared-down downsampling list.
     downsamplings = (
         DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) == 4)) else None
     )
