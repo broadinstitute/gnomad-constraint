@@ -27,7 +27,7 @@ from typing import List
 
 import hail as hl
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
-from gnomad.utils.constraint import build_models, explode_downsamplings
+from gnomad.utils.constraint import build_models, explode_downsamplings_oe
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_qc.resource_utils import (
@@ -572,7 +572,7 @@ def main(args):
             # If downsamplings per genetic ancestry group are present, export
             # downsamplings to a separate tsv and drop from the main metrics tsv.
             if pops:
-                downsampling_ht = explode_downsamplings(
+                downsampling_ht = explode_downsamplings_oe(
                     ht,
                     downsampling_meta=hl.eval(ht.apply_model_params.downsampling_meta),
                 )
