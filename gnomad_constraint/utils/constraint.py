@@ -3,7 +3,6 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 import hail as hl
-from hail.utils.misc import new_temp_file
 import numpy as np
 from gnomad.utils.constraint import (
     add_gencode_transcript_annotations,
@@ -37,6 +36,7 @@ from gnomad_constraint.resources.resource_utils import (
     COVERAGE_CUTOFF,
     get_checkpoint_path,
 )
+from hail.utils.misc import new_temp_file
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
