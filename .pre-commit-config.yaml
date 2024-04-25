@@ -30,3 +30,7 @@ repos:
       - id: isort
         args: ["--profile", "black", "--filter-files"]
         files: gnomad_constraint
+  - repo: https://github.com/lorenzwalthert/precommit
+    rev: v0.4.2
+    hooks:
+      - id: style-files

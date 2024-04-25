@@ -37,3 +37,9 @@ jobs:
         run: autopep8 --exit-code --diff gnomad_constraint
       - name: Run Pylint
         run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v1
+      - name: Install styler
+        run: Rscript -e 'install.packages("styler")'
+      - name: Run styler
+        run: Rscript -e 'styler::style_pkg()'
