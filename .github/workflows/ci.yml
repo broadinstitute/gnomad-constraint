@@ -27,6 +27,11 @@ jobs:
           pip install wheel
           pip install -r requirements-dev.txt
           pip install hail
+      - name: Setup R
+        run: |
+          sudo apt update
+          sudo apt install -y r-base
+          sudo Rscript -e 'install.packages(c("lintr", "formatR"), repos="http://cran.rstudio.com/")'
       - name: Check formatting
         run: black --check --preview gnomad_constraint
       - name: Check imports
@@ -37,9 +42,7 @@ jobs:
         run: autopep8 --exit-code --diff gnomad_constraint
       - name: Run Pylint
         run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint
-      - name: Setup R
-        uses: r-lib/actions/setup-r@v1
-      - name: Install styler
-        run: Rscript -e 'install.packages("styler")'
-      - name: Run styler
-        run: Rscript -e 'styler::style_pkg()'
+      - name: Run lintr
+        run: Rscript -e "lintr::lint_dir('R/', pattern='.R$$')"
+      - name: Run formatR
+        run: Rscript -e "formatR::tidy_dir('R/', pattern='.R$$', arrow=TRUE);"

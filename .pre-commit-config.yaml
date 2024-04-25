@@ -30,7 +30,17 @@ repos:
       - id: isort
         args: ["--profile", "black", "--filter-files"]
         files: gnomad_constraint
-  - repo: https://github.com/lorenzwalthert/precommit
-    rev: v0.4.2
+  - repo: local
     hooks:
-      - id: style-files
+      - id: lintr
+        name: lintr
+        entry: Rscript -e "lintr::lint_dir('R/', pattern='.R$')"
+        language: system
+        types: [r]
+        pass_filenames: false
+      - id: formatr
+        name: formatR
+        entry: Rscript -e "formatR::tidy_dir('R/', pattern='.R$$', arrow=TRUE);"
+        language: system
+        types: [r]
+        pass_filenames: false
