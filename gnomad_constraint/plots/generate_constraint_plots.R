@@ -70,10 +70,12 @@ for (version in versions_to_plot) {
 # Plot ROC Curves
 ####################################################################
 ####################################################################
-plot_roc(constraint_data,"loeuf", get_plot_path(paste("roc_plot_", "loeuf"), output_path = default_output_path))
-plot_roc(constraint_data,
-         "pli",
-         get_plot_path(paste("roc_plot_", "pli"), output_path = default_output_path))
+plot_roc(constraint_data, "loeuf", get_plot_path(paste("roc_plot_", "loeuf"), output_path = default_output_path))
+plot_roc(
+  constraint_data,
+  "pli",
+  get_plot_path(paste("roc_plot_", "pli"), output_path = default_output_path)
+)
 
 ####################################################################
 ####################################################################
@@ -86,8 +88,7 @@ v2_ds <- read.delim("gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz")
 v4_ds <- read.delim("gnomad.v4.1.downsampling_constraint_metrics.txt.bgz")
 
 # Rename v4 columns
-v4_ds <-
-  v4_ds %>% rename(
+v4_ds <- v4_ds %>% rename(
     exp_syn = syn.exp,
     exp_mis = mis.exp,
     exp_lof = lof.exp,
