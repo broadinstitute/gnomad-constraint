@@ -1,6 +1,6 @@
 library("optparse")
-source("config.R")
-source("utils.R")
+source("loading_functions.R")
+source("plotting_functions.R")
 
 # Define input arguments
 option_list <- list(
@@ -58,6 +58,14 @@ v2 <- filter(constraint_data, v2)
 ####################################################################
 gene_lists <- load_all_gene_list_data(output_path = default_output_path)
 
+# Define olfactory genes based on gene names
+or_genes <- constraint_data %>%
+  filter(grepl("^OR", gene)) %>%
+  transmute(gene = gene, gene_list = "Olfactory Genes")
+
+# Add olfactory genes to gene list
+gene_lists <- gene_lists %>% bind_rows(or_genes)
+
 # Obtain just haploinsufficient genes
 hi_genes <- gene_lists %>% filter(gene_list == "Haploinsufficient")
 
@@ -75,6 +83,7 @@ versions_to_plot <- c("v2", "v4")
 for (version in versions_to_plot) {
   plot_gene_lists(
     gene_data,
+    gene_lists_to_plot,
     version,
     get_plot_path(
       "gene_list_barplot",
@@ -91,11 +100,13 @@ for (version in versions_to_plot) {
 ####################################################################
 plot_roc(
   constraint_data,
+  hi_genes,
   "loeuf",
   get_plot_path(paste("roc_plot_", "loeuf"), output_path = default_output_path)
 )
 plot_roc(
   constraint_data,
+  hi_genes,
   "pli",
   get_plot_path(paste("roc_plot_", "pli"), output_path = default_output_path)
 )

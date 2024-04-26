@@ -1,8 +1,39 @@
+library(conflicted)
+library(dplyr)
+library(ggplot2)
+library(googleCloudStorageR)
+library(grid)
+library(rlang)
+library(tidyr)
+library(forcats, include.only = c("fct_recode", "fct_relevel"))
+library(purrr, include.only = c("map_df"))
+library(pROC, include.only = c("roc")) # nolint
+library(readr, include.only = c("read_tsv", "cols", "col_double"))
+library(scales, include.only = c("comma"))
+library(stringr, include.only = c("str_sub"))
+
+####################################################################
+# Define colors for plots
+####################################################################
+color_lof <- "#9D1309"
+color_dominant <- "#F0810F"
+color_recessive <- "#FFBB00"
+color_benign <- "#87A4DC"
+gene_list_colors <- c(
+  "Haploinsufficient" = color_lof,
+  "Essential Genes" = "#CB0000",
+  "Autosomal Dominant" = color_dominant,
+  "Autosomal Recessive" = color_recessive,
+  "Olfactory Genes" = color_benign,
+  "Background" = "lightgray",
+  "Universe" = "lightgray"
+)
+
 label_function <- function(x) {
   paste0(x * 10, "-", x * 10 + 10, "%")
 }
 
-plot_gene_lists <- function(df, version, plot_path) {
+plot_gene_lists <- function(df, gene_lists_to_plot, version, plot_path) {
   # Output table of gene list membership and
   # plot gene list membership according to LOEUF decile
   # 'df' is dataframe to use
@@ -14,36 +45,33 @@ plot_gene_lists <- function(df, version, plot_path) {
     metric <- "lof.oe_ci.upper_bin_decile"
   }
 
-  gene_data$lof.oe_ci.upper_bin_decile
-  sort(colnames(gene_data))
-
-  # Filter dataframe to specified version
+  # Filter gene data to specified version
   df <- filter(df, !!sym(version))
 
-  # Remove rows where gene_list or metric is not defined and filter to gene lists of interest
+  # Remove rows where gene_list or metric is not defined and filter to gene lists of
+  # interest
   df <- df %>%
-    filter(!is.na(gene_list) & !is.na(!!sym(metric))) %>%
+    filter(!is.na(.data$gene_list) & !is.na(!!sym(metric))) %>%
     mutate(metric = label_function(!!sym(metric))) %>%
     filter(
-      gene_list %in% c(
+      .data$gene_list %in% c(
         "Haploinsufficient",
         "Autosomal Dominant",
         "Autosomal Recessive",
         "Olfactory Genes"
       )
     )
-  summary_df <- df %>% select(gene, gene_list, !!sym(metric))
 
   ####################################################################
   # Summarize counts of gene lists by oe_lof_upper_bin
   ####################################################################
   # Generate counts of gene list membership
   gene_list_sums <- df %>%
-    group_by(metric, gene_list, .drop = FALSE) %>%
+    group_by(.data$metric, .data$gene_list, .drop = FALSE) %>%
     summarise(count = n())
-  gene_list_sums <- dplyr::filter(
+  gene_list_sums <- filter(
     gene_list_sums,
-    gene_list %in% c(
+    .data$gene_list %in% c(
       "Haploinsufficient",
       "Autosomal Dominant",
       "Autosomal Recessive",
@@ -51,7 +79,7 @@ plot_gene_lists <- function(df, version, plot_path) {
     )
   )
 
-  summary_gene_list_per_sums <- gene_list_sums %>% spread(gene_list, count)
+  summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
 
   # Write out table of gene list membership
   write.table(
@@ -62,22 +90,25 @@ plot_gene_lists <- function(df, version, plot_path) {
 
   # Convert counts to proportions
   props <- gene_list_sums %>%
-    group_by(gene_list) %>%
-    mutate(prop_in_bin = count / sum(count))
-  props <- filter(props, gene_list %in% gene_lists_to_plot)
+    group_by(.data$gene_list) %>%
+    mutate(prop_in_bin = .data$count / sum(.data$count))
+  props <- filter(props, .data$gene_list %in% gene_lists_to_plot)
 
   ####################################################################
   # Plot gene list per decile
   ####################################################################
   top_legend <- max(props$prop_in_bin * 100)
-  bar_plot <- ggplot(props, aes(x = metric, y = prop_in_bin * 100, fill = gene_list)) +
+  bar_plot <- ggplot(
+    props,
+    aes(x = .data$metric, y = .data$prop_in_bin * 100, fill = .data$gene_list)
+  ) +
     geom_bar(position = "dodge", stat = "identity", width = 0.9) +
     theme_classic() +
     theme(
       axis.title = element_text(colour = "black", size = 12, face = "bold"),
       axis.text = element_text(colour = "black", size = 10)
     ) +
-    scale_fill_manual(values = gene_list_colors, guide = F) +
+    scale_fill_manual(values = gene_list_colors, guide = FALSE) +
     annotate(
       "text",
       4.5,
@@ -121,13 +152,13 @@ plot_gene_lists <- function(df, version, plot_path) {
   )
 }
 
-plot_roc <- function(df, metric, plot_path) {
+plot_roc <- function(df, hi_genes, metric, plot_path) {
   # Plot ROC and display value for AUC
   # 'df' is dataframe to use
   # 'metric' is which metric to use for ROC plot (either 'loeuf' or 'pli')
 
   # Define haploinsufficient genes
-  df <- mutate(df, hi_gene = gene %in% hi_genes$gene)
+  df <- mutate(df, hi_gene = .data$gene %in% hi_genes$gene)
 
   # Define column names based on specified metric
   if (metric == "loeuf") {
@@ -141,7 +172,7 @@ plot_roc <- function(df, metric, plot_path) {
   }
 
   # Filter to where the metric is defined in both v2 and v4
-  df <- df %>% dplyr::filter(!is.na(!!sym(v2_metric)) & !is.na(!!sym(v4_metric)))
+  df <- df %>% filter(!is.na(!!sym(v2_metric)) & !is.na(!!sym(v4_metric)))
 
   # Split data into a training and testing set
   set.seed(663)
@@ -161,8 +192,8 @@ plot_roc <- function(df, metric, plot_path) {
   predicted_v4 <- predict(m4, test, type = "response")
 
   # Plot ROC curve and display AUC
-  roc_v2 <- roc(test$hi_gene, predicted_v2, print.auc = T, plot = TRUE)
-  roc_v4 <- roc(test$hi_gene, predicted_v4, print.auc = T, plot = TRUE)
+  roc_v2 <- roc(test$hi_gene, predicted_v2, print.auc = TRUE, plot = TRUE)
+  roc_v4 <- roc(test$hi_gene, predicted_v4, print.auc = TRUE, plot = TRUE)
 
   # Combine ROC outputs
   roc_data_v2 <- as.data.frame(cbind(roc_v2$sensitivities, roc_v2$specificities))
@@ -181,7 +212,10 @@ plot_roc <- function(df, metric, plot_path) {
   v4_color <- "darkorchid3"
 
   # Plot ROC output
-  roc_plot <- ggplot(all_rocs, aes(1 - specificity, sensitivity, color = version)) +
+  roc_plot <- ggplot(
+    all_rocs,
+    aes(1 - .data$specificity, .data$sensitivity, color = version)
+  ) +
     geom_line(size = 1, alpha = 0.9) +
     theme_classic() +
     theme(
@@ -201,6 +235,56 @@ plot_roc <- function(df, metric, plot_path) {
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
 
+expected_projections <- function(df, label = "pLoF") {
+  # Generate plot displaying the percent of genes that would be expected to have a
+  # certain number or variants based on sample size
+  # df: input dataframe with columns 'n_variants', 'n_required',
+  # and 'rank'
+  # label: text that will be included at the top of the plot
+
+  # Define the limits of the x-axis
+  xlimits <- c(100, 1e8)
+
+  # Create dataframe of ExAC, gnomAD v2, and gnomAD v4 sample sizes
+  lines <- data.frame(
+    intercepts = c(60706, 141456, 807162),
+    names = c("1", "2", "3")
+  )
+
+  df <- df %>%
+    mutate(n_variants = fct_reorder(as.factor(.data$n_variants), .data$n_variants))
+
+  # Exac size
+  # gnomAD v2 size
+  # gnomAD v4 size
+  p <- ggplot(df, aes(y = .data$rank, x = .data$n_required, color = .data$n_variants)) +
+    geom_line(size = 2) +
+    theme_classic() +
+    scale_x_log10(labels = comma, limits = xlimits) +
+    xlab("Sample size required") +
+    ylab("Percent of human genes") +
+    geom_vline(xintercept = 60706, linetype = "dotted") +
+    geom_vline(xintercept = 141456, linetype = "dashed") +
+    geom_vline(xintercept = 807162, linetype = "twodash")
+
+  # Add manual linetype scale for legend
+  p <- p +
+    scale_linetype_manual(
+      name = "Database size",
+      values = c("dotted", "dashed", "twodash"),
+      labels = c("ExAC", "gnomADv2", "gnomADv4")
+    ) +
+    geom_vline(
+      data = lines,
+      aes(xintercept = .data$intercepts, linetype = names),
+      key_glyph = "path"
+    ) +
+    scale_color_discrete(name = ">= N variants\nexpected", h = c(40, 120)) +
+    annotate("text", x = xlimits[1], y = 1, hjust = 0, vjust = 1, label = label)
+
+  return(p)
+}
+
 plot_projected_sample_size <- function(df, version) {
   # Get plot of the percent of genes that have a variable expected number of variants
   # across sample sizes
@@ -212,34 +296,41 @@ plot_projected_sample_size <- function(df, version) {
 
   # Filter to canoncial/MANE Select transcripts and fit linear models
   if (version == "v2") {
-    df <- filter(df, (canonical == "true") & (pop == "global") & (downsampling >= 100))
+    df <- filter(
+      df,
+      (.data$canonical == "true") &
+        (.data$pop == "global") &
+        (.data$downsampling >= 100)
+    )
   } else {
     df <- filter(
       df,
-      (mane_select == "true") &
-        grepl("^ENST", transcript) &
-        (gen_anc == "global") &
-        (downsampling > 100) &
-        (!is.na(gene))
+      (.data$mane_select == "true") &
+        grepl("^ENST", .data$transcript) &
+        (.data$gen_anc == "global") &
+        (.data$downsampling > 100) &
+        (!is.na(.data$gene))
     )
   } # Remove 8 genes with missing gene names
 
-  # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant within all its respective rows
+  # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant
+  # within all its respective rows
   # Convert expected counts and n downsamplings to log scale
-  # Fit linear models where expected counts are a function of downsampling size for each gene
+  # Fit linear models where expected counts are a function of downsampling size for
+  # each gene
   df <- df %>%
-    group_by(gene) %>%
-    filter(min(exp_lof) > 0 & min(exp_mis) > 0 & min(exp_syn) > 0) %>%
+    group_by(.data$gene) %>%
+    filter(min(.data$exp_lof) > 0 & min(.data$exp_mis) > 0 & min(.data$exp_syn) > 0) %>%
     mutate(
-      log_exp_lof = log10(exp_lof),
-      log_exp_mis = log10(exp_mis),
-      log_exp_syn = log10(exp_syn),
-      log_n = log10(downsampling)
+      log_exp_lof = log10(.data$exp_lof),
+      log_exp_mis = log10(.data$exp_mis),
+      log_exp_syn = log10(.data$exp_syn),
+      log_n = log10(.data$downsampling)
     ) %>%
     summarize(
-      lof_fit = list(lm(log_exp_lof ~ log_n)),
-      mis_fit = list(lm(log_exp_mis ~ log_n)),
-      syn_fit = list(lm(log_exp_syn ~ log_n))
+      lof_fit = list(lm(.data$log_exp_lof ~ .data$log_n)),
+      mis_fit = list(lm(.data$log_exp_mis ~ .data$log_n)),
+      syn_fit = list(lm(.data$log_exp_syn ~ .data$log_n))
     )
 
   # Extract slope and intercept for lof variants
@@ -248,43 +339,55 @@ plot_projected_sample_size <- function(df, version) {
   # why need this step to sum?
   gene_lof_fit <- df %>%
     mutate(
-      slope = purrr::map_dbl(lof_fit, ~ .x$coefficients[2]),
-      intercept = purrr::map_dbl(lof_fit, ~ .x$coefficients[1])
+      slope = map_dbl(.data$lof_fit, ~ .x$coefficients[2]),
+      intercept = map_dbl(.data$lof_fit, ~ .x$coefficients[1])
     ) %>%
-    group_by(gene) %>%
-    summarize(slope = sum(slope), intercept = sum(intercept))
+    group_by(.data$gene) %>%
+    summarize(slope = sum(.data$slope), intercept = sum(.data$intercept))
 
   # Extract slope and intercept for missense variants
   # Extract slope (coefficient for log_n)
   # Extract intercept
   gene_mis_fit <- df %>%
     mutate(
-      slope = purrr::map_dbl(mis_fit, ~ .x$coefficients[2]),
-      intercept = purrr::map_dbl(mis_fit, ~ .x$coefficients[1])
+      slope = map_dbl(.data$mis_fit, ~ .x$coefficients[2]),
+      intercept = map_dbl(.data$mis_fit, ~ .x$coefficients[1])
     ) %>%
-    group_by(gene) %>%
-    summarize(slope = sum(slope), intercept = sum(intercept))
+    group_by(.data$gene) %>%
+    summarize(slope = sum(.data$slope), intercept = sum(.data$intercept))
 
   ####################################################################
   # Process predictions
   ####################################################################
   post_process_predictions <- function(data) {
-    # Transform predictions at specific points ('5', '10', '20', '50', '100') using fitted model coefficients
-    # 'data' is the dataframe to use (should contain columns 'gene', 'slope' and 'intercept')
-    # Calculates the percentile rank of each value in the n_required column within the respective n_variants group
+    # Transform predictions at specific points ('5', '10', '20', '50', '100') using
+    # fitted model coefficients 'data' is the dataframe to use (should contain columns
+    # 'gene', 'slope' and 'intercept')
+    # Calculates the percentile rank of each value in the n_required column within the
+    # respective n_variants group
     data %>%
       mutate(
-        `5` = 10^((log10(5) - intercept) / slope),
-        `10` = 10^((log10(10) - intercept) / slope),
-        `20` = 10^((log10(20) - intercept) / slope),
-        `50` = 10^((log10(50) - intercept) / slope),
-        `100` = 10^((log10(100) - intercept) / slope)
+        `5` = 10^((log10(5) - .data$intercept) / .data$slope),
+        `10` = 10^((log10(10) - .data$intercept) / .data$slope),
+        `20` = 10^((log10(20) - .data$intercept) / .data$slope),
+        `50` = 10^((log10(50) - .data$intercept) / .data$slope),
+        `100` = 10^((log10(100) - .data$intercept) / .data$slope)
       ) %>%
-      select(-slope, -intercept) %>%
-      gather("n_variants", "n_required", -gene) %>%
-      mutate(n_variants = as.numeric(n_variants)) %>%
-      group_by(n_variants) %>%
-      mutate(rank = percent_rank(n_required)) %>%
+      select(-all_of(c("slope", "intercept"))) %>%
+      # Select all columns for pivot except 'gene'
+      pivot_longer(
+        cols = -.data$gene,
+        names_to = "n_variants",
+        values_to = "n_required"
+      ) %>%
+      # Clean and convert to numeric if needed
+      mutate(
+        n_variants = as.numeric(gsub("X", "", .data$n_variants))
+      ) %>%
+      group_by(.data$n_variants) %>%
+      mutate(
+        rank = percent_rank(.data$n_required)
+      ) %>%
       ungroup()
   }
 
@@ -294,49 +397,6 @@ plot_projected_sample_size <- function(df, version) {
   ####################################################################
   # Plot projections
   ####################################################################
-  # Define the limits of the x-axis
-  xlimits <- c(100, 1e8)
-
-  # Create dataframe of ExAC, gnomAD v2, and gnomAD v4 sample sizes
-  lines <- data.frame(
-    intercepts = c(60706, 141456, 807162),
-    names = c("1", "2", "3")
-  )
-
-  expected_projections <- function(projection_df, label = "pLoF") {
-    # Generate plot displaying the percent of genes that would be expected to have a certain number or variants based on sample size
-    # 'projection_df is the input dataframe with columns 'n_variants', 'n_required', and 'rank'
-    # 'label' is the text that will be included at the top of the plot
-    p <- projection_df %>%
-      mutate(n_variants = forcats::fct_reorder(as.factor(n_variants), n_variants)) %>%
-      ggplot() +
-      aes(y = rank, x = n_required, color = n_variants) +
-      geom_line(size = 2) +
-      theme_classic() +
-      scale_x_log10(labels = scales::comma, limits = xlimits) +
-      xlab("Sample size required") +
-      ylab("Percent of human genes") +
-      geom_vline(xintercept = 60706, linetype = "dotted") + # Exac size
-      geom_vline(xintercept = 141456, linetype = "dashed") + # gnomAD v2 size
-      geom_vline(xintercept = 807162, linetype = "twodash") + # gnomAD v4 size
-
-      # Add manual linetype scale for legend
-      p <- p + scale_linetype_manual(
-      name = "Database size",
-      values = c("dotted", "dashed", "twodash"),
-      labels = c("ExAC", "gnomADv2", "gnomADv4")
-    ) +
-      geom_vline(
-        data = lines,
-        aes(xintercept = intercepts, linetype = names),
-        key_glyph = "path"
-      ) +
-      scale_color_discrete(name = ">= N variants\nexpected", h = c(40, 120)) +
-      annotate("text", x = xlimits[1], y = 1, hjust = 0, vjust = 1, label = label)
-
-    return(p)
-  }
-
   lof_projections <- expected_projections(samples_required_lof, "pLoF")
   missense_projections <- expected_projections(samples_required_mis, "Missense")
 

@@ -1,41 +1,25 @@
+library(conflicted)
 library(dplyr)
 library(ggplot2)
+library(googleCloudStorageR)
 library(grid)
+library(rlang)
 library(tidyr)
-library(purrr, include.only = c("map_df"))
-library(readr, include.only = c("read_tsv", "cols", "col_double"))
 library(forcats, include.only = c("fct_recode", "fct_relevel"))
-library(stringr, include.only = c("str_sub"))
+library(purrr, include.only = c("map_df"))
 library(pROC, include.only = c("roc")) # nolint
-library(conflicted)
+library(readr, include.only = c("read_tsv", "cols", "col_double"))
+library(stringr, include.only = c("str_sub"))
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("select", "dplyr")
 conflict_prefer("mutate", "dplyr")
 conflict_prefer("%>%", "dplyr")
 
-data_versions <- c("v2.1.1", "v4.0")
-
-####################################################################
-# Define colors for plots
-####################################################################
-color_lof <- "#9D1309"
-color_dominant <- "#F0810F"
-color_recessive <- "#FFBB00"
-color_benign <- "#87A4DC"
-gene_list_colors <- c(
-  "Haploinsufficient" = color_lof,
-  "Essential Genes" = "#CB0000",
-  "Autosomal Dominant" = color_dominant,
-  "Autosomal Recessive" = color_recessive,
-  "Olfactory Genes" = color_benign,
-  "Background" = "lightgray",
-  "Universe" = "lightgray"
-)
-
 ####################################################################
 # Constants and functions related to data loading
 ####################################################################
+data_versions <- c("v2.1.1", "v4.0")
 default_output_path <- "."
 default_data_dir <- "data"
 default_plot_dir <- "plots"
@@ -57,8 +41,7 @@ setup_directories <- function(
 get_data_url <- function(version = "v4.0") {
   # TODO: Replace with sprintf("gs://gnomad/%s/constraint/", version)
   if (version == "v2.1.1") {
-    data_path <-
-      sprintf("gs://gcp-public-data--gnomad/release/2.1.1/constraint/")
+    data_path <- sprintf("gs://gcp-public-data--gnomad/release/2.1.1/constraint/")
   } else if (version == "v4.0") {
     data_path <- "gs://gnomad-kristen/constraint/"
   }
@@ -151,32 +134,24 @@ load_all_gene_list_data <- function(
     function(x) {
       read_tsv(
         paste(list_dir, x, sep = "/"),
-        col_names = F,
+        col_names = FALSE,
         col_types = cols()
-      ) %>% transmute(gene = toupper(X1), gene_list = str_sub(x, end = -5))
+      ) %>% transmute(gene = toupper(.data$X1), gene_list = str_sub(x, end = -5))
     }
   )
-
-  # Define olfactory genes based on gene names
-  or_genes <- constraint_data %>%
-    filter(grepl("^OR", gene)) %>%
-    transmute(gene = gene, gene_list = "Olfactory Genes")
-
-  # Add olfactory genes to gene list
-  gene_lists <- gene_lists %>% bind_rows(or_genes)
 
   # Rename gene lists
   gene_lists <- gene_lists %>%
     mutate(
       gene_list = if_else(
-        grepl("haploinsufficiency", gene_list),
+        grepl("haploinsufficiency", .data$gene_list),
         "Haploinsufficient",
-        gene_list
+        .data$gene_list
       )
     ) %>%
     mutate(
       gene_list = fct_recode(
-        gene_list,
+        .data$gene_list,
         "Autosomal Recessive" = "all_ar",
         "Autosomal Dominant" = "all_ad"
       )
