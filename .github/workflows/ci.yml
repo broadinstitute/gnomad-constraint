@@ -22,13 +22,14 @@ jobs:
           key: pip-${{ hashFiles('**/requirements*.txt') }}
           restore-keys: |
             pip-
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install wheel
           pip install -r requirements-dev.txt
           pip install hail
       - name: Setup R
         uses: r-lib/actions/setup-r@v1
+      - name: Install R dependencies
         run: |
           sudo apt update
           sudo apt install -y r-base
