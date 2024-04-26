@@ -48,9 +48,12 @@ setup_directories <- function(
 
 get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   # TODO: Modify if there are changes for v4.1
-  full_version = map_data_version[[version]]
+  full_version <- map_data_version[[version]]
   if (release && public) {
-    data_path <- sprintf("gs://gcp-public-data--gnomad/release/%s/constraint/", full_version)
+    data_path <- sprintf(
+      "gs://gcp-public-data--gnomad/release/%s/constraint/",
+      full_version
+    )
   } else if (version == "v4_tmp") {
     data_path <- "gs://gnomad-kristen/constraint/"
   } else if (release && !public) {
@@ -60,7 +63,7 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   } else {
     stop("Invalid combination of release and public")
   }
-  
+
   return(data_path)
 }
 
@@ -71,7 +74,7 @@ get_or_download_file <- function(
     data_dir = default_data_dir,
     subfolder = "",
     local_name = "",
-    release = TRUE, 
+    release = TRUE,
     public = TRUE) {
   local_path <- paste0(
     output_path,
@@ -80,15 +83,20 @@ get_or_download_file <- function(
     "/",
     ifelse(local_name != "", local_name, base_fname)
   )
-  # To set up authentication for Google Cloud Storage (GCS) access, use the following workflow:
-  # Go to https://console.cloud.google.com/apis/credentials and download the JSON file for the tidyverse-gcs-access under OAuth 2.0 Client IDs
+  # To set up authentication for Google Cloud Storage (GCS) access, use the following
+  # workflow:
+  # Go to https://console.cloud.google.com/apis/credentials and download the JSON file
+  # for the tidyverse-gcs-access under OAuth 2.0 Client IDs
   # client <- gargle_oauth_client_from_json(
   #   path = "path/to/your/client_secret.json",
   #   name = "my-oauth-client"
   # )
-  # token <- credentials_user_oauth2("https://www.googleapis.com/auth/devstorage.read_only", client)
+  # token <- credentials_user_oauth2(
+  #   "https://www.googleapis.com/auth/devstorage.read_only",
+  #   client
+  # )
   # gar_auth(token = token)
-  
+
   # TODO: Modify when v4.1 files are ready
   if (version == "v2") {
     data_bucket <- "gs://gcp-public-data--gnomad"
@@ -98,7 +106,11 @@ get_or_download_file <- function(
     data_bucket <- "gs://gnomad-kristen"
   }
   if (!file.exists(local_path)) {
-    remote_path <- paste0(get_data_url(version, release=release, public=public), subfolder, base_fname)
+    remote_path <- paste0(
+      get_data_url(version, release = release, public = public),
+      subfolder,
+      base_fname
+    )
     print(paste0("Downloading ", remote_path, " to ", local_path))
     gcs_get_object(
       strsplit(
@@ -136,19 +148,28 @@ load_constraint_metrics <- function(
     release = TRUE,
     public = TRUE) {
   # TODO: Change if files change or are added for v4.1
-  full_version = map_data_version[[version]]
+  full_version <- map_data_version[[version]]
   if (downsamplings && version == "v2") {
     base_fname <- "gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz"
   } else if (downsamplings) {
-    base_fname <- sprintf("gnomad.v%s.downsampling_constraint_metrics.txt.bgz", full_version)
-  }
-  else if (version == "v4_tmp") {
+    base_fname <- sprintf(
+      "gnomad.v%s.downsampling_constraint_metrics.txt.bgz",
+      full_version
+    )
+  } else if (version == "v4_tmp") {
     base_fname <- "extra_annotations.tsv"
   } else {
     base_fname <- sprintf("gnomad.v%s.lof_metrics.by_gene.txt.bgz", full_version)
   }
 
-  fname <- get_or_download_file(base_fname, version, output_path, data_dir, release=release, public=public)
+  fname <- get_or_download_file(
+    base_fname,
+    version,
+    output_path,
+    data_dir,
+    release = release,
+    public = public
+  )
 
   return(read.delim(fname))
 }
@@ -160,11 +181,12 @@ load_all_gene_list_data <- function(
   list_dir <- paste0(gene_list_dir, "/lists")
   all_files <- list.files(list_dir, ".+tsv")
   if (length(all_files) == 0) {
-    if (length(all_files) == 0) {
-      system(
-        paste0("git clone https://github.com/macarthur-lab/gene_lists.git ", gene_list_dir)
+    system(
+      paste0(
+        "git clone https://github.com/macarthur-lab/gene_lists.git ",
+        gene_list_dir
       )
-    }
+    )
     all_files <- list.files(list_dir, ".+tsv")
   }
   gene_lists <- map_df(

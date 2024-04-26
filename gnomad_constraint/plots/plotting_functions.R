@@ -51,10 +51,10 @@ summarize_gene_lists <- function(df, metric, version) {
   # plot gene list membership according to LOEUF decile
   # 'df' is dataframe to use
   # 'version' is version of gnomAD to use for the plot (either 'v2' or 'v4')
-  
+
   # Filter gene data to specified version
   df <- filter(df, !!sym(version))
-  
+
   # Remove rows where gene_list or metric is not defined and filter to gene lists of
   # interest
   df <- df %>%
@@ -68,7 +68,7 @@ summarize_gene_lists <- function(df, metric, version) {
         "Olfactory Genes"
       )
     )
-  
+
   ####################################################################
   # Summarize counts of gene lists by oe_lof_upper_bin
   ####################################################################
@@ -85,7 +85,7 @@ summarize_gene_lists <- function(df, metric, version) {
       "Olfactory Genes"
     )
   )
-  
+
   return(gene_list_sums)
 }
 
@@ -143,9 +143,11 @@ plot_gene_lists <- function(df, gene_lists_to_plot, metric) {
     scale_x_discrete(
       labels = c("0", "10", "20", "30", "40", "50", "60", "70", "80", "90")
     )
+
+  return(bar_plot)
 }
 
-plot_roc <- function(df, hi_genes, metric, split_seed=663) {
+plot_roc <- function(df, hi_genes, metric, split_seed = 663) {
   # Plot ROC and display value for AUC
   # 'df' is dataframe to use
   # 'metric' is which metric to use for ROC plot (either 'loeuf' or 'pli')
@@ -168,11 +170,18 @@ plot_roc <- function(df, hi_genes, metric, split_seed=663) {
 
   # Plot ROC curve
   p <- roc(test$hi_gene, predicted, print.auc = TRUE)
-  
+
   return(p)
 }
 
-combine_roc_plots <- function(roc1, roc2, version1, version2, title_label, color1="darkorange1", color2="darkorchid3") {
+combine_roc_plots <- function(
+    roc1,
+    roc2,
+    version1,
+    version2,
+    title_label,
+    color1 = "darkorange1",
+    color2 = "darkorchid3") {
   # Combine ROC outputs
   roc_data1 <- as.data.frame(cbind(roc1$sensitivities, roc1$specificities))
   roc_data2 <- as.data.frame(cbind(roc2$sensitivities, roc2$specificities))
@@ -180,11 +189,11 @@ combine_roc_plots <- function(roc1, roc2, version1, version2, title_label, color
   roc_data2$version <- version2
   all_rocs <- rbind(roc_data1, roc_data2)
   colnames(all_rocs) <- c("sensitivity", "specificity", "version")
-  
+
   # Define AUC labels
   auc1 <- paste("AUC: ", round(roc1$auc[1], 2), sep = "")
   auc2 <- paste("AUC: ", round(roc2$auc[1], 2), sep = "")
-  
+
   # Plot ROC output
   p <- ggplot(
     all_rocs,
@@ -205,11 +214,15 @@ combine_roc_plots <- function(roc1, roc2, version1, version2, title_label, color
     ) +
     annotate("text", x = .70, y = .25, label = auc1, color = color1) +
     annotate("text", x = .70, y = .20, label = auc2, color = color2)
-  
+
   return(p)
 }
 
-expected_projections <- function(df, label = "pLoF", sample_size_df=dataset_sample_sizes, xlimits=c(100, 1e8)) {
+expected_projections <- function(
+    df,
+    label = "pLoF",
+    sample_size_df = dataset_sample_sizes,
+    xlimits = c(100, 1e8)) {
   # Generate plot displaying the percent of genes that would be expected to have a
   # certain number or variants based on sample size
   # df: input dataframe with columns 'n_variants', 'n_required',
@@ -217,7 +230,9 @@ expected_projections <- function(df, label = "pLoF", sample_size_df=dataset_samp
   # label: text that will be included at the top of the plot
   # xlimits: Define the limits of the x-axis
   df <- df %>%
-    mutate(n_variants = forcats::fct_reorder(as.factor(.data$n_variants), .data$n_variants))
+    mutate(
+      n_variants = forcats::fct_reorder(as.factor(.data$n_variants), .data$n_variants)
+    )
 
   p <- ggplot(df, aes(y = .data$rank, x = .data$n_required, color = .data$n_variants)) +
     geom_line(linewidth = 2) +
@@ -339,6 +354,6 @@ plot_projected_sample_size <- function(df) {
   ####################################################################
   lof_projections <- expected_projections(samples_required_lof, "pLoF")
   missense_projections <- expected_projections(samples_required_mis, "Missense")
-  
-  return(list(lof=lof_projections,  mis=missense_projections))
+
+  return(list(lof = lof_projections, mis = missense_projections))
 }
