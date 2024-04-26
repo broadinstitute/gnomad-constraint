@@ -1,27 +1,61 @@
+# Example use:
+# Rscript gnomad_constraint/plots/generate_constraint_plots.R \
+#  -o "/Users/my_name/Documents/Constraint/plots/" \
+#  -w "/Users/my_name/git_projects_location/gnomad-constraint/gnomad_constraint/plots/"
+#  -t "/path/to/token.rds"
+#
+# To set up authentication for Google Cloud Storage (GCS) access, go to
+# https://console.cloud.google.com/apis/credentials and download the JSON file for
+# the tidyverse-gcs-access under OAuth 2.0 Client IDs. Then pass that file to the
+# interactive_authenticate_gcs function in an interactive session. The saved token
+# can be passed to this script.
+
+
 library("optparse")
-source("loading_functions.R")
-source("plotting_functions.R")
 
 # Define input arguments
 option_list <- list(
   make_option(
-    c("-o", "--output-directory"),
+    c("-o", "--output_directory"),
     type = "character",
     default = "plots",
     help = "Output directory to save plots to."
   ),
   make_option(
-    c("-w", "--working-directory"),
+    c("-w", "--working_directory"),
     type = "character",
+    default = NA,
     help = "Working directory where scripts are located locally."
+  ),
+  make_option(
+    c("-t", "--gcs_auth_token"),
+    type = "character",
+    default = NA,
+    help = ""
   )
 )
 
 # Parse the options
 opt <- parse_args(OptionParser(option_list = option_list))
+output_path <- opt$output_directory
 
-default_output_path <- opt$output_directory
-setup_directories(opt$working_directory, default_output_path)
+# Set the working directory if supplied by user
+if (!is.na(opt$working_directory)){
+  setwd(opt$working_directory)
+}
+print(paste0("Working directory is ", getwd()))
+
+# Source the loading and plotting functions R files
+source("loading_functions.R")
+source("plotting_functions.R")
+
+# Setup directory structure for output
+setup_directories(output_path)
+
+# Authenticate google storage if client secrets JSON is supplied
+if (!is.na(opt$gcs_auth_token)){
+  authenticate_gcs(opt$gcs_auth_token)
+}
 
 ####################################################################
 ####################################################################

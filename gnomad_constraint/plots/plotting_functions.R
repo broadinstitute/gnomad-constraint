@@ -331,7 +331,7 @@ plot_projected_sample_size <- function(df) {
       select(-all_of(c("slope", "intercept"))) %>%
       # Select all columns for pivot except 'gene'
       pivot_longer(
-        cols = -.data$gene,
+        cols = -all_of(c("gene")),
         names_to = "n_variants",
         values_to = "n_required"
       ) %>%

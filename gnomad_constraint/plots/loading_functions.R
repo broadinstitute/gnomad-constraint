@@ -1,6 +1,8 @@
 library(conflicted)
 library(dplyr)
+library(gargle)
 library(ggplot2)
+library(googleAuthR)
 library(googleCloudStorageR)
 library(grid)
 library(rlang)
@@ -34,12 +36,10 @@ default_gene_lists <- "data/gene_lists"
 bucket <- "gs://gnomad"
 
 setup_directories <- function(
-    wd_path,
     output_path = default_output_path,
     data_dir = default_data_dir,
     plot_dir = default_plot_dir,
     gene_lists = default_gene_lists) {
-  setwd(wd_path)
   suppressWarnings(dir.create(output_path))
   suppressWarnings(dir.create(sprintf("%s/%s/", output_path, data_dir)))
   suppressWarnings(dir.create(sprintf("%s/%s/", output_path, plot_dir)))
@@ -67,6 +67,28 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   return(data_path)
 }
 
+authenticate_gcs <- function(token_path){
+  # Load the token from a file when starting a new session
+  token <- readRDS(token_path)
+  gar_auth(token = token)
+}
+
+interactive_authenticate_gcs <- function(
+client_secret_json_path,
+token_output_path="token.rds"){
+  client <- gargle_oauth_client_from_json(
+    path = client_secret_json_path,
+    name = "constraint-oauth-client"
+  )
+  token <- credentials_user_oauth2(
+    "https://www.googleapis.com/auth/devstorage.read_only",
+    client
+  )
+
+  # Save the token to a file
+  saveRDS(token, file = token_output_path)
+}
+
 get_or_download_file <- function(
     base_fname,
     version = "v4",
@@ -75,7 +97,8 @@ get_or_download_file <- function(
     subfolder = "",
     local_name = "",
     release = TRUE,
-    public = TRUE) {
+    public = TRUE,
+    gcs_authentication_token = NULL) {
   local_path <- paste0(
     output_path,
     "/",
@@ -83,19 +106,11 @@ get_or_download_file <- function(
     "/",
     ifelse(local_name != "", local_name, base_fname)
   )
-  # To set up authentication for Google Cloud Storage (GCS) access, use the following
-  # workflow:
-  # Go to https://console.cloud.google.com/apis/credentials and download the JSON file
-  # for the tidyverse-gcs-access under OAuth 2.0 Client IDs
-  # client <- gargle_oauth_client_from_json(
-  #   path = "path/to/your/client_secret.json",
-  #   name = "my-oauth-client"
-  # )
-  # token <- credentials_user_oauth2(
-  #   "https://www.googleapis.com/auth/devstorage.read_only",
-  #   client
-  # )
-  # gar_auth(token = token)
+  # To set up authentication for Google Cloud Storage (GCS) access, go to
+  # https://console.cloud.google.com/apis/credentials and download the JSON file for
+  # the tidyverse-gcs-access under OAuth 2.0 Client IDs. Then pass that file to the
+  # interactive_authenticate_gcs function in an interactive session. The saved token
+  # can be passed to this function.
 
   # TODO: Modify when v4.1 files are ready
   if (version == "v2") {
@@ -106,6 +121,9 @@ get_or_download_file <- function(
     data_bucket <- "gs://gnomad-kristen"
   }
   if (!file.exists(local_path)) {
+    if (!missing(gcs_authentication_token)){
+      authenticate_gcs(gcs_authentication_token)
+    }
     remote_path <- paste0(
       get_data_url(version, release = release, public = public),
       subfolder,
