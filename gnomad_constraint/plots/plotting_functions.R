@@ -35,17 +35,19 @@ dataset_sample_sizes <- data.frame(
   linetype = c("dotted", "dashed", "twodash")
 )
 
-
 label_function <- function(x) {
+  # Function to generate labels for LOEUF or pLI deciles
+  # x: Decile to label
+  # Returns: label for decile
   paste0(x * 10, "-", x * 10 + 10, "%")
 }
 
 summarize_gene_lists <- function(df, metric, version) {
-  # Output table of gene list membership and
-  # plot gene list membership according to LOEUF decile
-  # 'df' is dataframe to use
-  # 'version' is version of gnomAD to use for the plot (either 'v2' or 'v4')
-
+  # Get table of gene list membership counts
+  # df: Dataframe containing gene list membership data
+  # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # version: Version of gnomAD to use for the plot (either 'v2' or 'v4')
+  # Returns: Dataframe with counts of gene list membership
   # Filter gene data to specified version
   df <- filter(df, !!sym(version))
 
@@ -84,6 +86,13 @@ summarize_gene_lists <- function(df, metric, version) {
 }
 
 plot_gene_lists <- function(df, gene_lists_to_plot, metric) {
+  # Plot gene list membership by decile of LOEUF or pLI
+  # df: Dataframe containing gene list membership counts from
+  # summarize_gene_lists
+  # gene_lists_to_plot: List of Gene lists to plot
+  # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # Returns: ggplot object
+
   # Convert counts to proportions
   props <- df %>%
     group_by(.data$gene_list) %>%
@@ -142,9 +151,12 @@ plot_gene_lists <- function(df, gene_lists_to_plot, metric) {
 }
 
 plot_roc <- function(df, hi_genes, metric, split_seed = 663) {
-  # Plot ROC and display value for AUC
-  # 'df' is dataframe to use
-  # 'metric' is which metric to use for ROC plot (either 'loeuf' or 'pli')
+  # Plot ROC with a value of AUC displayed on the plot for a given metric,
+  # using haploinsufficient genes as the positive class
+  # df: Dataframe containing constraint data for genes
+  # hi_genes: Dataframe containing haploinsufficient genes
+  # metric: Metric to use for ROC plot (either 'loeuf' or 'pli')
+  # split_seed: Seed for splitting data into training and testing sets
 
   # Define haploinsufficient genes
   df <- mutate(df, hi_gene = .data$gene %in% hi_genes$gene)
@@ -176,6 +188,16 @@ combine_roc_plots <- function(
     title_label,
     color1 = "darkorange1",
     color2 = "darkorchid3") {
+  # Combine two ROC plots into a single plot
+  # roc1: ROC object from pROC package
+  # roc2: ROC object from pROC package
+  # version1: Version label for ROC1
+  # version2: Version label for ROC2
+  # title_label: Title for the plot
+  # color1: Color for ROC1
+  # color2: Color for ROC2
+  # Returns: ggplot object
+
   # Combine ROC outputs
   roc_data1 <- as.data.frame(cbind(roc1$sensitivities, roc1$specificities))
   roc_data2 <- as.data.frame(cbind(roc2$sensitivities, roc2$specificities))
@@ -217,12 +239,15 @@ expected_projections <- function(
     label = "pLoF",
     sample_size_df = dataset_sample_sizes,
     xlimits = c(100, 1e8)) {
-  # Generate plot displaying the percent of genes that would be expected to have a
+  # Plot displaying the percent of genes that would be expected to have a
   # certain number or variants based on sample size
-  # df: input dataframe with columns 'n_variants', 'n_required',
-  # and 'rank'
-  # label: text that will be included at the top of the plot
+  # df: Dataframe with columns 'n_variants', 'n_required', and 'rank'
+  # label: Text that will be included at the top of the plot
+  # sample_size_df: Dataframe with columns 'intercepts', 'linetype', and
+  # 'label' for vertical lines on the plot that show the sample size of some
+  # key datasets.
   # xlimits: Define the limits of the x-axis
+  # Returns: ggplot object
   df <- df %>%
     mutate(
       n_variants = forcats::fct_reorder(as.factor(.data$n_variants), .data$n_variants)
@@ -254,13 +279,12 @@ expected_projections <- function(
 }
 
 plot_projected_sample_size <- function(df) {
-  # Get plot of the percent of genes that have a variable expected number of variants
-  # across sample sizes
-  # df: dataframe consisting of downsampling data per specific genetic ancestry groups
+  # Plot of the percent of genes that have a variable expected number of
+  # variants across sample sizes
+  # df: Dataframe consisting of downsampling data per specific genetic ancestry groups
   # (has to include 'global')
-  # version: version of gnomAD to use for the plot
-  # Returns: plot of the percent of genes that would be expected to have a certain
-  # number or variants based on sample size
+  # Returns: ggplot object of the percent of genes that would be expected to have a
+  # certain number or variants based on sample size
 
   # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant
   # within all its respective rows

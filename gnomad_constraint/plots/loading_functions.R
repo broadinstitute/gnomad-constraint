@@ -34,6 +34,12 @@ setup_directories <- function(
     data_dir = default_data_dir,
     plot_dir = default_plot_dir,
     gene_lists = default_gene_lists) {
+  # Create the output directory and subdirectories if they don't exist
+  # output_path: The base directory for the output
+  # data_dir: The subdirectory for data files
+  # plot_dir: The subdirectory for plot files
+  # gene_lists: The subdirectory for gene list files
+  # Returns: None
   suppressWarnings(dir.create(output_path))
   suppressWarnings(dir.create(sprintf("%s/%s/", output_path, data_dir)))
   suppressWarnings(dir.create(sprintf("%s/%s/", output_path, plot_dir)))
@@ -41,6 +47,12 @@ setup_directories <- function(
 }
 
 get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
+  # Get the URL for the data files
+  # version: The version of the data
+  # release: Whether to use the release or development version
+  # public: Whether to use the public or non-public version
+  # Returns: The URL for the data files
+
   # TODO: Modify if there are changes for v4.1
   full_version <- map_data_version[[version]]
   if (release && public) {
@@ -62,7 +74,9 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
 }
 
 authenticate_gcs <- function(token_path) {
-  # Load the token from a file when starting a new session
+  # Authenticate with Google Cloud Storage (GCS) using a saved token
+  # token_path: The path to the saved token
+  # Returns: None
   token <- readRDS(token_path)
   gar_auth(token = token)
 }
@@ -70,6 +84,11 @@ authenticate_gcs <- function(token_path) {
 interactive_authenticate_gcs <- function(
     client_secret_json_path,
     token_output_path = "token.rds") {
+  # Authenticate with Google Cloud Storage (GCS) interactively and save the
+  # token
+  # client_secret_json_path: The path to the client secret JSON file
+  # token_output_path: The path to save the token
+  # Returns: None
   client <- gargle_oauth_client_from_json(
     path = client_secret_json_path,
     name = "constraint-oauth-client"
@@ -93,6 +112,18 @@ get_or_download_file <- function(
     release = TRUE,
     public = TRUE,
     gcs_authentication_token = NULL) {
+  # Get a local file, and if it doesn't exist, try downloading it from Google
+  # Cloud Storage (GCS)
+  # base_fname: The base filename of the file
+  # version: The version of the data
+  # output_path: The base directory for the output
+  # data_dir: The subdirectory for data files
+  # subfolder: The subfolder in the data directory
+  # local_name: The local name of the file
+  # release: Whether to use the release or development version
+  # public: Whether to use the public or non-public version
+  # gcs_authentication_token: The path to the saved token for GCS authentication
+  # Returns: The path to the local file for requested data
   local_path <- paste0(
     output_path,
     "/",
@@ -144,6 +175,13 @@ get_plot_path <- function(
     output_path = default_output_path,
     plot_dir = default_plot_dir,
     extension = ".png") {
+  # Get the path to save a plot
+  # base_fname: The base filename of the plot
+  # version: The version of the data
+  # output_path: The base directory for the output
+  # plot_dir: The subdirectory for plots
+  # extension: The file extension for the plot
+  # Returns: The path to save the plot
   if (version == "") {
     format_path <- "%s/%s/%s%s%s"
   } else {
@@ -159,6 +197,15 @@ load_constraint_metrics <- function(
     downsamplings = FALSE,
     release = TRUE,
     public = TRUE) {
+  # Load the constraint metrics data
+  # version: The version of the data
+  # output_path: The base directory for the output
+  # data_dir: The subdirectory for data files
+  # downsamplings: Whether to load downsampling data instead of the main data
+  # release: Whether to use the release or development version
+  # public: Whether to use the public or non-public version
+  # Returns: A data frame with constraint metrics data
+
   # TODO: Change if files change or are added for v4.1
   full_version <- map_data_version[[version]]
   if (downsamplings && version == "v2") {
@@ -189,6 +236,11 @@ load_constraint_metrics <- function(
 load_all_gene_list_data <- function(
     output_path = default_output_path,
     gene_lists = default_gene_lists) {
+  # Load all gene list data, and clone from GitHub if the data is not available
+  # locally
+  # output_path: The base directory for the output
+  # gene_lists: The subdirectory for gene lists
+  # Returns: A data frame with gene list data
   gene_list_dir <- sprintf("%s/%s", output_path, gene_lists)
   list_dir <- paste0(gene_list_dir, "/lists")
   all_files <- list.files(list_dir, ".+tsv")

@@ -31,7 +31,7 @@ option_list <- list(
     c("-t", "--gcs_auth_token"),
     type = "character",
     default = NA,
-    help = ""
+    help = "Path to the RDS file containing the GCS authentication token."
   )
 )
 
