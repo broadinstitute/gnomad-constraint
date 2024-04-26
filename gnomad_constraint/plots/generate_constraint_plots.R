@@ -40,7 +40,7 @@ opt <- parse_args(OptionParser(option_list = option_list))
 output_path <- opt$output_directory
 
 # Set the working directory if supplied by user
-if (!is.na(opt$working_directory)){
+if (!is.na(opt$working_directory)) {
   setwd(opt$working_directory)
 }
 print(paste0("Working directory is ", getwd()))
@@ -53,7 +53,7 @@ source("plotting_functions.R")
 setup_directories(output_path)
 
 # Authenticate google storage if client secrets JSON is supplied
-if (!is.na(opt$gcs_auth_token)){
+if (!is.na(opt$gcs_auth_token)) {
   authenticate_gcs(opt$gcs_auth_token)
 }
 

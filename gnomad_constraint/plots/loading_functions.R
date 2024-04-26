@@ -1,17 +1,11 @@
 library(conflicted)
 library(dplyr)
 library(gargle)
-library(ggplot2)
 library(googleAuthR)
 library(googleCloudStorageR)
-library(grid)
-library(rlang)
-library(tidyr)
-library(forcats, include.only = c("fct_recode", "fct_relevel"))
-library(purrr, include.only = c("map_dbl", "map_df"))
-library(pROC, include.only = c("roc")) # nolint
-library(readr, include.only = c("read_tsv", "cols", "col_double"))
-library(scales, include.only = c("comma"))
+library(forcats, include.only = c("fct_recode"))
+library(purrr, include.only = c("map_df"))
+library(readr, include.only = c("read_tsv", "cols"))
 library(stringr, include.only = c("str_sub"))
 
 conflict_prefer("filter", "dplyr")
@@ -67,15 +61,15 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   return(data_path)
 }
 
-authenticate_gcs <- function(token_path){
+authenticate_gcs <- function(token_path) {
   # Load the token from a file when starting a new session
   token <- readRDS(token_path)
   gar_auth(token = token)
 }
 
 interactive_authenticate_gcs <- function(
-client_secret_json_path,
-token_output_path="token.rds"){
+    client_secret_json_path,
+    token_output_path = "token.rds") {
   client <- gargle_oauth_client_from_json(
     path = client_secret_json_path,
     name = "constraint-oauth-client"
@@ -121,7 +115,7 @@ get_or_download_file <- function(
     data_bucket <- "gs://gnomad-kristen"
   }
   if (!file.exists(local_path)) {
-    if (!missing(gcs_authentication_token)){
+    if (!missing(gcs_authentication_token)) {
       authenticate_gcs(gcs_authentication_token)
     }
     remote_path <- paste0(

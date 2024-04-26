@@ -1,16 +1,10 @@
 library(conflicted)
 library(dplyr)
 library(ggplot2)
-library(googleCloudStorageR)
-library(grid)
-library(rlang)
 library(tidyr)
-library(forcats, include.only = c("fct_recode", "fct_relevel"))
-library(purrr, include.only = c("map_dbl", "map_df"))
+library(purrr, include.only = c("map_dbl"))
 library(pROC, include.only = c("roc")) # nolint
-library(readr, include.only = c("read_tsv", "cols", "col_double"))
 library(scales, include.only = c("comma"))
-library(stringr, include.only = c("str_sub"))
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("select", "dplyr")

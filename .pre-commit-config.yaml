@@ -30,12 +30,14 @@ repos:
       - id: isort
         args: ["--profile", "black", "--filter-files"]
         files: gnomad_constraint
-  - repo: https://github.com/lorenzwalthert/precommit
-    rev: v0.1.3  # Use the latest release
-    hooks:
-      - id: style-files
   - repo: local
     hooks:
+      - id: styler
+        name: styler
+        entry: Rscript -e "renv::restore(); styler::style_dir('gnomad_constraint/plots/', transformers = styler::tidyverse_style(strict = TRUE, scope='tokens'))"
+        language: system
+        types: [r]
+        pass_filenames: false
       - id: lintr
         name: lintr
         entry: Rscript -e "renv::restore(); lintr::lint_dir('gnomad_constraint/plots/', pattern='.R$')"
