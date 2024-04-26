@@ -42,7 +42,12 @@ default_plot_dir <- "plots"
 default_gene_lists <- "data/gene_lists"
 bucket <- "gs://gnomad"
 
-setup_directories <- function(wd_path, output_path = default_output_path, data_dir = default_data_dir, plot_dir = default_plot_dir, gene_lists = default_gene_lists) {
+setup_directories <- function(
+    wd_path,
+    output_path = default_output_path,
+    data_dir = default_data_dir,
+    plot_dir = default_plot_dir,
+    gene_lists = default_gene_lists) {
   setwd(wd_path)
   suppressWarnings(dir.create(sprintf("%s/%s/", output_path, data_dir)))
   suppressWarnings(dir.create(sprintf("%s/%s/", output_path, plot_dir)))
@@ -61,97 +66,121 @@ get_data_url <- function(version = "v4.0") {
   return(data_path)
 }
 
-get_or_download_file <- function(base_fname, version = "v4.0", output_path = default_output_path, data_dir = default_data_dir, subfolder = "", local_name = "") {
-    local_path <- paste0(
-        output_path,
-        "/",
-        data_dir,
-        "/",
-        ifelse(local_name != "", local_name, base_fname)
+get_or_download_file <- function(
+    base_fname,
+    version = "v4.0",
+    output_path = default_output_path,
+    data_dir = default_data_dir,
+    subfolder = "",
+    local_name = "") {
+  local_path <- paste0(
+    output_path,
+    "/",
+    data_dir,
+    "/",
+    ifelse(local_name != "", local_name, base_fname)
+  )
+  print(local_path)
+  if (version == "v2.1.1") {
+    data_bucket <- "gs://gcp-public-data--gnomad"
+  } else {
+    data_bucket <- "gs://gnomad-kristen"
+  }
+  if (!file.exists(local_path)) {
+    remote_path <- paste0(get_data_url(version), subfolder, base_fname)
+    print(paste0("Downloading ", remote_path, " to ", local_path))
+    print(strsplit(remote_path, paste0(data_bucket, "/"), fixed = TRUE)[[1]][2])
+    gcs_get_object(
+      strsplit(
+        remote_path,
+        paste0(data_bucket, "/"),
+        fixed = TRUE
+      )[[1]][2],
+      data_bucket,
+      saveToDisk = local_path
     )
-    print(local_path)
-    if (version == "v2.1.1") {
-      data_bucket <- "gs://gcp-public-data--gnomad"
-    } else {
-      data_bucket <- "gs://gnomad-kristen"
-    }
-    if (!file.exists(local_path)) {
-      remote_path <- paste0(get_data_url(version), subfolder, base_fname)
-      print(paste0("Downloading ", remote_path, " to ", local_path))
-      print(strsplit(remote_path, paste0(data_bucket, "/"), fixed = TRUE)[[1]][2])
-      gcs_get_object(strsplit(remote_path, paste0(data_bucket, "/"), fixed = TRUE)[[1]][2],
-        data_bucket,
-        saveToDisk = local_path
-      )
-    }
-
-    return(local_path)
   }
 
-get_plot_path <- function(base_fname, version = "", output_path = default_output_path, plot_dir = default_plot_dir, extension = ".png") {
-    if (version == "") {
-      format_path <- "%s/%s/%s%s%s"
-    } else {
-      format_path <- "%s/%s/%s.%s%s"
-    }
-    return(sprintf(format_path, output_path, plot_dir, base_fname, version, extension))
+  return(local_path)
 }
 
-load_constraint_metrics <- function(version = "v4.0", output_path = default_output_path, data_dir = default_data_dir) {
-    # TODO: Change to sprintf('gnomad.%s.lof_metrics.by_gene.txt.bgz', version) when ready
-    if (version == "v2.1.1") {
-      data_path <- "gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz"
-    } else if (version == "v4.0") {
-      data_path <- "extra_annotations.tsv"
-    }
-    fname <- get_or_download_file(data_path, version, output_path, data_dir)
-
-    return(read.delim(fname))
+get_plot_path <- function(
+    base_fname,
+    version = "",
+    output_path = default_output_path,
+    plot_dir = default_plot_dir,
+    extension = ".png") {
+  if (version == "") {
+    format_path <- "%s/%s/%s%s%s"
+  } else {
+    format_path <- "%s/%s/%s.%s%s"
+  }
+  return(sprintf(format_path, output_path, plot_dir, base_fname, version, extension))
 }
 
-load_all_gene_list_data <- function(output_path = default_output_path, gene_lists = default_gene_lists) {
-    list_dir <- sprintf("%s/%s/lists", output_path, gene_lists)
-    all_files <- list.files(list_dir, ".+tsv")
+load_constraint_metrics <- function(
+    version = "v4.0",
+    output_path = default_output_path,
+    data_dir = default_data_dir) {
+  # TODO: Change to sprintf('gnomad.%s.lof_metrics.by_gene.txt.bgz', version) when ready
+  if (version == "v2.1.1") {
+    data_path <- "gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz"
+  } else if (version == "v4.0") {
+    data_path <- "extra_annotations.tsv"
+  }
+  fname <- get_or_download_file(data_path, version, output_path, data_dir)
+
+  return(read.delim(fname))
+}
+
+load_all_gene_list_data <- function(
+    output_path = default_output_path,
+    gene_lists = default_gene_lists) {
+  list_dir <- sprintf("%s/%s/lists", output_path, gene_lists)
+  all_files <- list.files(list_dir, ".+tsv")
+  if (length(all_files) == 0) {
     if (length(all_files) == 0) {
-      if (length(all_files) == 0) {
-        system(
-          paste0(
-            "git clone https://github.com/macarthur-lab/gene_lists.git ",
-            list_dir
-          )
-        )
-      }
-      all_files <- list.files(list_dir, ".+tsv")
+      system(
+        paste0("git clone https://github.com/macarthur-lab/gene_lists.git ", list_dir)
+      )
     }
-    gene_lists <- map_df(all_files, function(x) {
-      read_tsv(paste(list_dir, x, sep = "/"),
+    all_files <- list.files(list_dir, ".+tsv")
+  }
+  gene_lists <- map_df(
+    all_files,
+    function(x) {
+      read_tsv(
+        paste(list_dir, x, sep = "/"),
         col_names = F,
         col_types = cols()
       ) %>% transmute(gene = toupper(X1), gene_list = str_sub(x, end = -5))
-    })
+    }
+  )
 
-    # Define olfactory genes based on gene names
-    or_genes <- constraint_data %>%
-      filter(grepl("^OR", gene)) %>%
-      transmute(gene = gene, gene_list = "Olfactory Genes")
+  # Define olfactory genes based on gene names
+  or_genes <- constraint_data %>%
+    filter(grepl("^OR", gene)) %>%
+    transmute(gene = gene, gene_list = "Olfactory Genes")
 
-    # Add olfactory genes to gene list
-    gene_lists <- gene_lists %>% bind_rows(or_genes)
+  # Add olfactory genes to gene list
+  gene_lists <- gene_lists %>% bind_rows(or_genes)
 
-    # Rename gene lists
-    gene_lists <- gene_lists %>%
-      mutate(gene_list = if_else(
+  # Rename gene lists
+  gene_lists <- gene_lists %>%
+    mutate(
+      gene_list = if_else(
         grepl("haploinsufficiency", gene_list),
         "Haploinsufficient",
         gene_list
-      )) %>%
-      mutate(
-        gene_list = fct_recode(
-          gene_list,
-          "Autosomal Recessive" = "all_ar",
-          "Autosomal Dominant" = "all_ad"
-        )
       )
+    ) %>%
+    mutate(
+      gene_list = fct_recode(
+        gene_list,
+        "Autosomal Recessive" = "all_ar",
+        "Autosomal Dominant" = "all_ad"
+      )
+    )
 
-    return(gene_lists)
-  }
+  return(gene_lists)
+}

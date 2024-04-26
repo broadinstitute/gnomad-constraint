@@ -18,7 +18,7 @@ plot_gene_lists <- function(df, version, plot_path) {
   sort(colnames(gene_data))
 
   # Filter dataframe to specified version
-  df <- filter(df,!!sym(version))
+  df <- filter(df, !!sym(version))
 
   # Remove rows where gene_list or metric is not defined and filter to gene lists of interest
   df <- df %>%
@@ -32,7 +32,7 @@ plot_gene_lists <- function(df, version, plot_path) {
         "Olfactory Genes"
       )
     )
-  summary_df <- df %>% select(gene, gene_list,!!sym(metric))
+  summary_df <- df %>% select(gene, gene_list, !!sym(metric))
 
   ####################################################################
   # Summarize counts of gene lists by oe_lof_upper_bin
@@ -42,14 +42,14 @@ plot_gene_lists <- function(df, version, plot_path) {
     group_by(metric, gene_list, .drop = FALSE) %>%
     summarise(count = n())
   gene_list_sums <- dplyr::filter(
-      gene_list_sums,
-      gene_list %in% c(
-        "Haploinsufficient",
-        "Autosomal Dominant",
-        "Autosomal Recessive",
-        "Olfactory Genes"
-      )
+    gene_list_sums,
+    gene_list %in% c(
+      "Haploinsufficient",
+      "Autosomal Dominant",
+      "Autosomal Recessive",
+      "Olfactory Genes"
     )
+  )
 
   summary_gene_list_per_sums <- gene_list_sums %>% spread(gene_list, count)
 
@@ -70,18 +70,11 @@ plot_gene_lists <- function(df, version, plot_path) {
   # Plot gene list per decile
   ####################################################################
   top_legend <- max(props$prop_in_bin * 100)
-
   bar_plot <- ggplot(props, aes(x = metric, y = prop_in_bin * 100, fill = gene_list)) +
-    geom_bar(position = "dodge",
-             stat = "identity",
-             width = 0.9) +
+    geom_bar(position = "dodge", stat = "identity", width = 0.9) +
     theme_classic() +
     theme(
-      axis.title = element_text(
-        colour = "black",
-        size = 12,
-        face = "bold"
-      ),
+      axis.title = element_text(colour = "black", size = 12, face = "bold"),
       axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_fill_manual(values = gene_list_colors, guide = F) +
@@ -114,7 +107,9 @@ plot_gene_lists <- function(df, version, plot_path) {
     ) +
     ylab("Percent of gene list (%)") +
     xlab("LOEUF decile (%)") +
-    scale_x_discrete(labels = c("0", "10", "20", "30", "40", "50", "60", "70", "80", "90"))
+    scale_x_discrete(
+      labels = c("0", "10", "20", "30", "40", "50", "60", "70", "80", "90")
+    )
 
   ggsave(
     bar_plot,
@@ -146,17 +141,13 @@ plot_roc <- function(df, metric, plot_path) {
   }
 
   # Filter to where the metric is defined in both v2 and v4
-  df <- df %>% dplyr::filter(!is.na(!!sym(v2_metric)) &
-                           !is.na(!!sym(v4_metric)))
+  df <- df %>% dplyr::filter(!is.na(!!sym(v2_metric)) & !is.na(!!sym(v4_metric)))
 
   # Split data into a training and testing set
   set.seed(663)
-  sample <- sample(c(TRUE, FALSE),
-           nrow(df),
-           replace = TRUE,
-           prob = c(0.7, 0.3))
-  train <- df[sample,]
-  test <- df[!sample,]
+  sample <- sample(c(TRUE, FALSE), nrow(df), replace = TRUE, prob = c(0.7, 0.3))
+  train <- df[sample, ]
+  test <- df[!sample, ]
 
   # Train generalized linear model
   v2_formula <- as.formula(paste("hi_gene ~", v2_metric))
@@ -170,14 +161,8 @@ plot_roc <- function(df, metric, plot_path) {
   predicted_v4 <- predict(m4, test, type = "response")
 
   # Plot ROC curve and display AUC
-  roc_v2 <- roc(test$hi_gene,
-        predicted_v2,
-        print.auc = T,
-        plot = TRUE)
-  roc_v4 <- roc(test$hi_gene,
-        predicted_v4,
-        print.auc = T,
-        plot = TRUE)
+  roc_v2 <- roc(test$hi_gene, predicted_v2, print.auc = T, plot = TRUE)
+  roc_v4 <- roc(test$hi_gene, predicted_v4, print.auc = T, plot = TRUE)
 
   # Combine ROC outputs
   roc_data_v2 <- as.data.frame(cbind(roc_v2$sensitivities, roc_v2$specificities))
@@ -200,11 +185,7 @@ plot_roc <- function(df, metric, plot_path) {
     geom_line(size = 1, alpha = 0.9) +
     theme_classic() +
     theme(
-      axis.title = element_text(
-        colour = "black",
-        size = 12,
-        face = "bold"
-      ),
+      axis.title = element_text(colour = "black", size = 12, face = "bold"),
       axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_color_manual(values = c(v2_color, v4_color)) +
@@ -214,29 +195,10 @@ plot_roc <- function(df, metric, plot_path) {
       color = "Version",
       title = title_label
     ) +
-    annotate(
-      "text",
-      x = .70,
-      y = .25,
-      label = v2_auc,
-      color = v2_color
-    ) +
-    annotate(
-      "text",
-      x = .70,
-      y = .20,
-      label = v4_auc,
-      color = v4_color
-    )
+    annotate("text", x = .70, y = .25, label = v2_auc, color = v2_color) +
+    annotate("text", x = .70, y = .20, label = v4_auc, color = v4_color)
 
-  ggsave(
-    roc_plot,
-    filename = plot_path,
-    dpi = 300,
-    width = 6,
-    height = 6,
-    units = "in"
-  )
+  ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
 
 plot_projected_sample_size <- function(df, version) {
@@ -250,17 +212,16 @@ plot_projected_sample_size <- function(df, version) {
 
   # Filter to canoncial/MANE Select transcripts and fit linear models
   if (version == "v2") {
-    df <- filter(
-        df,
-        (canonical == "true") & (pop == "global") & (downsampling >= 100)
-      )
+    df <- filter(df, (canonical == "true") & (pop == "global") & (downsampling >= 100))
   } else {
     df <- filter(
-        df,
-        (mane_select == "true") &
-          (grepl("^ENST", transcript)) &
-          (gen_anc == "global") & (downsampling > 100) & (!is.na(gene))
-      )
+      df,
+      (mane_select == "true") &
+        grepl("^ENST", transcript) &
+        (gen_anc == "global") &
+        (downsampling > 100) &
+        (!is.na(gene))
+    )
   } # Remove 8 genes with missing gene names
 
   # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant within all its respective rows
@@ -268,8 +229,7 @@ plot_projected_sample_size <- function(df, version) {
   # Fit linear models where expected counts are a function of downsampling size for each gene
   df <- df %>%
     group_by(gene) %>%
-    filter(min(exp_lof) > 0 &
-      min(exp_mis) > 0 & min(exp_syn) > 0) %>%
+    filter(min(exp_lof) > 0 & min(exp_mis) > 0 & min(exp_syn) > 0) %>%
     mutate(
       log_exp_lof = log10(exp_lof),
       log_exp_mis = log10(exp_mis),
@@ -339,8 +299,8 @@ plot_projected_sample_size <- function(df, version) {
 
   # Create dataframe of ExAC, gnomAD v2, and gnomAD v4 sample sizes
   lines <- data.frame(
-      intercepts = c(60706, 141456, 807162),
-      names = c("1", "2", "3")
+    intercepts = c(60706, 141456, 807162),
+    names = c("1", "2", "3")
   )
 
   expected_projections <- function(projection_df, label = "pLoF") {
@@ -362,21 +322,17 @@ plot_projected_sample_size <- function(df, version) {
 
       # Add manual linetype scale for legend
       p <- p + scale_linetype_manual(
-        name = "Database size",
-        values = c("dotted", "dashed", "twodash"),
-        labels = c("ExAC", "gnomADv2", "gnomADv4")
-      ) + geom_vline(
+      name = "Database size",
+      values = c("dotted", "dashed", "twodash"),
+      labels = c("ExAC", "gnomADv2", "gnomADv4")
+    ) +
+      geom_vline(
         data = lines,
         aes(xintercept = intercepts, linetype = names),
         key_glyph = "path"
-      ) + scale_color_discrete(name = ">= N variants\nexpected", h = c(40, 120)) + annotate(
-        "text",
-        x = xlimits[1],
-        y = 1,
-        hjust = 0,
-        vjust = 1,
-        label = label
-      )
+      ) +
+      scale_color_discrete(name = ">= N variants\nexpected", h = c(40, 120)) +
+      annotate("text", x = xlimits[1], y = 1, hjust = 0, vjust = 1, label = label)
 
     return(p)
   }
