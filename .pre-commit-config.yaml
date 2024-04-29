@@ -34,13 +34,13 @@ repos:
     hooks:
       - id: styler
         name: styler
-        entry: Rscript -e "renv::restore(); styler::style_dir('gnomad_constraint/plots/', transformers = styler::tidyverse_style(strict = TRUE, scope='tokens'))"
+        entry: Rscript -e "styler::style_dir('gnomad_constraint/plots/', transformers = styler::tidyverse_style(strict = TRUE, scope='tokens'))"
         language: system
         types: [r]
         pass_filenames: false
       - id: lintr
         name: lintr
-        entry: Rscript -e "renv::restore(); lintr::lint_dir('gnomad_constraint/plots/', pattern='.R$')"
+        entry: Rscript -e "lintr::lint_dir('gnomad_constraint/plots/', pattern='.R$')"
         language: system
         types: [r]
         pass_filenames: false
