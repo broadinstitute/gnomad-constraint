@@ -217,17 +217,14 @@ v4_ds <- filter(
   (.data$mane_select == "true") &
     grepl("^ENST", .data$transcript) &
     (.data$gen_anc == "global") &
+     # Note ">" rather than ">=" difference from v2 to avoid dropping too many rows
     (.data$downsampling > 100) &
     # Remove 8 genes with missing gene names
     (!is.na(.data$gene))
 )
 
 
-####################################################################
-####################################################################
 # Fit linear models for lof, mis, and syn
-####################################################################
-####################################################################
 # Define datasets and versions
 datasets <- list(v2 = v2_ds, v4 = v4_ds)
 

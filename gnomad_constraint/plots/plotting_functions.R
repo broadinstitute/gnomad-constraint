@@ -48,6 +48,7 @@ summarize_gene_lists <- function(df, metric, version) {
   # metric: Metric to use for the plot (either 'loeuf' or 'pli')
   # version: Version of gnomAD to use for the plot (either 'v2' or 'v4')
   # Returns: Dataframe with counts of gene list membership
+  
   # Filter gene data to specified version
   df <- filter(df, !!sym(version))
 
@@ -89,7 +90,7 @@ plot_gene_lists <- function(df, gene_lists_to_plot, metric) {
   # Plot gene list membership by decile of LOEUF or pLI
   # df: Dataframe containing gene list membership counts from
   # summarize_gene_lists
-  # gene_lists_to_plot: List of Gene lists to plot
+  # gene_lists_to_plot: List of gene lists to plot
   # metric: Metric to use for the plot (either 'loeuf' or 'pli')
   # Returns: ggplot object
 
@@ -157,6 +158,7 @@ plot_roc <- function(df, hi_genes, metric, split_seed = 663) {
   # hi_genes: Dataframe containing haploinsufficient genes
   # metric: Metric to use for ROC plot (either 'loeuf' or 'pli')
   # split_seed: Seed for splitting data into training and testing sets
+  # Returns: ggplot object
 
   # Define haploinsufficient genes
   df <- mutate(df, hi_gene = .data$gene %in% hi_genes$gene)
@@ -245,7 +247,7 @@ expected_projections <- function(
   # label: Text that will be included at the top of the plot
   # sample_size_df: Dataframe with columns 'intercepts', 'linetype', and
   # 'label' for vertical lines on the plot that show the sample size of some
-  # key datasets.
+  # key datasets
   # xlimits: Define the limits of the x-axis
   # Returns: ggplot object
   df <- df %>%
@@ -334,7 +336,8 @@ plot_projected_sample_size <- function(df) {
   ####################################################################
   post_process_predictions <- function(data) {
     # Transform predictions at specific points ('5', '10', '20', '50', '100') using
-    # fitted model coefficients 'data' is the dataframe to use (should contain columns
+    # fitted model coefficients 
+    # data: is the dataframe to use (should contain columns
     # 'gene', 'slope' and 'intercept')
     # Calculates the percentile rank of each value in the n_required column within the
     # respective n_variants group
