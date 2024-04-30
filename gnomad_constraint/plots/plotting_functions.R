@@ -48,7 +48,7 @@ summarize_gene_lists <- function(df, metric, version) {
   # metric: Metric to use for the plot (either 'loeuf' or 'pli')
   # version: Version of gnomAD to use for the plot (either 'v2' or 'v4')
   # Returns: Dataframe with counts of gene list membership
-  
+
   # Filter gene data to specified version
   df <- filter(df, !!sym(version))
 
@@ -290,18 +290,22 @@ plot_projected_sample_size <- function(df) {
 
   # Filter to rows where a respective gene has at least 1 lof, mis, and syn variant
   # within all its respective rows
-  # Convert expected counts and n downsamplings to log scale
-  # Fit linear models where expected counts are a function of downsampling size for
-  # each gene
   df <- df %>%
     group_by(.data$gene) %>%
-    filter(min(.data$exp_lof) > 0 & min(.data$exp_mis) > 0 & min(.data$exp_syn) > 0) %>%
+    filter(min(.data$exp_lof) > 0 & min(.data$exp_mis) > 0 & min(.data$exp_syn) > 0)
+
+  # Convert expected counts and n downsamplings to log scale
+  df <- df %>%
     mutate(
       log_exp_lof = log10(.data$exp_lof),
       log_exp_mis = log10(.data$exp_mis),
       log_exp_syn = log10(.data$exp_syn),
       log_n = log10(.data$downsampling)
-    ) %>%
+    )
+
+  # Fit linear models where expected counts are a function of downsampling size for
+  # each gene
+  df <- df %>%
     summarize(
       lof_fit = list(lm(.data$log_exp_lof ~ .data$log_n)),
       mis_fit = list(lm(.data$log_exp_mis ~ .data$log_n)),
@@ -309,9 +313,6 @@ plot_projected_sample_size <- function(df) {
     )
 
   # Extract slope and intercept for lof variants
-  # Extract slope (coefficient for log_n)
-  # Extract intercept
-  # why need this step to sum?
   gene_lof_fit <- df %>%
     mutate(
       slope = purrr::map_dbl(.data$lof_fit, ~ .x$coefficients[2]),
@@ -321,8 +322,6 @@ plot_projected_sample_size <- function(df) {
     summarize(slope = sum(.data$slope), intercept = sum(.data$intercept))
 
   # Extract slope and intercept for missense variants
-  # Extract slope (coefficient for log_n)
-  # Extract intercept
   gene_mis_fit <- df %>%
     mutate(
       slope = purrr::map_dbl(.data$mis_fit, ~ .x$coefficients[2]),
@@ -336,7 +335,7 @@ plot_projected_sample_size <- function(df) {
   ####################################################################
   post_process_predictions <- function(data) {
     # Transform predictions at specific points ('5', '10', '20', '50', '100') using
-    # fitted model coefficients 
+    # fitted model coefficients
     # data: is the dataframe to use (should contain columns
     # 'gene', 'slope' and 'intercept')
     # Calculates the percentile rank of each value in the n_required column within the

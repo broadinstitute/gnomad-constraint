@@ -23,27 +23,27 @@ map_data_version <- list(
   v4_tmp = "4.1"
 )
 
-default_output_path <- "."
-default_data_dir <- "data"
-default_plot_dir <- "plots"
-default_gene_lists <- "data/gene_lists"
+default_output_basedir <- "."
+default_data_subdir <- "data"
+default_plot_subdir <- "plots"
+default_gene_list_subdir <- "data/gene_lists"
 bucket <- "gs://gnomad"
 
 setup_directories <- function(
-    output_path = default_output_path,
-    data_dir = default_data_dir,
-    plot_dir = default_plot_dir,
-    gene_lists = default_gene_lists) {
+    output_basedir = default_output_basedir,
+    data_subdir = default_data_subdir,
+    plot_subdir = default_plot_subdir,
+    gene_list_subdir = default_gene_list_subdir) {
   # Create the output directory and subdirectories if they don't exist
-  # output_path: The base directory for the output
-  # data_dir: The subdirectory for data files
-  # plot_dir: The subdirectory for plot files
-  # gene_lists: The subdirectory for gene list files
+  # output_basedir: The base directory for the output
+  # data_subdir: The subdirectory for data files
+  # plot_subdir: The subdirectory for plot files
+  # gene_list_subdir: The subdirectory for gene list files
   # Returns: None
-  suppressWarnings(dir.create(output_path))
-  suppressWarnings(dir.create(sprintf("%s/%s/", output_path, data_dir)))
-  suppressWarnings(dir.create(sprintf("%s/%s/", output_path, plot_dir)))
-  suppressWarnings(dir.create(sprintf("%s/%s/", output_path, gene_lists)))
+  suppressWarnings(dir.create(output_basedir))
+  suppressWarnings(dir.create(glue("{output_basedir}/{data_subdir}/")))
+  suppressWarnings(dir.create(glue("{output_basedir}/{plot_subdir}/")))
+  suppressWarnings(dir.create(glue("{output_basedir}/{gene_list_subdir}/")))
 }
 
 get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
@@ -56,16 +56,13 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   # TODO: Modify if there are changes for v4.1
   full_version <- map_data_version[[version]]
   if (release && public) {
-    data_path <- sprintf(
-      "gs://gcp-public-data--gnomad/release/%s/constraint/",
-      full_version
-    )
+    data_path <- glue("gs://gcp-public-data--gnomad/release/{full_version}/constraint/")
   } else if (version == "v4_tmp") {
     data_path <- "gs://gnomad-kristen/constraint/"
   } else if (release && !public) {
-    data_path <- sprintf("gs://gnomad/release/%s/constraint/", full_version)
+    data_path <- glue("gs://gnomad/release/{full_version}/constraint/")
   } else if (!release && !public) {
-    data_path <- sprintf("gs://gnomad/v%s/constraint/metrics/tsv/", full_version)
+    data_path <- glue("gs://gnomad/v{full_version}/constraint/metrics/tsv/")
   } else {
     stop("Invalid combination of release and public")
   }
@@ -105,8 +102,8 @@ interactive_authenticate_gcs <- function(
 get_or_download_file <- function(
     base_fname,
     version = "v4",
-    output_path = default_output_path,
-    data_dir = default_data_dir,
+    output_basedir = default_output_basedir,
+    data_subdir = default_data_subdir,
     subfolder = "",
     local_name = "",
     release = TRUE,
@@ -116,21 +113,17 @@ get_or_download_file <- function(
   # Cloud Storage (GCS)
   # base_fname: The base filename of the file
   # version: The version of the data
-  # output_path: The base directory for the output
-  # data_dir: The subdirectory for data files
+  # output_basedir: The base directory for the output
+  # data_subdir: The subdirectory for data files
   # subfolder: The subfolder in the data directory
   # local_name: The local name of the file
   # release: Whether to use the release or development version
   # public: Whether to use the public or non-public version
   # gcs_authentication_token: The path to the saved token for GCS authentication
   # Returns: The path to the local file for requested data
-  local_path <- paste0(
-    output_path,
-    "/",
-    data_dir,
-    "/",
-    ifelse(local_name != "", local_name, base_fname)
-  )
+  local_name <- ifelse(local_name != "", local_name, base_fname)
+  local_path <- glue("{output_basedir}/{data_subdir}/{local_name}")
+
   # To set up authentication for Google Cloud Storage (GCS) access, go to
   # https://console.cloud.google.com/apis/credentials and download the JSON file for
   # the tidyverse-gcs-access under OAuth 2.0 Client IDs. Then pass that file to the
@@ -154,11 +147,11 @@ get_or_download_file <- function(
       subfolder,
       base_fname
     )
-    print(paste0("Downloading ", remote_path, " to ", local_path))
+    print(glue("Downloading {remote_path} to {local_path}))
     gcs_get_object(
       strsplit(
         remote_path,
-        paste0(data_bucket, "/"),
+        glue("{data_bucket}/"),
         fixed = TRUE
       )[[1]][2],
       data_bucket,
@@ -172,35 +165,33 @@ get_or_download_file <- function(
 get_plot_path <- function(
     base_fname,
     version = "",
-    output_path = default_output_path,
-    plot_dir = default_plot_dir,
+    output_basedir = default_output_basedir,
+    plot_subdir = default_plot_subdir,
     extension = ".png") {
   # Get the path to save a plot
   # base_fname: The base filename of the plot
   # version: The version of the data
-  # output_path: The base directory for the output
-  # plot_dir: The subdirectory for plots
+  # output_basedir: The base directory for the output
+  # plot_subdir: The subdirectory for plots
   # extension: The file extension for the plot
   # Returns: The path to save the plot
-  if (version == "") {
-    format_path <- "%s/%s/%s%s%s"
-  } else {
-    format_path <- "%s/%s/%s.%s%s"
+  if (version != "") {
+    version <- glue(".{version}")
   }
-  return(sprintf(format_path, output_path, plot_dir, base_fname, version, extension))
+  return(glue("{output_basedir}/{plot_subdir}/{base_fname}{version}{extension}))
 }
 
 load_constraint_metrics <- function(
     version = "v4",
-    output_path = default_output_path,
-    data_dir = default_data_dir,
+    output_basedir = default_output_basedir,
+    data_subdir = default_data_subdir,
     downsamplings = FALSE,
     release = TRUE,
     public = TRUE) {
   # Load the constraint metrics data
   # version: The version of the data
-  # output_path: The base directory for the output
-  # data_dir: The subdirectory for data files
+  # output_basedir: The base directory for the output
+  # data_subdir: The subdirectory for data files
   # downsamplings: Whether to load downsampling data instead of the main data
   # release: Whether to use the release or development version
   # public: Whether to use the public or non-public version
@@ -208,24 +199,25 @@ load_constraint_metrics <- function(
 
   # TODO: Change if files change or are added for v4.1
   full_version <- map_data_version[[version]]
-  if (downsamplings && version == "v2") {
+  if (!downsamplings) {
+    if (version == "v4_tmp") {
+      base_fname <- "extra_annotations.tsv"
+    } else if (version == "v2") {
+      base_fname <- glue("gnomad.v{full_version}.lof_metrics.by_gene.txt.bgz")
+    } else if (version == "v4") {
+      base_fname <- glue("gnomad.v{full_version}.constraint_metrics.tsv")
+    }
+  } else if (version == "v2") {
     base_fname <- "gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz"
-  } else if (downsamplings) {
-    base_fname <- sprintf(
-      "gnomad.v%s.downsampling_constraint_metrics.txt.bgz",
-      full_version
-    )
-  } else if (version == "v4_tmp") {
-    base_fname <- "extra_annotations.tsv"
-  } else {
-    base_fname <- sprintf("gnomad.v%s.lof_metrics.by_gene.txt.bgz", full_version)
+  } else if (version == "v4") {
+    base_fname <- glue("gnomad.v{full_version}.downsampling_constraint_metrics.tsv.bgz")
   }
 
   fname <- get_or_download_file(
     base_fname,
     version,
-    output_path,
-    data_dir,
+    output_basedir,
+    data_subdir,
     release = release,
     public = public
   )
@@ -234,22 +226,19 @@ load_constraint_metrics <- function(
 }
 
 load_all_gene_list_data <- function(
-    output_path = default_output_path,
-    gene_lists = default_gene_lists) {
+    output_basedir = default_output_basedir,
+    gene_list_subdir = default_gene_list_subdir) {
   # Load all gene list data, and clone from GitHub if the data is not available
   # locally
-  # output_path: The base directory for the output
-  # gene_lists: The subdirectory for gene lists
+  # output_basedir: The base directory for the output
+  # gene_list_subdir: The subdirectory for gene lists
   # Returns: A data frame with gene list data
-  gene_list_dir <- sprintf("%s/%s", output_path, gene_lists)
-  list_dir <- paste0(gene_list_dir, "/lists")
+  gene_list_subdir <- glue("{output_basedir}/{gene_list_subdir}")
+  list_dir <- glue("{gene_list_subdir}/lists")
   all_files <- list.files(list_dir, ".+tsv")
   if (length(all_files) == 0) {
     system(
-      paste0(
-        "git clone https://github.com/macarthur-lab/gene_lists.git ",
-        gene_list_dir
-      )
+     glue("git clone https://github.com/macarthur-lab/gene_lists.git {gene_list_subdir}")
     )
     all_files <- list.files(list_dir, ".+tsv")
   }

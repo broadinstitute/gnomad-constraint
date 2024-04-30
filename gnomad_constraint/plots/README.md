@@ -47,7 +47,18 @@ If you're adding new dependencies to the project, update the `renv` lockfile by 
 renv::snapshot()
 ```
 
-Before pushing your changes, make sure to run the pre-commit hooks to ensure your code adheres to the project's style guidelines and passes all checks:
+Before pushing your changes, make sure to run the pre-commit hooks to ensure your code
+adheres to the project's style guidelines and passes all checks:
 ```commandline
 pre-commit run --all-files
 ```
+
+The above pre-commit hooks run [`styler`](https://styler.r-lib.org/) and
+[`lintr`](https://lintr.r-lib.org/). They use the
+[tidyverse style guide](https://style.tidyverse.org/) as the code format. A few things
+to note about their use:
+ - Unfortunately, at the time this was last updated, `styler` does not handle reformatting long lines. If you add the newlines yourself, you don't need to worry about correcting the tabs because `styler` can handle that for you.
+ - `dplyr` uses non-standard evaluation to interpret the names of columns inside its verbs like `mutate` and `select`, and this causes `lintr` to issue warnings of "no visible binding for global variable" because the linter does not recognize column names in your dataframe when used within `dplyr` functions.
+   - With most `dplyr` statements, this can be fixed with the use of '.data' before the column name.
+   - The `select` statement requires the use of quotes around the column names where possible.
+   - The `all_of()` function in the `select` statement is typically the best approach for cases where column names are dynamic or external but still need to be recognized as originating from within the data frame.

@@ -18,7 +18,7 @@ option_list <- list(
   make_option(
     c("-o", "--output_directory"),
     type = "character",
-    default = "plots",
+    default = NA,
     help = "Output directory to save plots to."
   ),
   make_option(
@@ -37,20 +37,20 @@ option_list <- list(
 
 # Parse the options
 opt <- parse_args(OptionParser(option_list = option_list))
-output_path <- opt$output_directory
+output_basedir <- opt$output_directory
 
 # Set the working directory if supplied by user
 if (!is.na(opt$working_directory)) {
   setwd(opt$working_directory)
 }
-print(paste0("Working directory is ", getwd()))
+print(glue("Working directory is {getwd()}))
 
 # Source the loading and plotting functions R files
 source("loading_functions.R")
 source("plotting_functions.R")
 
 # Setup directory structure for output
-setup_directories(output_path)
+setup_directories(output_basedir)
 
 # Authenticate google storage if client secrets JSON is supplied
 if (!is.na(opt$gcs_auth_token)) {
@@ -64,13 +64,13 @@ if (!is.na(opt$gcs_auth_token)) {
 ####################################################################
 v2_constraint_data <- load_constraint_metrics(
   version = "v2",
-  output_path = output_path
+  output_basedir = output_basedir
 )
 
 # TODO: This is the gnomad v4.0 file, will replace when v4.1 is ready
 v4_constraint_data <- load_constraint_metrics(
   version = "v4_tmp",
-  output_path = output_path,
+  output_basedir = output_basedir,
   public = FALSE,
 )
 
@@ -91,7 +91,7 @@ v2 <- filter(constraint_data, .data$v2)
 # Load in gene lists
 ####################################################################
 ####################################################################
-gene_lists <- load_all_gene_list_data(output_path = output_path)
+gene_lists <- load_all_gene_list_data(output_basedir = output_basedir)
 
 # Define olfactory genes based on gene names
 or_genes <- constraint_data %>%
@@ -127,7 +127,7 @@ for (version in versions_to_plot) {
   txt_path <- get_plot_path(
     "gene_list_counts",
     version = version,
-    output_path = output_path,
+    output_basedir = output_basedir,
     extension = ".txt"
   )
   write.table(summary_gene_list_per_sums, file = txt_path, quote = FALSE)
@@ -137,7 +137,7 @@ for (version in versions_to_plot) {
   plot_path <- get_plot_path(
     "gene_list_barplot",
     version = version,
-    output_path = output_path
+    output_basedir = output_basedir
   )
   ggsave(p, filename = plot_path, dpi = 300, width = 11, height = 6, units = "in")
 }
@@ -172,7 +172,7 @@ for (metric in names(metric_by_version)) {
 
   # Get combine ROC curve plot
   roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title)
-  plot_path <- get_plot_path(paste0("roc_plot_", metric), output_path = output_path)
+  plot_path <- get_plot_path(glue("roc_plot_{metric}), output_basedir = output_basedir)
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
 
@@ -186,12 +186,12 @@ options(scipen = 50)
 # Load in downsampling data for v2 and v4
 v2_ds <- load_constraint_metrics(
   version = "v2",
-  output_path = output_path,
+  output_basedir = output_basedir,
   downsamplings = TRUE
 )
 v4_ds <- load_constraint_metrics(
   version = "v4",
-  output_path = output_path,
+  output_basedir = output_basedir,
   downsamplings = TRUE,
   release = FALSE,
   public = FALSE,
@@ -240,8 +240,8 @@ for (version in names(datasets)) {
 
     # Construct output path and save plot
     plot_path <- get_plot_path(
-      paste0(var_type, "_ds_projections_", version),
-      output_path = output_path
+      glue("{var_type}_ds_projections_{version}"),
+      output_basedir = output_basedir
     )
     ggsave(p, filename = plot_path, dpi = 300, width = 8, height = 6, units = "in")
   }
