@@ -10,8 +10,8 @@
 # interactive_authenticate_gcs function in an interactive session. The saved token
 # can be passed to this script.
 
-
-library("optparse")
+library(optparse)
+library(glue)
 
 # Define input arguments
 option_list <- list(
@@ -43,7 +43,7 @@ output_basedir <- opt$output_directory
 if (!is.na(opt$working_directory)) {
   setwd(opt$working_directory)
 }
-print(glue("Working directory is {getwd()}))
+print(glue("Working directory is {getwd()}"))
 
 # Source the loading and plotting functions R files
 source("loading_functions.R")
@@ -172,7 +172,7 @@ for (metric in names(metric_by_version)) {
 
   # Get combine ROC curve plot
   roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title)
-  plot_path <- get_plot_path(glue("roc_plot_{metric}), output_basedir = output_basedir)
+  plot_path <- get_plot_path(glue("roc_plot_{metric}"), output_basedir = output_basedir)
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
 
@@ -217,7 +217,7 @@ v4_ds <- filter(
   (.data$mane_select == "true") &
     grepl("^ENST", .data$transcript) &
     (.data$gen_anc == "global") &
-     # Note ">" rather than ">=" difference from v2 to avoid dropping too many rows
+    # Note ">" rather than ">=" difference from v2 to avoid dropping too many rows
     (.data$downsampling > 100) &
     # Remove 8 genes with missing gene names
     (!is.na(.data$gene))

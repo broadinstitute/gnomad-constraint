@@ -1,6 +1,7 @@
 library(conflicted)
 library(dplyr)
 library(gargle)
+library(glue)
 library(googleAuthR)
 library(googleCloudStorageR)
 library(forcats, include.only = c("fct_recode"))
@@ -147,11 +148,12 @@ get_or_download_file <- function(
       subfolder,
       base_fname
     )
-    print(glue("Downloading {remote_path} to {local_path}))
+    print(glue("Downloading {remote_path} to {local_path}"))
+
     gcs_get_object(
       strsplit(
         remote_path,
-        glue("{data_bucket}/"),
+        paste0(data_bucket, "/"),
         fixed = TRUE
       )[[1]][2],
       data_bucket,
@@ -178,7 +180,7 @@ get_plot_path <- function(
   if (version != "") {
     version <- glue(".{version}")
   }
-  return(glue("{output_basedir}/{plot_subdir}/{base_fname}{version}{extension}))
+  return(glue("{output_basedir}/{plot_subdir}/{base_fname}{version}{extension}"))
 }
 
 load_constraint_metrics <- function(
@@ -238,7 +240,7 @@ load_all_gene_list_data <- function(
   all_files <- list.files(list_dir, ".+tsv")
   if (length(all_files) == 0) {
     system(
-     glue("git clone https://github.com/macarthur-lab/gene_lists.git {gene_list_subdir}")
+      glue("git clone https://github.com/macarthur-lab/gene_lists.git {gene_list_subdir}")
     )
     all_files <- list.files(list_dir, ".+tsv")
   }
