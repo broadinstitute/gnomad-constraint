@@ -121,7 +121,6 @@ lof_upper_bin <- list(
 
 for (version in versions_to_plot) {
   gene_list_sums <- summarize_gene_lists(gene_data, lof_upper_bin[[version]], version)
-  print(head(gene_list_sums))
   summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
 
   # Write out table of gene list membership
