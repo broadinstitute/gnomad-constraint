@@ -112,7 +112,6 @@ gene_data <- left_join(constraint_data, gene_lists, by = "gene")
 # Plot gene list distribution
 ####################################################################
 ####################################################################
-gene_lists_to_plot <- c("Haploinsufficient", "Autosomal Recessive", "Olfactory Genes")
 versions_to_plot <- c("v2", "v4")
 lof_upper_bin <- list(
   v2 = "oe_lof_upper_bin",
@@ -133,7 +132,7 @@ for (version in versions_to_plot) {
   write.table(summary_gene_list_per_sums, file = txt_path, quote = FALSE)
 
   # Plot gene list distribution
-  p <- plot_gene_lists(gene_list_sums, gene_lists_to_plot, lof_upper_bin[version])
+  p <- plot_gene_lists(gene_list_sums, lof_upper_bin[version])
   plot_path <- get_plot_path(
     "gene_list_barplot",
     version = version,

@@ -28,6 +28,18 @@ gene_list_colors <- c(
   "Universe" = "lightgray"
 )
 
+default_gene_lists <- c(
+  "Haploinsufficient",
+  "Autosomal Dominant",
+  "Autosomal Recessive",
+  "Olfactory Genes"
+)
+default_gene_lists_to_plot <- c(
+  "Haploinsufficient",
+  "Autosomal Recessive",
+  "Olfactory Genes"
+)
+
 # Create dataframe of ExAC, gnomAD v2, and gnomAD v4 sample sizes
 dataset_sample_sizes <- data.frame(
   intercepts = c(60706, 141456, 807162),
@@ -42,11 +54,16 @@ label_function <- function(x) {
   paste0(x * 10, "-", x * 10 + 10, "%")
 }
 
-summarize_gene_lists <- function(df, metric, version) {
+summarize_gene_lists <- function(
+    df,
+    metric,
+    version,
+    gene_lists_to_summarize = default_gene_lists) {
   # Get table of gene list membership counts
   # df: Dataframe containing gene list membership data
   # metric: Metric to use for the plot (either 'loeuf' or 'pli')
   # version: Version of gnomAD to use for the plot (either 'v2' or 'v4')
+  # gene_lists_to_summarize: List of gene lists to summarize
   # Returns: Dataframe with counts of gene list membership
 
   # Filter gene data to specified version
@@ -57,14 +74,7 @@ summarize_gene_lists <- function(df, metric, version) {
   df <- df %>%
     filter(!is.na(.data$gene_list) & !is.na(!!sym(metric))) %>%
     mutate(metric = label_function(!!sym(metric))) %>%
-    filter(
-      .data$gene_list %in% c(
-        "Haploinsufficient",
-        "Autosomal Dominant",
-        "Autosomal Recessive",
-        "Olfactory Genes"
-      )
-    )
+    filter(.data$gene_list %in% gene_lists_to_summarize)
 
   ####################################################################
   # Summarize counts of gene lists by oe_lof_upper_bin
@@ -72,26 +82,21 @@ summarize_gene_lists <- function(df, metric, version) {
   # Generate counts of gene list membership
   gene_list_sums <- df %>%
     group_by(.data$metric, .data$gene_list, .drop = FALSE) %>%
-    summarise(count = n())
-  gene_list_sums <- filter(
-    gene_list_sums,
-    .data$gene_list %in% c(
-      "Haploinsufficient",
-      "Autosomal Dominant",
-      "Autosomal Recessive",
-      "Olfactory Genes"
-    )
-  )
+    summarise(count = n()) %>%
+    filter(.data$gene_list %in% gene_lists_to_summarize)
 
   return(gene_list_sums)
 }
 
-plot_gene_lists <- function(df, gene_lists_to_plot, metric) {
+plot_gene_lists <- function(
+    df,
+    metric,
+    gene_lists_to_plot = default_gene_lists_to_plot) {
   # Plot gene list membership by decile of LOEUF or pLI
   # df: Dataframe containing gene list membership counts from
   # summarize_gene_lists
-  # gene_lists_to_plot: List of gene lists to plot
   # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # gene_lists_to_plot: List of gene lists to plot
   # Returns: ggplot object
 
   # Convert counts to proportions
@@ -114,34 +119,24 @@ plot_gene_lists <- function(df, gene_lists_to_plot, metric) {
       axis.title = element_text(colour = "black", size = 12, face = "bold"),
       axis.text = element_text(colour = "black", size = 10)
     ) +
-    scale_fill_manual(values = gene_list_colors, guide = "none") +
-    annotate(
-      "text",
-      4.5,
-      top_legend,
-      hjust = 0.5,
-      vjust = 1,
-      label = "Haploinsufficient",
-      color = gene_list_colors["Haploinsufficient"]
-    ) +
-    annotate(
-      "text",
-      4.5,
-      top_legend * 0.88,
-      hjust = 0.5,
-      vjust = 1,
-      label = "Autosomal Recessive",
-      color = gene_list_colors["Autosomal Recessive"]
-    ) +
-    annotate(
-      "text",
-      4.5,
-      top_legend * 0.76,
-      hjust = 0.5,
-      vjust = 1,
-      label = "Olfactory Genes",
-      color = gene_list_colors["Olfactory Genes"]
-    ) +
+    scale_fill_manual(values = gene_list_colors, guide = "none")
+
+  top_legend_adj <- 1.0
+  for (gene_list in gene_lists_to_plot) {
+    bar_plot <- bar_plot +
+      annotate(
+        "text",
+        4.5,
+        top_legend * top_legend_adj,
+        hjust = 0.5,
+        vjust = 1,
+        label = gene_list,
+        color = gene_list_colors[gene_list]
+      )
+    top_legend_adj <- top_legend_adj - 0.12
+  }
+
+  bar_plot <- bar_plot +
     ylab("Percent of gene list (%)") +
     xlab("LOEUF decile (%)") +
     scale_x_discrete(
