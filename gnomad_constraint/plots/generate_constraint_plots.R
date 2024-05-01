@@ -96,7 +96,7 @@ gene_lists <- load_all_gene_list_data(output_basedir = output_basedir)
 # Define olfactory genes based on gene names
 or_genes <- constraint_data %>%
   filter(grepl("^OR", gene)) %>%
-  transmute(gene = gene, gene_list = "Olfactory Genes")
+  transmute(gene = gene, gene_list = as.factor("Olfactory Genes"))
 
 # Add olfactory genes to gene list
 gene_lists <- gene_lists %>% bind_rows(or_genes)
@@ -121,6 +121,7 @@ lof_upper_bin <- list(
 
 for (version in versions_to_plot) {
   gene_list_sums <- summarize_gene_lists(gene_data, lof_upper_bin[[version]], version)
+  print(head(gene_list_sums))
   summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
 
   # Write out table of gene list membership
