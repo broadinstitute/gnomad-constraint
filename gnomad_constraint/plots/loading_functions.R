@@ -20,8 +20,7 @@ conflict_prefer("%>%", "dplyr")
 data_versions <- c("v2", "v4")
 map_data_version <- list(
   v2 = "2.1.1",
-  v4 = "4.1",
-  v4_tmp = "4.1"
+  v4 = "4.1"
 )
 
 default_output_basedir <- "."
@@ -54,12 +53,9 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   # public: Whether to use the public or non-public version
   # Returns: The URL for the data files
 
-  # TODO: Modify if there are changes for v4.1
   full_version <- map_data_version[[version]]
   if (release && public) {
     data_path <- glue("gs://gcp-public-data--gnomad/release/{full_version}/constraint/")
-  } else if (version == "v4_tmp") {
-    data_path <- "gs://gnomad-kristen/constraint/"
   } else if (release && !public) {
     data_path <- glue("gs://gnomad/release/{full_version}/constraint/")
   } else if (!release && !public) {
@@ -131,25 +127,33 @@ get_or_download_file <- function(
   # interactive_authenticate_gcs function in an interactive session. The saved token
   # can be passed to this function.
 
-  # TODO: Modify when v4.1 files are ready
-  if (version == "v2") {
+  if (public == TRUE) {
     data_bucket <- "gs://gcp-public-data--gnomad"
-  } else if (version == "v4") {
+  } else {
     data_bucket <- "gs://gnomad"
-  } else if (version == "v4_tmp") {
-    data_bucket <- "gs://gnomad-kristen"
   }
   if (!file.exists(local_path)) {
     if (!missing(gcs_authentication_token)) {
       authenticate_gcs(gcs_authentication_token)
     }
+    print(paste0("version", version))
+    print(paste0("release", release))
+    print(paste0("public", public))
+    print(paste0("subfolder", subfolder))
+    print(paste0("base_fname", base_fname))
+    print(get_data_url(version, release = release, public = public))
     remote_path <- paste0(
       get_data_url(version, release = release, public = public),
       subfolder,
       base_fname
     )
     print(glue("Downloading {remote_path} to {local_path}"))
-
+    print(strsplit(
+      remote_path,
+      paste0(data_bucket, "/"),
+      fixed = TRUE
+    )[[1]][2])
+    print(data_bucket)
     gcs_get_object(
       strsplit(
         remote_path,
@@ -199,12 +203,9 @@ load_constraint_metrics <- function(
   # public: Whether to use the public or non-public version
   # Returns: A data frame with constraint metrics data
 
-  # TODO: Change if files change or are added for v4.1
   full_version <- map_data_version[[version]]
   if (!downsamplings) {
-    if (version == "v4_tmp") {
-      base_fname <- "extra_annotations.tsv"
-    } else if (version == "v2") {
+    if (version == "v2") {
       base_fname <- glue("gnomad.v{full_version}.lof_metrics.by_gene.txt.bgz")
     } else if (version == "v4") {
       base_fname <- glue("gnomad.v{full_version}.constraint_metrics.tsv")
