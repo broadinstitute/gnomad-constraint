@@ -69,7 +69,7 @@ v2_constraint_data <- load_constraint_metrics(
 
 # TODO: This is the gnomad v4.0 file, will replace when v4.1 is ready
 v4_constraint_data <- load_constraint_metrics(
-  version = "v4_tmp",
+  version = "v4",
   output_basedir = output_basedir,
   public = FALSE,
 )

@@ -254,6 +254,7 @@ expected_projections <- function(
     geom_line(linewidth = 2) +
     theme_classic() +
     scale_x_log10(labels = comma, limits = xlimits) +
+    scale_y_continuous(labels=scales::percent_format(accuracy = 1)) +
     xlab("Sample size required") +
     ylab("Percent of human genes") +
     geom_vline(
