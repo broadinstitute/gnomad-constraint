@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -22,11 +22,22 @@ jobs:
           key: pip-${{ hashFiles('**/requirements*.txt') }}
           restore-keys: |
             pip-
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install wheel
           pip install -r requirements-dev.txt
           pip install hail
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - name: Install R packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          packages: |
+            any::lintr
+            any::styler
       - name: Check formatting
         run: black --check --preview gnomad_constraint
       - name: Check imports
@@ -37,3 +48,7 @@ jobs:
         run: autopep8 --exit-code --diff gnomad_constraint
       - name: Run Pylint
         run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint
+      - name: Run styler
+        run: Rscript -e "styler::style_dir('gnomad_constraint/plots/')"
+      - name: Run lintr
+        run: Rscript -e "lintr::lint_dir('gnomad_constraint/plots/', pattern='.R$')"
