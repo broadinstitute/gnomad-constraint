@@ -630,14 +630,13 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-
-    preprocess_data_args = parser.add_argument_group(
-        "Preprocess data args", "Arguments used for preprocessing the data."
-    )
-    preprocess_data_args.add_argument(
+    prepare_context_args.add_argument(
         "--use-v2-release-context-ht",
         help="Whether to use the annotated context Table for the v2 release.",
         action="store_true",
+    )
+    preprocess_data_args = parser.add_argument_group(
+        "Preprocess data args", "Arguments used for preprocessing the data."
     )
     preprocess_data_args.add_argument(
         "--preprocess-data",
@@ -735,6 +734,19 @@ if __name__ == "__main__":
         default=1,
     )
 
+     # `populations` is an arg for `--calculate-mutation-rate`, `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
+    populations = mutation_rate_args.add_argument(
+        "--pops",
+        nargs="+",
+        help=(
+            "Populations on which to calculate mutation rates, train models, build models, apply models, and or"
+            " compute metrics on. Downsamplings for the specified population will be"
+            " included."
+        ),
+        choices=["global", "afr", "amr", "eas", "nfe", "sas"],
+        default=None,
+    )
+
     training_set_args = parser.add_argument_group(
         "Training set args", "Arguments used for creating the training set."
     )
@@ -766,20 +778,7 @@ if __name__ == "__main__":
         default=0.001,
     )
 
-    # `populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
-    populations = training_set_args.add_argument(
-        "--pops",
-        nargs="+",
-        help=(
-            "Populations on which to train models, build models, apply models, and or"
-            " compute metrics on. Downsamplings for the specified population will be"
-            " included."
-        ),
-        choices=["global", "afr", "amr", "eas", "nfe", "sas"],
-        default=None,
-    )
-
-    use_v2_release_mutation_rate = training_set_args.add_argument(
+    use_v2_release_mutation_ht = training_set_args.add_argument(
         "--use-v2-release-mutation-ht",
         help="Whether to use the mutatation rate computed for the v2 release.",
         action="store_true",
@@ -789,6 +788,10 @@ if __name__ == "__main__":
     mutation_rate_parser._group_actions.append(use_v2_release_mutation_rate)
     mutation_rate_parser._group_actions.append(recalculate_mutation_rate)
 
+   
+    training_set_args._group_actions.append(populations)
+
+   
     build_models_args = parser.add_argument_group(
         "Build models args", "Arguments used for building models."
     )
