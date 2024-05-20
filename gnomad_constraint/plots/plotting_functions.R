@@ -373,3 +373,39 @@ plot_projected_sample_size <- function(df) {
 
   return(list(lof = lof_projections, mis = missense_projections))
 }
+
+
+plot_decile_change <- function(df) {
+  # Plot of the change in LOEUF deciles between gnomAD versions
+  # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by 
+  # 'oe_lof_upper_bin' and the v4 value defined by 'lof.oe_ci.upper_bin_decile'
+  # Returns: ggplot object of the LOEUF decile change from v2 to v4
+  
+  # Calculate the decile change by substracting the v4 value from the v2 value
+  df <- df %>% mutate(decile_change = .data$oe_lof_upper_bin - .data$lof.oe_ci.upper_bin_decile)
+  
+  p <- ggplot(
+    df,
+    aes(x = .data$decile_change)
+  ) +
+    geom_histogram(stat = "count") +
+    theme_classic() +
+    theme(
+      axis.title = element_text(colour = "black", size = 25),
+      axis.text = element_text(colour = "black", size = 20)
+    ) +
+    scale_x_continuous(breaks = seq(-10, 8, by = 2)) +
+    ylab("Count") +
+    xlab("Decile change from v2 to v4")
+  
+  return(p)
+}
+  
+  
+
+  
+
+
+
+
+

@@ -243,3 +243,22 @@ for (version in names(datasets)) {
     ggsave(p, filename = plot_path, dpi = 300, width = 8, height = 6, units = "in")
   }
 }
+
+
+####################################################################
+####################################################################
+# Plot LOEUF decile change from v2 to v4
+####################################################################
+####################################################################
+decile_data <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & constraint_flags == "[]" & mane_select == "true" & grepl("^ENST", transcript))
+
+decile_plot <- plot_decile_change(decile_data)
+
+plot_path <- get_plot_path(
+  "decile_change",
+  output_basedir = output_basedir
+)
+
+ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, units = "in")
+
+
