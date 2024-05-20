@@ -381,7 +381,7 @@ plot_decile_change <- function(df) {
   # 'oe_lof_upper_bin' and the v4 value defined by 'lof.oe_ci.upper_bin_decile'
   # Returns: ggplot object of the LOEUF decile change from v2 to v4
   
-  # Calculate the decile change by substracting the v4 value from the v2 value
+  # Calculate the decile change by subtracting the v4 value from the v2 value
   df <- df %>% mutate(decile_change = .data$oe_lof_upper_bin - .data$lof.oe_ci.upper_bin_decile)
   
   p <- ggplot(
@@ -404,6 +404,27 @@ plot_decile_change <- function(df) {
   
 
   
+
+plot_metric_comparison <- function(df) {
+  # Plot comparison of metrics between gnomAD versions
+  # df: Dataframe consisting of 'metric_name' and the corresponding
+  # values in 'v2' and 'v4'
+  # Returns: ggplot object of metric comparison between v2 to v4
+  
+  p <- ggplot(df, aes(x = .data$v2, y = .data$v4)) + 
+    geom_point(size=0.75, alpha=.25) +
+    facet_wrap(.~metric_name,scale="free") +
+    theme_classic() +
+    theme(axis.text = element_text(size = 15, colour = "black"),
+          axis.title = element_text(size = 20, colour = "black"),
+          strip.background = element_blank(),
+          strip.text = element_text(size = 15, colour = "black"),
+        
+    ) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+    labs(x = "Value in gnomAD v2", y = "Value in gnomAD v4")  
+  
+  return(p)
 
 
 

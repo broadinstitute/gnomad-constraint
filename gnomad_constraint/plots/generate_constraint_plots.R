@@ -262,3 +262,53 @@ plot_path <- get_plot_path(
 ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, units = "in")
 
 
+####################################################################
+####################################################################
+# Plot LOEUF and Z-Score comparison between v2 and v4
+####################################################################
+####################################################################
+comparision_df <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript))
+comparision_df <- comparision_df %>% (all_of(c("transcript", "v2", "v4", "oe_lof_upper",  "lof.oe_ci.upper", "lof_z", "lof.z_score"))) 
+
+# Pivot to longer df with metric name and value  
+comparision_df <- comparision_df %>%
+  pivot_longer(
+    cols = c( oe_lof_upper, lof.oe_ci.upper, lof_z, lof.z_score),
+    names_to = "metric_name",
+    values_to = "value"
+  ) 
+
+comparision_df <- comparision_df %>% mutate(version = if_else(grepl("\\.", metric_name), "v4", "v2"))
+
+# Rename metrics in df to be the same for v2 and v4
+v2_to_v4_mapping <- c(
+  oe_lof_upper = "lof.oe_ci.upper",
+  lof_z = "lof.z_score"
+)
+comparision_df <- comparision_df %>%
+  mutate(metric_name = if_else(metric_name %in% names(v2_to_v4_mapping), 
+                               v2_to_v4_mapping[metric_name], 
+                               metric_name))
+
+
+comparision_df <- comparision_df %>%
+  mutate(metric_name = case_when(
+    metric_name == "lof.oe_ci.upper" ~ "LOEUF",
+    metric_name == "lof.z_score" ~ "pLoF Z-score",
+    TRUE ~ metric_name  # Keeps all other values as they are
+  ))
+
+comparision_df <- comparision_df %>% select(-v2, -v4)
+
+# Pivot to wider format
+comparision_df <- comparision_df %>% pivot_wider(names_from = version, values_from = value)
+comparsion_plot <- plot_metric_comparison(comparision_df)
+plot_path <- get_plot_path(
+  "v2_v4_compare_values",
+  output_basedir = output_basedir
+)
+
+ggsave(comparsion_plot, filename = plot_path, dpi = 300, width = 8, height = 4, units = "in")
+
+
+
