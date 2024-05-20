@@ -97,7 +97,7 @@ or_genes <- constraint_data %>%
   transmute(gene = gene, gene_list = as.factor("Olfactory Genes"))
 
 # Add olfactory genes to gene list
-gene_lists <- gene_lists %>% bind_rows(or_genes)
+gene_lists <- gene_lists %>% bind_rows(or_genes) %>% distinct()
 
 # Obtain just haploinsufficient genes
 hi_genes <- gene_lists %>% filter(gene_list == "Haploinsufficient")

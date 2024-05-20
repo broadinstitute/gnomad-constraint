@@ -140,7 +140,7 @@ plot_gene_lists <- function(
     ylab("Percent of gene list (%)") +
     xlab("LOEUF decile (%)") +
     scale_x_discrete(
-      labels = c("0", "10", "20", "30", "40", "50", "60", "70", "80", "90")
+      labels = c("1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th")
     )
 
   return(bar_plot)
