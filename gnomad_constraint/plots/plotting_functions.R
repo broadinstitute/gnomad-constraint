@@ -1,4 +1,5 @@
 library(conflicted)
+library(cowplot)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
@@ -116,7 +117,7 @@ plot_gene_lists <- function(
     geom_bar(position = "dodge", stat = "identity", width = 0.9) +
     theme_classic() +
     theme(
-      axis.title = element_text(colour = "black", size = 12, face = "bold"),
+      axis.title = element_text(colour = "black", size = 12),
       axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_fill_manual(values = gene_list_colors, guide = "none")
@@ -138,7 +139,7 @@ plot_gene_lists <- function(
 
   bar_plot <- bar_plot +
     ylab("Percent of gene list (%)") +
-    xlab("LOEUF decile (%)") +
+    xlab("LOEUF decile") +
     scale_x_discrete(
       labels = c("1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th")
     )
@@ -215,7 +216,7 @@ combine_roc_plots <- function(
     geom_line(linewidth = 1, alpha = 0.9) +
     theme_classic() +
     theme(
-      axis.title = element_text(colour = "black", size = 12, face = "bold"),
+      axis.title = element_text(colour = "black", size = 12),
       axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_color_manual(values = c(color1, color2)) +
@@ -419,14 +420,58 @@ plot_metric_comparison <- function(df) {
           axis.title = element_text(size = 20, colour = "black"),
           strip.background = element_blank(),
           strip.text = element_text(size = 15, colour = "black"),
-        
+          plot.margin = unit(c(.65, .65, .65, .65), "lines")
     ) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
     labs(x = "Value in gnomAD v2", y = "Value in gnomAD v4")  
   
   return(p)
-
-
-
-
-
+}
+  
+  
+  
+plot_observed_vs_expected <- function(df, version) {
+    # Plot the observed vs expected values
+    # df: Dataframe consisting of metrics to plot in 'metric_name', the 
+    # observed counts in 'obs', and the expected counts in 'exp', and
+    # max values of the two in 'max_limit'
+    # Returns: ggplot object of observed vs expected values for the specified version
+  
+  plot_list <- list()
+  correlation_results <- data.frame(metric = character(), correlation = numeric(), stringsAsFactors = FALSE)
+  for(metric in unique(df$metric_name)) {
+    data_subset <- filter(df, metric_name == metric)
+    max_limit <- max(data_subset$max_limit, na.rm = TRUE)
+    
+    correlation <- cor(data_subset$exp, data_subset$obs, method = "pearson")
+    correlation_results <- rbind(correlation_results, data.frame(metric = metric, correlation = correlation))
+  
+    p <- ggplot(data_subset, aes(x = exp, y = obs)) +
+      geom_point(size = 0.75) +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+      ggtitle(metric) +  # Add title to identify the metric
+      coord_fixed(ratio = 1) +
+      xlim(0, max_limit) +
+      ylim(0, max_limit) +
+      theme_classic() +
+      theme(
+        strip.background = element_blank(),
+        strip.text = element_text(colour = "black", face = "bold"),
+        axis.text.y = element_text(size = 15, color = "black"),
+        axis.text.x = element_text(size = 15, color = "black", hjust=1, angle=45),
+        axis.title = element_blank(),
+        plot.margin = unit(c(1,1,1,2.2), "lines"),
+        plot.title = element_text(hjust = 0.5)
+      )
+    # Add plot to the plot list
+    plot_list[[metric]] <- p
+  }
+  
+  # Combine all plots in the plot list
+  combined_plot <- plot_grid(plotlist = plot_list, ncol = 3, align = 'v')  # Arrange plots vertically
+  combined_plot<- combined_plot + draw_label("Expected Variants", x=0.5, vjust= 7, angle= 0, size=16) 
+  combined_plot<- combined_plot + draw_label("Observed\n Variants" , y=0.5, vjust= -7.75, angle=90, size=16)
+  print(correlation_results)
+  return(combined_plot)
+}
+  

@@ -57,6 +57,13 @@ if (!is.na(opt$gcs_auth_token)) {
   authenticate_gcs(opt$gcs_auth_token)
 }
 
+
+output_basedir <- "/Users/kristen/Documents/presentations/conference/eshg_2024/plots"
+# Set the working directory if supplied by user
+#if (!is.na(opt$working_directory)) {
+setwd("/Users/kristen/code/broad/gnomad-constraint/gnomad_constraint/plots")
+#}
+
 ####################################################################
 ####################################################################
 # Load and join constraint data from v2 and v4
@@ -83,6 +90,8 @@ constraint_data <- full_join(
 
 v4 <- filter(constraint_data, .data$v4)
 v2 <- filter(constraint_data, .data$v2)
+
+
 
 ####################################################################
 ####################################################################
@@ -116,8 +125,50 @@ lof_upper_bin <- list(
   v4 = "lof.oe_ci.upper_bin_decile"
 )
 
+preferred_transcripts <- list(
+  v2 = "canonical",
+  v4 = "mane_select"
+)
+
+
+
+filter_transcripts<- function(df, version, preferred_transcripts_only=TRUE, enst_only=TRUE, include_flagged_transcripts=FALSE) {
+  # Filter transcripts to specified criteria
+  # df: Dataframe on which filters should  be applied
+  # version: Version of the dataset, either 'v2' or 'v4. Dataframe will be filtered to variants in this version.
+  # preferred_transcripts_only: Whether to filter to only the preferred transcript. Default is TRUE.
+  # For 'v4', 'mane_select' are the preferred transcripts
+  # For 'v2', 'canonical' transcripts are the preferred transcripts
+  # enst_only: Whether to filter to only Ensembl transcripts. Default is TRUE.
+  # include_flagged_transcripts: Whether to keep transcripts with a constraint flag. Default is FALSE.
+  # Returns: Filtered dataframe
+  
+  
+  # Filtter to tranascripts present in specified version
+  df <- filter(df, !!sym(version))
+  
+  # Filter to only Ensembl transcripts if specified
+  if (enst_only){df <- filter(df, grepl("^ENST", .data$transcript))}
+  
+  # Filter to exclude flagged transcripts if specified
+  if (!include_flagged_transcripts) { 
+    if (version == "v4") {
+      df <- filter(df, .data$constraint_flags == "[]")
+    }
+    if (version == "v2") {
+      df <- filter(df, .data$constraint_flag == "")
+    }
+  }
+  
+  # Filter to only preferred transcripts if specified
+  if (preferred_transcripts_only==TRUE) {df <- filter(df, !!sym(preferred_transcripts[[version]])=="true")}
+  
+  return(df)
+}
+
 for (version in versions_to_plot) {
-  gene_list_sums <- summarize_gene_lists(gene_data, lof_upper_bin[[version]], version)
+  filtered_data <- filter_transcripts(gene_data, version, preferred_transcripts_only=TRUE, enst_only=TRUE, include_flagged_transcripts=FALSE)
+  gene_list_sums <- summarize_gene_lists(filtered_data, lof_upper_bin[[version]], version)
   summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
 
   # Write out table of gene list membership
@@ -251,14 +302,12 @@ for (version in names(datasets)) {
 ####################################################################
 ####################################################################
 decile_data <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & constraint_flags == "[]" & mane_select == "true" & grepl("^ENST", transcript))
-
 decile_plot <- plot_decile_change(decile_data)
 
 plot_path <- get_plot_path(
   "decile_change",
   output_basedir = output_basedir
 )
-
 ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, units = "in")
 
 
@@ -268,7 +317,7 @@ ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, unit
 ####################################################################
 ####################################################################
 comparision_df <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript))
-comparision_df <- comparision_df %>% (all_of(c("transcript", "v2", "v4", "oe_lof_upper",  "lof.oe_ci.upper", "lof_z", "lof.z_score"))) 
+comparision_df <- comparision_df %>% select(all_of(c("transcript", "v2", "v4", "oe_lof_upper",  "lof.oe_ci.upper", "lof_z", "lof.z_score"))) 
 
 # Pivot to longer df with metric name and value  
 comparision_df <- comparision_df %>%
@@ -302,6 +351,11 @@ comparision_df <- comparision_df %>% select(-v2, -v4)
 
 # Pivot to wider format
 comparision_df <- comparision_df %>% pivot_wider(names_from = version, values_from = value)
+
+
+comparision_df %>% group_by(metric_name) %>% 
+  summarize(correlation = cor(.data$v2, .data$v4, method = "pearson", use = "complete.obs"))
+
 comparsion_plot <- plot_metric_comparison(comparision_df)
 plot_path <- get_plot_path(
   "v2_v4_compare_values",
@@ -309,6 +363,71 @@ plot_path <- get_plot_path(
 )
 
 ggsave(comparsion_plot, filename = plot_path, dpi = 300, width = 8, height = 4, units = "in")
+
+
+####################################################################
+####################################################################
+# Plot observed vs expected values
+####################################################################
+####################################################################
+comparision_df <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & constraint_flags == "[]" & mane_select == "true" & grepl("^ENST", transcript))
+
+for (version in versions_to_plot){
+  filtered_data <- filter_transcripts(constraint_data, version, preferred_transcripts_only=TRUE, enst_only=TRUE, include_flagged_transcripts=FALSE)
+  # Reformat column names if data is from v2
+  if (version == "v2") {oe_data <- filtered_data %>% select(all_of(c("transcript", "v2", "exp_syn", "obs_syn", "exp_mis", "obs_mis", "exp_lof", "obs_lof")))
+  oe_data <- oe_data %>% rename(
+    syn.exp = exp_syn,
+    mis.exp= exp_mis,
+    lof.exp = exp_lof,
+    syn.obs = obs_syn,
+    mis.obs = obs_mis,
+    lof.obs = obs_lof 
+  )
+  }
+  if (version == "v4") {oe_data <- filtered_data %>% select(all_of(c("transcript", "v4", "syn.exp", "syn.obs", "mis.exp", "mis.obs", "lof.exp", "lof.obs")))}
+
+  # Reformat the data
+  oe_data <- oe_data %>%
+    pivot_longer(
+      cols = -c(transcript, version),  # Keep 'transcript' and version, pivot all other columns
+      names_to = "metric_combo",  
+      values_to = "counts"
+    ) %>%
+    separate(metric_combo, into = c("metric_name", "count_type"), sep = "\\.") %>%
+    pivot_wider(
+      names_from = count_type,
+      values_from = counts,
+      names_prefix = ""
+    ) %>%
+    select(-any_of(c("v2", "v4")))
+  
+
+  # Reorder the values in the df
+  oe_data <- oe_data %>%
+    mutate(metric_name = factor(metric_name, levels = c("syn", "mis", "lof")))
+
+  # Find the max value of the observed and expiected values for each metric
+  max_values <- oe_data %>%
+    group_by(metric_name) %>%
+    summarise(max_exp = max(exp, na.rm = TRUE), 
+              max_obs = max(obs, na.rm = TRUE)) %>%
+    mutate(max_limit = pmax(max_exp, max_obs))
+
+  # Join these max values back to the original data to use in plotting
+  oe_data <- oe_data %>%
+    left_join(max_values, by = "metric_name")
+
+  oe_plot <- plot_observed_vs_expected(oe_data, version)
+
+  plot_path <- get_plot_path(
+    "obs_vs_exp",
+    version = version,
+    output_basedir = output_basedir
+  )
+  ggsave(oe_plot, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+  }
+
 
 
 
