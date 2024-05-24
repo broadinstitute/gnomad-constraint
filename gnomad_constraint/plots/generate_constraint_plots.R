@@ -142,16 +142,16 @@ filter_transcripts<- function(df, version, preferred_transcripts_only=TRUE, enst
   # enst_only: Whether to filter to only Ensembl transcripts. Default is TRUE.
   # include_flagged_transcripts: Whether to keep transcripts with a constraint flag. Default is FALSE.
   # Returns: Filtered dataframe
-  
-  
+
+
   # Filtter to tranascripts present in specified version
   df <- filter(df, !!sym(version))
-  
+
   # Filter to only Ensembl transcripts if specified
   if (enst_only){df <- filter(df, grepl("^ENST", .data$transcript))}
-  
+
   # Filter to exclude flagged transcripts if specified
-  if (!include_flagged_transcripts) { 
+  if (!include_flagged_transcripts) {
     if (version == "v4") {
       df <- filter(df, .data$constraint_flags == "[]")
     }
@@ -159,10 +159,10 @@ filter_transcripts<- function(df, version, preferred_transcripts_only=TRUE, enst
       df <- filter(df, .data$constraint_flag == "")
     }
   }
-  
+
   # Filter to only preferred transcripts if specified
   if (preferred_transcripts_only==TRUE) {df <- filter(df, !!sym(preferred_transcripts[[version]])=="true")}
-  
+
   return(df)
 }
 
@@ -317,15 +317,15 @@ ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, unit
 ####################################################################
 ####################################################################
 comparision_df <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript))
-comparision_df <- comparision_df %>% select(all_of(c("transcript", "v2", "v4", "oe_lof_upper",  "lof.oe_ci.upper", "lof_z", "lof.z_score"))) 
+comparision_df <- comparision_df %>% select(all_of(c("transcript", "v2", "v4", "oe_lof_upper",  "lof.oe_ci.upper", "lof_z", "lof.z_score")))
 
-# Pivot to longer df with metric name and value  
+# Pivot to longer df with metric name and value
 comparision_df <- comparision_df %>%
   pivot_longer(
     cols = c( oe_lof_upper, lof.oe_ci.upper, lof_z, lof.z_score),
     names_to = "metric_name",
     values_to = "value"
-  ) 
+  )
 
 comparision_df <- comparision_df %>% mutate(version = if_else(grepl("\\.", metric_name), "v4", "v2"))
 
@@ -335,8 +335,8 @@ v2_to_v4_mapping <- c(
   lof_z = "lof.z_score"
 )
 comparision_df <- comparision_df %>%
-  mutate(metric_name = if_else(metric_name %in% names(v2_to_v4_mapping), 
-                               v2_to_v4_mapping[metric_name], 
+  mutate(metric_name = if_else(metric_name %in% names(v2_to_v4_mapping),
+                               v2_to_v4_mapping[metric_name],
                                metric_name))
 
 
@@ -353,7 +353,7 @@ comparision_df <- comparision_df %>% select(-v2, -v4)
 comparision_df <- comparision_df %>% pivot_wider(names_from = version, values_from = value)
 
 
-comparision_df %>% group_by(metric_name) %>% 
+comparision_df %>% group_by(metric_name) %>%
   summarize(correlation = cor(.data$v2, .data$v4, method = "pearson", use = "complete.obs"))
 
 comparsion_plot <- plot_metric_comparison(comparision_df)
@@ -382,7 +382,7 @@ for (version in versions_to_plot){
     lof.exp = exp_lof,
     syn.obs = obs_syn,
     mis.obs = obs_mis,
-    lof.obs = obs_lof 
+    lof.obs = obs_lof
   )
   }
   if (version == "v4") {oe_data <- filtered_data %>% select(all_of(c("transcript", "v4", "syn.exp", "syn.obs", "mis.exp", "mis.obs", "lof.exp", "lof.obs")))}
@@ -391,7 +391,7 @@ for (version in versions_to_plot){
   oe_data <- oe_data %>%
     pivot_longer(
       cols = -c(transcript, version),  # Keep 'transcript' and version, pivot all other columns
-      names_to = "metric_combo",  
+      names_to = "metric_combo",
       values_to = "counts"
     ) %>%
     separate(metric_combo, into = c("metric_name", "count_type"), sep = "\\.") %>%
@@ -401,7 +401,7 @@ for (version in versions_to_plot){
       names_prefix = ""
     ) %>%
     select(-any_of(c("v2", "v4")))
-  
+
 
   # Reorder the values in the df
   oe_data <- oe_data %>%
@@ -410,7 +410,7 @@ for (version in versions_to_plot){
   # Find the max value of the observed and expiected values for each metric
   max_values <- oe_data %>%
     group_by(metric_name) %>%
-    summarise(max_exp = max(exp, na.rm = TRUE), 
+    summarise(max_exp = max(exp, na.rm = TRUE),
               max_obs = max(obs, na.rm = TRUE)) %>%
     mutate(max_limit = pmax(max_exp, max_obs))
 
@@ -427,7 +427,3 @@ for (version in versions_to_plot){
   )
   ggsave(oe_plot, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
   }
-
-
-
-

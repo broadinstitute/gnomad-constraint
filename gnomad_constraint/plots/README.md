@@ -39,18 +39,18 @@ Rscript gnomad_constraint/plots/generate_constraint_plots.R \
   -w "/Users/my_name/git_projects_location/gnomad-constraint/gnomad_constraint/plots/"
   -t "/path/to/token.rds"
 ```
-Running this script will create subdirectories in the output directory if they don't already exist. For example, the above command would create the following directories:  
+Running this script will create subdirectories in the output directory if they don't already exist. For example, the above command would create the following directories:
 - /Users/my_name/Documents/Constraint/plots/plots
 - /Users/my_name/Documents/Constraint/plots/gene_lists/lists
 - /Users/my_name/Documents/Constraint/plots/data
-  
-  
-If not using a token to download the files from the Google Cloud bucket, the necessary files should be placed in the "data" and "gene_lists/lists" subdirectories. For example, "/Users/my_name/Documents/Constraint/plots/" would need to contain the following:  
 
-- gnomad.v4.1.constraint_metrics.tsv  
-- gnomad.v4.1.downsampling_constraint_metrics.tsv.bgz  
-- gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz  
-- gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz  
+
+If not using a token to download the files from the Google Cloud bucket, the necessary files should be placed in the "data" and "gene_lists/lists" subdirectories. For example, "/Users/my_name/Documents/Constraint/plots/" would need to contain the following:
+
+- gnomad.v4.1.constraint_metrics.tsv
+- gnomad.v4.1.downsampling_constraint_metrics.tsv.bgz
+- gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz
+- gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz
 
 ## Contributing
 If you're adding new dependencies to the project, update the `renv` lockfile by running:

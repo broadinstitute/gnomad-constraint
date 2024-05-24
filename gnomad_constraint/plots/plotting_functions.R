@@ -378,13 +378,13 @@ plot_projected_sample_size <- function(df) {
 
 plot_decile_change <- function(df) {
   # Plot of the change in LOEUF deciles between gnomAD versions
-  # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by 
+  # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by
   # 'oe_lof_upper_bin' and the v4 value defined by 'lof.oe_ci.upper_bin_decile'
   # Returns: ggplot object of the LOEUF decile change from v2 to v4
-  
+
   # Calculate the decile change by subtracting the v4 value from the v2 value
   df <- df %>% mutate(decile_change = .data$oe_lof_upper_bin - .data$lof.oe_ci.upper_bin_decile)
-  
+
   p <- ggplot(
     df,
     aes(x = .data$decile_change)
@@ -398,21 +398,21 @@ plot_decile_change <- function(df) {
     scale_x_continuous(breaks = seq(-10, 8, by = 2)) +
     ylab("Count") +
     xlab("Decile change from v2 to v4")
-  
+
   return(p)
 }
-  
-  
 
-  
+
+
+
 
 plot_metric_comparison <- function(df) {
   # Plot comparison of metrics between gnomAD versions
   # df: Dataframe consisting of 'metric_name' and the corresponding
   # values in 'v2' and 'v4'
   # Returns: ggplot object of metric comparison between v2 to v4
-  
-  p <- ggplot(df, aes(x = .data$v2, y = .data$v4)) + 
+
+  p <- ggplot(df, aes(x = .data$v2, y = .data$v4)) +
     geom_point(size=0.75, alpha=.25) +
     facet_wrap(.~metric_name,scale="free") +
     theme_classic() +
@@ -423,29 +423,29 @@ plot_metric_comparison <- function(df) {
           plot.margin = unit(c(.65, .65, .65, .65), "lines")
     ) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
-    labs(x = "Value in gnomAD v2", y = "Value in gnomAD v4")  
-  
+    labs(x = "Value in gnomAD v2", y = "Value in gnomAD v4")
+
   return(p)
 }
-  
-  
-  
+
+
+
 plot_observed_vs_expected <- function(df, version) {
     # Plot the observed vs expected values
-    # df: Dataframe consisting of metrics to plot in 'metric_name', the 
+    # df: Dataframe consisting of metrics to plot in 'metric_name', the
     # observed counts in 'obs', and the expected counts in 'exp', and
     # max values of the two in 'max_limit'
     # Returns: ggplot object of observed vs expected values for the specified version
-  
+
   plot_list <- list()
   correlation_results <- data.frame(metric = character(), correlation = numeric(), stringsAsFactors = FALSE)
   for(metric in unique(df$metric_name)) {
     data_subset <- filter(df, metric_name == metric)
     max_limit <- max(data_subset$max_limit, na.rm = TRUE)
-    
+
     correlation <- cor(data_subset$exp, data_subset$obs, method = "pearson")
     correlation_results <- rbind(correlation_results, data.frame(metric = metric, correlation = correlation))
-  
+
     p <- ggplot(data_subset, aes(x = exp, y = obs)) +
       geom_point(size = 0.75) +
       geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
@@ -466,12 +466,11 @@ plot_observed_vs_expected <- function(df, version) {
     # Add plot to the plot list
     plot_list[[metric]] <- p
   }
-  
+
   # Combine all plots in the plot list
   combined_plot <- plot_grid(plotlist = plot_list, ncol = 3, align = 'v')  # Arrange plots vertically
-  combined_plot<- combined_plot + draw_label("Expected Variants", x=0.5, vjust= 7, angle= 0, size=16) 
+  combined_plot<- combined_plot + draw_label("Expected Variants", x=0.5, vjust= 7, angle= 0, size=16)
   combined_plot<- combined_plot + draw_label("Observed\n Variants" , y=0.5, vjust= -7.75, angle=90, size=16)
   print(correlation_results)
   return(combined_plot)
 }
-  
