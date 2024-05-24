@@ -58,12 +58,6 @@ if (!is.na(opt$gcs_auth_token)) {
 }
 
 
-output_basedir <- "/Users/kristen/Documents/presentations/conference/eshg_2024/plots"
-# Set the working directory if supplied by user
-#if (!is.na(opt$working_directory)) {
-setwd("/Users/kristen/code/broad/gnomad-constraint/gnomad_constraint/plots")
-#}
-
 ####################################################################
 ####################################################################
 # Load and join constraint data from v2 and v4
@@ -144,7 +138,7 @@ filter_transcripts<- function(df, version, preferred_transcripts_only=TRUE, enst
   # Returns: Filtered dataframe
 
 
-  # Filtter to tranascripts present in specified version
+  # Filter to transcripts present in specified version
   df <- filter(df, !!sym(version))
 
   # Filter to only Ensembl transcripts if specified
@@ -301,7 +295,9 @@ for (version in names(datasets)) {
 # Plot LOEUF decile change from v2 to v4
 ####################################################################
 ####################################################################
-decile_data <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & constraint_flags == "[]" & mane_select == "true" & grepl("^ENST", transcript))
+# Filter to MANE Select Ensembl transcripts that are present in both v2 and v4
+# and that have no constriant flags
+decile_data <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript))
 decile_plot <- plot_decile_change(decile_data)
 
 plot_path <- get_plot_path(
@@ -316,6 +312,8 @@ ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, unit
 # Plot LOEUF and Z-Score comparison between v2 and v4
 ####################################################################
 ####################################################################
+# Filter to MANE Select Ensembl transcripts that are present in both v2 and v4
+# and that have no constriant flags
 comparision_df <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript))
 comparision_df <- comparision_df %>% select(all_of(c("transcript", "v2", "v4", "oe_lof_upper",  "lof.oe_ci.upper", "lof_z", "lof.z_score")))
 
@@ -327,6 +325,7 @@ comparision_df <- comparision_df %>%
     values_to = "value"
   )
 
+# Pull out version (v4 metrics have a "." in metric name whereas v2 metrics do not)
 comparision_df <- comparision_df %>% mutate(version = if_else(grepl("\\.", metric_name), "v4", "v2"))
 
 # Rename metrics in df to be the same for v2 and v4
@@ -342,9 +341,9 @@ comparision_df <- comparision_df %>%
 
 comparision_df <- comparision_df %>%
   mutate(metric_name = case_when(
-    metric_name == "lof.oe_ci.upper" ~ "LOEUF",
-    metric_name == "lof.z_score" ~ "pLoF Z-score",
-    TRUE ~ metric_name  # Keeps all other values as they are
+    .data$metric_name == "lof.oe_ci.upper" ~ "LOEUF",
+    .data$metric_name == "lof.z_score" ~ "pLoF Z-score",
+    TRUE ~ .data$metric_name  # Keeps all other values as they are
   ))
 
 comparision_df <- comparision_df %>% select(-v2, -v4)
@@ -353,6 +352,7 @@ comparision_df <- comparision_df %>% select(-v2, -v4)
 comparision_df <- comparision_df %>% pivot_wider(names_from = version, values_from = value)
 
 
+# Calculate correlations for each metric between v2 and v4
 comparision_df %>% group_by(metric_name) %>%
   summarize(correlation = cor(.data$v2, .data$v4, method = "pearson", use = "complete.obs"))
 
@@ -370,8 +370,6 @@ ggsave(comparsion_plot, filename = plot_path, dpi = 300, width = 8, height = 4, 
 # Plot observed vs expected values
 ####################################################################
 ####################################################################
-comparision_df <- filter(constraint_data, .data$v2==TRUE & .data$v4==TRUE & constraint_flags == "[]" & mane_select == "true" & grepl("^ENST", transcript))
-
 for (version in versions_to_plot){
   filtered_data <- filter_transcripts(constraint_data, version, preferred_transcripts_only=TRUE, enst_only=TRUE, include_flagged_transcripts=FALSE)
   # Reformat column names if data is from v2
@@ -394,6 +392,7 @@ for (version in versions_to_plot){
       names_to = "metric_combo",
       values_to = "counts"
     ) %>%
+    # Split metric_combo ("syn.exp") into metric_name ("syn") and count_type ("exp")
     separate(metric_combo, into = c("metric_name", "count_type"), sep = "\\.") %>%
     pivot_wider(
       names_from = count_type,
@@ -403,15 +402,16 @@ for (version in versions_to_plot){
     select(-any_of(c("v2", "v4")))
 
 
-  # Reorder the values in the df
+  # Rname lof to pLoF and reorder the values in the df
   oe_data <- oe_data %>%
-    mutate(metric_name = factor(metric_name, levels = c("syn", "mis", "lof")))
+    mutate(metric_name = recode(.data$metric_name, "lof" = "pLoF")) %>%
+    mutate(metric_name = factor(.data$metric_name, levels = c("syn", "mis", "pLoF")))
 
-  # Find the max value of the observed and expiected values for each metric
+  # Find the max value of the observed and expected values for each metric
   max_values <- oe_data %>%
     group_by(metric_name) %>%
-    summarise(max_exp = max(exp, na.rm = TRUE),
-              max_obs = max(obs, na.rm = TRUE)) %>%
+    summarise(max_exp = max(.data$exp, na.rm = TRUE),
+              max_obs = max(.data$obs, na.rm = TRUE)) %>%
     mutate(max_limit = pmax(max_exp, max_obs))
 
   # Join these max values back to the original data to use in plotting
