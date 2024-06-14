@@ -86,7 +86,6 @@ v4 <- filter(constraint_data, .data$v4)
 v2 <- filter(constraint_data, .data$v2)
 
 
-
 ####################################################################
 ####################################################################
 # Load in gene lists
@@ -110,6 +109,7 @@ hi_genes <- gene_lists %>% filter(gene_list == "Haploinsufficient")
 # Join gene lists to constraint data
 gene_data <- left_join(constraint_data, gene_lists, by = "gene")
 
+
 ####################################################################
 ####################################################################
 # Plot gene list distribution
@@ -125,7 +125,6 @@ preferred_transcripts <- list(
   v2 = "canonical",
   v4 = "mane_select"
 )
-
 
 
 filter_transcripts <- function(
@@ -205,6 +204,7 @@ for (version in versions_to_plot) {
   ggsave(p, filename = plot_path, dpi = 300, width = 11, height = 6, units = "in")
 }
 
+
 ####################################################################
 ####################################################################
 # Plot ROC Curves
@@ -238,6 +238,7 @@ for (metric in names(metric_by_version)) {
   plot_path <- get_plot_path(glue("roc_plot_{metric}"), output_basedir = output_basedir)
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
+
 
 ####################################################################
 ####################################################################
@@ -286,7 +287,6 @@ v4_ds <- filter(
     (!is.na(.data$gene))
 )
 
-
 # Fit linear models for lof, mis, and syn
 # Define datasets and versions
 datasets <- list(v2 = v2_ds, v4 = v4_ds)
@@ -320,7 +320,11 @@ for (version in names(datasets)) {
 # and that have no constriant flags
 decile_data <- filter(
   constraint_data,
-  .data$v2 == TRUE & .data$v4 == TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript)
+  (.data$v2 == TRUE &
+    .data$v4 == TRUE &
+    .data$constraint_flags == "[]" &
+    .data$mane_select == "true" &
+    grepl("^ENST", transcript))
 )
 decile_plot <- plot_decile_change(decile_data)
 
@@ -328,7 +332,14 @@ plot_path <- get_plot_path(
   "decile_change",
   output_basedir = output_basedir
 )
-ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, units = "in")
+ggsave(
+  decile_plot,
+  filename = plot_path,
+  dpi = 300,
+  width = 8,
+  height = 4,
+  units = "in"
+)
 
 
 ####################################################################
@@ -340,9 +351,26 @@ ggsave(decile_plot, filename = plot_path, dpi = 300, width = 8, height = 4, unit
 # and that have no constriant flags
 comparision_df <- filter(
   constraint_data,
-  .data$v2 == TRUE & .data$v4 == TRUE & .data$constraint_flags == "[]" & .data$mane_select == "true" & grepl("^ENST", transcript)
+  (.data$v2 == TRUE &
+    .data$v4 == TRUE &
+    .data$constraint_flags == "[]" &
+    .data$mane_select == "true" &
+    grepl("^ENST", transcript))
 )
-comparision_df <- comparision_df %>% select(all_of(c("transcript", "v2", "v4", "oe_lof_upper", "lof.oe_ci.upper", "lof_z", "lof.z_score")))
+comparision_df <- comparision_df %>%
+  select(
+    all_of(
+      c(
+        "transcript",
+        "v2",
+        "v4",
+        "oe_lof_upper",
+        "lof.oe_ci.upper",
+        "lof_z",
+        "lof.z_score"
+      )
+    )
+  )
 
 # Pivot to longer df with metric name and value
 comparision_df <- comparision_df %>%
@@ -368,7 +396,6 @@ comparision_df <- comparision_df %>%
     metric_name
   ))
 
-
 comparision_df <- comparision_df %>%
   mutate(metric_name = case_when(
     .data$metric_name == "lof.oe_ci.upper" ~ "LOEUF",
@@ -382,7 +409,6 @@ comparision_df <- comparision_df %>% select(-v2, -v4)
 comparision_df <- comparision_df %>% pivot_wider(
   names_from = version, values_from = value
 )
-
 
 # Calculate correlations for each metric between v2 and v4
 comparision_df %>%
@@ -478,7 +504,6 @@ for (version in versions_to_plot) {
       names_prefix = ""
     ) %>%
     select(-any_of(c("v2", "v4")))
-
 
   # Rname lof to pLoF and reorder the values in the df
   oe_data <- oe_data %>%

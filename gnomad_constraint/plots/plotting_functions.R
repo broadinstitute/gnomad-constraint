@@ -375,7 +375,6 @@ plot_projected_sample_size <- function(df) {
   return(list(lof = lof_projections, mis = missense_projections))
 }
 
-
 plot_decile_change <- function(df) {
   # Plot of the change in LOEUF deciles between gnomAD versions
   # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by
@@ -404,8 +403,6 @@ plot_decile_change <- function(df) {
   return(p)
 }
 
-
-
 plot_metric_comparison <- function(df) {
   # Plot comparison of metrics between gnomAD versions
   # df: Dataframe consisting of 'metric_name' and the corresponding
@@ -428,8 +425,6 @@ plot_metric_comparison <- function(df) {
 
   return(p)
 }
-
-
 
 plot_observed_vs_expected <- function(df, version) {
   # Plot the observed vs expected values
