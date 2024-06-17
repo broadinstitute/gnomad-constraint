@@ -448,7 +448,7 @@ plot_observed_vs_expected <- function(df, version) {
     # Pull out the max value of the metric
     max_limit <- max(data_subset$max_limit, na.rm = TRUE)
 
-    # Calculte correlation between observed and expected counts
+    # Calculate correlation between observed and expected counts
     correlation <- cor(data_subset$exp, data_subset$obs, method = "pearson")
     correlation_results <- rbind(
       correlation_results,
