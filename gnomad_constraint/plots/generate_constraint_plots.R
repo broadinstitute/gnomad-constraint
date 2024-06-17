@@ -175,7 +175,8 @@ for (version in versions_to_plot) {
   filtered_data <- filter_transcripts(gene_data, version)
   gene_list_sums <- summarize_gene_lists(
     filtered_data,
-    lof_upper_bin[[version]], version
+    lof_upper_bin[[version]], 
+    version
   )
   summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
 
