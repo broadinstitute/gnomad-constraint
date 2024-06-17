@@ -164,7 +164,7 @@ filter_transcripts <- function(
   }
 
   # Filter to only preferred transcripts if specified
-  if (preferred_transcripts_only == TRUE) {
+  if (preferred_transcripts_only) {
     df <- filter(df, !!sym(preferred_transcripts[[version]]) == "true")
   }
 
