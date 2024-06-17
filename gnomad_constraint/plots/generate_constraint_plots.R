@@ -172,13 +172,7 @@ filter_transcripts <- function(
 }
 
 for (version in versions_to_plot) {
-  filtered_data <- filter_transcripts(
-    gene_data,
-    version,
-    preferred_transcripts_only = TRUE,
-    enst_only = TRUE,
-    include_flagged_transcripts = FALSE
-  )
+  filtered_data <- filter_transcripts(gene_data, version)
   gene_list_sums <- summarize_gene_lists(
     filtered_data,
     lof_upper_bin[[version]], version
