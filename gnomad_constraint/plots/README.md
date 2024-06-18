@@ -45,7 +45,7 @@ Running this script will create subdirectories in the output directory if they d
 - /Users/my_name/Documents/Constraint/plots/data
 
 
-If not using a token to download the files from the Google Cloud bucket, the necessary files should be placed in the "data" and "gene_lists/lists" subdirectories. For example, "/Users/my_name/Documents/Constraint/plots/" would need to contain the following:
+If not using a token to download the files from the Google Cloud bucket, the necessary files should be placed in the "data" and "gene_lists/lists" subdirectories. For example, "/Users/my_name/Documents/Constraint/plots/data" would need to contain the following:
 
 - gnomad.v4.1.constraint_metrics.tsv
 - gnomad.v4.1.downsampling_constraint_metrics.tsv.bgz
