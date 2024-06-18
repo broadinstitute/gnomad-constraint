@@ -29,6 +29,26 @@ gene_list_colors <- c(
   "Universe" = "lightgray"
 )
 
+####################################################################
+# Define function to increase text on plots for presentations
+####################################################################
+apply_presentation_sizes <- function(p, title_size = 25, text_size = 20) {
+  p <- p + 
+    theme(
+      plot.title = element_text(size = title_size),
+      axis.title.x = element_text(size = title_size),
+      axis.title.y = element_text(size = title_size),
+      axis.text.x = element_text(size = text_size),
+      axis.text.y = element_text(size = text_size),
+      legend.title = element_text(size = title_size),
+      legend.text = element_text(size = text_size)
+    )
+  return(p)
+}
+
+####################################################################
+# Define gene lists to use
+####################################################################
 default_gene_lists <- c(
   "Haploinsufficient",
   "Autosomal Dominant",
@@ -55,6 +75,9 @@ label_function <- function(x) {
   paste0(x * 10, "-", x * 10 + 10, "%")
 }
 
+####################################################################
+# Summarize gene lists
+####################################################################
 summarize_gene_lists <- function(
     df,
     metric,
@@ -89,15 +112,21 @@ summarize_gene_lists <- function(
   return(gene_list_sums)
 }
 
+
+####################################################################
+# Plot distribution of gene lists
+####################################################################
 plot_gene_lists <- function(
     df,
     metric,
-    gene_lists_to_plot = default_gene_lists_to_plot) {
+    gene_lists_to_plot = default_gene_lists_to_plot,
+    use_presentation_sizes = FALSE) {
   # Plot gene list membership by decile of LOEUF or pLI
   # df: Dataframe containing gene list membership counts from
   # summarize_gene_lists
   # metric: Metric to use for the plot (either 'loeuf' or 'pli')
   # gene_lists_to_plot: List of gene lists to plot
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object
 
   # Convert counts to proportions
@@ -143,10 +172,16 @@ plot_gene_lists <- function(
     scale_x_discrete(
       labels = c("1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th")
     )
-
+  
+  if (use_presentation_sizes) {bar_plot <- apply_presentation_sizes(bar_plot)}
+  
   return(bar_plot)
 }
 
+
+####################################################################
+# Plot ROC curves
+####################################################################
 plot_roc <- function(df, hi_genes, metric, split_seed = 663) {
   # Plot ROC with a value of AUC displayed on the plot for a given metric,
   # using haploinsufficient genes as the positive class
@@ -185,7 +220,8 @@ combine_roc_plots <- function(
     version2,
     title_label,
     color1 = "darkorange1",
-    color2 = "darkorchid3") {
+    color2 = "darkorchid3",
+    use_presentation_sizes = FALSE) {
   # Combine two ROC plots into a single plot
   # roc1: ROC object from pROC package
   # roc2: ROC object from pROC package
@@ -194,6 +230,7 @@ combine_roc_plots <- function(
   # title_label: Title for the plot
   # color1: Color for ROC1
   # color2: Color for ROC2
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object
 
   # Combine ROC outputs
@@ -228,15 +265,21 @@ combine_roc_plots <- function(
     ) +
     annotate("text", x = .70, y = .25, label = auc1, color = color1) +
     annotate("text", x = .70, y = .20, label = auc2, color = color2)
-
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
   return(p)
 }
 
+####################################################################
+# Plot downsampling projections
+####################################################################
 expected_projections <- function(
     df,
     label = "pLoF",
     sample_size_df = dataset_sample_sizes,
-    xlimits = c(100, 1e8)) {
+    xlimits = c(100, 1e8),
+    use_presentation_sizes=FALSE) {
   # Plot displaying the percent of genes that would be expected to have a
   # certain number or variants based on sample size
   # df: Dataframe with columns 'n_variants', 'n_required', and 'rank'
@@ -245,6 +288,8 @@ expected_projections <- function(
   # 'label' for vertical lines on the plot that show the sample size of some
   # key datasets
   # xlimits: Define the limits of the x-axis
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
+
   # Returns: ggplot object
   df <- df %>%
     mutate(
@@ -254,6 +299,10 @@ expected_projections <- function(
   p <- ggplot(df, aes(y = .data$rank, x = .data$n_required, color = .data$n_variants)) +
     geom_line(linewidth = 2) +
     theme_classic() +
+    theme(
+      axis.title = element_text(colour = "black", size = 12),
+      axis.text = element_text(colour = "black", size = 10)
+    ) +
     scale_x_log10(labels = comma, limits = xlimits) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
     xlab("Sample size required") +
@@ -273,15 +322,19 @@ expected_projections <- function(
     ) +
     scale_color_discrete(name = ">= N variants\nexpected", h = c(40, 120)) +
     annotate("text", x = xlimits[1], y = 1, hjust = 0, vjust = 1, label = label)
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
 
   return(p)
 }
 
-plot_projected_sample_size <- function(df) {
+plot_projected_sample_size <- function(df, use_presentation_sizes=FALSE) {
   # Plot of the percent of genes that have a variable expected number of
   # variants across sample sizes
   # df: Dataframe consisting of downsampling data per specific genetic ancestry groups
   # (has to include 'global')
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of the percent of genes that would be expected to have a
   # certain number or variants based on sample size
 
@@ -369,16 +422,20 @@ plot_projected_sample_size <- function(df) {
   ####################################################################
   # Plot projections
   ####################################################################
-  lof_projections <- expected_projections(samples_required_lof, "pLoF")
-  missense_projections <- expected_projections(samples_required_mis, "Missense")
+  lof_projections <- expected_projections(samples_required_lof, "pLoF", use_presentation_sizes=use_presentation_sizes)
+  missense_projections <- expected_projections(samples_required_mis, "Missense", use_presentation_sizes=use_presentation_sizes)
 
   return(list(lof = lof_projections, mis = missense_projections))
 }
 
-plot_decile_change <- function(df) {
+####################################################################
+# Plot decile change from v2 to v4
+####################################################################
+plot_decile_change <- function(df, use_presentation_sizes=FALSE) {
   # Plot of the change in LOEUF deciles between gnomAD versions
   # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by
   # 'oe_lof_upper_bin' and the v4 values defined by 'lof.oe_ci.upper_bin_decile'
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of the LOEUF decile change from v2 to v4
 
   # Calculate the decile change by subtracting the v4 value from the v2 value
@@ -393,20 +450,27 @@ plot_decile_change <- function(df) {
     geom_histogram(stat = "count") +
     theme_classic() +
     theme(
-      axis.title = element_text(colour = "black", size = 25),
-      axis.text = element_text(colour = "black", size = 20)
+      axis.title = element_text(colour = "black", size = 12),
+      axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_x_continuous(breaks = seq(-10, 8, by = 2)) +
     ylab("Count") +
     xlab("Decile change from v2 to v4")
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
 
   return(p)
 }
 
-plot_metric_comparison <- function(df) {
+
+####################################################################
+# Plot comparison of metrics between v2 and v4
+####################################################################
+plot_metric_comparison <- function(df, use_presentation_sizes = FALSE) {
   # Plot comparison of metrics between gnomAD versions
   # df: Dataframe consisting of 'metric_name' and the corresponding
   # values in 'v2' and 'v4'
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of metric comparison between v2 to v4
 
   p <- ggplot(df, aes(x = .data$v2, y = .data$v4)) +
@@ -414,18 +478,23 @@ plot_metric_comparison <- function(df) {
     facet_wrap(. ~ metric_name, scale = "free") +
     theme_classic() +
     theme(
-      axis.text = element_text(size = 15, colour = "black"),
-      axis.title = element_text(size = 20, colour = "black"),
+      axis.text = element_text(size = 10, colour = "black"),
+      axis.title = element_text(size = 12, colour = "black"),
       strip.background = element_blank(),
-      strip.text = element_text(size = 15, colour = "black"),
+      strip.text = element_text(size = 10, colour = "black"),
       plot.margin = unit(c(.65, .65, .65, .65), "lines")
     ) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
     labs(x = "Value in gnomAD v2", y = "Value in gnomAD v4")
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
 
   return(p)
 }
 
+####################################################################
+# Plot observed vs expected values
+####################################################################
 plot_observed_vs_expected <- function(df, version) {
   # Plot the observed vs expected values
   # df: Dataframe consisting of metrics to plot in 'metric_name', the
@@ -467,12 +536,13 @@ plot_observed_vs_expected <- function(df, version) {
       theme(
         strip.background = element_blank(),
         strip.text = element_text(colour = "black", face = "bold"),
-        axis.text.y = element_text(size = 15, color = "black"),
-        axis.text.x = element_text(size = 15, color = "black", hjust = 1, angle = 45),
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_text(size = 10, color = "black", hjust = 1, angle = 45),
         axis.title = element_blank(),
         plot.margin = unit(c(1, 1, 1, 2.2), "lines"),
         plot.title = element_text(hjust = 0.5)
       )
+  
     # Add plot to the plot list
     plot_list[[metric]] <- p
   }

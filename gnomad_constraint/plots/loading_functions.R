@@ -216,7 +216,7 @@ load_constraint_metrics <- function(
     base_fname <- glue("gnomad.v{full_version}.downsampling_constraint_metrics.tsv.bgz")
   }
 
-  fname <- get_or_download_file(
+  df <- read.delim(get_or_download_file(
     base_fname,
     version,
     output_basedir,
@@ -224,8 +224,34 @@ load_constraint_metrics <- function(
     release = release,
     public = public
   )
+  )
+  
+  # Create column for version and set to TRUE
+  df <- mutate(df, !!version := TRUE)
+  
+  # Convert "true/false" values in "canonical" and/or "mane_select" columns to bools
+  for(col_name in c("canonical", "mane_select")) {
+    if (col_name %in% colnames(df)) {
+      df <- mutate(df, !!col_name := .data[[col_name]] == "true")
+    }
+  }
+  
+  # Set absesence of constraint flags to "[]" and append version to constraint flag column name
+  if (!downsamplings) {
+    if (version == "v2") {
+    df <- rename(df, constraint_flags.v2 = constraint_flag) %>%
+      mutate(
+        constraint_flags.v2 = if_else(
+          .data$constraint_flags.v2 == "",
+          "[]",
+          .data$constraint_flags.v2
+        )
+      )
+    }
+    if (version == "v4") {df <- rename(df, constraint_flags.v4 = constraint_flags)  }
+}
 
-  return(read.delim(fname))
+  return(df)
 }
 
 load_all_gene_list_data <- function(

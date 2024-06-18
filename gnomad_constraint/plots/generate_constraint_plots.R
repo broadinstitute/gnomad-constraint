@@ -32,6 +32,12 @@ option_list <- list(
     type = "character",
     default = NA,
     help = "Path to the RDS file containing the GCS authentication token."
+  ),
+  make_option(
+    c("--use_presentation_sizes"),
+    type = "logical",
+    default = FALSE,
+    help = "Whether to use presentation sizes (larger text sizes) when generating plots."
   )
 )
 
@@ -45,6 +51,12 @@ if (!is.na(opt$working_directory)) {
 }
 print(glue("Working directory is {getwd()}"))
 
+
+output_basedir = "/Users/kristen/Desktop/constraint/plots"
+working_directory = "/Users/kristen/Desktop/repos/gnomad-constraint/gnomad_constraint/plots"
+
+setwd(working_directory)
+
 # Source the loading and plotting functions R files
 source("loading_functions.R")
 source("plotting_functions.R")
@@ -57,6 +69,7 @@ if (!is.na(opt$gcs_auth_token)) {
   authenticate_gcs(opt$gcs_auth_token)
 }
 
+use_presentation_sizes = opt$use_presentation_sizes
 
 ####################################################################
 ####################################################################
@@ -73,8 +86,8 @@ v4_constraint_data <- load_constraint_metrics(
   output_basedir = output_basedir,
 )
 
-v2_constraint_data <- mutate(v2_constraint_data, v2 = TRUE)
-v4_constraint_data <- mutate(v4_constraint_data, v4 = TRUE)
+v2_constraint_data <- mutate(v2_constraint_data, v2)
+v4_constraint_data <- mutate(v4_constraint_data, v4)
 
 constraint_data <- full_join(
   v2_constraint_data,
@@ -85,7 +98,7 @@ constraint_data <- full_join(
 v4 <- filter(constraint_data, .data$v4)
 v2 <- filter(constraint_data, .data$v2)
 
-
+use_presentation_sizes = FALSE
 ####################################################################
 ####################################################################
 # Load in gene lists
@@ -155,23 +168,19 @@ filter_transcripts <- function(
 
   # Filter to exclude flagged transcripts if specified
   if (!include_flagged_transcripts) {
-    if (version == "v4") {
-      df <- filter(df, .data$constraint_flags == "[]")
-    }
-    if (version == "v2") {
-      df <- filter(df, .data$constraint_flag == "")
-    }
+    df <- filter(df, .data[[paste0("constraint_flags.", version)]] == "[]")
   }
 
   # Filter to only preferred transcripts if specified
   if (preferred_transcripts_only) {
-    df <- filter(df, !!sym(preferred_transcripts[[version]]) == "true")
+    df <- filter(df, !!sym(preferred_transcripts[[version]]) == TRUE)
   }
 
   return(df)
 }
 
 for (version in versions_to_plot) {
+  # Filter to preferred  Ensembl transcripts (mane select or canonical) without any constraint flags
   filtered_data <- filter_transcripts(gene_data, version)
   gene_list_sums <- summarize_gene_lists(
     filtered_data,
@@ -190,7 +199,7 @@ for (version in versions_to_plot) {
   write.table(summary_gene_list_per_sums, file = txt_path, quote = FALSE)
 
   # Plot gene list distribution
-  p <- plot_gene_lists(gene_list_sums, lof_upper_bin[version])
+  p <- plot_gene_lists(gene_list_sums, lof_upper_bin[version], use_presentation_sizes=use_presentation_sizes)
   plot_path <- get_plot_path(
     "gene_list_barplot",
     version = version,
@@ -229,7 +238,7 @@ for (metric in names(metric_by_version)) {
   v4_roc <- plot_roc(roc_df, hi_genes, v4_metric)
 
   # Get combine ROC curve plot
-  roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title)
+  roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title, use_presentation_sizes=use_presentation_sizes)
   plot_path <- get_plot_path(glue("roc_plot_{metric}"), output_basedir = output_basedir)
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
@@ -267,13 +276,13 @@ v4_ds <- load_constraint_metrics(
 # Filter to canoncial/MANE Select transcripts and fit linear models
 v2_ds <- filter(
   v2_ds,
-  (.data$canonical == "true") &
+  (.data$canonical) &
     (.data$pop == "global") &
     (.data$downsampling >= 100)
 )
 v4_ds <- filter(
   v4_ds,
-  (.data$mane_select == "true") &
+  (.data$mane_select) &
     grepl("^ENST", .data$transcript) &
     (.data$gen_anc == "global") &
     # Note ">" rather than ">=" difference from v2 to avoid dropping too many rows
@@ -291,11 +300,11 @@ for (version in names(datasets)) {
   df <- datasets[[version]]
 
   # Generate plots
-  plots <- plot_projected_sample_size(df)
+  plots <- plot_projected_sample_size(df, use_presentation_sizes=use_presentation_sizes)
 
   for (var_type in c("lof", "mis")) {
     p <- plots[[var_type]]
-
+    
     # Construct output path and save plot
     plot_path <- get_plot_path(
       glue("{var_type}_ds_projections_{version}"),
@@ -312,16 +321,10 @@ for (version in names(datasets)) {
 ####################################################################
 ####################################################################
 # Filter to MANE Select Ensembl transcripts that are present in both v2 and v4
-# and that have no constriant flags
-decile_data <- filter(
-  constraint_data,
-  (.data$v2 == TRUE &
-    .data$v4 == TRUE &
-    .data$constraint_flags == "[]" &
-    .data$mane_select == "true" &
-    grepl("^ENST", transcript))
-)
-decile_plot <- plot_decile_change(decile_data)
+# and that have no constraint flags
+decile_data <- filter_transcripts(constraint_data, "v4") %>% filter(.data$v2 == TRUE)
+
+decile_plot <- plot_decile_change(decile_data, use_presentation_sizes=use_presentation_sizes)
 
 plot_path <- get_plot_path(
   "decile_change",
@@ -343,15 +346,9 @@ ggsave(
 ####################################################################
 ####################################################################
 # Filter to MANE Select Ensembl transcripts that are present in both v2 and v4
-# and that have no constriant flags
-comparision_df <- filter(
-  constraint_data,
-  (.data$v2 == TRUE &
-    .data$v4 == TRUE &
-    .data$constraint_flags == "[]" &
-    .data$mane_select == "true" &
-    grepl("^ENST", transcript))
-)
+# and that have no constraint flags
+comparision_df <- filter_transcripts(constraint_data, "v4") %>% filter(.data$v2 == TRUE)
+
 comparision_df <- comparision_df %>%
   select(
     all_of(
@@ -412,7 +409,7 @@ comparision_df %>%
     correlation = cor(.data$v2, .data$v4, method = "pearson", use = "complete.obs")
   )
 
-comparsion_plot <- plot_metric_comparison(comparision_df)
+comparsion_plot <- plot_metric_comparison(comparision_df, use_presentation_sizes=use_presentation_sizes)
 plot_path <- get_plot_path(
   "v2_v4_compare_values",
   output_basedir = output_basedir
@@ -434,6 +431,7 @@ ggsave(
 ####################################################################
 ####################################################################
 for (version in versions_to_plot) {
+  # Filter to preferred Ensembl transcripts (mane select or canonical) without any constraint flags
   filtered_data <- filter_transcripts(
     constraint_data,
     version,
