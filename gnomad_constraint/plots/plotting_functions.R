@@ -92,9 +92,11 @@ summarize_gene_lists <- function(
 
   # Filter gene data to specified version
   df <- filter(df, !!sym(version))
-
+  
   # Remove rows where gene_list or metric is not defined and filter to gene lists of
   # interest
+  df <- select(df,"gene_list", !!sym(metric))
+  
   df <- df %>%
     filter(!is.na(.data$gene_list) & !is.na(!!sym(metric))) %>%
     mutate(metric = label_function(!!sym(metric))) %>%
@@ -187,7 +189,7 @@ plot_roc <- function(df, hi_genes, metric, split_seed = 663) {
   # using haploinsufficient genes as the positive class
   # df: Dataframe containing constraint data for genes
   # hi_genes: Dataframe containing haploinsufficient genes
-  # metric: Metric to use for ROC plot (either 'loeuf' or 'pli')
+  # metric: Metric to use for ROC plot
   # split_seed: Seed for splitting data into training and testing sets
   # Returns: ggplot object
 
@@ -342,14 +344,14 @@ plot_projected_sample_size <- function(df, use_presentation_sizes=FALSE) {
   # within all its respective rows
   df <- df %>%
     group_by(.data$gene) %>%
-    filter(min(.data$exp_lof) > 0 & min(.data$exp_mis) > 0 & min(.data$exp_syn) > 0)
+    filter(min(.data$lof.exp) > 0 & min(.data$mis.exp) > 0 & min(.data$syn.exp) > 0)
 
   # Convert expected counts and n downsamplings to log scale
   df <- df %>%
     mutate(
-      log_exp_lof = log10(.data$exp_lof),
-      log_exp_mis = log10(.data$exp_mis),
-      log_exp_syn = log10(.data$exp_syn),
+      log_exp_lof = log10(.data$lof.exp),
+      log_exp_mis = log10(.data$mis.exp),
+      log_exp_syn = log10(.data$syn.exp),
       log_n = log10(.data$downsampling)
     )
 
@@ -434,13 +436,13 @@ plot_projected_sample_size <- function(df, use_presentation_sizes=FALSE) {
 plot_decile_change <- function(df, use_presentation_sizes=FALSE) {
   # Plot of the change in LOEUF deciles between gnomAD versions
   # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by
-  # 'oe_lof_upper_bin' and the v4 values defined by 'lof.oe_ci.upper_bin_decile'
+  # 'lof.oe_ci.upper_bin_decile.v2' and the v4 values defined by 'lof.oe_ci.upper_bin_decile.v4'
   # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of the LOEUF decile change from v2 to v4
 
   # Calculate the decile change by subtracting the v4 value from the v2 value
   df <- df %>% mutate(
-    decile_change = .data$oe_lof_upper_bin - .data$lof.oe_ci.upper_bin_decile
+    decile_change = .data$lof.oe_ci.upper_bin_decile.v2 - .data$lof.oe_ci.upper_bin_decile
   )
   # Plot decile changes
   p <- ggplot(

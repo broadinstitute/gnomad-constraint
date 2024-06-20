@@ -122,7 +122,7 @@ hi_genes <- gene_lists %>% filter(gene_list == "Haploinsufficient")
 # Join gene lists to constraint data
 gene_data <- left_join(constraint_data, gene_lists, by = "gene")
 
-
+test = filter(gene_data, gene== "CHD2")
 ####################################################################
 ####################################################################
 # Plot gene list distribution
@@ -179,12 +179,22 @@ filter_transcripts <- function(
   return(df)
 }
 
+
+source("plotting_functions.R")
+
 for (version in versions_to_plot) {
   # Filter to preferred  Ensembl transcripts (mane select or canonical) without any constraint flags
+  version = "v4"
   filtered_data <- filter_transcripts(gene_data, version)
+
+  #H1
+  filtered_data <- rename(filtered_data, lof.oe_ci.upper_bin_decile.v4 = lof.oe_ci.upper_bin_decile)
+  #H1
+  metric <- paste0("lof.oe_ci.upper_bin_decile", ".", version)
+  
   gene_list_sums <- summarize_gene_lists(
     filtered_data,
-    lof_upper_bin[[version]], 
+    metric, 
     version
   )
   summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
@@ -199,7 +209,7 @@ for (version in versions_to_plot) {
   write.table(summary_gene_list_per_sums, file = txt_path, quote = FALSE)
 
   # Plot gene list distribution
-  p <- plot_gene_lists(gene_list_sums, lof_upper_bin[version], use_presentation_sizes=use_presentation_sizes)
+  p <- plot_gene_lists(gene_list_sums, metric, use_presentation_sizes=use_presentation_sizes)
   plot_path <- get_plot_path(
     "gene_list_barplot",
     version = version,
@@ -208,28 +218,26 @@ for (version in versions_to_plot) {
   ggsave(p, filename = plot_path, dpi = 300, width = 11, height = 6, units = "in")
 }
 
-
 ####################################################################
 ####################################################################
 # Plot ROC Curves
 ####################################################################
 ####################################################################
-metric_by_version <- list(
-  loeuf = list(
-    v2 = "oe_lof_upper",
-    v4 = "lof.oe_ci.upper",
-    title_label = "LOEUF"
-  ),
-  pli = list(
-    v2 = "pLI",
-    v4 = "lof.pLI",
-    title_label = "pLI"
-  )
-)
-for (metric in names(metric_by_version)) {
-  v2_metric <- metric_by_version[[metric]]$v2
-  v4_metric <- metric_by_version[[metric]]$v4
-  metric_title <- metric_by_version[[metric]]$title_label
+metric_titles <- list(
+  "lof.oe_ci.upper" = "LOEUF",
+  "lof.pLI" = "pLI")
+
+
+constraint_data <- rename(constraint_data, lof.oe_ci.upper.v4 = lof.oe_ci.upper,
+                          lof.pLI.v4 = lof.pLI,
+                          lof.oe_ci.upper.v2 = oe_lof_upper,
+                          lof.pLI.v2 = pLI)
+
+
+for (metric in names(metric_titles)) {
+  v2_metric <- glue("{metric}.v2")
+  v4_metric <- glue("{metric}.v4")
+  metric_title <- metric_titles[metric]
 
   # Filter to where the metric is defined in both v2 and v4
   roc_df <- constraint_data %>%
@@ -239,7 +247,7 @@ for (metric in names(metric_by_version)) {
 
   # Get combine ROC curve plot
   roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title, use_presentation_sizes=use_presentation_sizes)
-  plot_path <- get_plot_path(glue("roc_plot_{metric}"), output_basedir = output_basedir)
+  plot_path <- get_plot_path(glue("roc_plot_{metric_title}"), output_basedir = output_basedir)
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
 
@@ -257,21 +265,35 @@ v2_ds <- load_constraint_metrics(
   output_basedir = output_basedir,
   downsamplings = TRUE
 )
+
 v4_ds <- load_constraint_metrics(
   version = "v4",
   output_basedir = output_basedir,
   downsamplings = TRUE,
   release = FALSE,
   public = FALSE,
-) %>%
+)
+
+
+v4_ds <- load_constraint_metrics(
+  version = "v4",
+  output_basedir = output_basedir,
+  downsamplings = TRUE,
+  release = FALSE,
+  public = FALSE,
+) 
+
+#H1
+v2_ds <- v2_ds %>%
   rename(
-    exp_syn = syn.exp,
-    exp_mis = mis.exp,
-    exp_lof = lof.exp,
-    obs_syn = syn.obs,
-    obs_mis = mis.obs,
-    obs_lof = lof.obs
+    syn.exp = exp_syn,
+    mis.exp = exp_mis,
+    lof.exp = exp_lof,
+    syn.obs = obs_syn,
+    mis.obs = obs_mis,
+    lof.obs =obs_lof
   )
+#H1
 
 # Filter to canoncial/MANE Select transcripts and fit linear models
 v2_ds <- filter(
@@ -294,6 +316,9 @@ v4_ds <- filter(
 # Fit linear models for lof, mis, and syn
 # Define datasets and versions
 datasets <- list(v2 = v2_ds, v4 = v4_ds)
+
+
+source("plotting_functions.R")
 
 # Iterate over datasets
 for (version in names(datasets)) {
@@ -324,6 +349,11 @@ for (version in names(datasets)) {
 # and that have no constraint flags
 decile_data <- filter_transcripts(constraint_data, "v4") %>% filter(.data$v2 == TRUE)
 
+source("plotting_functions.R")
+
+decile_data <- rename(decile_data, lof.oe_ci.upper_bin_decile.v2 = oe_lof_upper_bin)
+
+colnames(constraint_data)
 decile_plot <- plot_decile_change(decile_data, use_presentation_sizes=use_presentation_sizes)
 
 plot_path <- get_plot_path(
@@ -349,6 +379,14 @@ ggsave(
 # and that have no constraint flags
 comparision_df <- filter_transcripts(constraint_data, "v4") %>% filter(.data$v2 == TRUE)
 
+
+comparision_df <- rename(comparision_df, lof.oe_ci.upper.v2 = oe_lof_upper,
+                         lof.oe_ci.upper.v4 = lof.oe_ci.upper,
+                         lof.z_score.v4 = lof.z_score,
+                         lof.z_score.v2 = lof_z)
+
+
+
 comparision_df <- comparision_df %>%
   select(
     all_of(
@@ -356,37 +394,44 @@ comparision_df <- comparision_df %>%
         "transcript",
         "v2",
         "v4",
-        "oe_lof_upper",
-        "lof.oe_ci.upper",
-        "lof_z",
-        "lof.z_score"
+        "lof.oe_ci.upper.v2",
+        "lof.oe_ci.upper.v4",
+        "lof.z_score.v2",
+        "lof.z_score.v4"
       )
+    )
+  )
+
+#comparision_df <- comparision_df %>%
+#  select(
+#    all_of(
+#      c(
+#        "transcript",
+#        "v2",
+#        "v4",
+#        "oe_lof_upper",
+#        "lof.oe_ci.upper",
+#        "lof_z",
+#        "lof.z_score"
+#      )
     )
   )
 
 # Pivot to longer df with metric name and value
 comparision_df <- comparision_df %>%
   pivot_longer(
-    cols = c(oe_lof_upper, lof.oe_ci.upper, lof_z, lof.z_score),
+    cols = c(lof.oe_ci.upper.v2, lof.oe_ci.upper.v4, lof.z_score.v2, lof.z_score.v4),
     names_to = "metric_name",
     values_to = "value"
   )
 
-# Pull out version (v4 metrics have a "." in metric name whereas v2 metrics do not)
+# Pull out version
 comparision_df <- comparision_df %>% mutate(
-  version = if_else(grepl("\\.", metric_name), "v4", "v2")
+  version = if_else(grepl("v4", metric_name), "v4", "v2")
 )
 
 # Rename metrics in df to be the same for v2 and v4
-v2_to_v4_mapping <- c(
-  oe_lof_upper = "lof.oe_ci.upper",
-  lof_z = "lof.z_score"
-)
-comparision_df <- comparision_df %>%
-  mutate(metric_name = if_else(metric_name %in% names(v2_to_v4_mapping),
-    v2_to_v4_mapping[metric_name],
-    metric_name
-  ))
+comparision_df$metric_name <- gsub("\\.v(2|4)$", "", comparision_df$metric_name)
 
 comparision_df <- comparision_df %>%
   mutate(metric_name = case_when(
@@ -430,6 +475,22 @@ ggsave(
 # Plot observed vs expected values
 ####################################################################
 ####################################################################
+
+constraint_data <- rename(constraint_data, 
+                         syn.exp.v2 = exp_syn,
+                         mis.exp.v2 = exp_mis,
+                         lof.exp.v2 = exp_lof,
+                         syn.obs.v2 = obs_syn,
+                         mis.obs.v2 = obs_mis,
+                         lof.obs.v2 = obs_lof,
+                         syn.exp.v4 = syn.exp,
+                         syn.obs.v4 = syn.obs,
+                         mis.exp.v4 = mis.exp,
+                         mis.obs.v4 = mis.obs,
+                         lof.exp.v4 = lof.exp,
+                         lof.obs.v4 = lof.obs)
+
+
 for (version in versions_to_plot) {
   # Filter to preferred Ensembl transcripts (mane select or canonical) without any constraint flags
   filtered_data <- filter_transcripts(
@@ -439,47 +500,19 @@ for (version in versions_to_plot) {
     enst_only = TRUE,
     include_flagged_transcripts = FALSE
   )
-  # Reformat column names if data is from v2
-  if (version == "v2") {
+  # Reformat column names 
     oe_data <- filtered_data %>% select(
-      all_of(
         c(
           "transcript",
-          "v2",
-          "exp_syn",
-          "obs_syn",
-          "exp_mis",
-          "obs_mis",
-          "exp_lof",
-          "obs_lof"
+          !!sym(version),
+          glue("syn.exp.{version}"),
+          glue("syn.obs.{version}"),
+          glue("mis.exp.{version}"),
+          glue("mis.obs.{version}"),
+          glue("lof.exp.{version}"),
+          glue("lof.obs.{version}")
         )
-      )
-    )
-    oe_data <- oe_data %>% rename(
-      syn.exp = exp_syn,
-      mis.exp = exp_mis,
-      lof.exp = exp_lof,
-      syn.obs = obs_syn,
-      mis.obs = obs_mis,
-      lof.obs = obs_lof
-    )
-  }
-  if (version == "v4") {
-    oe_data <- filtered_data %>% select(
-      all_of(
-        c(
-          "transcript",
-          "v4",
-          "syn.exp",
-          "syn.obs",
-          "mis.exp",
-          "mis.obs",
-          "lof.exp",
-          "lof.obs"
-        )
-      )
-    )
-  }
+    )  %>% rename_with(~ gsub("\\.v(4|2)$", "", .))
 
   # Reformat the data
   oe_data <- oe_data %>%
