@@ -34,7 +34,7 @@ gene_list_colors <- c(
 ####################################################################
 apply_presentation_sizes <- function(p, title_size = 25, text_size = 20) {
   # Apply larger title and text sizes to plot for presentations
-  # p: plot
+  # p: Plot
   # title_size: Font size to use for titles
   # text_size: Font size to use for text
   # Returns: ggplot object with larger font sizes

@@ -51,10 +51,6 @@ if (!is.na(opt$working_directory)) {
 }
 print(glue("Working directory is {getwd()}"))
 
-
-output_basedir = "/Users/kristen/Desktop/constraint/plots"
-working_directory = "/Users/kristen/Desktop/repos/gnomad-constraint/gnomad_constraint/plots"
-
 setwd(working_directory)
 
 # Source the loading, plotting, and utils functions R files

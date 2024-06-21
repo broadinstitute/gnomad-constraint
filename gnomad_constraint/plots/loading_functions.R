@@ -226,9 +226,7 @@ load_constraint_metrics <- function(
   )
   )
   
-  # Create column for version and set to TRUE
-  df <- mutate(df, !!version := TRUE)
-  
+
   # Convert "true/false" values in "canonical" and/or "mane_select" columns to bools
   for(col_name in c("canonical", "mane_select")) {
     if (col_name %in% colnames(df)) {
@@ -247,10 +245,46 @@ load_constraint_metrics <- function(
           .data$constraint_flags.v2
         )
       )
+    
+    # Rename columns in v2 and add version to the column names
+    df <- df %>% rename(
+           lof.oe_ci.upper.v2 = oe_lof_upper,
+           lof.pLI.v2 = pLI,
+           lof.z_score.v2 = lof_z,
+           lof.oe_ci.upper_bin_decile.v2 = oe_lof_upper_bin,
+           syn.exp.v2 = exp_syn,
+           mis.exp.v2 = exp_mis,
+           lof.exp.v2 = exp_lof,
+           syn.obs.v2 = obs_syn,
+           mis.obs.v2 = obs_mis,
+           lof.obs.v2 = obs_lof)
     }
-    if (version == "v4") {df <- rename(df, constraint_flags.v4 = constraint_flags)  }
-}
-
+    
+    # Add "v4" version to column names
+    if (version == "v4") {
+      base_annotations = c("gene", "gene_id", "transcript", "canonical", "mane_select", "level", "transcript_type", "chromosome", "cds_length", "num_coding_exons")
+      df <- df %>% rename_with(~ ifelse(. %in% base_annotations, ., paste0(., ".v4")))
+    }
+  }
+    
+    # Rename columns in v2 downsamplings
+    if (downsamplings && version == "v2") {
+      df <- df %>%
+            rename(
+              syn.exp = exp_syn,
+              mis.exp = exp_mis,
+              lof.exp = exp_lof,
+              syn.obs = obs_syn,
+              mis.obs = obs_mis,
+              lof.obs = obs_lof
+            )
+  
+  
+  
+  }
+  # Create column for version and set to TRUE
+  df <- mutate(df, !!version := TRUE)
+  
   return(df)
 }
 
