@@ -33,6 +33,11 @@ gene_list_colors <- c(
 # Define function to increase text on plots for presentations
 ####################################################################
 apply_presentation_sizes <- function(p, title_size = 25, text_size = 20) {
+  # Apply larger title and text sizes to plot for presentations
+  # p: plot
+  # title_size: Font size to use for titles
+  # text_size: Font size to use for text
+  # Returns: ggplot object with larger font sizes
   p <- p + 
     theme(
       plot.title = element_text(size = title_size),
@@ -85,7 +90,7 @@ summarize_gene_lists <- function(
     gene_lists_to_summarize = default_gene_lists) {
   # Get table of gene list membership counts
   # df: Dataframe containing gene list membership data
-  # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # metric: Metric to use for the plot
   # version: Version of gnomAD to use for the plot (either 'v2' or 'v4')
   # gene_lists_to_summarize: List of gene lists to summarize
   # Returns: Dataframe with counts of gene list membership
@@ -123,10 +128,10 @@ plot_gene_lists <- function(
     metric,
     gene_lists_to_plot = default_gene_lists_to_plot,
     use_presentation_sizes = FALSE) {
-  # Plot gene list membership by decile of LOEUF or pLI
+  # Plot gene list membership by decile of LOEUF
   # df: Dataframe containing gene list membership counts from
   # summarize_gene_lists
-  # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # metric: Metric to use for the plot
   # gene_lists_to_plot: List of gene lists to plot
   # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object
@@ -442,7 +447,7 @@ plot_decile_change <- function(df, use_presentation_sizes=FALSE) {
 
   # Calculate the decile change by subtracting the v4 value from the v2 value
   df <- df %>% mutate(
-    decile_change = .data$lof.oe_ci.upper_bin_decile.v2 - .data$lof.oe_ci.upper_bin_decile
+    decile_change = .data$lof.oe_ci.upper_bin_decile.v2 - .data$lof.oe_ci.upper_bin_decile.v4
   )
   # Plot decile changes
   p <- ggplot(
@@ -463,6 +468,7 @@ plot_decile_change <- function(df, use_presentation_sizes=FALSE) {
 
   return(p)
 }
+
 
 
 ####################################################################
@@ -503,7 +509,7 @@ plot_observed_vs_expected <- function(df, version) {
   # observed counts in 'obs', and the expected counts in 'exp', and
   # max values of the two in 'max_limit'
   # Returns: ggplot object of observed vs expected values for the specified version
-
+  
   # Create list to store plots in
   plot_list <- list()
   # Create dataframe to store correlation results in
