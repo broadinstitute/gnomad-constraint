@@ -43,5 +43,3 @@ ignore = ['E201', 'E202', 'E203', 'E731']
 recursive = true
 aggressive = 1
 
-[tool.setuptools]
-packages = ["renv"]
