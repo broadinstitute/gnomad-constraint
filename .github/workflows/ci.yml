@@ -38,6 +38,8 @@ jobs:
           packages: |
             any::lintr
             any::styler
+      - name: Source renv activate
+        run: Rscript -e 'source("gnomad_constraint/renv/activate.R")'
       - name: Check formatting
         run: black --check --preview gnomad_constraint
       - name: Check imports
