@@ -1092,6 +1092,7 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
 def annotate_context_ht(
     ht: hl.Table,
     coverage_hts: Dict[str, hl.Table],
+    an_hts: Dict[str, hl.Table],
     methylation_ht: hl.Table,
     gerp_ht: hl.Table,
 ) -> hl.Table:
@@ -1105,6 +1106,8 @@ def annotate_context_ht(
     :param ht: Input context Table with VEP annotation.
     :param coverage_hts: A Dictionary with key as one of 'exomes' or 'genomes' and
         values as corresponding coverage Tables.
+    :param an_hts: A Dictionary with key as one of 'exomes' or 'genomes' and
+        values as corresponding allele number Tables.
     :param methylation_ht: Methylation Table.
     :param gerp_ht: Table with GERP annotation.
     :return: Table with sites split and necessary annotations.
@@ -1132,6 +1135,10 @@ def annotate_context_ht(
         methylation=methylation_ht[ht.locus],
         coverage=hl.struct(
             **{loc: coverage_ht[ht.locus] for loc, coverage_ht in coverage_hts.items()}
+        ),
+        # Use adj criteria to annotate adj
+        AN=hl.struct(
+            **{data_type: an_ht[ht.locus].AN[0] for data_type, an_ht in an_hts.items()}
         ),
         gerp=gerp_ht[ht.locus].S,
     )
