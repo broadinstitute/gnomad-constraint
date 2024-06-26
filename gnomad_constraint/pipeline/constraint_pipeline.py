@@ -302,9 +302,14 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
+            context_hts = {
+            "genomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht")
+            "exomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht")
+            }
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
+                context_hts,
                 res.methylation_ht.ht(),
                 constraint_res.get_gerp_ht(get_reference_genome(context_ht.locus).name),
             ).write(res.annotated_context_ht.path, overwrite)
