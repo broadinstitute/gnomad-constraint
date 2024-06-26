@@ -150,6 +150,10 @@ def prepare_ht_for_constraint_calculations(
             .default(0)
         ),
         exome_coverage=ht.coverage.exomes[exome_median_cov_field],
+        exomes_AN=ht.AN.exomes,
+        genomes_AN=ht.AN.genomes,
+
+
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the

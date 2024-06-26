@@ -262,6 +262,10 @@ def main(args):
     )
     logger.info("The following downsamplings will be used: %s", downsamplings)
 
+    # If pops not specified, set to empty Tuple
+    if not pops:
+        pops=()
+    
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
     if int(version[0]) >= 4:
@@ -302,14 +306,14 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
-            context_hts = {
-            "genomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht")
+            an_hts = {
+            "genomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht"),
             "exomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht")
             }
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
-                context_hts,
+                an_hts,
                 res.methylation_ht.ht(),
                 constraint_res.get_gerp_ht(get_reference_genome(context_ht.locus).name),
             ).write(res.annotated_context_ht.path, overwrite)
@@ -411,6 +415,9 @@ def main(args):
             logger.info("Counting possible and observed variant counts...")
             res = resources.create_training_set
             res.check_resource_existence()
+
+            print("POPS ARE")
+            print(pops)
 
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
