@@ -216,7 +216,7 @@ load_constraint_metrics <- function(
     base_fname <- glue("gnomad.v{full_version}.downsampling_constraint_metrics.tsv.bgz")
   }
 
-  fname <- get_or_download_file(
+  df <- read.delim(get_or_download_file(
     base_fname,
     version,
     output_basedir,
@@ -224,8 +224,68 @@ load_constraint_metrics <- function(
     release = release,
     public = public
   )
+  )
+  
 
-  return(read.delim(fname))
+  # Convert "true/false" values in "canonical" and/or "mane_select" columns to bools
+  for(col_name in c("canonical", "mane_select")) {
+    if (col_name %in% colnames(df)) {
+      df <- mutate(df, !!col_name := .data[[col_name]] == "true")
+    }
+  }
+  
+  # Set absesence of constraint flags to "[]" and append version to constraint flag column name
+  if (!downsamplings) {
+    if (version == "v2") {
+    df <- rename(df, constraint_flags.v2 = constraint_flag) %>%
+      mutate(
+        constraint_flags.v2 = if_else(
+          .data$constraint_flags.v2 == "",
+          "[]",
+          .data$constraint_flags.v2
+        )
+      )
+    
+    # Rename columns in v2 and add version to the column names
+    df <- df %>% rename(
+           lof.oe_ci.upper.v2 = oe_lof_upper,
+           lof.pLI.v2 = pLI,
+           lof.z_score.v2 = lof_z,
+           lof.oe_ci.upper_bin_decile.v2 = oe_lof_upper_bin,
+           syn.exp.v2 = exp_syn,
+           mis.exp.v2 = exp_mis,
+           lof.exp.v2 = exp_lof,
+           syn.obs.v2 = obs_syn,
+           mis.obs.v2 = obs_mis,
+           lof.obs.v2 = obs_lof)
+    }
+    
+    # Add "v4" version to column names
+    if (version == "v4") {
+      base_annotations = c("gene", "gene_id", "transcript", "canonical", "mane_select", "level", "transcript_type", "chromosome", "cds_length", "num_coding_exons")
+      df <- df %>% rename_with(~ ifelse(. %in% base_annotations, ., paste0(., ".v4")))
+    }
+  }
+    
+    # Rename columns in v2 downsamplings
+    if (downsamplings && version == "v2") {
+      df <- df %>%
+            rename(
+              syn.exp = exp_syn,
+              mis.exp = exp_mis,
+              lof.exp = exp_lof,
+              syn.obs = obs_syn,
+              mis.obs = obs_mis,
+              lof.obs = obs_lof
+            )
+  
+  
+  
+  }
+  # Create column for version and set to TRUE
+  df <- mutate(df, !!version := TRUE)
+  
+  return(df)
 }
 
 load_all_gene_list_data <- function(
