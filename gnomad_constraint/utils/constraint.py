@@ -180,7 +180,7 @@ def create_observed_and_possible_ht(
     ),
     pops: Tuple[str] = (),
     downsamplings: Optional[List[int]] = None,
-    grouping: Tuple[str] = ("exome_coverage",),
+    grouping: Tuple[str] = ("exomes_AN", "exome_coverage"),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
     low_coverage_filter: int = None,
@@ -263,6 +263,9 @@ def create_observed_and_possible_ht(
 
     keep_annotations += grouping
 
+    print("KEEP ANOTATION ARE")
+    print(keep_anotations)
+
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
@@ -309,7 +312,8 @@ def create_observed_and_possible_ht(
     context_ht = context_ht.select(*keep_annotations).anti_join(
         exome_ht.filter(keep_criteria, keep=False)
     )
-
+    print("GROUPIN IS")
+    print(grouping)
     # Count the possible variants in the context Table grouped by `keep_annotations`.
     possible_ht = count_variants_by_group(
         context_ht,
