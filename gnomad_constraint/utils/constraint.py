@@ -264,7 +264,7 @@ def create_observed_and_possible_ht(
     keep_annotations += grouping
 
     print("KEEP ANOTATION ARE")
-    print(keep_anotations)
+    print(keep_annotations)
 
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
