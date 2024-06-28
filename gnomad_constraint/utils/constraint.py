@@ -152,7 +152,7 @@ def prepare_ht_for_constraint_calculations(
         exome_coverage=ht.coverage.exomes[exome_median_cov_field],
         exomes_AN=ht.AN.exomes,
         genomes_AN=ht.AN.genomes,
-        exomes_AN_percent=hl.int(ht.AN.exomes/1461894),
+        exomes_AN_percent=hl.int(ht.AN.exomes/1461894*100),
 
 
     )
