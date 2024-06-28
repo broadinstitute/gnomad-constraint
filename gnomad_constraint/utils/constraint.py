@@ -181,7 +181,7 @@ def create_observed_and_possible_ht(
     ),
     pops: Tuple[str] = (),
     downsamplings: Optional[List[int]] = None,
-    grouping: Tuple[str] = ("exomes_AN_percent", "exome_coverage"),
+    grouping: Tuple[str] = ("exomes_AN_percent"),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
     low_coverage_filter: int = None,
