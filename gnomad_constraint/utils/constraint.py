@@ -152,6 +152,7 @@ def prepare_ht_for_constraint_calculations(
         exome_coverage=ht.coverage.exomes[exome_median_cov_field],
         exomes_AN=ht.AN.exomes,
         genomes_AN=ht.AN.genomes,
+        exomes_AN_percent=hl.int(ht.AN.exomes/1461894),
 
 
     )
@@ -244,6 +245,7 @@ def create_observed_and_possible_ht(
         global annotation will not be added. Default is None.
     :return: Table with observed variant and possible variant count.
     """
+    print(" CONSTRAINT TESTING LINE")
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
         exome_ht = exome_ht.filter(exome_ht.exome_coverage >= low_coverage_filter)
