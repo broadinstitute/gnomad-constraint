@@ -354,6 +354,8 @@ for (version in versions_to_plot) {
 # Plot proportion observed vs mu
 ####################################################################
 ####################################################################
+df = read_delim("an_po.txt")
+
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
                                                            coverage_metric="exomes_AN_percent",
                                                            high_coverage_cutoff=90)
@@ -362,7 +364,13 @@ po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
                                           coverage_metric="exomes_AN_percent",
                                           high_coverage_cutoff=90)
 
-
+plot_path <- get_plot_path(
+  "ov_v_mu",
+  version = version,
+  output_basedir = output_basedir
+)
+ggsave(po_v_mu, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+}
 ####################################################################
 ####################################################################
 # Plot observed to expected ratio vs coverage metric
@@ -376,3 +384,10 @@ oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
                                   coverage_metric="exomes_AN_percent",
                                   high_coverage_cutoff=90)
 
+plot_path <- get_plot_path(
+  "ov_v_cov",
+  version = version,
+  output_basedir = output_basedir
+)
+ggsave(ov_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+}
