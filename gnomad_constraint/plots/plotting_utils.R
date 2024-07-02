@@ -150,3 +150,56 @@ reformat_for_observed_vs_expected <- function(df, version) {
   
   return(df)
 }
+
+
+####################################################################
+# Get predicted proportion observed
+####################################################################
+get_predicted_proportion_observed <- function (
+    df,
+    coverage_metric ="exome_coverage",
+    high_coverage_cutoff = 30) {
+  # Calculate the predicted proportion of observed variants using well-covered sites
+  # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constriant pipeline)
+  # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
+  # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
+  # Returns: Dataframe with the predicted proportion of observed variants in the 'pred_prop_observed' column.
+  
+  # Calculate proportion observed variants (observed/possible) at well covered sites
+  po_data <- df %>%
+    filter(!!sym(coverage_metric) >= high_coverage_cutoff) %>%
+    group_by(context, ref, alt, methylation_level, mu_snp, mutation_type, cpg) %>%
+    summarize(
+      obs = sum(observed_variants, na.rm = TRUE),
+      poss = sum(possible_variants, na.rm = TRUE),
+      prop_observed = obs / poss,
+      .groups = 'drop'
+    )
+  
+  # Group by cpg and perform linear regression on the well-covered sites (lm(prop_observed ~ mu_snp)
+  high_coverage_models <- po_data %>%
+    group_by(cpg) %>%
+    do({
+      model <- lm(prop_observed ~ mu_snp, data = .)
+      data.frame(
+        cpg = unique(.$cpg),
+        term = c("intercept", "mu_snp"),
+        estimate = coef(model)
+      )
+    }) %>%
+    ungroup()
+  
+  # Join models from well-covered sites to the original dataframe and calculate the predicted proportion observed
+  data_with_predictions <- df %>%
+    left_join(high_coverage_models, by = "cpg") %>%
+    group_by_at(vars(-term, -estimate)) %>%
+    summarize(
+      pred_prop_observed = sum((term == 'mu_snp') * mu_snp * estimate + (term == 'intercept') * estimate),
+      .groups = 'drop'
+    ) %>%
+    ungroup()
+  
+  return(data_with_predictions)
+  
+  
+}

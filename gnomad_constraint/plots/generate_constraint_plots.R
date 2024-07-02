@@ -347,3 +347,32 @@ for (version in versions_to_plot) {
   )
   ggsave(oe_plot, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
 }
+
+
+####################################################################
+####################################################################
+# Plot proportion observed vs mu
+####################################################################
+####################################################################
+data_with_predictions <- get_predicted_proportion_observed(df = training_data,
+                                                           coverage_metric="exomes_AN_percent",
+                                                           high_coverage_cutoff=90)
+
+po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
+                                          coverage_metric="exomes_AN_percent",
+                                          high_coverage_cutoff=90)
+
+
+####################################################################
+####################################################################
+# Plot observed to expected ratio vs coverage metric
+####################################################################
+####################################################################
+data_with_predictions <- get_predicted_proportion_observed(df = training_data,
+                                                           coverage_metric="exomes_AN_percent",
+                                                           high_coverage_cutoff=90)
+
+oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
+                                  coverage_metric="exomes_AN_percent",
+                                  high_coverage_cutoff=90)
+
