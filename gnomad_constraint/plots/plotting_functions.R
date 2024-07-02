@@ -30,6 +30,18 @@ gene_list_colors <- c(
 )
 
 ####################################################################
+# Define colors for mutation types
+####################################################################
+# Set colors for mutation types
+mut_type_colors <- c("transversion" = "#EA4444", "non-CpG transition" = "#458B00", "CpG" = '#2E9FFE')
+color_cpg = '#2E9FFE'
+color_ti = '#458B00'
+color_tv = '#EA4444'
+variant_type_colors = c(color_tv, color_ti, color_cpg, color_cpg)
+names(variant_type_colors) = c('transversion', 'non-CpG transition', 'CpG transition', 'CpG')
+shapes = c('0' = 16, '1' = 15, '2' = 17)
+
+####################################################################
 # Define function to increase text on plots for presentations
 ####################################################################
 apply_presentation_sizes <- function(p, title_size = 25, text_size = 20) {
@@ -565,4 +577,102 @@ plot_observed_vs_expected <- function(df, version) {
   print(glue("Correlation results for  observed vs expected counts in {version}:"))
   print(correlation_results)
   return(combined_plot)
+}
+
+
+####################################################################
+# Plot proportion observed vs mu
+####################################################################
+plot_proportion_observed_vs_mu <-  function(
+    df,
+    coverage_metric ="exome_coverage",
+    high_coverage_cutoff = 30) {
+  # Plot proportion observed (observed over possible variants) vs mu 
+  # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constraint pipeline) and predicted proportion observed
+  # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
+  # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
+  # Returns: ggplot object of proportion observed vs mu 
+  
+  # Get metrics (observed, possible, proportion observed) for well-covered sites
+  high_coverage_data <- df %>% 
+    filter(!!sym(coverage_metric) >= high_coverage_cutoff) %>%
+    group_by(context, ref, alt, methylation_level, mu_snp, mutation_type, cpg, pred_prop_observed) %>%
+    summarize(obs = sum(observed_variants, na.rm=T), poss = sum(possible_variants, na.rm=T), prop_observed = obs / poss)
+  
+  # Plot proportion observed vs mu_snp
+  prop_observed_v_mu_snp_plot = high_coverage_data %>%
+    ggplot + aes_string(x = 'mu_snp') +
+    aes(y = prop_observed, color = mutation_type, shape = as.character(methylation_level)) + 
+    geom_point() + theme_classic() + scale_shape_manual(values=shapes, guide=F) +
+    scale_color_manual(values=variant_type_colors) + xlab('Mu') + ylab('Proportion observed')
+  
+  # Fit linear model and add to plot
+  lms <- high_coverage_data %>%
+    group_by(cpg) %>%
+    do({
+      model <- lm(prop_observed ~ mu_snp, data = .)
+      data.frame(
+        cpg = unique(.$cpg),
+        intercept = coef(model)[1],
+        mu_snp = coef(model)[2]
+      )
+    }) %>%
+    ungroup()
+  
+  prop_observed_v_mu_snp_plot = prop_observed_v_mu_snp_plot + geom_abline(aes(slope = mu_snp, intercept= intercept), 
+                                                                          data=lms, linetype='dashed', color='darkgray')
+  return(prop_observed_v_mu_snp_plot)
+}
+
+####################################################################
+# Plot observed to expected ratio vs coverage metric
+####################################################################
+plot_oe_vs_cov_metric <-  function(
+    df,
+    coverage_metric ="exome_coverage",
+    high_coverage_cutoff = 30,
+    add_best_fit = FALSE) {
+  # Plot the observed to expected ratio vs metrics that determines coverage at site
+  # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constraint pipeline) and predicted proportion observed
+  # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
+  # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
+  # add_best_fit: Add line of best fit to plot of observed:expected ratio vs coverage_metric for poorly-covered sites. Default is FALSE.
+  # Returns: ggplot object of observed:expected ration vs coverage_metric
+  
+  # Get metrics (observed, possible, expected, observed/expected) for poorly covered sites
+  low_coverage_data <- data_with_predictions %>%
+    group_by(!!sym(coverage_metric)) %>%
+    summarize(
+      obs = sum(observed_variants, na.rm = TRUE),
+      poss = sum(possible_variants, na.rm = TRUE),
+      mu_sum = sum(possible_variants * mu_snp, na.rm = TRUE),
+      exp = sum(possible_variants * pred_prop_observed, na.rm = TRUE),
+      oe = obs / exp,
+      .groups = 'drop')
+  
+  # Fit linear model for poorly covered sites
+  low_cov_lm <- low_coverage_data %>%
+    filter(!!sym(coverage_metric) < high_coverage_cutoff) %>%
+    do({
+      model <- lm(oe ~ !!sym(coverage_metric), data = .)
+      data.frame(
+        term = c("intercept", "exome_coverage"),
+        estimate = coef(model)
+      )
+    }) %>%
+    pivot_wider(names_from = term, values_from = estimate)
+  
+  # Plot observed/expected vs coverage_metrics
+  oe_v_mu_plot = low_coverage_data %>%
+    ggplot + aes(x = !!sym(coverage_metric), y = oe) + geom_point() + theme_classic() +
+    xlab(coverage_metric) + ylab('Observed / Expected') 
+  
+  if (add_best_fit==TRUE){
+    oe_v_mu_plot <- oe_v_mu_plot + geom_smooth(aes(!!sym(coverage_metric), oe),
+                                               data = low_coverage_data %>% filter(!!sym(coverage_metric) < high_coverage_cutoff & !!sym(coverage_metric) > 0),
+                                               method = lm, formula = y ~ log10(x), 
+                                               linetype = 'dashed', se=F, color='darkgray')}
+  
+  return(oe_v_mu_plot)
+  
 }
