@@ -46,11 +46,12 @@ setup_directories <- function(
   suppressWarnings(dir.create(glue("{output_basedir}/{gene_list_subdir}/")))
 }
 
-get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
+get_data_url <- function(version = "v4", release = TRUE, public = TRUE, pipeline_step="metrics") {
   # Get the URL for the data files
   # version: The version of the data
   # release: Whether to use the release or development version
   # public: Whether to use the public or non-public version
+  # pipeline_step: What step of the pipeline to obtain data for. Either "metrics" or "training". Default is "metrics".
   # Returns: The URL for the data files
 
   full_version <- map_data_version[[version]]
@@ -59,7 +60,10 @@ get_data_url <- function(version = "v4", release = TRUE, public = TRUE) {
   } else if (release && !public) {
     data_path <- glue("gs://gnomad/release/{full_version}/constraint/")
   } else if (!release && !public) {
-    data_path <- glue("gs://gnomad/v{full_version}/constraint/metrics/tsv/")
+    if (pipeline_step == "metrics") {
+    data_path <- glue("gs://gnomad/v{full_version}/constraint/metrics/tsv/")}
+    if (pipeline_step == "training") {
+      data_path <- glue("gs://gnomad/v{full_version}/constraint/training_data/")}
   } else {
     stop("Invalid combination of release and public")
   }
@@ -105,6 +109,7 @@ get_or_download_file <- function(
     local_name = "",
     release = TRUE,
     public = TRUE,
+    pipeline_step="metrics",
     gcs_authentication_token = NULL) {
   # Get a local file, and if it doesn't exist, try downloading it from Google
   # Cloud Storage (GCS)
@@ -116,6 +121,7 @@ get_or_download_file <- function(
   # local_name: The local name of the file
   # release: Whether to use the release or development version
   # public: Whether to use the public or non-public version
+  # pipeline_step: What step of the pipeline to obtain data for. Either "metrics" or "training". Default is "metrics".
   # gcs_authentication_token: The path to the saved token for GCS authentication
   # Returns: The path to the local file for requested data
   local_name <- ifelse(local_name != "", local_name, base_fname)
@@ -141,7 +147,7 @@ get_or_download_file <- function(
     print(paste0("public", public))
     print(paste0("subfolder", subfolder))
     print(paste0("base_fname", base_fname))
-    print(get_data_url(version, release = release, public = public))
+    print(get_data_url(version, release = release, public = public, pipeline_step=pipeline_step))
     remote_path <- paste0(
       get_data_url(version, release = release, public = public),
       subfolder,
@@ -168,6 +174,8 @@ get_or_download_file <- function(
   return(local_path)
 }
 
+
+
 get_plot_path <- function(
     base_fname,
     version = "",
@@ -192,6 +200,7 @@ load_constraint_metrics <- function(
     output_basedir = default_output_basedir,
     data_subdir = default_data_subdir,
     downsamplings = FALSE,
+    training_set = FALSE,
     release = TRUE,
     public = TRUE) {
   # Load the constraint metrics data
@@ -199,9 +208,15 @@ load_constraint_metrics <- function(
   # output_basedir: The base directory for the output
   # data_subdir: The subdirectory for data files
   # downsamplings: Whether to load downsampling data instead of the main data
+  # training_set: Whether to load training data instead of the main data
   # release: Whether to use the release or development version
   # public: Whether to use the public or non-public version
   # Returns: A data frame with constraint metrics data
+  if (downsamplings & training_set){
+    stop("Only one of downsamplings or training_set can be set to TRUE")
+  }
+    if (training_set & (release|public)){
+    stop("Training set is only available when release and public are both set to FALSE")}
 
   full_version <- map_data_version[[version]]
   if (!downsamplings) {
@@ -215,6 +230,11 @@ load_constraint_metrics <- function(
   } else if (version == "v4") {
     base_fname <- glue("gnomad.v{full_version}.downsampling_constraint_metrics.tsv.bgz")
   }
+  # Note: v2 training step will be pulled from the reprocessed pipeline
+  if (training_set) {
+    base_fname <- glue("gnomad.v{full_version}.constraint_training.autosome_par.ht")
+    pipeline_step = "training"
+  } else {pipeline_step = "metrics"}
 
   df <- read.delim(get_or_download_file(
     base_fname,
@@ -222,7 +242,8 @@ load_constraint_metrics <- function(
     output_basedir,
     data_subdir,
     release = release,
-    public = public
+    public = public,
+    pipeline_step = pipeline_step
   )
   )
   
