@@ -77,7 +77,7 @@ def filter_for_test(ht: hl.Table, data_type: str) -> hl.Table:
 
     return ht
 
-
+print("test")
 def get_constraint_resources(
     version: str,
     use_v2_release_mutation_ht: bool,
