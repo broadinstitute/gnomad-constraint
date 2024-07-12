@@ -77,7 +77,7 @@ def filter_for_test(ht: hl.Table, data_type: str) -> hl.Table:
 
     return ht
 
-print("test")
+
 def get_constraint_resources(
     version: str,
     use_v2_release_mutation_ht: bool,
@@ -412,6 +412,8 @@ def main(args):
         # Create training datasets that include possible and observed variant counts
         # for building models.
         if args.create_training_set:
+            logger.info("Testing AN!")
+
             logger.info("Counting possible and observed variant counts...")
             res = resources.create_training_set
             res.check_resource_existence()

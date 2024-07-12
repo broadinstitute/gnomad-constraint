@@ -247,8 +247,8 @@ def create_observed_and_possible_ht(
     """
     print(" CONSTRAINT TESTING LINE")
     if low_coverage_filter is not None:
-        context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
-        exome_ht = exome_ht.filter(exome_ht.exome_coverage >= low_coverage_filter)
+        context_ht = context_ht.filter(context_ht.exomes_AN_percent >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
@@ -272,7 +272,7 @@ def create_observed_and_possible_ht(
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
 
     # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.
