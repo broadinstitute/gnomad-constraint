@@ -150,11 +150,13 @@ def prepare_ht_for_constraint_calculations(
             .default(0)
         ),
         exome_coverage=ht.coverage.exomes[exome_median_cov_field],
-        exomes_AN=ht.AN.exomes,
+        exomes_AN=ht.AN.exomes[0],
+        exomes_AN_raw=ht.AN.exomes[1],
         genomes_AN=ht.AN.genomes,
-        exomes_AN_percent=hl.int(ht.AN.exomes/1461894*100),
+    )
 
-
+    ht = ht.annotate(exomes_AN_percent=hl.int(ht.exomes_AN/1461894*100),
+    exomes_AN_percent_raw=hl.int(ht.exomes_AN_raw/1461894*100)
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
@@ -181,7 +183,7 @@ def create_observed_and_possible_ht(
     ),
     pops: Tuple[str] = (),
     downsamplings: Optional[List[int]] = None,
-    grouping: Tuple[str] = ("exomes_AN_percent",),
+    grouping: Tuple[str] = ("exomes_AN_percent_raw",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
     low_coverage_filter: int = None,
@@ -247,8 +249,8 @@ def create_observed_and_possible_ht(
     """
     print(" CONSTRAINT TESTING LINE")
     if low_coverage_filter is not None:
-        context_ht = context_ht.filter(context_ht.exomes_AN_percent >= low_coverage_filter)
-        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
+        context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent_raw >= low_coverage_filter)
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
@@ -272,7 +274,7 @@ def create_observed_and_possible_ht(
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent_raw))
 
     # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.
@@ -1146,9 +1148,9 @@ def annotate_context_ht(
         coverage=hl.struct(
             **{loc: coverage_ht[ht.locus] for loc, coverage_ht in coverage_hts.items()}
         ),
-        # Use adj criteria to annotate adj
+        # Use adj criteria to annotate AN
         AN=hl.struct(
-            **{data_type: an_ht[ht.locus].AN[0] for data_type, an_ht in an_hts.items()}
+            **{data_type: an_ht[ht.locus].AN for data_type, an_ht in an_hts.items()}
         ),
         gerp=gerp_ht[ht.locus].S,
     )

@@ -307,7 +307,7 @@ def main(args):
                 "genomes": res.genomes_coverage_ht.ht(),
             }
             an_hts = {
-            "genomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht"),
+            "genomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/genomes/gnomad.genomes.v4.1.allele_number_all_sites.ht"),
             "exomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht")
             }
             annotate_context_ht(
