@@ -354,7 +354,21 @@ for (version in versions_to_plot) {
 # Plot proportion observed vs mu
 ####################################################################
 ####################################################################
-df = read_delim("an_po.txt")
+setwd("/Users/kristen/code/gnomad-constraint/gnomad_constraint/plots")
+source("loading_functions.R")
+source("plotting_functions.R")
+source("plotting_utils.R")
+
+setwd("/Users/kristen/Desktop/an_cov")
+training_data = read.delim("an_po.txt")
+name=""
+
+training_data = read.delim("po_an_raw.txt")
+name="_raw"
+
+
+version="v4"
+output_basedir="/Users/kristen/Desktop/an_cov"
 
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
                                                            coverage_metric="exomes_AN_percent",
@@ -365,12 +379,12 @@ po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
                                           high_coverage_cutoff=90)
 
 plot_path <- get_plot_path(
-  "ov_v_mu",
+  glue("ov_v_mu{name}"),
   version = version,
   output_basedir = output_basedir
 )
 ggsave(po_v_mu, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
-}
+
 ####################################################################
 ####################################################################
 # Plot observed to expected ratio vs coverage metric
@@ -382,12 +396,13 @@ data_with_predictions <- get_predicted_proportion_observed(df = training_data,
 
 oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
                                   coverage_metric="exomes_AN_percent",
-                                  high_coverage_cutoff=90)
+                                  high_coverage_cutoff=90,
+                                  add_best_fit=TRUE)
 
 plot_path <- get_plot_path(
-  "ov_v_cov",
+  glue("ov_v_cov{name})",
   version = version,
   output_basedir = output_basedir
 )
-ggsave(ov_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
-}
+ggsave(oe_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+

@@ -670,7 +670,7 @@ plot_oe_vs_cov_metric <-  function(
   if (add_best_fit==TRUE){
     oe_v_mu_plot <- oe_v_mu_plot + geom_smooth(aes(!!sym(coverage_metric), oe),
                                                data = low_coverage_data %>% filter(!!sym(coverage_metric) < high_coverage_cutoff & !!sym(coverage_metric) > 0),
-                                               method = lm, formula = y ~ log10(x), 
+                                               method = lm, formula = y ~ x, 
                                                linetype = 'dashed', se=F, color='darkgray')}
   
   return(oe_v_mu_plot)
