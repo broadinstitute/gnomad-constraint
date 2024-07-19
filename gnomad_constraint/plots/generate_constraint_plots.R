@@ -372,6 +372,10 @@ training_data = read.delim("po_an_10.txt")
 name="_10"
 high_coverage_cutoff=9
 
+training_data = read.delim("po_an_20.txt")
+name="_20"
+high_coverage_cutoff=18
+
 unique(training_data$exomes_AN_percent)
 
 
@@ -408,7 +412,7 @@ oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
                                   add_best_fit=TRUE)
 
 plot_path <- get_plot_path(
-  glue("oe_v_cov{name})"),
+  glue("oe_v_cov{name}"),
   version = version,
   output_basedir = output_basedir
 )
