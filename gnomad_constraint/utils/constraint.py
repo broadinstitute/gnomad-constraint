@@ -249,6 +249,8 @@ def create_observed_and_possible_ht(
     """
     print(" CONSTRAINT TESTING LINE")
     exome_ht = exome_ht.annotate(exomes_AN_percent = hl.int(exome_ht.exomes_AN_percent/10))
+    context_ht = context_ht.annotate(exomes_AN_percent = hl.int(context_ht.exomes_AN_percent/10))
+
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exomes_AN_percent >= low_coverage_filter)
         exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
