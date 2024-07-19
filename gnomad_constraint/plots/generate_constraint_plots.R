@@ -362,9 +362,17 @@ source("plotting_utils.R")
 setwd("/Users/kristen/Desktop/an_cov")
 training_data = read.delim("an_po.txt")
 name=""
+high_coverage_cutoff=90
 
 training_data = read.delim("po_an_raw.txt")
 name="_raw"
+high_coverage_cutoff=90
+
+training_data = read.delim("po_an_10.txt")
+name="_10"
+high_coverage_cutoff=9
+
+unique(training_data$exomes_AN_percent)
 
 
 version="v4"
@@ -372,11 +380,11 @@ output_basedir="/Users/kristen/Desktop/an_cov"
 
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
                                                            coverage_metric="exomes_AN_percent",
-                                                           high_coverage_cutoff=90)
+                                                           high_coverage_cutoff=high_coverage_cutoff)
 
 po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
                                           coverage_metric="exomes_AN_percent",
-                                          high_coverage_cutoff=90)
+                                          high_coverage_cutoff=high_coverage_cutoff)
 
 plot_path <- get_plot_path(
   glue("ov_v_mu{name}"),
@@ -392,15 +400,15 @@ ggsave(po_v_mu, filename = plot_path, dpi = 300, width = 7, height = 6, units = 
 ####################################################################
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
                                                            coverage_metric="exomes_AN_percent",
-                                                           high_coverage_cutoff=90)
+                                                           high_coverage_cutoff=high_coverage_cutoff)
 
 oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
                                   coverage_metric="exomes_AN_percent",
-                                  high_coverage_cutoff=90,
+                                  high_coverage_cutoff=high_coverage_cutoff,
                                   add_best_fit=TRUE)
 
 plot_path <- get_plot_path(
-  glue("ov_v_cov{name})",
+  glue("oe_v_cov{name})"),
   version = version,
   output_basedir = output_basedir
 )
