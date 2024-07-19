@@ -248,8 +248,8 @@ def create_observed_and_possible_ht(
     :return: Table with observed variant and possible variant count.
     """
     print(" CONSTRAINT TESTING LINE")
-    exome_ht = exome_ht.annotate(exomes_AN_percent = hl.int(exome_ht.exomes_AN_percent/10))
-    context_ht = context_ht.annotate(exomes_AN_percent = hl.int(context_ht.exomes_AN_percent/10))
+    exome_ht = exome_ht.annotate(exomes_AN_percent = hl.int(exome_ht.exomes_AN_percent/5))
+    context_ht = context_ht.annotate(exomes_AN_percent = hl.int(context_ht.exomes_AN_percent/5))
 
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exomes_AN_percent >= low_coverage_filter)
