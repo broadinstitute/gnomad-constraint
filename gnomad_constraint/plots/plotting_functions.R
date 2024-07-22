@@ -665,7 +665,8 @@ plot_oe_vs_cov_metric <-  function(
   # Plot observed/expected vs coverage_metrics
   oe_v_mu_plot = low_coverage_data %>%
     ggplot + aes(x = !!sym(coverage_metric), y = oe) + geom_point() + theme_classic() +
-    xlab(coverage_metric) + ylab('Observed / Expected') 
+    xlab("AN bin") + ylab('Observed / Expected')
+    #xlab(coverage_metric) + ylab('Observed / Expected') 
   
   if (add_best_fit==TRUE){
     oe_v_mu_plot <- oe_v_mu_plot + geom_smooth(aes(!!sym(coverage_metric), oe),

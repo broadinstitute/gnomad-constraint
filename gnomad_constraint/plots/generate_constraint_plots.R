@@ -376,6 +376,10 @@ training_data = read.delim("po_an_20.txt")
 name="_20"
 high_coverage_cutoff=18
 
+training_data = read.delim("po_an_50.txt")
+name="_50"
+high_coverage_cutoff=45
+
 unique(training_data$exomes_AN_percent)
 
 
