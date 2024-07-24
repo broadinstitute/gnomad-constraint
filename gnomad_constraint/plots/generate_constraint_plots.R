@@ -360,15 +360,18 @@ source("plotting_functions.R")
 source("plotting_utils.R")
 
 setwd("/Users/kristen/Desktop/an_cov")
+
+#ADJ
 training_data = read.delim("an_po.txt")
 name=""
 high_coverage_cutoff=90
 
+#RAW
 training_data = read.delim("po_an_raw.txt")
 name="_raw"
 high_coverage_cutoff=90
 
-#RAW
+#RAW BINS
 training_data = read.delim("po_an_10_raw.txt")
 name="_10_raw"
 high_coverage_cutoff=9
@@ -382,7 +385,7 @@ name="_50_raw"
 high_coverage_cutoff=45
 
 
-# REGULAR
+# ADJ BINS
 training_data = read.delim("po_an_10.txt")
 name="_10"
 high_coverage_cutoff=9
@@ -394,6 +397,13 @@ high_coverage_cutoff=18
 training_data = read.delim("po_an_50.txt")
 name="_50"
 high_coverage_cutoff=45
+
+
+#NON-UKB
+training_data = read.delim("po_an_non_ukb.txt")
+name="non_ukb"
+high_coverage_cutoff=90
+
 
 unique(training_data$exomes_AN_percent)
 
