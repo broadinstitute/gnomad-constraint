@@ -248,8 +248,12 @@ def create_observed_and_possible_ht(
     :return: Table with observed variant and possible variant count.
     """
     print(" CONSTRAINT TESTING LINE")
-    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/10))
-    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/10))
+    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.AN.exomes[168]))
+    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.AN.exomes[168]))
+
+
+    #exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/2))
+    #context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/2))
 
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
@@ -257,7 +261,8 @@ def create_observed_and_possible_ht(
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
-    freq_expr = exome_ht.freq[0]
+    #freq_expr = exome_ht.freq[0]
+    freq_expr = exome_ht.freq[167]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, variants with allele frequency above the `max_af` cutoff, and variants
