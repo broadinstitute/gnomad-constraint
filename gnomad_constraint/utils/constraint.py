@@ -183,7 +183,7 @@ def create_observed_and_possible_ht(
     ),
     pops: Tuple[str] = (),
     downsamplings: Optional[List[int]] = None,
-    grouping: Tuple[str] = ("exomes_AN_percent",),
+    grouping: Tuple[str] = ("exomes_AN_percent_raw",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
     low_coverage_filter: int = None,
@@ -248,12 +248,12 @@ def create_observed_and_possible_ht(
     :return: Table with observed variant and possible variant count.
     """
     print(" CONSTRAINT TESTING LINE")
-    exome_ht = exome_ht.annotate(exomes_AN_percent = hl.int(exome_ht.exomes_AN_percent/2))
-    context_ht = context_ht.annotate(exomes_AN_percent = hl.int(context_ht.exomes_AN_percent/2))
+    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/10))
+    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/10))
 
     if low_coverage_filter is not None:
-        context_ht = context_ht.filter(context_ht.exomes_AN_percent >= low_coverage_filter)
-        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
+        context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent_raw >= low_coverage_filter)
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
@@ -277,7 +277,7 @@ def create_observed_and_possible_ht(
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent_raw))
 
     # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.
