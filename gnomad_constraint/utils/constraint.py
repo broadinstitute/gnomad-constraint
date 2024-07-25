@@ -272,6 +272,12 @@ def create_observed_and_possible_ht(
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
     #freq_expr = exome_ht.freq[0]
+    exome_ht = exome_ht.annotate(freq = [hl.struct(AC=exome_ht.freq[0].AC-exome_ht.freq[167].AC,
+                                   AN=exome_ht.freq[0].AN-exome_ht.freq[167].AN,
+                                   AF=(exome_ht.freq[0].AC-exome_ht.freq[167].AC)/(exome_ht.freq[0].AN-exome_ht.freq[167].AN))])
+
+    exome_ht = exome_ht.checkpoint(new_temp_file(prefix="exome_ht", extension="ht"))
+
     freq_expr = exome_ht.freq[0]
     #freq_expr = exome_ht.freq[167]
 
