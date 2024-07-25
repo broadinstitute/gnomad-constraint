@@ -401,7 +401,13 @@ high_coverage_cutoff=45
 
 #NON-UKB
 training_data = read.delim("po_an_non_ukb.txt")
-name="non_ukb"
+name="_non_ukb"
+high_coverage_cutoff=90
+
+
+#UKB
+training_data = read.delim("po_an_ukb.txt")
+name="_ukb"
 high_coverage_cutoff=90
 
 
