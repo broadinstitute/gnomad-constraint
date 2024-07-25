@@ -251,8 +251,8 @@ def create_observed_and_possible_ht(
     exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[1])-hl.int(exome_ht.AN.exomes[168]))
     context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[1])-hl.int(context_ht.AN.exomes[168]))
 
-    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/883110*100))
-    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/883110*100))
+    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/833110*100))
+    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/833110*100))
 
 
     #exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[168]))
