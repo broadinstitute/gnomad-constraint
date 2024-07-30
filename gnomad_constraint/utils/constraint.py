@@ -16,7 +16,8 @@ from gnomad.utils.constraint import (
     compute_pli,
     count_variants_by_group,
     get_constraint_flags,
-    get_downsampling_freq_indices,
+    #get_downsampling_freq_indices,
+    get_pop_freq_indices,
     oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
@@ -182,6 +183,7 @@ def create_observed_and_possible_ht(
     low_coverage_filter: int = None,
     transcript_for_synonymous_filter: str = None,
     global_annotation: Optional[str] = None,
+    skip_downsamplings: bool=False, 
 ) -> hl.Table:
     """
     Count the observed variants and possible variants by substitution, context, methylation level, and additional `grouping`.
@@ -238,6 +240,7 @@ def create_observed_and_possible_ht(
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
         global annotation will not be added. Default is None.
+    :param skip_downsamplings: Whether of not to skip pulling the downsampling data.
     :return: Table with observed variant and possible variant count.
     """
     if low_coverage_filter is not None:
@@ -292,6 +295,7 @@ def create_observed_and_possible_ht(
         count_downsamplings=pops,
         use_table_group_by=True,
         max_af=max_af,
+        skip_downsamplings=skip_downsamplings,
     )
 
     # TODO: Remove repartition once partition_hint bugs are resolved.
@@ -353,6 +357,7 @@ def apply_models(
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
     use_mane_select: bool = True,
+    skip_downsamplings: bool=False, 
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -426,6 +431,7 @@ def apply_models(
     :param use_mane_select: Use MANE Select transcripts in grouping.
         Only used when `custom_vep_annotation` is set to 'transcript_consequences'.
         Default is True.
+    :param skip_downsamplings: Whether of not to skip pulling the downsampling data.
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
@@ -477,6 +483,7 @@ def apply_models(
         partition_hint=obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         transcript_for_synonymous_filter=None,
+        skip_downsamplings=skip_downsamplings,
     )
 
     # NOTE: In v2 ht.mu_snp was incorrectly multiplied here by possible_variants, but this multiplication has now been moved,
@@ -528,15 +535,14 @@ def apply_models(
         key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
         genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
         downsampling_meta[pop] = [
-            x[1]["downsampling"]
+         x[1].get("downsampling", "full")  
             for x in ds
-            if (x[1][genetic_ancestry_label] == pop)
-            & (
-                int(x[1]["downsampling"]) in downsamplings
-                if downsamplings is not None
-                else True
-            )
-        ]
+        if x[1][genetic_ancestry_label] == pop
+        and (
+            int(x[1].get("downsampling", 0)) in downsamplings  
+            if downsamplings is not None
+            else True
+        )]
 
     grouping = list(grouping)
     grouping.remove("coverage")
