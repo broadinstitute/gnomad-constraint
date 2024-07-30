@@ -410,6 +410,11 @@ training_data = read.delim("po_an_ukb.txt")
 name="_ukb"
 high_coverage_cutoff=90
 
+#NON-UKB and BROAD INTERVALS
+training_data = read.delim("po_an_non_ukb_bi.txt")
+name="_non_ukb"
+high_coverage_cutoff=90
+
 
 unique(training_data$exomes_AN_percent)
 
