@@ -1,4 +1,5 @@
 """Script containing utility functions used in the constraint pipeline."""
+
 import logging
 from typing import Dict, List, Optional, Tuple
 
@@ -16,7 +17,7 @@ from gnomad.utils.constraint import (
     compute_pli,
     count_variants_by_group,
     get_constraint_flags,
-    #get_downsampling_freq_indices,
+    # get_downsampling_freq_indices,
     get_pop_freq_indices,
     oe_aggregation_expr,
     oe_confidence_interval,
@@ -183,7 +184,7 @@ def create_observed_and_possible_ht(
     low_coverage_filter: int = None,
     transcript_for_synonymous_filter: str = None,
     global_annotation: Optional[str] = None,
-    skip_downsamplings: bool=False, 
+    skip_downsamplings: bool = False,
 ) -> hl.Table:
     """
     Count the observed variants and possible variants by substitution, context, methylation level, and additional `grouping`.
@@ -357,7 +358,7 @@ def apply_models(
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
     use_mane_select: bool = True,
-    skip_downsamplings: bool=False, 
+    skip_downsamplings: bool = False,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -535,14 +536,15 @@ def apply_models(
         key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
         genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
         downsampling_meta[pop] = [
-         x[1].get("downsampling", "full")  
+            x[1].get("downsampling", "full")
             for x in ds
-        if x[1][genetic_ancestry_label] == pop
-        and (
-            int(x[1].get("downsampling", 0)) in downsamplings  
-            if downsamplings is not None
-            else True
-        )]
+            if x[1][genetic_ancestry_label] == pop
+            and (
+                int(x[1].get("downsampling", 0)) in downsamplings
+                if downsamplings is not None
+                else True
+            )
+        ]
 
     grouping = list(grouping)
     grouping.remove("coverage")
@@ -903,9 +905,8 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
-            ht.annotation
-        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
+        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC.
         "lof": ht.modifier == "HC",
         # Filter to missense variants.

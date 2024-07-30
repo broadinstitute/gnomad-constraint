@@ -265,7 +265,7 @@ def main(args):
 
     # If pops not specified, set to empty Tuple
     if not pops:
-        pops=()
+        pops = ()
 
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
@@ -431,8 +431,11 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                #op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
-                op_ht.write("gs://gnomad-kristen/constraint/gen_anc/train.ht", overwrite=overwrite)
+                # op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
+                op_ht.write(
+                    "gs://gnomad-kristen/constraint/gen_anc/train.ht",
+                    overwrite=overwrite,
+                )
             logger.info("Done with creating training dataset.")
 
         if args.build_models:
@@ -443,8 +446,10 @@ def main(args):
             # chromosome X, and chromosome Y.
             for r in regions:
                 # TODO: Remove repartition once partition_hint bugs are resolved.
-                #training_ht = getattr(res, f"train_{r}_ht").ht()
-                training_ht = hl.read_table("gs://gnomad-kristen/constraint/gen_anc/train.ht")
+                # training_ht = getattr(res, f"train_{r}_ht").ht()
+                training_ht = hl.read_table(
+                    "gs://gnomad-kristen/constraint/gen_anc/train.ht"
+                )
                 training_ht = training_ht.repartition(args.training_set_partition_hint)
 
                 logger.info("Building %s plateau and coverage models...", r)
@@ -459,11 +464,10 @@ def main(args):
                 hl.experimental.write_expression(
                     plateau_models,
                     "gs://gnomad-kristen/constraint/gen_anc/plateau_models.he",
-
-                    #getattr(res, f"model_{r}_plateau").path,
+                    # getattr(res, f"model_{r}_plateau").path,
                     overwrite=overwrite,
                 )
-                #if not args.skip_coverage_model:
+                # if not args.skip_coverage_model:
                 #    hl.experimental.write_expression(
                 #        coverage_model,
                 #        getattr(res, f"model_{r}_coverage").path,
@@ -496,8 +500,10 @@ def main(args):
                     exome_ht=getattr(res, f"preprocessed_{r}_exomes_ht").ht(),
                     context_ht=getattr(res, f"preprocessed_{r}_context_ht").ht(),
                     mutation_ht=mutation_ht,
-                    plateau_models = hl.experimental.read_expression("gs://gnomad-kristen/constraint/gen_anc/plateau_models.he"),
-                    #plateau_models=getattr(res, f"model_{r}_plateau").he(),
+                    plateau_models=hl.experimental.read_expression(
+                        "gs://gnomad-kristen/constraint/gen_anc/plateau_models.he"
+                    ),
+                    # plateau_models=getattr(res, f"model_{r}_plateau").he(),
                     coverage_model=(
                         getattr(res, "model_autosome_par_coverage").he()
                         if not args.skip_coverage_model
@@ -520,7 +526,7 @@ def main(args):
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                #oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
+                # oe_ht.write(getattr(res, f"apply_{r}_ht").path, overwrite=overwrite)
                 oe_ht.write("gs://gnomad-kristen/constraint/gen_anc/apply.ht")
 
             logger.info(
