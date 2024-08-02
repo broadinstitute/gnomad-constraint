@@ -248,11 +248,11 @@ def create_observed_and_possible_ht(
     :return: Table with observed variant and possible variant count.
     """
     print(" CONSTRAINT TESTING LINE")
-    exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[1])-hl.int(exome_ht.AN.exomes[168]))
-    context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[1])-hl.int(context_ht.AN.exomes[168]))
+    #exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[1])-hl.int(exome_ht.AN.exomes[168]))
+    #context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[1])-hl.int(context_ht.AN.exomes[168]))
 
-    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/833110*100))
-    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/833110*100))
+    #exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/833110*100))
+    #context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/833110*100))
 
 
     #exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[168]))
@@ -262,8 +262,8 @@ def create_observed_and_possible_ht(
     #context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/628784*100))
 
 
-    #exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/2))
-    #context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/2))
+    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/2))
+    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/2))
 
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
@@ -272,11 +272,11 @@ def create_observed_and_possible_ht(
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
     #freq_expr = exome_ht.freq[0]
-    exome_ht = exome_ht.annotate(freq = [hl.struct(AC=exome_ht.freq[0].AC-exome_ht.freq[167].AC,
-                                   AN=exome_ht.freq[0].AN-exome_ht.freq[167].AN,
-                                   AF=(exome_ht.freq[0].AC-exome_ht.freq[167].AC)/(exome_ht.freq[0].AN-exome_ht.freq[167].AN))])
+   #exome_ht = exome_ht.annotate(freq = [hl.struct(AC=exome_ht.freq[0].AC-exome_ht.freq[167].AC,
+   #                                AN=exome_ht.freq[0].AN-exome_ht.freq[167].AN,
+   #                                AF=(exome_ht.freq[0].AC-exome_ht.freq[167].AC)/(exome_ht.freq[0].AN-exome_ht.freq[167].AN))])
 
-    exome_ht = exome_ht.checkpoint(new_temp_file(prefix="exome_ht", extension="ht"))
+    #exome_ht = exome_ht.checkpoint(new_temp_file(prefix="exome_ht", extension="ht"))
 
     freq_expr = exome_ht.freq[0]
     #freq_expr = exome_ht.freq[167]
@@ -293,7 +293,7 @@ def create_observed_and_possible_ht(
 
     keep_annotations += grouping
 
-    print("KEEP ANOTATION ARE")
+    print("KEEP ANNOTATIONS ARE")
     print(keep_annotations)
 
     # Keep variants that satisfy the criteria above.
@@ -469,11 +469,11 @@ def apply_models(
         (observed:expected ratio) annotations.
     """
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exome_coverage))
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent_raw))
 
     if low_coverage_filter is not None:
-        context_ht = context_ht.filter(context_ht.exome_coverage >= low_coverage_filter)
-        exome_ht = exome_ht.filter(exome_ht.exome_coverage >= low_coverage_filter)
+        context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent_raw >= low_coverage_filter)
 
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
