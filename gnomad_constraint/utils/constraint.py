@@ -17,7 +17,6 @@ from gnomad.utils.constraint import (
     compute_pli,
     count_variants_by_group,
     get_constraint_flags,
-    # get_downsampling_freq_indices,
     get_pop_freq_indices,
     oe_aggregation_expr,
     oe_confidence_interval,
@@ -1015,6 +1014,29 @@ def compute_constraint_metrics(
             oe_ci=oe_ci_expr,
             z_raw=raw_z_expr,
         )
+
+        gen_anc_lower_struct = {}
+        gen_anc_upper_struct = {}
+        gen_anc_z_raw_struct = {}
+
+        # Calculate lower and upper cis, and raw z scores for each pop, excluding downsamplings
+        for pop in pops:
+            obs_expr = ht[ann]["gen_anc_obs"][pop][0]
+            exp_expr = ht[ann]["gen_anc_exp"][pop][0]
+            oe_ci_expr = oe_confidence_interval(obs_expr, exp_expr)
+            raw_z_expr = calculate_raw_z_score(obs_expr, exp_expr)
+
+            lower_struct[pop] = oe_ci_expr.lower
+            upper_struct[pop] = oe_ci_expr.upper
+            gen_anc_z_raw_struct[pop] = raw_z_expr
+
+    # Annotate the table with the nested structs
+    ann_expr[ann] = ann_expr[ann].annotate(
+        gen_anc_oe_ci=hl.struct(
+            lower=hl.struct(**lower_struct), upper=hl.struct(**upper_struct)
+        ),
+        gen_anc_z_raw=hl.struct(**gen_anc_z_raw_struct),
+    )
 
     ann_expr["constraint_flags"] = add_filters_expr(filters=constraint_flags_expr)
     ht = ht.annotate(**ann_expr)
