@@ -535,7 +535,7 @@ def apply_models(
         key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
         genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
         downsampling_meta[pop] = [
-            x[1].get("downsampling", "full")
+            x[1].get("downsampling", "all")
             for x in ds
             if x[1][genetic_ancestry_label] == pop
             and (
