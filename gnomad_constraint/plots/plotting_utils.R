@@ -55,7 +55,7 @@ reformat_for_metric_comparison <- function(comparison_df) {
   # Pivot to longer df with metric name and value
   comparison_df <- comparison_df %>%
     pivot_longer(
-      cols = c(lof.oe_ci.upper.v2, lof.oe_ci.upper.v4, lof.z_score.v2, lof.z_score.v4),
+      cols = c(lof.oe_ci.upper.v2, lof.oe_ci.upper.v4, lof.z_score.v2, lof.z_score.v4,lof.oe.v2, lof.oe.v4),
       names_to = "metric_name",
       values_to = "value"
     )
@@ -72,6 +72,7 @@ reformat_for_metric_comparison <- function(comparison_df) {
     mutate(metric_name = case_when(
       .data$metric_name == "lof.oe_ci.upper" ~ "LOEUF",
       .data$metric_name == "lof.z_score" ~ "pLoF Z-score",
+      .data$metric_name == "lof.oe" ~ "pLoF o/e",
       TRUE ~ .data$metric_name # Keeps all other values as they are
     ))
   

@@ -51,7 +51,7 @@ if (!is.na(opt$working_directory)) {
 }
 print(glue("Working directory is {getwd()}"))
 
-output_directory="/Users/kristen/Desktop/constraint_plots"
+output_basedir="/Users/kristen/Desktop/constraint_plots"
 working_directory="/Users/kristen/code/gnomad-constraint/gnomad_constraint/plots"
 use_presentation_sizes=FALSE
 
@@ -300,7 +300,9 @@ comparison_df <- comparison_df %>%
         "lof.oe_ci.upper.v2",
         "lof.oe_ci.upper.v4",
         "lof.z_score.v2",
-        "lof.z_score.v4"
+        "lof.z_score.v4",
+        "lof.oe.v2",
+        "lof.oe.v4"
       )
     )
   )
@@ -309,13 +311,15 @@ comparison_df <- comparison_df %>%
 comparison_df <- reformat_for_metric_comparison(comparison_df)
 
 comparison_plot <- plot_metric_comparison(comparison_df, use_presentation_sizes=use_presentation_sizes)
+comparison_plot
+comparison_plot
 plot_path <- get_plot_path(
   "v2_v4_compare_values",
   output_basedir = output_basedir
 )
 
 ggsave(
-  comparsion_plot,
+  comparison_plot,
   filename = plot_path,
   dpi = 300,
   width = 8,

@@ -278,7 +278,10 @@ load_constraint_metrics <- function(
            lof.exp.v2 = exp_lof,
            syn.obs.v2 = obs_syn,
            mis.obs.v2 = obs_mis,
-           lof.obs.v2 = obs_lof)
+           lof.obs.v2 = obs_lof,
+           lof.oe.v2 = oe_lof,
+           mis.oe.v2 = oe_mis,
+           syn.oe.v2 = oe_syn)
     }
     
     # Add "v4" version to column names
