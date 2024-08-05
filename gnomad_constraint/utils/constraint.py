@@ -1,4 +1,5 @@
 """Script containing utility functions used in the constraint pipeline."""
+
 import logging
 from typing import Dict, List, Optional, Tuple
 
@@ -16,7 +17,7 @@ from gnomad.utils.constraint import (
     compute_pli,
     count_variants_by_group,
     get_constraint_flags,
-    get_downsampling_freq_indices,
+    get_pop_freq_indices,
     oe_aggregation_expr,
     oe_confidence_interval,
     trimer_from_heptamer,
@@ -182,6 +183,7 @@ def create_observed_and_possible_ht(
     low_coverage_filter: int = None,
     transcript_for_synonymous_filter: str = None,
     global_annotation: Optional[str] = None,
+    skip_downsamplings: bool = False,
 ) -> hl.Table:
     """
     Count the observed variants and possible variants by substitution, context, methylation level, and additional `grouping`.
@@ -238,6 +240,7 @@ def create_observed_and_possible_ht(
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
         global annotation will not be added. Default is None.
+    :param skip_downsamplings: Whether or not to skip pulling the downsampling data.
     :return: Table with observed variant and possible variant count.
     """
     if low_coverage_filter is not None:
@@ -292,6 +295,7 @@ def create_observed_and_possible_ht(
         count_downsamplings=pops,
         use_table_group_by=True,
         max_af=max_af,
+        skip_downsamplings=skip_downsamplings,
     )
 
     # TODO: Remove repartition once partition_hint bugs are resolved.
@@ -353,6 +357,7 @@ def apply_models(
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
     use_mane_select: bool = True,
+    skip_downsamplings: bool = False,
 ) -> hl.Table:
     """
     Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
@@ -426,6 +431,7 @@ def apply_models(
     :param use_mane_select: Use MANE Select transcripts in grouping.
         Only used when `custom_vep_annotation` is set to 'transcript_consequences'.
         Default is True.
+    :param skip_downsamplings: Whether or not to skip pulling the downsampling data.
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
@@ -477,6 +483,7 @@ def apply_models(
         partition_hint=obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         transcript_for_synonymous_filter=None,
+        skip_downsamplings=skip_downsamplings,
     )
 
     # NOTE: In v2 ht.mu_snp was incorrectly multiplied here by possible_variants, but this multiplication has now been moved,
@@ -524,15 +531,15 @@ def apply_models(
 
         # Store which downsamplings are obtained for each pop in a
         # downsampling_meta dictionary.
-        ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, pop=pop))
+        ds = hl.eval(get_pop_freq_indices(ht.freq_meta, pop=pop))
         key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
         genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
         downsampling_meta[pop] = [
-            x[1]["downsampling"]
+            x[1].get("downsampling", "all")
             for x in ds
-            if (x[1][genetic_ancestry_label] == pop)
-            & (
-                int(x[1]["downsampling"]) in downsamplings
+            if x[1][genetic_ancestry_label] == pop
+            and (
+                int(x[1].get("downsampling", 0)) in downsamplings
                 if downsamplings is not None
                 else True
             )
@@ -897,9 +904,8 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
-            ht.annotation
-        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
+        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC.
         "lof": ht.modifier == "HC",
         # Filter to missense variants.
@@ -1008,6 +1014,29 @@ def compute_constraint_metrics(
             oe_ci=oe_ci_expr,
             z_raw=raw_z_expr,
         )
+
+        gen_anc_lower_struct = {}
+        gen_anc_upper_struct = {}
+        gen_anc_z_raw_struct = {}
+
+        # Calculate lower and upper cis, and raw z scores for each pop, excluding downsamplings.
+        for pop in pops:
+            obs_expr = ht[ann]["gen_anc_obs"][pop][0]
+            exp_expr = ht[ann]["gen_anc_exp"][pop][0]
+            oe_ci_expr = oe_confidence_interval(obs_expr, exp_expr)
+            raw_z_expr = calculate_raw_z_score(obs_expr, exp_expr)
+
+            lower_struct[pop] = oe_ci_expr.lower
+            upper_struct[pop] = oe_ci_expr.upper
+            gen_anc_z_raw_struct[pop] = raw_z_expr
+
+    # Annotate the table with the structs.
+    ann_expr[ann] = ann_expr[ann].annotate(
+        gen_anc_oe_ci=hl.struct(
+            lower=hl.struct(**lower_struct), upper=hl.struct(**upper_struct)
+        ),
+        gen_anc_z_raw=hl.struct(**gen_anc_z_raw_struct),
+    )
 
     ann_expr["constraint_flags"] = add_filters_expr(filters=constraint_flags_expr)
     ht = ht.annotate(**ann_expr)
