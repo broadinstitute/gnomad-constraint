@@ -240,7 +240,7 @@ def create_observed_and_possible_ht(
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
         global annotation will not be added. Default is None.
-    :param skip_downsamplings: Whether of not to skip pulling the downsampling data.
+    :param skip_downsamplings: Whether or not to skip pulling the downsampling data.
     :return: Table with observed variant and possible variant count.
     """
     if low_coverage_filter is not None:
@@ -431,7 +431,7 @@ def apply_models(
     :param use_mane_select: Use MANE Select transcripts in grouping.
         Only used when `custom_vep_annotation` is set to 'transcript_consequences'.
         Default is True.
-    :param skip_downsamplings: Whether of not to skip pulling the downsampling data.
+    :param skip_downsamplings: Whether or not to skip pulling the downsampling data.
 
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
@@ -1019,7 +1019,7 @@ def compute_constraint_metrics(
         gen_anc_upper_struct = {}
         gen_anc_z_raw_struct = {}
 
-        # Calculate lower and upper cis, and raw z scores for each pop, excluding downsamplings
+        # Calculate lower and upper cis, and raw z scores for each pop, excluding downsamplings.
         for pop in pops:
             obs_expr = ht[ann]["gen_anc_obs"][pop][0]
             exp_expr = ht[ann]["gen_anc_exp"][pop][0]
@@ -1030,7 +1030,7 @@ def compute_constraint_metrics(
             upper_struct[pop] = oe_ci_expr.upper
             gen_anc_z_raw_struct[pop] = raw_z_expr
 
-    # Annotate the table with the nested structs
+    # Annotate the table with the structs.
     ann_expr[ann] = ann_expr[ann].annotate(
         gen_anc_oe_ci=hl.struct(
             lower=hl.struct(**lower_struct), upper=hl.struct(**upper_struct)
