@@ -89,7 +89,7 @@ reformat_for_metric_comparison <- function(comparison_df) {
     summarize(
       correlation = cor(.data$v2, .data$v4, method = "pearson", use = "complete.obs")
     )
-  return(df)
+  return(comparison_df)
 }
 ####################################################################
 # Reformat data to use for plotting observed vs expected values

@@ -586,11 +586,14 @@ plot_observed_vs_expected <- function(df, version) {
 plot_proportion_observed_vs_mu <-  function(
     df,
     coverage_metric ="exome_coverage",
-    high_coverage_cutoff = 30) {
+    high_coverage_cutoff = 30,
+    use_presentation_sizes = FALSE
+    ) {
   # Plot proportion observed (observed over possible variants) vs mu 
   # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constraint pipeline) and predicted proportion observed
   # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
   # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of proportion observed vs mu 
   
   # Get metrics (observed, possible, proportion observed) for well-covered sites
@@ -600,7 +603,7 @@ plot_proportion_observed_vs_mu <-  function(
     summarize(obs = sum(observed_variants, na.rm=T), poss = sum(possible_variants, na.rm=T), prop_observed = obs / poss)
   
   # Plot proportion observed vs mu_snp
-  prop_observed_v_mu_snp_plot = high_coverage_data %>%
+  p = high_coverage_data %>%
     ggplot + aes_string(x = 'mu_snp') +
     aes(y = prop_observed, color = mutation_type, shape = as.character(methylation_level)) + 
     geom_point() + theme_classic() + scale_shape_manual(values=shapes, guide=F) +
@@ -619,9 +622,11 @@ plot_proportion_observed_vs_mu <-  function(
     }) %>%
     ungroup()
   
-  prop_observed_v_mu_snp_plot = prop_observed_v_mu_snp_plot + geom_abline(aes(slope = mu_snp, intercept= intercept), 
-                                                                          data=lms, linetype='dashed', color='darkgray')
-  return(prop_observed_v_mu_snp_plot)
+  p <- p + geom_abline(aes(slope = mu_snp, intercept= intercept), data=lms, linetype='dashed', color='darkgray')
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
+  return(p)
 }
 
 ####################################################################
@@ -631,12 +636,14 @@ plot_oe_vs_cov_metric <-  function(
     df,
     coverage_metric ="exome_coverage",
     high_coverage_cutoff = 30,
-    add_best_fit = FALSE) {
+    add_best_fit = FALSE,
+    use_presentation_sizes = FALSE) {
   # Plot the observed to expected ratio vs metrics that determines coverage at site
   # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constraint pipeline) and predicted proportion observed
   # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
   # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
   # add_best_fit: Add line of best fit to plot of observed:expected ratio vs coverage_metric for poorly-covered sites. Default is FALSE.
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of observed:expected ration vs coverage_metric
   
   # Get metrics (observed, possible, expected, observed/expected) for poorly covered sites
@@ -663,17 +670,20 @@ plot_oe_vs_cov_metric <-  function(
     pivot_wider(names_from = term, values_from = estimate)
   
   # Plot observed/expected vs coverage_metrics
-  oe_v_mu_plot = low_coverage_data %>%
+  p = low_coverage_data %>%
     ggplot + aes(x = !!sym(coverage_metric), y = oe) + geom_point() + theme_classic() +
-    xlab("AN bin") + ylab('Observed / Expected')
-    #xlab(coverage_metric) + ylab('Observed / Expected') 
+    #xlab("AN bin") + ylab('Observed / Expected')
+    xlab(coverage_metric) + ylab('Observed / Expected') 
   
   if (add_best_fit==TRUE){
-    oe_v_mu_plot <- oe_v_mu_plot + geom_smooth(aes(!!sym(coverage_metric), oe),
+    p <- p + geom_smooth(aes(!!sym(coverage_metric), oe),
                                                data = low_coverage_data %>% filter(!!sym(coverage_metric) < high_coverage_cutoff & !!sym(coverage_metric) > 0),
                                                method = lm, formula = y ~ x, 
                                                linetype = 'dashed', se=F, color='darkgray')}
   
-  return(oe_v_mu_plot)
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
+  
+  return(p)
   
 }
