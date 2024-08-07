@@ -1,4 +1,5 @@
 """Script containing utility functions used in the constraint pipeline."""
+
 import logging
 from typing import Dict, List, Optional, Tuple
 
@@ -155,8 +156,9 @@ def prepare_ht_for_constraint_calculations(
         genomes_AN=ht.AN.genomes,
     )
 
-    ht = ht.annotate(exomes_AN_percent=hl.int(ht.exomes_AN/1461894*100),
-    exomes_AN_percent_raw=hl.int(ht.exomes_AN_raw/1461894*100)
+    ht = ht.annotate(
+        exomes_AN_percent=hl.int(ht.exomes_AN / 1461894 * 100),
+        exomes_AN_percent_raw=hl.int(ht.exomes_AN_raw / 1461894 * 100),
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
@@ -183,7 +185,7 @@ def create_observed_and_possible_ht(
     ),
     pops: Tuple[str] = (),
     downsamplings: Optional[List[int]] = None,
-    grouping: Tuple[str] = ("exomes_AN_percent_raw",),
+    grouping: Tuple[str] = ("exomes_AN_percent",),
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
     low_coverage_filter: int = None,
@@ -248,39 +250,38 @@ def create_observed_and_possible_ht(
     :return: Table with observed variant and possible variant count.
     """
     print(" CONSTRAINT TESTING LINE")
-    #exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[1])-hl.int(exome_ht.AN.exomes[168]))
-    #context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[1])-hl.int(context_ht.AN.exomes[168]))
+    # exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[1])-hl.int(exome_ht.AN.exomes[168]))
+    # context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[1])-hl.int(context_ht.AN.exomes[168]))
 
-    #exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/833110*100))
-    #context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/833110*100))
+    # exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/833110*100))
+    # context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/833110*100))
 
+    # exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[168]))
+    # context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[168]))
 
-    #exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[168]))
-    #context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[168]))
+    # exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/628784*100))
+    # context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/628784*100))
 
-    #exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/628784*100))
-    #context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/628784*100))
-
-
-    exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/2))
-    context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/2))
+    # exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/2))
+    # context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/2))
 
     if low_coverage_filter is not None:
-        context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
-        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent_raw >= low_coverage_filter)
+        context_ht = context_ht.filter(
+            context_ht.exomes_AN_percent >= low_coverage_filter
+        )
+        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
-    #freq_expr = exome_ht.freq[0]
-   #exome_ht = exome_ht.annotate(freq = [hl.struct(AC=exome_ht.freq[0].AC-exome_ht.freq[167].AC,
-   #                                AN=exome_ht.freq[0].AN-exome_ht.freq[167].AN,
-   #                                AF=(exome_ht.freq[0].AC-exome_ht.freq[167].AC)/(exome_ht.freq[0].AN-exome_ht.freq[167].AN))])
+    # freq_expr = exome_ht.freq[0]
+    # exome_ht = exome_ht.annotate(freq = [hl.struct(AC=exome_ht.freq[0].AC-exome_ht.freq[167].AC,
+    #                                AN=exome_ht.freq[0].AN-exome_ht.freq[167].AN,
+    #                                AF=(exome_ht.freq[0].AC-exome_ht.freq[167].AC)/(exome_ht.freq[0].AN-exome_ht.freq[167].AN))])
 
-    #exome_ht = exome_ht.checkpoint(new_temp_file(prefix="exome_ht", extension="ht"))
+    # exome_ht = exome_ht.checkpoint(new_temp_file(prefix="exome_ht", extension="ht"))
 
     freq_expr = exome_ht.freq[0]
-    #freq_expr = exome_ht.freq[167]
-
+    # freq_expr = exome_ht.freq[167]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, variants with allele frequency above the `max_af` cutoff, and variants
@@ -300,7 +301,7 @@ def create_observed_and_possible_ht(
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent_raw))
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
 
     # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.
@@ -469,11 +470,13 @@ def apply_models(
         (observed:expected ratio) annotations.
     """
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent_raw))
+    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
 
     if low_coverage_filter is not None:
-        context_ht = context_ht.filter(context_ht.exomes_AN_percent_raw >= low_coverage_filter)
-        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent_raw >= low_coverage_filter)
+        context_ht = context_ht.filter(
+            context_ht.exomes_AN_percent >= low_coverage_filter
+        )
+        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
 
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
@@ -935,9 +938,8 @@ def compute_constraint_metrics(
     # `annotation_dict` stats the rule of filtration for each annotation.
     annotation_dict = {
         # Filter to classic LoF annotations with LOFTEE HC or LC.
-        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(
-            ht.annotation
-        ) & ((ht.modifier == "HC") | (ht.modifier == "LC")),
+        "lof_hc_lc": hl.literal(set(classic_lof_annotations)).contains(ht.annotation)
+        & ((ht.modifier == "HC") | (ht.modifier == "LC")),
         # Filter to LoF annotations with LOFTEE HC.
         "lof": ht.modifier == "HC",
         # Filter to missense variants.
