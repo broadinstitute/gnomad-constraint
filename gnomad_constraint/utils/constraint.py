@@ -531,7 +531,7 @@ def apply_models(
         .when(ht.coverage == 0, 0)
         .when(ht.coverage >= high_cov_definition, 1)
         .default(
-            (coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
+            (coverage_model[1] * (ht.coverage) + coverage_model[0])
             if coverage_model is not None
             else 1
         )
