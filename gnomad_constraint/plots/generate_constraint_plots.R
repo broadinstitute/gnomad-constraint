@@ -475,5 +475,5 @@ plot_path <- get_plot_path(
 ggsave(oe_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
 
 
-test <- filter(comparison_df, metric_name =="pLoF o/e", v2 > 4, v4< 1)
+test <- filter(comparison_df, metric_name =="pLoF o/e", v2 > 0, v4==0)
 
