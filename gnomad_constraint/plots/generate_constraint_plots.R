@@ -359,99 +359,31 @@ for (version in versions_to_plot) {
 
 ####################################################################
 ####################################################################
-# Plot proportion observed vs mu
+# Plot proportion observed vs mu for v4
 ####################################################################
 ####################################################################
-setwd("/Users/kristen/code/gnomad-constraint/gnomad_constraint/plots")
-source("loading_functions.R")
-source("plotting_functions.R")
-source("plotting_utils.R")
+training_data <- load_constraint_metrics(
+  version = "v4",
+  output_basedir = output_basedir,
+  training_set = TRUE,
+  release = FALSE,
+  public = FALSE,
+)
 
-setwd("/Users/kristen/Desktop/an_cov")
-use_presentation_sizes=TRUE
-
-#ADJ
-training_data = read.delim("an_po.txt")
-name=""
-high_coverage_cutoff=90
-
-#RAW
-training_data = read.delim("po_an_raw.txt")
-name="_raw"
-high_coverage_cutoff=90
-
-#RAW BINS
-training_data = read.delim("po_an_10_raw.txt")
-name="_10_raw"
-high_coverage_cutoff=9
-
-training_data = read.delim("po_an_20_raw.txt")
-name="_20_raw"
-high_coverage_cutoff=18
-
-training_data = read.delim("po_an_50_raw.txt")
-name="_50_raw"
-high_coverage_cutoff=45
-
-
-# ADJ BINS
-training_data = read.delim("po_an_10.txt")
-name="_10"
-high_coverage_cutoff=9
-
-training_data = read.delim("po_an_20.txt")
-name="_20"
-high_coverage_cutoff=18
-
-training_data = read.delim("po_an_50.txt")
-name="_50"
-high_coverage_cutoff=45
-
-
-#NON-UKB
-training_data = read.delim("po_an_non_ukb.txt")
-name="_non_ukb"
-high_coverage_cutoff=90
-
-
-#UKB
-training_data = read.delim("po_an_ukb.txt")
-name="_ukb"
-high_coverage_cutoff=90
-
-#NON-UKB and BROAD INTERVALS
-training_data = read.delim("po_an_non_ukb_bi.txt")
-name="_non_ukb"
-high_coverage_cutoff=90
-
-#ADJ AND COV
-training_data = read.delim("po_an_adj_cov.txt")
-name="_adj_cov"
-high_coverage_cutoff=66
-
-#ADJ AND COV2
-training_data = read.delim("po_an_adj_cov2.txt")
-name="_adj_cov2"
-high_coverage_cutoff=66
-
-
-unique(training_data$exomes_AN_percent)
-
-
-version="v4"
-output_basedir="/Users/kristen/Desktop/an_cov"
+# TODO: make arg?
+coverage_metric = "exomes_AN_percent"
 
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
-                                                           coverage_metric="exomes_AN_percent",
+                                                           coverage_metric=coverage_metric,
                                                            high_coverage_cutoff=high_coverage_cutoff)
 
 po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
-                                          coverage_metric="exomes_AN_percent",
+                                          coverage_metric=coverage_metric,
                                           high_coverage_cutoff=high_coverage_cutoff,
                                           use_presentation_sizes=use_presentation_sizes)
-po_v_mu
+
 plot_path <- get_plot_path(
-  glue("ov_v_mu{name}"),
+  glue("ov_v_mu"),
   version = version,
   output_basedir = output_basedir
 )
@@ -459,26 +391,23 @@ ggsave(po_v_mu, filename = plot_path, dpi = 300, width = 7, height = 6, units = 
 
 ####################################################################
 ####################################################################
-# Plot observed to expected ratio vs coverage metric
+# Plot observed to expected ratio vs coverage metric for v4
 ####################################################################
 ####################################################################
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
-                                                           coverage_metric="exomes_AN_percent",
+                                                           coverage_metric=coverage_metric,
                                                            high_coverage_cutoff=high_coverage_cutoff)
 
 oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
-                                  coverage_metric="exomes_AN_percent",
+                                  coverage_metric=coverage_metric,
                                   high_coverage_cutoff=high_coverage_cutoff,
                                   add_best_fit=TRUE,
                                   use_presentation_sizes=use_presentation_sizes)
 
 plot_path <- get_plot_path(
-  glue("oe_v_cov{name}"),
+  "oe_v_cov",
   version = version,
   output_basedir = output_basedir
 )
 ggsave(oe_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
-
-
-test <- filter(comparison_df, metric_name =="pLoF o/e", v2 > 0, v4==0)
 

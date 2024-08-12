@@ -233,7 +233,7 @@ load_constraint_metrics <- function(
   # Note: v2 training step will be pulled from the reprocessed pipeline
   if (training_set) {
     base_fname <- glue("gnomad.v{full_version}.constraint_training.autosome_par.ht")
-    pipeline_step = "training"
+    pipeline_step = "training_data"
   } else {pipeline_step = "metrics"}
 
   df <- read.delim(get_or_download_file(
