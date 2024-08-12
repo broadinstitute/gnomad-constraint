@@ -201,6 +201,19 @@ get_predicted_proportion_observed <- function (
     ungroup()
   
   return(data_with_predictions)
-  
-  
 }
+
+####################################################################
+# Remove version suffix
+####################################################################
+remove_version_suffix <- function(df, version = "v4") {
+  # Reformat version suffix from column names in dataframe if relevant
+  # df: Dataframe to edit
+  # version: Version to check for in suffix
+  # Returns: Reformatted dataframe with version suffix removed
+  
+  pattern <- paste0("\\.", version, "$")
+  names(df) <- gsub(pattern, "", names(df))
+  return(df)
+}
+

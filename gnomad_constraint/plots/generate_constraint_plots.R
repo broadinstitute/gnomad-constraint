@@ -370,8 +370,14 @@ training_data <- load_constraint_metrics(
   public = FALSE,
 )
 
+
+# Remove version suffix from the training data to prepare for plotting
+training_data <- remove_version_suffix(training_data)
+
 # TODO: make arg?
 coverage_metric = "exomes_AN_percent"
+coverage_metric = "exome_coverage"
+
 
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
                                                            coverage_metric=coverage_metric,
@@ -410,4 +416,4 @@ plot_path <- get_plot_path(
   output_basedir = output_basedir
 )
 ggsave(oe_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
-
+plot_path
