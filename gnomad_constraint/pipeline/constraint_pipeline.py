@@ -126,8 +126,9 @@ def get_constraint_resources(
                 "genomes_coverage_ht": constraint_res.get_coverage_ht(
                     "genomes", version
                 ),
-                "exomes_an_ht": constraint_res.get_an_ht("exomes"),
-                "genomes_an_ht": constraint_res.get_an_ht("genomes"),
+                # TODO: Check why all_sites_an doesn't work
+                "exomes_an_ht": "gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht",
+                "genomes_an_ht": "gs://gcp-public-data--gnomad/release/4.1/ht/genomes/gnomad.genomes.v4.1.allele_number_all_sites.ht",
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
             },
         },
@@ -253,6 +254,7 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
+    coverage_metric = args.coverage_metric
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -310,8 +312,8 @@ def main(args):
             }
             # TODO: Make compatible with v2
             an_hts = {
-                "exomes": res.exomes_an_ht.ht(),
-                "genomes": res.genomes_an_ht.ht(),
+                "exomes": hl.read_table(res.exomes_an_ht),
+                "genomes": hl.read_table(res.genomes_an_ht),
             }
             annotate_context_ht(
                 context_ht,
@@ -347,7 +349,9 @@ def main(args):
                 # Filter input Table and add annotations used in constraint
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(
-                    ht, require_exome_coverage=(data_type == "exomes")
+                    ht,
+                    require_exome_coverage=(data_type == "exomes"),
+                    coverage_metric=coverage_metric,
                 )
                 # Filter to locus that is on an autosome.
                 # TODO: Add back in pseudoautosomal regions once have X/Y methylation
@@ -651,11 +655,7 @@ if __name__ == "__main__":
     preprocess_data_args = parser.add_argument_group(
         "Preprocess data args", "Arguments used for preprocessing the data."
     )
-    preprocess_data_args.add_argument(
-        "--use-v2-release-context-ht",
-        help="Whether to use the annotated context Table for the v2 release.",
-        action="store_true",
-    )
+
     preprocess_data_args.add_argument(
         "--preprocess-data",
         help=(
@@ -664,6 +664,19 @@ if __name__ == "__main__":
             " annotations."
         ),
         action="store_true",
+    )
+
+    preprocess_data_args.add_argument(
+        "--use-v2-release-context-ht",
+        help="Whether to use the annotated context Table for the v2 release.",
+        action="store_true",
+    )
+
+    preprocess_data_args.add_argument(
+        "--coverage-metric",
+        help="Name of metric to use to assess coverage. Default is 'exomes_AN_percent'.",
+        type=str,
+        default="exomes_AN_percent",
     )
 
     parser.add_argument(

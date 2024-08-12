@@ -77,7 +77,9 @@ def add_vep_context_annotations(
 
 
 def prepare_ht_for_constraint_calculations(
-    ht: hl.Table, require_exome_coverage: bool = True
+    ht: hl.Table,
+    require_exome_coverage: bool = True,
+    coverage_metric: str = "exomes_AN_percent",
 ) -> hl.Table:
     """
     Filter input Table and add annotations used in constraint calculations.
@@ -97,6 +99,7 @@ def prepare_ht_for_constraint_calculations(
     :param ht: Input Table to be annotated.
     :param require_exome_coverage: Filter to sites where exome coverage is defined.
         Default is True.
+    :param coverage_metric: Name for metric to use for coverage. Default is "exomes_AN_percent".
     :return: Table with annotations.
     """
     ht = trimer_from_heptamer(ht)
@@ -156,9 +159,14 @@ def prepare_ht_for_constraint_calculations(
         genomes_AN=ht.AN.genomes,
     )
 
+    # Calculate total allele number from strata_sample_count and annotate exomes_AN_percent (percent samples with AN)
     ht = ht.annotate(
-        exomes_AN_percent=hl.int(ht.exomes_AN / 1461894 * 100),
-        exomes_AN_percent_raw=hl.int(ht.exomes_AN_raw / 1461894 * 100),
+        exomes_AN_percent=hl.int(
+            ht.exomes_AN / ht.globals.strata_sample_count[0] * 2 * 100
+        ),
+        exomes_AN_percent_raw=hl.int(
+            ht.exomes_AN_raw / ht.globals.strata_sample_count[1] * 2 * 100
+        ),
     )
 
     # Add most_severe_consequence annotation to 'transcript_consequences' within the
@@ -166,8 +174,8 @@ def prepare_ht_for_constraint_calculations(
     ht = add_most_severe_csq_to_tc_within_vep_root(ht)
 
     if require_exome_coverage:
-        # Filter out locus with undefined exome coverage.
-        ht = ht.filter(hl.is_defined(ht.exome_coverage))
+        # Filter out locus with undefined coverage_metric.
+        ht = ht.filter(hl.is_defined(ht.coverage_metric))
 
     return ht
 
