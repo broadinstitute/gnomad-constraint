@@ -85,7 +85,7 @@ def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> s
     return (
         f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
         if test
-        else f"gs://gnomad/v{version}/constraint"
+        else f"gs://gnomad/v{version}/constraint_an"
     )
 
 
@@ -266,6 +266,27 @@ def get_training_dataset(
     )
 
 
+def get_training_tsv_path(
+    version: str = CURRENT_VERSION,
+    genomic_region: str = "autosome_par",
+    test: bool = False,
+) -> TableResource:
+    """
+    Return tsv of training dataset with observed and possible variant count.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_nonpar", or "chry_nonpar". Default is "autosome_par".
+    :param test: Whether the Table is for testing purpose and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :return: TSV path of training dataset.
+    """
+    check_param_scope(version, genomic_region)
+
+    return f"{get_constraint_root(version, test)}/training_data/gnomad.v{version}.constraint_training.{genomic_region}.tsv.bgz"
+
+
 def get_models(
     model_type: str,
     version: str = CURRENT_VERSION,
@@ -355,9 +376,7 @@ def get_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
-    )
+    return f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
 
 
 def get_downsampling_constraint_tsv_path(
@@ -374,9 +393,7 @@ def get_downsampling_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
-    )
+    return f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
 
 
 def check_param_scope(
@@ -442,9 +459,7 @@ def get_checkpoint_path(
     :param bool mt: Whether path is for a MatrixTable. Default is False.
     :return: Output checkpoint path.
     """
-    return (
-        f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
-    )
+    return f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
 
 
 def get_gencode_ht(version: str) -> hl.Table:

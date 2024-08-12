@@ -169,8 +169,14 @@ def get_constraint_resources(
     create_training_set = PipelineStepResourceCollection(
         "--create-training-set",
         output_resources={
-            f"train_{r}_ht": constraint_res.get_training_dataset(version, r, test)
-            for r in regions
+            **{
+                f"train_{r}_ht": constraint_res.get_training_dataset(version, r, test)
+                for r in regions
+            },
+            **{
+                f"train_{r}_tsv": constraint_res.get_training_tsv_path(version, r, test)
+                for r in regions
+            },
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
     )
@@ -426,6 +432,8 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
+                op_ht.export(getattr(res, f"train_{r}_tsv").path)
+
             logger.info("Done with creating training dataset.")
 
         if args.build_models:
