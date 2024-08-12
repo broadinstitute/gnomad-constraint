@@ -126,6 +126,8 @@ def get_constraint_resources(
                 "genomes_coverage_ht": constraint_res.get_coverage_ht(
                     "genomes", version
                 ),
+                "exomes_an_ht": constraint_res.get_an_ht("exomes"),
+                "genomes_an_ht": constraint_res.get_an_ht("genomes"),
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
             },
         },
@@ -264,8 +266,8 @@ def main(args):
 
     # If pops not specified, set to empty Tuple
     if not pops:
-        pops=()
-    
+        pops = ()
+
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
     if int(version[0]) >= 4:
@@ -306,9 +308,10 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
+            # TODO: Make compatible with v2
             an_hts = {
-            "genomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/genomes/gnomad.genomes.v4.1.allele_number_all_sites.ht"),
-            "exomes": hl.read_table("gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht")
+                "exomes": res.exomes_an_ht.ht(),
+                "genomes": res.genomes_an_ht.ht(),
             }
             annotate_context_ht(
                 context_ht,

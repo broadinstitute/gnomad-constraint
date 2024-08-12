@@ -1176,7 +1176,7 @@ def annotate_context_ht(
         coverage=hl.struct(
             **{loc: coverage_ht[ht.locus] for loc, coverage_ht in coverage_hts.items()}
         ),
-        # Use adj criteria to annotate AN
+        # Use adj criteria to annotate AN.
         AN=hl.struct(
             **{data_type: an_ht[ht.locus].AN for data_type, an_ht in an_hts.items()}
         ),

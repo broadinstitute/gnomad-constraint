@@ -164,6 +164,22 @@ def get_coverage_ht(
         return gnomad_grch38.coverage(data_type)
 
 
+def get_an_ht(
+    data_type: str,
+) -> VersionedTableResource:
+    """
+    Return TableResource of allele number Table.
+    :param data_type: One of "exomes", "genomes".
+    :return: TableResource of allele number Table.
+    """
+    if int(version[0]) < 4:
+        raise ValueError(
+            "Allele number Tables are not availble for versions preceeding v4."
+        )
+    else:
+        return gnomad_grch38.all_sites_an(data_type)
+
+
 def get_mutation_ht(
     version: str = CURRENT_VERSION,
     test: bool = False,
@@ -355,9 +371,7 @@ def get_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
-    )
+    return f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
 
 
 def get_downsampling_constraint_tsv_path(
@@ -374,9 +388,7 @@ def get_downsampling_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
-    )
+    return f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
 
 
 def check_param_scope(
@@ -442,9 +454,7 @@ def get_checkpoint_path(
     :param bool mt: Whether path is for a MatrixTable. Default is False.
     :return: Output checkpoint path.
     """
-    return (
-        f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
-    )
+    return f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
 
 
 def get_gencode_ht(version: str) -> hl.Table:
