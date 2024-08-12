@@ -268,6 +268,10 @@ def main(args):
     )
     logger.info("The following downsamplings will be used: %s", downsamplings)
 
+    # If pops not specified, set to empty Tuple
+    if not pops:
+        pops = ()
+
     # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
     # methylation data).
     if int(version[0]) >= 4:
@@ -432,7 +436,7 @@ def main(args):
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
                 op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
-                op_ht.export(getattr(res, f"train_{r}_tsv").path)
+                op_ht.export(getattr(res, f"train_{r}_tsv"))
 
             logger.info("Done with creating training dataset.")
 
