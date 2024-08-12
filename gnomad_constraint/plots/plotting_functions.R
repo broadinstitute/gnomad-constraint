@@ -607,7 +607,8 @@ plot_proportion_observed_vs_mu <-  function(
     ggplot + aes_string(x = 'mu_snp') +
     aes(y = prop_observed, color = mutation_type, shape = as.character(methylation_level)) + 
     geom_point() + theme_classic() + scale_shape_manual(values=shapes, guide=F) +
-    scale_color_manual(values=variant_type_colors) + xlab('Mu') + ylab('Proportion observed')
+    scale_color_manual(values=variant_type_colors) + xlab('Mu') + ylab('Proportion observed') +
+    scale_x_continuous(labels = scales::scientific)
   
   # Fit linear model and add to plot
   lms <- high_coverage_data %>%

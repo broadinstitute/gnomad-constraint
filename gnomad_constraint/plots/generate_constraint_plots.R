@@ -429,6 +429,11 @@ training_data = read.delim("po_an_adj_cov.txt")
 name="_adj_cov"
 high_coverage_cutoff=66
 
+#ADJ AND COV2
+training_data = read.delim("po_an_adj_cov2.txt")
+name="_adj_cov2"
+high_coverage_cutoff=66
+
 
 unique(training_data$exomes_AN_percent)
 
@@ -443,7 +448,7 @@ data_with_predictions <- get_predicted_proportion_observed(df = training_data,
 po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
                                           coverage_metric="exomes_AN_percent",
                                           high_coverage_cutoff=high_coverage_cutoff,
-                                          use_presentation_sizes=FALSE)
+                                          use_presentation_sizes=use_presentation_sizes)
 po_v_mu
 plot_path <- get_plot_path(
   glue("ov_v_mu{name}"),
