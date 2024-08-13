@@ -67,13 +67,19 @@ def add_vep_context_annotations(
         Function expects that multiallelic variants in the VEP context Table have been
         split.
 
+    Function also adds an_strata_sample_count to globals.
+
     :param ht: gnomAD exomes or genomes public Hail Table.
     :param annotated_context_ht: VEP context Table.
     :return: Table with annotations.
     """
     context_ht = annotated_context_ht.drop("a_index", "was_split")
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
-    return ht.annotate(**context_ht[ht.key])
+    ht = ht.annotate_globals(
+        an_strata_sample_count=context_ht.an_strata_sample_count.collect()[0]
+    )
+    ht = ht.annotate(**context_ht[ht.key])
+    return ht
 
 
 def prepare_ht_for_constraint_calculations(
@@ -162,10 +168,10 @@ def prepare_ht_for_constraint_calculations(
     # Calculate total allele number from strata_sample_count and annotate exomes_AN_percent (percent samples with AN)
     ht = ht.annotate(
         exomes_AN_percent=hl.int(
-            ht.exomes_AN / ht.globals.strata_sample_count[0] * 2 * 100
+            ht.exomes_AN / ht.an_strata_sample_count.exomes[0] * 2 * 100
         ),
         exomes_AN_percent_raw=hl.int(
-            ht.exomes_AN_raw / ht.globals.strata_sample_count[1] * 2 * 100
+            ht.exomes_AN_raw / ht.an_strata_sample_count.exomes[1] * 2 * 100
         ),
     )
 
@@ -175,7 +181,7 @@ def prepare_ht_for_constraint_calculations(
 
     if require_exome_coverage:
         # Filter out locus with undefined coverage_metric.
-        ht = ht.filter(hl.is_defined(ht.coverage_metric))
+        ht = ht.filter(hl.is_defined(ht[coverage_metric]))
 
     return ht
 
@@ -193,7 +199,8 @@ def create_observed_and_possible_ht(
     ),
     pops: Tuple[str] = (),
     downsamplings: Optional[List[int]] = None,
-    grouping: Tuple[str] = ("exomes_AN_percent",),
+    grouping: Tuple[str] = (),
+    coverage_metric: str = "exomes_AN_percent",
     partition_hint: int = 100,
     filter_coverage_over_0: bool = False,
     low_coverage_filter: int = None,
@@ -242,7 +249,7 @@ def create_observed_and_possible_ht(
         ('exome_coverage',).
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :param filter_coverage_over_0: Whether to filter the exome Table and context Table
-        to variants with coverage larger than 0. Default is False.
+        to variants with `coverage_metric` larger than 0. Default is False.
     :param low_coverage_filter: Lower median coverage cutoff for coverage filter. Sites
         with coverage below this cutoff will be removed from the `exome_ht` and
         'context_ht'.
@@ -255,41 +262,20 @@ def create_observed_and_possible_ht(
     :param global_annotation: The annotation name to use as a global StructExpression
         annotation containing input parameter values. If no value is supplied, this
         global annotation will not be added. Default is None.
+    :param coverage_metric: Name for metric to use for coverage. Default is "exomes_AN_percent".
     :return: Table with observed variant and possible variant count.
     """
-    print(" CONSTRAINT TESTING LINE")
-    # exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[1])-hl.int(exome_ht.AN.exomes[168]))
-    # context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[1])-hl.int(context_ht.AN.exomes[168]))
-
-    # exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/833110*100))
-    # context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/833110*100))
-
-    # exome_ht = exome_ht.annotate(exomes_AN_nukb = hl.int(exome_ht.AN.exomes[168]))
-    # context_ht = context_ht.annotate(exomes_AN_nukb = hl.int(context_ht.AN.exomes[168]))
-
-    # exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_nukb/628784*100))
-    # context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_nukb/628784*100))
-
-    # exome_ht = exome_ht.annotate(exomes_AN_percent_raw = hl.int(exome_ht.exomes_AN_percent_raw/2))
-    # context_ht = context_ht.annotate(exomes_AN_percent_raw = hl.int(context_ht.exomes_AN_percent_raw/2))
+    logger.info("Setting coverage_metric to %s", coverage_metric)
 
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(
-            context_ht.exomes_AN_percent >= low_coverage_filter
+            context_ht[coverage_metric] >= low_coverage_filter
         )
-        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht[coverage_metric] >= low_coverage_filter)
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
     # freq_expr = exome_ht.freq[0]
-    # exome_ht = exome_ht.annotate(freq = [hl.struct(AC=exome_ht.freq[0].AC-exome_ht.freq[167].AC,
-    #                                AN=exome_ht.freq[0].AN-exome_ht.freq[167].AN,
-    #                                AF=(exome_ht.freq[0].AC-exome_ht.freq[167].AC)/(exome_ht.freq[0].AN-exome_ht.freq[167].AN))])
-
-    # exome_ht = exome_ht.checkpoint(new_temp_file(prefix="exome_ht", extension="ht"))
-
-    freq_expr = exome_ht.freq[0]
-    # freq_expr = exome_ht.freq[167]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, variants with allele frequency above the `max_af` cutoff, and variants
@@ -298,18 +284,17 @@ def create_observed_and_possible_ht(
         (freq_expr.AC > 0) & exome_ht.pass_filters & (freq_expr.AF <= max_af)
     )
     if filter_coverage_over_0:
-        keep_criteria &= exome_ht.coverage > 0
+        keep_criteria &= exome_ht[coverage_metric] > 0
 
     keep_annotations += grouping
 
-    print("KEEP ANNOTATIONS ARE")
-    print(keep_annotations)
+    logger.info("Seeting keep annotations to %s", keep_annotations)
 
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
 
     # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
+    context_ht = context_ht.filter(hl.is_defined(context_ht[coverage_metric]))
 
     # If requested keep only variants that are synonymous in either MANE Select or
     # canonical transcripts.
@@ -351,8 +336,7 @@ def create_observed_and_possible_ht(
     context_ht = context_ht.select(*keep_annotations).anti_join(
         exome_ht.filter(keep_criteria, keep=False)
     )
-    print("GROUPIN IS")
-    print(grouping)
+
     # Count the possible variants in the context Table grouped by `keep_annotations`.
     possible_ht = count_variants_by_group(
         context_ht,
@@ -397,6 +381,7 @@ def apply_models(
     obs_pos_count_partition_hint: int = 2000,
     expected_variant_partition_hint: int = 1000,
     custom_vep_annotation: str = None,
+    coverage_metric: str = "exomes_AN_percent",
     high_cov_definition: int = COVERAGE_CUTOFF,
     low_coverage_filter: int = None,
     use_mane_select: bool = True,
@@ -463,6 +448,7 @@ def apply_models(
         aggregators when computation is done. Default is 1000.
     :param custom_vep_annotation: The customized model (one of
         "transcript_consequences" or "worst_csq_by_gene"). Default is None.
+    :param coverage_metric: Name for metric to use for coverage. Default is "exomes_AN_percent".
     :param high_cov_definition: Median coverage cutoff. Sites with coverage above this cutoff
         are considered well covered and was used to build plateau models. Sites
         below this cutoff have low coverage and was used to build coverage models.
@@ -477,14 +463,14 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
-    # Filter context ht to sites with defined exome coverage.
-    context_ht = context_ht.filter(hl.is_defined(context_ht.exomes_AN_percent))
+    # Filter context ht to sites with defined exome coverage_metric.
+    context_ht = context_ht.filter(hl.is_defined(context_ht[coverage_metric]))
 
     if low_coverage_filter is not None:
         context_ht = context_ht.filter(
-            context_ht.exomes_AN_percent >= low_coverage_filter
+            context_ht[coverage_metric] >= low_coverage_filter
         )
-        exome_ht = exome_ht.filter(exome_ht.exomes_AN_percent >= low_coverage_filter)
+        exome_ht = exome_ht.filter(exome_ht[coverage_metric] >= low_coverage_filter)
 
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
@@ -505,12 +491,14 @@ def apply_models(
         vep_annotation=vep_annotation,
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
+        coverage_metric=coverage_metric,
     )
     exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
         ht=exome_ht,
         vep_annotation=vep_annotation,
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
+        coverage_metric=coverage_metric,
     )
 
     # Compute observed and possible variant counts.
@@ -523,6 +511,7 @@ def apply_models(
         pops=pops,
         downsamplings=downsamplings,
         grouping=grouping,
+        coverage_metric=coverage_metric,
         partition_hint=obs_pos_count_partition_hint,
         filter_coverage_over_0=True,
         transcript_for_synonymous_filter=None,
@@ -587,6 +576,7 @@ def apply_models(
             )
         ]
 
+    # Remove coverage from grouping.
     grouping = list(grouping)
     grouping.remove("coverage")
 
@@ -1192,5 +1182,12 @@ def annotate_context_ht(
     )
 
     ht = ht.annotate(gerp=hl.if_else(hl.is_missing(ht.gerp), 0, ht.gerp))
+
+    # Add strata sample count for allele number to globals.
+    strata_sample_counts = {
+        data_type: an_ht.strata_sample_count.collect()[0]
+        for data_type, an_ht in an_hts.items()
+    }
+    ht = ht.annotate_globals(an_strata_sample_count=hl.struct(**strata_sample_counts))
 
     return ht

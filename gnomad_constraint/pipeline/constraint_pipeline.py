@@ -437,6 +437,8 @@ def main(args):
                     res.mutation_ht.ht().select("mu_snp"),
                     max_af=max_af,
                     pops=pops,
+                    grouping=(coverage_metric,),
+                    coverage_metric=coverage_metric,
                     partition_hint=args.training_set_partition_hint,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     transcript_for_synonymous_filter=(
@@ -519,6 +521,7 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    coverage_metric=coverage_metric,
                     high_cov_definition=args.high_cov_definition,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     use_mane_select=(
