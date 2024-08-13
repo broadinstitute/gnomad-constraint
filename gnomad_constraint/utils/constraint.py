@@ -369,6 +369,7 @@ def apply_models(
     mutation_ht: hl.Table,
     plateau_models: hl.StructExpression,
     coverage_model: Optional[Tuple[float, float]] = None,
+    cov_model_type: str = "linear",
     max_af: float = 0.001,
     keep_annotations: Tuple[str] = (
         "context",
@@ -436,6 +437,7 @@ def apply_models(
         gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
         given coverage level to observed:expected ratio. It's a correction factor for
         low coverage sites.
+    :param cov_model_type: Type of model to use for low coverage sites when building the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'.
     :param max_af: Maximum allele frequency for a variant to be included in returned
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
@@ -523,12 +525,19 @@ def apply_models(
     poss_expr = ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
+    if cov_model_type == "logrithmic":
+        cov_value = hl.log10(ht.coverage)
+    elif cov_model_type == "linear":
+        cov_value = ht.coverage
+    else:
+        raise ValueError("cov_model_type must be one of 'logrithmic' or 'linear'!")
+
     cov_corr_expr = (
         hl.case()
         .when(ht.coverage == 0, 0)
         .when(ht.coverage >= high_cov_definition, 1)
         .default(
-            (coverage_model[1] * (ht.coverage) + coverage_model[0])
+            (coverage_model[1] * cov_value + coverage_model[0])
             if coverage_model is not None
             else 1
         )

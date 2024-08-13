@@ -513,6 +513,7 @@ def main(args):
                         if not args.skip_coverage_model
                         else None
                     ),
+                    cov_model_type=cov_model_type,
                     max_af=max_af,
                     pops=pops,
                     downsamplings=downsamplings,
