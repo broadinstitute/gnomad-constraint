@@ -255,6 +255,7 @@ def main(args):
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
     coverage_metric = args.coverage_metric
+    cov_model_type = args.cov_model_type
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -425,9 +426,6 @@ def main(args):
             res = resources.create_training_set
             res.check_resource_existence()
 
-            print("POPS ARE")
-            print(pops)
-
             # Create training datasets for sites on autosomes/pseudoautosomal regions,
             # chromosome X, and chromosome Y.
             for r in regions:
@@ -471,6 +469,7 @@ def main(args):
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
                     coverage_metric=coverage_metric,
+                    cov_model_type=cov_model_type,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -867,6 +866,22 @@ if __name__ == "__main__":
         "--skip-coverage-model",
         help="Omit computing and applying the coverage model.",
         action="store_true",
+    )
+
+    build_models_args.add_argument(
+        "--skip-coverage-model",
+        help="Omit computing and applying the coverage model.",
+        action="store_true",
+    )
+
+    build_models_args.add_argument(
+        "--cov-model-type",
+        help=(
+            "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'."
+        ),
+        type=str,
+        choices=["linear", "logarithmic"],
+        default="linear",
     )
 
     build_models_args._group_actions.append(populations)

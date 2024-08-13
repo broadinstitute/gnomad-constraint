@@ -275,7 +275,7 @@ def create_observed_and_possible_ht(
 
     # Allele frequency information for high-quality genotypes (GQ >= 20; DP >= 10; and
     # AB >= 0.2 for heterozygous calls) in all release samples in gnomAD.
-    # freq_expr = exome_ht.freq[0]
+    freq_expr = exome_ht.freq[0]
 
     # Set up the criteria to exclude variants not observed in the dataset, low-quality
     # variants, variants with allele frequency above the `max_af` cutoff, and variants
