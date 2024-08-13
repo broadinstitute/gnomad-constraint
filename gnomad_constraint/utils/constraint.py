@@ -437,7 +437,7 @@ def apply_models(
         gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
         given coverage level to observed:expected ratio. It's a correction factor for
         low coverage sites.
-    :param cov_model_type: Type of model to use for low coverage sites when building the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'.
+    :param cov_model_type: Type of model to use for low coverage sites when applying the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'.
     :param max_af: Maximum allele frequency for a variant to be included in returned
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
