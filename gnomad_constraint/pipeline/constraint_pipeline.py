@@ -470,6 +470,7 @@ def main(args):
                     high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
+                    coverage_metric=coverage_metric,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -677,7 +678,7 @@ if __name__ == "__main__":
 
     preprocess_data_args.add_argument(
         "--coverage-metric",
-        help="Name of metric to use to assess coverage. Default is 'exomes_AN_percent'.",
+        help="Name of metric to use to assess coverage. Default is 'exomes_AN_percent'. Note that v2 uses 'exome_coverage'.",
         type=str,
         default="exomes_AN_percent",
     )
