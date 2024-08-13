@@ -127,7 +127,7 @@ preferred_transcripts <- list(
 )
 
 for (version in versions_to_plot) {
-  # Filter to preferred  Ensembl transcripts (mane select or canonical) without any constraint flags
+  # Filter to preferred Ensembl transcripts (mane select or canonical) without any constraint flags
   filtered_data <- filter_transcripts(gene_data, version)
 
   # Define metric (lof.oe_ci.upper_bin_decile + version)
