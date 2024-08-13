@@ -420,8 +420,6 @@ def main(args):
         # Create training datasets that include possible and observed variant counts
         # for building models.
         if args.create_training_set:
-            logger.info("Testing AN!")
-
             logger.info("Counting possible and observed variant counts...")
             res = resources.create_training_set
             res.check_resource_existence()

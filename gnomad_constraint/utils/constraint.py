@@ -288,7 +288,7 @@ def create_observed_and_possible_ht(
 
     keep_annotations += grouping
 
-    logger.info("Seeting keep annotations to %s", keep_annotations)
+    logger.info("Setting keep annotations to %s", keep_annotations)
 
     # Keep variants that satisfy the criteria above.
     filtered_exome_ht = exome_ht.filter(keep_criteria)
