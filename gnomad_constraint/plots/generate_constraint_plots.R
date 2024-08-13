@@ -38,6 +38,13 @@ option_list <- list(
     type = "logical",
     default = FALSE,
     help = "Whether to use presentation sizes (larger text sizes) when generating plots."
+  ),
+  
+  make_option(
+    c("-c", "--coverage_metric"),
+    type = "character",
+    default = "exomes_AN_percent"
+    help = "Name of coverage metric to use for plotting training data. Either 'exomes_AN_percent' or 'exome_coverage'".
   )
 )
 
@@ -65,6 +72,8 @@ if (!is.na(opt$gcs_auth_token)) {
 }
 
 use_presentation_sizes = opt$use_presentation_sizes
+coverage_metric = opt$coverage_metric
+
 
 ####################################################################
 ####################################################################
@@ -90,7 +99,6 @@ constraint_data <- full_join(
 v4 <- filter(constraint_data, .data$v4)
 v2 <- filter(constraint_data, .data$v2)
 
-use_presentation_sizes = FALSE
 ####################################################################
 ####################################################################
 # Load in gene lists
@@ -367,10 +375,6 @@ training_data <- load_constraint_metrics(
 
 # Remove version suffix from the training data to prepare for plotting
 training_data <- remove_version_suffix(training_data)
-
-# TODO: make arg?
-coverage_metric = "exomes_AN_percent"
-coverage_metric = "exome_coverage"
 
 
 data_with_predictions <- get_predicted_proportion_observed(df = training_data,
