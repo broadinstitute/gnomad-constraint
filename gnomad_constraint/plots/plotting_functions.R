@@ -673,7 +673,6 @@ plot_oe_vs_cov_metric <-  function(
   # Plot observed/expected vs coverage_metrics
   p = low_coverage_data %>%
     ggplot + aes(x = !!sym(coverage_metric), y = oe) + geom_point() + theme_classic() +
-    #xlab("AN bin") + ylab('Observed / Expected')
     xlab(coverage_metric) + ylab('Observed / Expected') 
   
   if (add_best_fit==TRUE){
