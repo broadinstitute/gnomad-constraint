@@ -142,12 +142,7 @@ get_or_download_file <- function(
     if (!missing(gcs_authentication_token)) {
       authenticate_gcs(gcs_authentication_token)
     }
-    print(paste0("version", version))
-    print(paste0("release", release))
-    print(paste0("public", public))
-    print(paste0("subfolder", subfolder))
-    print(paste0("base_fname", base_fname))
-    print(get_data_url(version, release = release, public = public, pipeline_step=pipeline_step))
+
     remote_path <- paste0(
       get_data_url(version, release = release, public = public, pipeline_step = pipeline_step),
       subfolder,

@@ -9,7 +9,6 @@
 # the tidyverse-gcs-access under OAuth 2.0 Client IDs. Then pass that file to the
 # interactive_authenticate_gcs function in an interactive session. The saved token
 # can be passed to this script.
-
 library(optparse)
 library(glue)
 
@@ -40,25 +39,27 @@ option_list <- list(
     help = "Whether to use presentation sizes (larger text sizes) when generating plots."
   ),
   make_option(
-    c("-c", "--coverage_metric"),
+    c("--coverage_metric"),
     type = "character",
     default = "exomes_AN_percent",
     help = "Name of coverage metric to use for plotting training data. Either 'exomes_AN_percent' or 'exome_coverage'."
-  )
+  ),
   make_option(
-    c("-h", "--high_coverage_cutoff"),
-    type = int,
+    c("--high_coverage_cutoff"),
+    type = "integer",
     default = 66,
     help = "Cutoff of coverage_metric above which a site will be considered high coverage when plotting training data."
   )
 )
 
 
-high_coverage_cutoff
-
 # Parse the options
 opt <- parse_args(OptionParser(option_list = option_list))
+
 output_basedir <- opt$output_directory
+use_presentation_sizes = opt$use_presentation_sizes
+coverage_metric = opt$coverage_metric
+high_coverage_cutoff = opt$high_coverage_cutoff
 
 # Set the working directory if supplied by user
 if (!is.na(opt$working_directory)) {
@@ -79,8 +80,6 @@ if (!is.na(opt$gcs_auth_token)) {
   authenticate_gcs(opt$gcs_auth_token)
 }
 
-use_presentation_sizes = opt$use_presentation_sizes
-coverage_metric = opt$coverage_metric
 
 
 ####################################################################
