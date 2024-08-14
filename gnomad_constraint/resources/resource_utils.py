@@ -270,7 +270,7 @@ def get_training_tsv_path(
     version: str = CURRENT_VERSION,
     genomic_region: str = "autosome_par",
     test: bool = False,
-) -> TableResource:
+) -> str:
     """
     Return tsv of training dataset with observed and possible variant count.
 
