@@ -39,7 +39,6 @@ option_list <- list(
     default = FALSE,
     help = "Whether to use presentation sizes (larger text sizes) when generating plots."
   ),
-  
   make_option(
     c("-c", "--coverage_metric"),
     type = "character",
