@@ -45,7 +45,16 @@ option_list <- list(
     default = "exomes_AN_percent",
     help = "Name of coverage metric to use for plotting training data. Either 'exomes_AN_percent' or 'exome_coverage'."
   )
+  make_option(
+    c("-h", "--high_coverage_cutoff"),
+    type = int,
+    default = 66,
+    help = "Cutoff of coverage_metric above which a site will be considered high coverage when plotting training data."
+  )
 )
+
+
+high_coverage_cutoff
 
 # Parse the options
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -371,7 +380,6 @@ training_data <- load_constraint_metrics(
   public = FALSE,
 )
 
-
 # Remove version suffix from the training data to prepare for plotting
 training_data <- remove_version_suffix(training_data)
 
@@ -397,10 +405,6 @@ ggsave(po_v_mu, filename = plot_path, dpi = 300, width = 7, height = 6, units = 
 # Plot observed to expected ratio vs coverage metric for v4
 ####################################################################
 ####################################################################
-data_with_predictions <- get_predicted_proportion_observed(df = training_data,
-                                                           coverage_metric=coverage_metric,
-                                                           high_coverage_cutoff=high_coverage_cutoff)
-
 oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
                                   coverage_metric=coverage_metric,
                                   high_coverage_cutoff=high_coverage_cutoff,
