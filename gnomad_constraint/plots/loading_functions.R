@@ -149,7 +149,7 @@ get_or_download_file <- function(
     print(paste0("base_fname", base_fname))
     print(get_data_url(version, release = release, public = public, pipeline_step=pipeline_step))
     remote_path <- paste0(
-      get_data_url(version, release = release, public = public),
+      get_data_url(version, release = release, public = public, pipeline_step = pipeline_step),
       subfolder,
       base_fname
     )
