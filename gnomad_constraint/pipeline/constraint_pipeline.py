@@ -26,7 +26,7 @@ import logging
 from typing import List
 
 import hail as hl
-from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
+from gnomad.resources.grch38.gnomad import all_sites_an, DOWNSAMPLINGS
 from gnomad.utils.constraint import build_models, explode_downsamplings_oe
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -127,8 +127,8 @@ def get_constraint_resources(
                     "genomes", version
                 ),
                 # TODO: Check why all_sites_an doesn't work
-                "exomes_an_ht": "gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.allele_number_all_sites.ht",
-                "genomes_an_ht": "gs://gcp-public-data--gnomad/release/4.1/ht/genomes/gnomad.genomes.v4.1.allele_number_all_sites.ht",
+                "exomes_an_ht": all_sites_an("exomes").path,
+                "genomes_an_ht": all_sites_an("genomes").path,
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
             },
         },
