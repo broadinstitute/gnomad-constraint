@@ -149,12 +149,6 @@ get_or_download_file <- function(
       base_fname
     )
     print(glue("Downloading {remote_path} to {local_path}"))
-    print(strsplit(
-      remote_path,
-      paste0(data_bucket, "/"),
-      fixed = TRUE
-    )[[1]][2])
-    print(data_bucket)
     gcs_get_object(
       strsplit(
         remote_path,
