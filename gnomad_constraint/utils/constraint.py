@@ -315,7 +315,7 @@ def create_observed_and_possible_ht(
             context_ht, canonical=canonical, mane_select=mane_select
         )
     # Count the observed variants in the entire Table and in each downsampling grouped
-    # by `keep_annotations`.
+    # by `grouping`, context, ref, and alt.
     observed_ht = count_variants_by_group(
         filtered_exome_ht.select(*list(keep_annotations) + ["freq"]),
         additional_grouping=grouping,
@@ -337,7 +337,7 @@ def create_observed_and_possible_ht(
         exome_ht.filter(keep_criteria, keep=False)
     )
 
-    # Count the possible variants in the context Table grouped by `keep_annotations`.
+    # Count the possible variants in the context Table grouped by by `grouping`, context, ref, and alt.
     possible_ht = count_variants_by_group(
         context_ht,
         additional_grouping=grouping,
