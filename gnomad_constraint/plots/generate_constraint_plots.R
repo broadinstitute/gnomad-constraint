@@ -35,6 +35,7 @@ option_list <- list(
   make_option(
     c("--use_presentation_sizes"),
     type = "logical",
+    action = "store_true",
     default = FALSE,
     help = "Whether to use presentation sizes (larger text sizes) when generating plots."
   ),
@@ -320,8 +321,7 @@ comparison_df <- comparison_df %>%
 comparison_df <- reformat_for_metric_comparison(comparison_df)
 
 comparison_plot <- plot_metric_comparison(comparison_df, use_presentation_sizes=use_presentation_sizes)
-comparison_plot
-comparison_plot
+
 plot_path <- get_plot_path(
   "v2_v4_compare_values",
   output_basedir = output_basedir
