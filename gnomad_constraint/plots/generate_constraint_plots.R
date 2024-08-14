@@ -43,7 +43,7 @@ option_list <- list(
   make_option(
     c("-c", "--coverage_metric"),
     type = "character",
-    default = "exomes_AN_percent"
+    default = "exomes_AN_percent",
     help = "Name of coverage metric to use for plotting training data. Either 'exomes_AN_percent' or 'exome_coverage'."
   )
 )
