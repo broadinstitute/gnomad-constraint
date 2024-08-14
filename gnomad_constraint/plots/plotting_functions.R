@@ -1,4 +1,5 @@
 library(conflicted)
+library(cowplot)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
@@ -28,6 +29,43 @@ gene_list_colors <- c(
   "Universe" = "lightgray"
 )
 
+####################################################################
+# Define colors for mutation types
+####################################################################
+# Set colors for mutation types
+mut_type_colors <- c("transversion" = "#EA4444", "non-CpG transition" = "#458B00", "CpG" = '#2E9FFE')
+color_cpg = '#2E9FFE'
+color_ti = '#458B00'
+color_tv = '#EA4444'
+variant_type_colors = c(color_tv, color_ti, color_cpg, color_cpg)
+names(variant_type_colors) = c('transversion', 'non-CpG transition', 'CpG transition', 'CpG')
+shapes = c('0' = 16, '1' = 15, '2' = 17)
+
+####################################################################
+# Define function to increase text on plots for presentations
+####################################################################
+apply_presentation_sizes <- function(p, title_size = 25, text_size = 20) {
+  # Apply larger title and text sizes to plot for presentations
+  # p: Plot
+  # title_size: Font size to use for titles
+  # text_size: Font size to use for text
+  # Returns: ggplot object with larger font sizes
+  p <- p + 
+    theme(
+      plot.title = element_text(size = title_size),
+      axis.title.x = element_text(size = title_size),
+      axis.title.y = element_text(size = title_size),
+      axis.text.x = element_text(size = text_size),
+      axis.text.y = element_text(size = text_size),
+      legend.title = element_text(size = title_size),
+      legend.text = element_text(size = text_size)
+    )
+  return(p)
+}
+
+####################################################################
+# Define gene lists to use
+####################################################################
 default_gene_lists <- c(
   "Haploinsufficient",
   "Autosomal Dominant",
@@ -54,6 +92,9 @@ label_function <- function(x) {
   paste0(x * 10, "-", x * 10 + 10, "%")
 }
 
+####################################################################
+# Summarize gene lists
+####################################################################
 summarize_gene_lists <- function(
     df,
     metric,
@@ -61,16 +102,18 @@ summarize_gene_lists <- function(
     gene_lists_to_summarize = default_gene_lists) {
   # Get table of gene list membership counts
   # df: Dataframe containing gene list membership data
-  # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # metric: Metric to use for the plot
   # version: Version of gnomAD to use for the plot (either 'v2' or 'v4')
   # gene_lists_to_summarize: List of gene lists to summarize
   # Returns: Dataframe with counts of gene list membership
 
   # Filter gene data to specified version
   df <- filter(df, !!sym(version))
-
+  
   # Remove rows where gene_list or metric is not defined and filter to gene lists of
   # interest
+  df <- select(df,"gene_list", !!sym(metric))
+  
   df <- df %>%
     filter(!is.na(.data$gene_list) & !is.na(!!sym(metric))) %>%
     mutate(metric = label_function(!!sym(metric))) %>%
@@ -88,15 +131,21 @@ summarize_gene_lists <- function(
   return(gene_list_sums)
 }
 
+
+####################################################################
+# Plot distribution of gene lists
+####################################################################
 plot_gene_lists <- function(
     df,
     metric,
-    gene_lists_to_plot = default_gene_lists_to_plot) {
-  # Plot gene list membership by decile of LOEUF or pLI
+    gene_lists_to_plot = default_gene_lists_to_plot,
+    use_presentation_sizes = FALSE) {
+  # Plot gene list membership by decile of LOEUF
   # df: Dataframe containing gene list membership counts from
   # summarize_gene_lists
-  # metric: Metric to use for the plot (either 'loeuf' or 'pli')
+  # metric: Metric to use for the plot
   # gene_lists_to_plot: List of gene lists to plot
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object
 
   # Convert counts to proportions
@@ -116,7 +165,7 @@ plot_gene_lists <- function(
     geom_bar(position = "dodge", stat = "identity", width = 0.9) +
     theme_classic() +
     theme(
-      axis.title = element_text(colour = "black", size = 12, face = "bold"),
+      axis.title = element_text(colour = "black", size = 12),
       axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_fill_manual(values = gene_list_colors, guide = "none")
@@ -138,20 +187,26 @@ plot_gene_lists <- function(
 
   bar_plot <- bar_plot +
     ylab("Percent of gene list (%)") +
-    xlab("LOEUF decile (%)") +
+    xlab("LOEUF decile") +
     scale_x_discrete(
-      labels = c("0", "10", "20", "30", "40", "50", "60", "70", "80", "90")
+      labels = c("1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th")
     )
-
+  
+  if (use_presentation_sizes) {bar_plot <- apply_presentation_sizes(bar_plot)}
+  
   return(bar_plot)
 }
 
+
+####################################################################
+# Plot ROC curves
+####################################################################
 plot_roc <- function(df, hi_genes, metric, split_seed = 663) {
   # Plot ROC with a value of AUC displayed on the plot for a given metric,
   # using haploinsufficient genes as the positive class
   # df: Dataframe containing constraint data for genes
   # hi_genes: Dataframe containing haploinsufficient genes
-  # metric: Metric to use for ROC plot (either 'loeuf' or 'pli')
+  # metric: Metric to use for ROC plot
   # split_seed: Seed for splitting data into training and testing sets
   # Returns: ggplot object
 
@@ -184,7 +239,8 @@ combine_roc_plots <- function(
     version2,
     title_label,
     color1 = "darkorange1",
-    color2 = "darkorchid3") {
+    color2 = "darkorchid3",
+    use_presentation_sizes = FALSE) {
   # Combine two ROC plots into a single plot
   # roc1: ROC object from pROC package
   # roc2: ROC object from pROC package
@@ -193,6 +249,7 @@ combine_roc_plots <- function(
   # title_label: Title for the plot
   # color1: Color for ROC1
   # color2: Color for ROC2
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object
 
   # Combine ROC outputs
@@ -215,7 +272,7 @@ combine_roc_plots <- function(
     geom_line(linewidth = 1, alpha = 0.9) +
     theme_classic() +
     theme(
-      axis.title = element_text(colour = "black", size = 12, face = "bold"),
+      axis.title = element_text(colour = "black", size = 12),
       axis.text = element_text(colour = "black", size = 10)
     ) +
     scale_color_manual(values = c(color1, color2)) +
@@ -227,15 +284,21 @@ combine_roc_plots <- function(
     ) +
     annotate("text", x = .70, y = .25, label = auc1, color = color1) +
     annotate("text", x = .70, y = .20, label = auc2, color = color2)
-
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
   return(p)
 }
 
+####################################################################
+# Plot downsampling projections
+####################################################################
 expected_projections <- function(
     df,
     label = "pLoF",
     sample_size_df = dataset_sample_sizes,
-    xlimits = c(100, 1e8)) {
+    xlimits = c(100, 1e8),
+    use_presentation_sizes=FALSE) {
   # Plot displaying the percent of genes that would be expected to have a
   # certain number or variants based on sample size
   # df: Dataframe with columns 'n_variants', 'n_required', and 'rank'
@@ -244,6 +307,8 @@ expected_projections <- function(
   # 'label' for vertical lines on the plot that show the sample size of some
   # key datasets
   # xlimits: Define the limits of the x-axis
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
+
   # Returns: ggplot object
   df <- df %>%
     mutate(
@@ -253,6 +318,10 @@ expected_projections <- function(
   p <- ggplot(df, aes(y = .data$rank, x = .data$n_required, color = .data$n_variants)) +
     geom_line(linewidth = 2) +
     theme_classic() +
+    theme(
+      axis.title = element_text(colour = "black", size = 12),
+      axis.text = element_text(colour = "black", size = 10)
+    ) +
     scale_x_log10(labels = comma, limits = xlimits) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
     xlab("Sample size required") +
@@ -272,15 +341,19 @@ expected_projections <- function(
     ) +
     scale_color_discrete(name = ">= N variants\nexpected", h = c(40, 120)) +
     annotate("text", x = xlimits[1], y = 1, hjust = 0, vjust = 1, label = label)
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
 
   return(p)
 }
 
-plot_projected_sample_size <- function(df) {
+plot_projected_sample_size <- function(df, use_presentation_sizes=FALSE) {
   # Plot of the percent of genes that have a variable expected number of
   # variants across sample sizes
   # df: Dataframe consisting of downsampling data per specific genetic ancestry groups
   # (has to include 'global')
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
   # Returns: ggplot object of the percent of genes that would be expected to have a
   # certain number or variants based on sample size
 
@@ -288,14 +361,14 @@ plot_projected_sample_size <- function(df) {
   # within all its respective rows
   df <- df %>%
     group_by(.data$gene) %>%
-    filter(min(.data$exp_lof) > 0 & min(.data$exp_mis) > 0 & min(.data$exp_syn) > 0)
+    filter(min(.data$lof.exp) > 0 & min(.data$mis.exp) > 0 & min(.data$syn.exp) > 0)
 
   # Convert expected counts and n downsamplings to log scale
   df <- df %>%
     mutate(
-      log_exp_lof = log10(.data$exp_lof),
-      log_exp_mis = log10(.data$exp_mis),
-      log_exp_syn = log10(.data$exp_syn),
+      log_exp_lof = log10(.data$lof.exp),
+      log_exp_mis = log10(.data$mis.exp),
+      log_exp_syn = log10(.data$syn.exp),
       log_n = log10(.data$downsampling)
     )
 
@@ -368,8 +441,249 @@ plot_projected_sample_size <- function(df) {
   ####################################################################
   # Plot projections
   ####################################################################
-  lof_projections <- expected_projections(samples_required_lof, "pLoF")
-  missense_projections <- expected_projections(samples_required_mis, "Missense")
+  lof_projections <- expected_projections(samples_required_lof, "pLoF", use_presentation_sizes=use_presentation_sizes)
+  missense_projections <- expected_projections(samples_required_mis, "Missense", use_presentation_sizes=use_presentation_sizes)
 
   return(list(lof = lof_projections, mis = missense_projections))
+}
+
+####################################################################
+# Plot decile change from v2 to v4
+####################################################################
+plot_decile_change <- function(df, use_presentation_sizes=FALSE) {
+  # Plot of the change in LOEUF deciles between gnomAD versions
+  # df: Dataframe consisting of LOEUF deciles, with the v2 values defined by
+  # 'lof.oe_ci.upper_bin_decile.v2' and the v4 values defined by 'lof.oe_ci.upper_bin_decile.v4'
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
+  # Returns: ggplot object of the LOEUF decile change from v2 to v4
+
+  # Calculate the decile change by subtracting the v4 value from the v2 value
+  df <- df %>% mutate(
+    decile_change = .data$lof.oe_ci.upper_bin_decile.v2 - .data$lof.oe_ci.upper_bin_decile.v4
+  )
+  # Plot decile changes
+  p <- ggplot(
+    df,
+    aes(x = .data$decile_change)
+  ) +
+    geom_histogram(stat = "count") +
+    theme_classic() +
+    theme(
+      axis.title = element_text(colour = "black", size = 12),
+      axis.text = element_text(colour = "black", size = 10)
+    ) +
+    scale_x_continuous(breaks = seq(-10, 8, by = 2)) +
+    ylab("Count") +
+    xlab("Decile change from v2 to v4")
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+
+  return(p)
+}
+
+
+
+####################################################################
+# Plot comparison of metrics between v2 and v4
+####################################################################
+plot_metric_comparison <- function(df, use_presentation_sizes = FALSE) {
+  # Plot comparison of metrics between gnomAD versions
+  # df: Dataframe consisting of 'metric_name' and the corresponding
+  # values in 'v2' and 'v4'
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
+  # Returns: ggplot object of metric comparison between v2 to v4
+
+  p <- ggplot(df, aes(x = .data$v2, y = .data$v4)) +
+    geom_point(size = 0.75, alpha = .25) +
+    facet_wrap(. ~ metric_name, scale = "free") +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 10, colour = "black"),
+      axis.title = element_text(size = 12, colour = "black"),
+      strip.background = element_blank(),
+      strip.text = element_text(size = 10, colour = "black"),
+      plot.margin = unit(c(.65, .65, .65, .65), "lines")
+    ) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+    labs(x = "Value in gnomAD v2", y = "Value in gnomAD v4")
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+
+  return(p)
+}
+
+####################################################################
+# Plot observed vs expected values
+####################################################################
+plot_observed_vs_expected <- function(df, version) {
+  # Plot the observed vs expected values
+  # df: Dataframe consisting of metrics to plot in 'metric_name', the
+  # observed counts in 'obs', and the expected counts in 'exp', and
+  # max values of the two in 'max_limit'
+  # Returns: ggplot object of observed vs expected values for the specified version
+  
+  # Create list to store plots in
+  plot_list <- list()
+  # Create dataframe to store correlation results in
+  correlation_results <- data.frame(
+    metric = character(),
+    correlation = numeric(),
+    stringsAsFactors = FALSE
+  )
+  # Plot observed vs expected coutns for each metric
+  for (metric in unique(df$metric_name)) {
+    # Filter dataset to the specified metric
+    data_subset <- filter(df, .data$metric_name == metric)
+    # Pull out the max value of the metric
+    max_limit <- max(data_subset$max_limit, na.rm = TRUE)
+
+    # Calculate correlation between observed and expected counts
+    correlation <- cor(data_subset$exp, data_subset$obs, method = "pearson")
+    correlation_results <- rbind(
+      correlation_results,
+      data.frame(metric = metric, correlation = correlation)
+    )
+
+    # Plot results
+    p <- ggplot(data_subset, aes(x = exp, y = obs)) +
+      geom_point(size = 0.75) +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+      ggtitle(metric) + # Add title to identify the metric
+      coord_fixed(ratio = 1) +
+      xlim(0, max_limit) +
+      ylim(0, max_limit) +
+      theme_classic() +
+      theme(
+        strip.background = element_blank(),
+        strip.text = element_text(colour = "black", face = "bold"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_text(size = 10, color = "black", hjust = 1, angle = 45),
+        axis.title = element_blank(),
+        plot.margin = unit(c(1, 1, 1, 2.2), "lines"),
+        plot.title = element_text(hjust = 0.5)
+      )
+  
+    # Add plot to the plot list
+    plot_list[[metric]] <- p
+  }
+
+  # Combine all plots in the plot list
+  combined_plot <- plot_grid(plotlist = plot_list, ncol = 3, align = "v")
+  combined_plot <- combined_plot +
+    draw_label("Expected Variants", x = 0.5, vjust = 7, angle = 0, size = 16)
+  combined_plot <- combined_plot +
+    draw_label("Observed\n Variants", y = 0.5, vjust = -7.75, angle = 90, size = 16)
+  # Print the correlation results
+  print(glue("Correlation results for  observed vs expected counts in {version}:"))
+  print(correlation_results)
+  return(combined_plot)
+}
+
+
+####################################################################
+# Plot proportion observed vs mu
+####################################################################
+plot_proportion_observed_vs_mu <-  function(
+    df,
+    coverage_metric ="exome_coverage",
+    high_coverage_cutoff = 30,
+    use_presentation_sizes = FALSE
+    ) {
+  # Plot proportion observed (observed over possible variants) vs mu 
+  # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constraint pipeline) and predicted proportion observed
+  # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
+  # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
+  # Returns: ggplot object of proportion observed vs mu 
+  
+  # Get metrics (observed, possible, proportion observed) for well-covered sites
+  high_coverage_data <- df %>% 
+    filter(!!sym(coverage_metric) >= high_coverage_cutoff) %>%
+    group_by(context, ref, alt, methylation_level, mu_snp, mutation_type, cpg, pred_prop_observed) %>%
+    summarize(obs = sum(observed_variants, na.rm=T), poss = sum(possible_variants, na.rm=T), prop_observed = obs / poss)
+  
+  # Plot proportion observed vs mu_snp
+  p = high_coverage_data %>%
+    ggplot + aes_string(x = 'mu_snp') +
+    aes(y = prop_observed, color = mutation_type, shape = as.character(methylation_level)) + 
+    geom_point() + theme_classic() + scale_shape_manual(values=shapes, guide=F) +
+    scale_color_manual(values=variant_type_colors) + xlab('Mu') + ylab('Proportion observed') +
+    scale_x_continuous(labels = scales::scientific)
+  
+  # Fit linear model and add to plot
+  lms <- high_coverage_data %>%
+    group_by(cpg) %>%
+    do({
+      model <- lm(prop_observed ~ mu_snp, data = .)
+      data.frame(
+        cpg = unique(.$cpg),
+        intercept = coef(model)[1],
+        mu_snp = coef(model)[2]
+      )
+    }) %>%
+    ungroup()
+  
+  p <- p + geom_abline(aes(slope = mu_snp, intercept= intercept), data=lms, linetype='dashed', color='darkgray')
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
+  return(p)
+}
+
+####################################################################
+# Plot observed to expected ratio vs coverage metric
+####################################################################
+plot_oe_vs_cov_metric <-  function(
+    df,
+    coverage_metric ="exome_coverage",
+    high_coverage_cutoff = 30,
+    add_best_fit = FALSE,
+    use_presentation_sizes = FALSE) {
+  # Plot the observed to expected ratio vs metrics that determines coverage at site
+  # df: Dataframe consisting of observed and possible variants per each context (the output of the create_training_set step in the constraint pipeline) and predicted proportion observed
+  # coverage_metric: Metric to use to determine well-covered sites (should correspond to column name in the dataframe). Examples: "exome_coverage" or "exomes_AN_percent". Default is 'exome_coverage'. 
+  # high_coverage_cutoff: Cutoff for determining well-covered sites in the specified coverage_metric. Default is 30.
+  # add_best_fit: Add line of best fit to plot of observed:expected ratio vs coverage_metric for poorly-covered sites. Default is FALSE.
+  # use_presentation_sizes: Bool for whether to increase plot text to presentation sizes. Default is FALSE.
+  # Returns: ggplot object of observed:expected ration vs coverage_metric
+  
+  # Get metrics (observed, possible, expected, observed/expected) for poorly covered sites
+  low_coverage_data <- data_with_predictions %>%
+    group_by(!!sym(coverage_metric)) %>%
+    summarize(
+      obs = sum(observed_variants, na.rm = TRUE),
+      poss = sum(possible_variants, na.rm = TRUE),
+      mu_sum = sum(possible_variants * mu_snp, na.rm = TRUE),
+      exp = sum(possible_variants * pred_prop_observed, na.rm = TRUE),
+      oe = obs / exp,
+      .groups = 'drop')
+  
+  # Fit linear model for poorly covered sites
+  low_cov_lm <- low_coverage_data %>%
+    filter(!!sym(coverage_metric) < high_coverage_cutoff) %>%
+    do({
+      model <- lm(oe ~ !!sym(coverage_metric), data = .)
+      data.frame(
+        term = c("intercept", "exome_coverage"),
+        estimate = coef(model)
+      )
+    }) %>%
+    pivot_wider(names_from = term, values_from = estimate)
+  
+  # Plot observed/expected vs coverage_metrics
+  p = low_coverage_data %>%
+    ggplot + aes(x = !!sym(coverage_metric), y = oe) + geom_point() + theme_classic() +
+    xlab(coverage_metric) + ylab('Observed / Expected') 
+  
+  if (add_best_fit==TRUE){
+    p <- p + geom_smooth(aes(!!sym(coverage_metric), oe),
+                                               data = low_coverage_data %>% filter(!!sym(coverage_metric) < high_coverage_cutoff & !!sym(coverage_metric) > 0),
+                                               method = lm, formula = y ~ x, 
+                                               linetype = 'dashed', se=F, color='darkgray')}
+  
+  if (use_presentation_sizes) {p <- apply_presentation_sizes(p)}
+  
+  
+  return(p)
+  
 }
