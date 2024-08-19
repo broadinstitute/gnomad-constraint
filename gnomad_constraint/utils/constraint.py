@@ -67,7 +67,7 @@ def add_vep_context_annotations(
         Function expects that multiallelic variants in the VEP context Table have been
         split.
 
-    Function also adds an_strata_sample_count to globals.
+    Function also adds 'an_strata_sample_count' to globals.
 
     :param ht: gnomAD exomes or genomes public Hail Table.
     :param annotated_context_ht: VEP context Table.
