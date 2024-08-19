@@ -681,9 +681,9 @@ if __name__ == "__main__":
 
     preprocess_data_args.add_argument(
         "--coverage-metric",
-        help="Name of metric to use to assess coverage. Default is 'exomes_AN_percent'. Note that v2 uses 'exome_coverage'.",
+        help="Name of metric to use to assess coverage, such as'exome_coverage' or 'exomes_AN_percent'. Default is 'exome_coverage'.",
         type=str,
-        default="exomes_AN_percent",
+        default="exome_coverage",
     )
 
     parser.add_argument(
