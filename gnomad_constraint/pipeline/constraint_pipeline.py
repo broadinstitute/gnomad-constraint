@@ -255,7 +255,7 @@ def main(args):
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
     coverage_metric = args.coverage_metric
-    cov_model_type = args.cov_model_type
+    cov_model_type = args.coverage_model_type
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
