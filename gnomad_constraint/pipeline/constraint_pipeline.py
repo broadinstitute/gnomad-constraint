@@ -109,6 +109,12 @@ def get_constraint_resources(
         overwrite=overwrite,
     )
 
+    # Make dictionary for allele number tables.
+    an_hts = {}
+    if int(version[0]) >= 4:
+        an_hts["exomes_an_ht"] = all_sites_an("exomes")
+        an_hts["genomes_an_ht"] = all_sites_an("genomes")
+
     # Create resource collection for each step of the constraint pipeline.
     context_res = constraint_res.get_vep_context_ht(version)
     context_build = get_reference_genome(context_res.ht().locus).name
@@ -126,10 +132,8 @@ def get_constraint_resources(
                 "genomes_coverage_ht": constraint_res.get_coverage_ht(
                     "genomes", version
                 ),
-                # TODO: Check why all_sites_an doesn't work
-                "exomes_an_ht": all_sites_an("exomes").path,
-                "genomes_an_ht": all_sites_an("genomes").path,
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
+                **an_hts,
             },
         },
     )
@@ -288,6 +292,10 @@ def main(args):
     # the coverage model.
     models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
 
+    # Check the version if 4.0 or later iu using "exomes_AN_percent" as coverage_metric.
+    if coverage_metric=="exomes_AN_percent" and not version_4_and_above:
+            raise ValueError("Allele number tbales are not avaiable for versions prior to v4.0.")
+
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
         version,
@@ -311,11 +319,8 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
-            # TODO: Make compatible with v2
-            an_hts = {
-                "exomes": hl.read_table(res.exomes_an_ht),
-                "genomes": hl.read_table(res.genomes_an_ht),
-            }
+            an_hts = {"exomes": res.exomes_an_ht.ht(), "genomes": res.genomes_an_ht.ht()} if version_4_and_above else {}
+
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
