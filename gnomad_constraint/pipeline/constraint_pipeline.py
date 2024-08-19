@@ -868,7 +868,7 @@ if __name__ == "__main__":
     )
 
     build_models_args.add_argument(
-        "--cov-model-type",
+        "--coverage-model-type",
         help=(
             "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'."
         ),
