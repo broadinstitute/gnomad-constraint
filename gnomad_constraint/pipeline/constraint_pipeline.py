@@ -26,7 +26,7 @@ import logging
 from typing import List
 
 import hail as hl
-from gnomad.resources.grch38.gnomad import all_sites_an, DOWNSAMPLINGS
+from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS, all_sites_an
 from gnomad.utils.constraint import build_models, explode_downsamplings_oe
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
