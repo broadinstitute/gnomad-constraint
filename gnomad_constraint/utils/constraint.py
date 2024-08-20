@@ -171,7 +171,8 @@ def prepare_ht_for_constraint_calculations(
             genomes_AN=ht.AN.genomes,
         )
 
-        # Calculate total allele number from strata_sample_count and annotate exomes_AN_percent (percent samples with AN)
+        # Calculate total allele number from strata_sample_count and annotate
+        # exomes_AN_percent (percent samples with AN)
         ht = ht.annotate(
             exomes_AN_percent=hl.int(
                 ht.exomes_AN / ht.an_strata_sample_count.exomes[0] * 2 * 100
@@ -343,7 +344,8 @@ def create_observed_and_possible_ht(
         exome_ht.filter(keep_criteria, keep=False)
     )
 
-    # Count the possible variants in the context Table grouped by by `grouping`, context, ref, alt, and methylation_level.
+    # Count the possible variants in the context Table grouped by by
+    # `grouping`, context, ref, alt, and methylation_level.
     possible_ht = count_variants_by_group(
         context_ht,
         additional_grouping=grouping,
@@ -1198,7 +1200,8 @@ def annotate_context_ht(
     )
     ht = ht.annotate(gerp=hl.if_else(hl.is_missing(ht.gerp), 0, ht.gerp))
 
-    # Add allele number annotation and an_strata_sample_count global annotation if allele number hts are supplied.
+    # Add allele number annotation and an_strata_sample_count global
+    # annotation if allele number hts are supplied.
     if len(an_hts) > 0:
         ht = ht.annotate(
             AN=hl.struct(
