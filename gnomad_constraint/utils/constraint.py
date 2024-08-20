@@ -76,9 +76,9 @@ def add_vep_context_annotations(
     context_ht = annotated_context_ht.drop("a_index", "was_split")
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
     if "an_strata_sample_count" in ht.globals:
-     ht = ht.annotate_globals(
+        ht = ht.annotate_globals(
             an_strata_sample_count=context_ht.an_strata_sample_count.collect()[0]
-     )
+        )
     ht = ht.annotate(**context_ht[ht.key])
     return ht
 
@@ -168,7 +168,8 @@ def prepare_ht_for_constraint_calculations(
         ht = ht.annotate(
             exomes_AN=ht.AN.exomes[0],
             exomes_AN_raw=ht.AN.exomes[1],
-            genomes_AN=ht.AN.genomes)
+            genomes_AN=ht.AN.genomes,
+        )
 
         # Calculate total allele number from strata_sample_count and annotate exomes_AN_percent (percent samples with AN)
         ht = ht.annotate(
@@ -176,7 +177,7 @@ def prepare_ht_for_constraint_calculations(
                 ht.exomes_AN / ht.an_strata_sample_count.exomes[0] * 2 * 100
             ),
             exomes_AN_percent_raw=hl.int(
-             ht.exomes_AN_raw / ht.an_strata_sample_count.exomes[1] * 2 * 100
+                ht.exomes_AN_raw / ht.an_strata_sample_count.exomes[1] * 2 * 100
             ),
         )
 
@@ -374,7 +375,7 @@ def apply_models(
     mutation_ht: hl.Table,
     plateau_models: hl.StructExpression,
     coverage_model: Optional[Tuple[float, float]] = None,
-    cov_model_type: str = "linear",
+    cov_model_type: str = "logarithmic",
     max_af: float = 0.001,
     keep_annotations: Tuple[str] = (
         "context",
@@ -442,7 +443,7 @@ def apply_models(
         gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
         given coverage level to observed:expected ratio. It's a correction factor for
         low coverage sites.
-    :param cov_model_type: Type of model to use for low coverage sites when applying the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'.
+    :param cov_model_type: Type of model to use for low coverage sites when applying the coverage model, either 'linear' or 'logarithmic'. Default is 'logarithmic'.
     :param max_af: Maximum allele frequency for a variant to be included in returned
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
@@ -470,6 +471,10 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
+    # Check value of cov_model_type.
+    if cov_model_type not in ["logarithmic", "linear"]:
+        raise ValueError("cov_model_type must be one of 'logarithmic' or 'linear'!")
+
     # Filter context ht to sites with defined exome coverage_metric.
     context_ht = context_ht.filter(hl.is_defined(context_ht[coverage_metric]))
 
@@ -530,12 +535,12 @@ def apply_models(
     poss_expr = ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
-    if cov_model_type == "logrithmic":
+    if cov_model_type == "logarithmic":
         cov_value = hl.log10(ht.coverage)
     elif cov_model_type == "linear":
         cov_value = ht.coverage
     else:
-        raise ValueError("cov_model_type must be one of 'logrithmic' or 'linear'!")
+        raise ValueError("cov_model_type must be one of 'logarithmic' or 'linear'!")
 
     cov_corr_expr = (
         hl.case()
@@ -1193,11 +1198,12 @@ def annotate_context_ht(
     )
     ht = ht.annotate(gerp=hl.if_else(hl.is_missing(ht.gerp), 0, ht.gerp))
 
-
     # Add allele number annotation and an_strata_sample_count global annotation if allele number hts are supplied.
     if len(an_hts) > 0:
-        ht = ht.annotate(AN=hl.struct(
-            **{data_type: an_ht[ht.locus].AN for data_type, an_ht in an_hts.items()}
+        ht = ht.annotate(
+            AN=hl.struct(
+                **{data_type: an_ht[ht.locus].AN for data_type, an_ht in an_hts.items()}
+            )
         )
 
         # Add strata sample count for allele number to globals.
@@ -1205,6 +1211,8 @@ def annotate_context_ht(
             data_type: an_ht.strata_sample_count.collect()[0]
             for data_type, an_ht in an_hts.items()
         }
-        ht = ht.annotate_globals(an_strata_sample_count=hl.struct(**strata_sample_counts))
+        ht = ht.annotate_globals(
+            an_strata_sample_count=hl.struct(**strata_sample_counts)
+        )
 
     return ht
