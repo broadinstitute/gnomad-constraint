@@ -293,8 +293,10 @@ def main(args):
     models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
 
     # Check the version if 4.0 or later iu using "exomes_AN_percent" as coverage_metric.
-    if coverage_metric=="exomes_AN_percent" and not version_4_and_above:
-            raise ValueError("Allele number tbales are not avaiable for versions prior to v4.0.")
+    if coverage_metric == "exomes_AN_percent" and not version_4_and_above:
+        raise ValueError(
+            "Allele number tbales are not avaiable for versions prior to v4.0."
+        )
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
@@ -319,7 +321,11 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
-            an_hts = {"exomes": res.exomes_an_ht.ht(), "genomes": res.genomes_an_ht.ht()} if version_4_and_above else {}
+            an_hts = (
+                {"exomes": res.exomes_an_ht.ht(), "genomes": res.genomes_an_ht.ht()}
+                if version_4_and_above
+                else {}
+            )
 
             annotate_context_ht(
                 context_ht,
@@ -875,11 +881,11 @@ if __name__ == "__main__":
     build_models_args.add_argument(
         "--coverage-model-type",
         help=(
-            "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logrithmic'. Default is 'linear'."
+            "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logrithmic'. Default is 'logarithmic'."
         ),
         type=str,
         choices=["linear", "logarithmic"],
-        default="linear",
+        default="logarithmic",
     )
 
     build_models_args._group_actions.append(populations)
