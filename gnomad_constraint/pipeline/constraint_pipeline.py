@@ -881,7 +881,7 @@ if __name__ == "__main__":
     build_models_args.add_argument(
         "--coverage-model-type",
         help=(
-            "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logrithmic'. Default is 'logarithmic'."
+            "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logarithmic'. Default is 'logarithmic'."
         ),
         type=str,
         choices=["linear", "logarithmic"],
