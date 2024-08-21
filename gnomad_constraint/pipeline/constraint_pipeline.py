@@ -259,7 +259,7 @@ def main(args):
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
     coverage_metric = args.coverage_metric
-    cov_model_type = args.coverage_model_type
+    coverage_model_type = args.coverage_model_type
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -297,6 +297,11 @@ def main(args):
         raise ValueError(
             "Allele number tbales are not avaiable for versions prior to v4.0."
         )
+
+    if coverage_model_type == "logarithmic":
+        log10_coverage = True
+    elif coverage_model_type == "linear":
+        log10_coverage = False
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
@@ -471,14 +476,14 @@ def main(args):
 
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
-                    training_ht,
+                    coverage_ht=training_ht,
+                    coverage_expr=training_ht[coverage_metric],
                     weighted=args.use_weights,
                     pops=pops,
                     high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
-                    coverage_metric=coverage_metric,
-                    cov_model_type=cov_model_type,
+                    log10_coverage=log10_coverage,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -524,7 +529,7 @@ def main(args):
                         if not args.skip_coverage_model
                         else None
                     ),
-                    cov_model_type=cov_model_type,
+                    log10_coverage=log10_coverage,
                     max_af=max_af,
                     pops=pops,
                     downsamplings=downsamplings,
@@ -878,7 +883,7 @@ if __name__ == "__main__":
         action="store_true",
     )
 
-    build_models_args.add_argument(
+    cov_model_type = build_models_args.add_argument(
         "--coverage-model-type",
         help=(
             "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logarithmic'. Default is 'logarithmic'."
@@ -935,6 +940,7 @@ if __name__ == "__main__":
     apply_models_args._group_actions.append(maximum_af)
     apply_models_args._group_actions.append(populations)
     apply_models_args._group_actions.append(use_v2_release_mutation_rate)
+    apply_models_args._group_actions.append(cov_model_type)
 
     compute_constraint_args = parser.add_argument_group(
         "Computate constraint metrics args",

@@ -75,7 +75,7 @@ def add_vep_context_annotations(
     """
     context_ht = annotated_context_ht.drop("a_index", "was_split")
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
-    if "an_strata_sample_count" in ht.globals:
+    if "an_strata_sample_count" in context_ht.globals:
         ht = ht.annotate_globals(
             an_strata_sample_count=context_ht.an_strata_sample_count.collect()[0]
         )
@@ -377,7 +377,7 @@ def apply_models(
     mutation_ht: hl.Table,
     plateau_models: hl.StructExpression,
     coverage_model: Optional[Tuple[float, float]] = None,
-    cov_model_type: str = "logarithmic",
+    log10_coverage: bool = True,
     max_af: float = 0.001,
     keep_annotations: Tuple[str] = (
         "context",
@@ -445,7 +445,7 @@ def apply_models(
         gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
         given coverage level to observed:expected ratio. It's a correction factor for
         low coverage sites.
-    :param cov_model_type: Type of model to use for low coverage sites when applying the coverage model, either 'linear' or 'logarithmic'. Default is 'logarithmic'.
+    :param log10_coverage: Whether to convert coverage sites with log10 when building the coverage model. Default is True.
     :param max_af: Maximum allele frequency for a variant to be included in returned
         counts. Default is 0.001.
     :param keep_annotations: Annotations to keep in the context Table and exome Table.
@@ -473,10 +473,6 @@ def apply_models(
     :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
         (observed:expected ratio) annotations.
     """
-    # Check value of cov_model_type.
-    if cov_model_type not in ["logarithmic", "linear"]:
-        raise ValueError("cov_model_type must be one of 'logarithmic' or 'linear'!")
-
     # Filter context ht to sites with defined exome coverage_metric.
     context_ht = context_ht.filter(hl.is_defined(context_ht[coverage_metric]))
 
@@ -502,17 +498,17 @@ def apply_models(
 
     context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
         ht=context_ht,
+        coverage_expr=context_ht[coverage_metric],
         vep_annotation=vep_annotation,
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
-        coverage_metric=coverage_metric,
     )
     exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
         ht=exome_ht,
+        coverage_expr=exome_ht[coverage_metric],
         vep_annotation=vep_annotation,
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
-        coverage_metric=coverage_metric,
     )
 
     # Compute observed and possible variant counts.
@@ -537,12 +533,10 @@ def apply_models(
     poss_expr = ht.possible_variants
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
-    if cov_model_type == "logarithmic":
+    if log10_coverage:
         cov_value = hl.log10(ht.coverage)
-    elif cov_model_type == "linear":
-        cov_value = ht.coverage
     else:
-        raise ValueError("cov_model_type must be one of 'logarithmic' or 'linear'!")
+        cov_value = ht.coverage
 
     cov_corr_expr = (
         hl.case()
@@ -621,6 +615,7 @@ def apply_models(
             coverage_model=coverage_model_global,
             high_cov_definition=high_cov_definition,
             coverage_metric=coverage_metric,
+            log10_coverage=log10_coverage,
             downsampling_meta=downsampling_meta if downsampling_meta else "None",
         )
     )
