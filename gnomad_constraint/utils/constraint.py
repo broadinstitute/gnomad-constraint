@@ -77,7 +77,7 @@ def add_vep_context_annotations(
     context_ht = context_ht.annotate(vep=context_ht.vep.drop("colocated_variants"))
     if "an_strata_sample_count" in context_ht.globals:
         ht = ht.annotate_globals(
-            an_strata_sample_count=context_ht.an_strata_sample_count.collect()[0]
+            an_strata_sample_count=context_ht.index_globals().an_strata_sample_count
         )
     ht = ht.annotate(**context_ht[ht.key])
     return ht
