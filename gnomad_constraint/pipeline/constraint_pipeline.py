@@ -292,7 +292,7 @@ def main(args):
     # the coverage model.
     models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
 
-    # Check the version if 4.0 or later iu using "exomes_AN_percent" as coverage_metric.
+    # Check the version if 4.0 or later is using "exomes_AN_percent" as coverage_metric.
     if coverage_metric == "exomes_AN_percent" and not version_4_and_above:
         raise ValueError(
             "Allele number tables are not available for versions prior to v4.0."
