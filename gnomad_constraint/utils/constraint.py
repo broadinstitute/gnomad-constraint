@@ -534,6 +534,7 @@ def apply_models(
     # Determine coverage correction to use based on coverage value. If no
     # coverage model is provided, set to 1 as long as coverage > 0.
     if log10_coverage:
+        logger.info("Converting coverage sites by log10.")
         cov_value = hl.log10(ht.coverage)
     else:
         cov_value = ht.coverage
