@@ -295,7 +295,7 @@ def main(args):
     # Check the version if 4.0 or later iu using "exomes_AN_percent" as coverage_metric.
     if coverage_metric == "exomes_AN_percent" and not version_4_and_above:
         raise ValueError(
-            "Allele number tbales are not avaiable for versions prior to v4.0."
+            "Allele number tables are not available for versions prior to v4.0."
         )
 
     if coverage_model_type == "logarithmic":
