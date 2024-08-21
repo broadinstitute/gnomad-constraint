@@ -85,7 +85,7 @@ def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> s
     return (
         f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
         if test
-        else f"gs://gnomad/v{version}/constraint_an"
+        else f"gs://gnomad/v{version}/constraint"
     )
 
 
