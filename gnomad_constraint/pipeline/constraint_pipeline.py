@@ -26,7 +26,7 @@ import logging
 from typing import List
 
 import hail as hl
-from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
+from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS, all_sites_an
 from gnomad.utils.constraint import build_models, explode_downsamplings_oe
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -109,6 +109,12 @@ def get_constraint_resources(
         overwrite=overwrite,
     )
 
+    # Make dictionary for allele number tables.
+    an_hts = {}
+    if int(version[0]) >= 4:
+        an_hts["exomes_an_ht"] = all_sites_an("exomes")
+        an_hts["genomes_an_ht"] = all_sites_an("genomes")
+
     # Create resource collection for each step of the constraint pipeline.
     context_res = constraint_res.get_vep_context_ht(version)
     context_build = get_reference_genome(context_res.ht().locus).name
@@ -127,6 +133,7 @@ def get_constraint_resources(
                     "genomes", version
                 ),
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
+                **an_hts,
             },
         },
     )
@@ -257,6 +264,8 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
+    coverage_metric = args.coverage_metric
+    coverage_model_type = args.coverage_model_type
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -289,6 +298,17 @@ def main(args):
     # the coverage model.
     models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
 
+    # Check the version if 4.0 or later is using "exomes_AN_percent" as coverage_metric.
+    if coverage_metric == "exomes_AN_percent" and not version_4_and_above:
+        raise ValueError(
+            "Allele number tables are not available for versions prior to v4.0."
+        )
+
+    if coverage_model_type == "logarithmic":
+        log10_coverage = True
+    elif coverage_model_type == "linear":
+        log10_coverage = False
+
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
         version,
@@ -312,9 +332,16 @@ def main(args):
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
+            an_hts = (
+                {"exomes": res.exomes_an_ht.ht(), "genomes": res.genomes_an_ht.ht()}
+                if version_4_and_above
+                else {}
+            )
+
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
+                an_hts,
                 res.methylation_ht.ht(),
                 constraint_res.get_gerp_ht(get_reference_genome(context_ht.locus).name),
             ).write(res.annotated_context_ht.path, overwrite)
@@ -345,7 +372,9 @@ def main(args):
                 # Filter input Table and add annotations used in constraint
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(
-                    ht, require_exome_coverage=(data_type == "exomes")
+                    ht,
+                    require_exome_coverage=(data_type == "exomes"),
+                    coverage_metric=coverage_metric,
                 )
                 # Filter to locus that is on an autosome.
                 # TODO: Add back in pseudoautosomal regions once have X/Y methylation
@@ -426,6 +455,8 @@ def main(args):
                     res.mutation_ht.ht().select("mu_snp"),
                     max_af=max_af,
                     pops=pops,
+                    grouping=(coverage_metric,),
+                    coverage_metric=coverage_metric,
                     partition_hint=args.training_set_partition_hint,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     transcript_for_synonymous_filter=(
@@ -453,12 +484,14 @@ def main(args):
 
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
-                    training_ht,
+                    coverage_ht=training_ht,
+                    coverage_expr=training_ht[coverage_metric],
                     weighted=args.use_weights,
                     pops=pops,
                     high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
+                    log10_coverage=log10_coverage,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -504,12 +537,14 @@ def main(args):
                         if not args.skip_coverage_model
                         else None
                     ),
+                    log10_coverage=log10_coverage,
                     max_af=max_af,
                     pops=pops,
                     downsamplings=downsamplings,
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    coverage_metric=coverage_metric,
                     high_cov_definition=args.high_cov_definition,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
                     use_mane_select=(
@@ -646,11 +681,7 @@ if __name__ == "__main__":
     preprocess_data_args = parser.add_argument_group(
         "Preprocess data args", "Arguments used for preprocessing the data."
     )
-    preprocess_data_args.add_argument(
-        "--use-v2-release-context-ht",
-        help="Whether to use the annotated context Table for the v2 release.",
-        action="store_true",
-    )
+
     preprocess_data_args.add_argument(
         "--preprocess-data",
         help=(
@@ -659,6 +690,19 @@ if __name__ == "__main__":
             " annotations."
         ),
         action="store_true",
+    )
+
+    preprocess_data_args.add_argument(
+        "--use-v2-release-context-ht",
+        help="Whether to use the annotated context Table for the v2 release.",
+        action="store_true",
+    )
+
+    preprocess_data_args.add_argument(
+        "--coverage-metric",
+        help="Name of metric to use to assess coverage, such as 'exome_coverage' or 'exomes_AN_percent'. Default is 'exome_coverage'.",
+        type=str,
+        default="exome_coverage",
     )
 
     parser.add_argument(
@@ -847,6 +891,16 @@ if __name__ == "__main__":
         action="store_true",
     )
 
+    cov_model_type = build_models_args.add_argument(
+        "--coverage-model-type",
+        help=(
+            "Type of model to use for low coverage sites when building and applying the coverage model, either 'linear' or 'logarithmic'. Default is 'logarithmic'."
+        ),
+        type=str,
+        choices=["linear", "logarithmic"],
+        default="logarithmic",
+    )
+
     build_models_args._group_actions.append(populations)
 
     apply_models_args = parser.add_argument_group(
@@ -894,6 +948,7 @@ if __name__ == "__main__":
     apply_models_args._group_actions.append(maximum_af)
     apply_models_args._group_actions.append(populations)
     apply_models_args._group_actions.append(use_v2_release_mutation_rate)
+    apply_models_args._group_actions.append(cov_model_type)
 
     compute_constraint_args = parser.add_argument_group(
         "Computate constraint metrics args",
