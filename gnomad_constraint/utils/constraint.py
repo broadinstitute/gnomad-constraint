@@ -175,10 +175,10 @@ def prepare_ht_for_constraint_calculations(
         # exomes_AN_percent (percent samples with AN)
         ht = ht.annotate(
             exomes_AN_percent=hl.int(
-                ht.exomes_AN / ht.an_strata_sample_count.exomes[0] * 2 * 100
+                ht.exomes_AN / (ht.an_strata_sample_count.exomes[0] * 2) * 100
             ),
             exomes_AN_percent_raw=hl.int(
-                ht.exomes_AN_raw / ht.an_strata_sample_count.exomes[1] * 2 * 100
+                ht.exomes_AN_raw / (ht.an_strata_sample_count.exomes[1] * 2) * 100
             ),
         )
 
