@@ -106,7 +106,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
-            return release_sites().versions[version]
+            return gnomad_grch38.public_release(data_type).versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
