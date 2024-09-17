@@ -193,6 +193,7 @@ def get_mutation_ht(
 def get_annotated_context_ht(
     version: str = CURRENT_VERSION,
     use_v2_context_ht: bool = False,
+    test: bool = False,
 ) -> TableResource:
     """
     Return TableResource of annotated context Table.
@@ -201,6 +202,8 @@ def get_annotated_context_ht(
         `CURRENT_VERSION`.
     :param use_v2_context_ht: Whether to use annotated context Table that was produced
         for gnomAD v2. Default is False.
+    :param test: Whether the Table is for testing purposes and only contains sites in
+        chr20, chrX, and chrY. Default is False.
     :return: TableResource of annotated context Table.
     """
     if use_v2_context_ht:
@@ -210,7 +213,7 @@ def get_annotated_context_ht(
 
     check_param_scope(version)
     return TableResource(
-        f"{get_constraint_root(version)}/preprocessed_data/annotated_context.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/annotated_context.ht"
     )
 
 

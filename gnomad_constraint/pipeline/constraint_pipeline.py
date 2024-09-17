@@ -56,24 +56,49 @@ logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
 
 
-def filter_for_test(ht: hl.Table, data_type: str) -> hl.Table:
+def filter_for_test(
+    ht: hl.Table,
+    data_type: str,
+    use_gene_list: bool = False,
+) -> hl.Table:
     """
-    Filter `ht` to chr20, chrX, and chrY for testing.
+    Filter `ht` to chr20, chrX, and chrY or a gene list for testing.
 
     :param ht: Table to filter.
     :param data_type: Data type of `ht`.
+    :param use_gene_list: Whether to use a gene list for testing instead of all of
+        chr20, chrX, and chrY for testing.
     :return: Filtered Table for testing.
     """
     rg = get_reference_genome(ht.locus)
-    contigs_keep = [
-        hl.parse_locus_interval(c, reference_genome=rg)
-        for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
-    ]
-    logger.info(
-        "Filtering the %s HT to chr20, chrX, and chrY for testing...",
-        data_type,
-    )
-    ht = hl.filter_intervals(ht, contigs_keep)
+    if use_gene_list:
+        if rg == "GRCh37":
+            keep_regions = [
+                "20:49505585-49547958",  # ADNP
+                "20:853296-896977",  # ANGPT4
+                "X:13752832-13787480",  # OFD1
+                "X:57313139-57515629",  # FAAH2
+                "Y:2803112-2850547",  # ZFY
+            ]
+        else:
+            keep_regions = [
+                "chr20:50888916-50931437",  # ADNP
+                "chr20:869900-916334",  # ANGPT4
+                "chrX:13734743-13777955",  # OFD1
+                "chrX:57286706-57489193",  # FAAH2
+                "chrY:2935281-2982506",  # ZFY
+            ]
+        keep = [hl.parse_locus_interval(c, reference_genome=rg) for c in keep_regions]
+    else:
+        keep = [
+            hl.parse_locus_interval(c, reference_genome=rg)
+            for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
+        ]
+        logger.info(
+            "Filtering the %s HT to chr20, chrX, and chrY for testing...",
+            data_type,
+        )
+    ht = hl.filter_intervals(ht, keep)
 
     return ht
 
@@ -122,7 +147,7 @@ def get_constraint_resources(
         "--prepare-context-ht",
         output_resources={
             "annotated_context_ht": constraint_res.get_annotated_context_ht(
-                version, use_v2_release_context_ht
+                version, use_v2_release_context_ht, test
             )
         },
         input_resources={
@@ -255,7 +280,8 @@ def main(args):
     )
     regions = constraint_res.GENOMIC_REGIONS
     version = args.version
-    test = args.test
+    test_gene_list = args.test_gene_list
+    test = args.test or test_gene_list
     overwrite = args.overwrite
 
     max_af = args.max_af
@@ -328,6 +354,11 @@ def main(args):
             res = resources.prepare_context
             res.check_resource_existence()
             context_ht = res.context_ht.ht()
+            if test:
+                context_ht = filter_for_test(
+                    context_ht, "raw context", use_gene_list=test_gene_list
+                )
+
             coverage_hts = {
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
@@ -363,7 +394,7 @@ def main(args):
                     ht = context_ht
 
                 if test:
-                    ht = filter_for_test(ht, data_type)
+                    ht = filter_for_test(ht, data_type, use_gene_list=test_gene_list)
 
                 # Add annotations from VEP context Table to genome and exome Tables.
                 if data_type != "context":
@@ -661,6 +692,15 @@ if __name__ == "__main__":
         help=(
             "Whether to filter the exome Table, genome Table and the context Table to"
             " only chromosome 20, chromosome X, and chromosome Y for testing."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--test-gene-list",
+        help=(
+            "Whether to filter the exome Table, genome Table and the context Table to"
+            " only a list of genes on chromosome 20, chromosome X, and chromosome Y for"
+            " testing."
         ),
         action="store_true",
     )
