@@ -1,18 +1,17 @@
-from typing import List
 import gzip
 import os
-import hail as hl
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import pandas_udf, col, explode, split, rtrim
-from pyspark.sql.types import StringType, StructType, StructField
-import pandas as pd
-import numpy as np
-from pyspark.sql.types import StringType
 from io import StringIO
-from Bio import SeqIO, SeqFeature
-from Bio.PDB.MMCIFParser import MMCIFParser
-from Bio.PDB import PPBuilder
+from typing import List
 
+import hail as hl
+import numpy as np
+import pandas as pd
+from Bio import SeqFeature, SeqIO
+from Bio.PDB import PPBuilder
+from Bio.PDB.MMCIFParser import MMCIFParser
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
+from pyspark.sql.types import StringType, StructField, StructType
 
 ########################################################################################
 # Functions to perform tasks from convert_gencode_fastn_to_dt.R and
@@ -47,6 +46,7 @@ COLNAMES_TRANSLATIONS = [
 Column names for the GENCODE translations Hail Table.
 """
 
+
 def convert_fasta_to_table(fasta_file: str, colnames: List[str]) -> hl.Table:
     """
     Convert a FASTA file to a Hail Table.
@@ -57,20 +57,20 @@ def convert_fasta_to_table(fasta_file: str, colnames: List[str]) -> hl.Table:
     """
     spark = hl.utils.java.Env.spark_session()
     df = spark.read.format("text").load(fasta_file, wholetext=True)
-    df = df.select(explode(split(df['value'], '>')).alias("sequence"))
+    df = df.select(explode(split(df["value"], ">")).alias("sequence"))
 
     # Convert the Spark DataFrame to a Hail Table.
     ht = hl.Table.from_spark(df)
     ht = ht.filter(ht.sequence != "")
 
-    split_expr = ht.sequence.split('\n')
-    split_info_expr = split_expr[0].split('\|')
+    split_expr = ht.sequence.split("\n")
+    split_info_expr = split_expr[0].split("\\|")
     ht = ht.select(
         **{
             n: hl.or_missing(
-                (split_info_expr.length() > i) & ~hl.array(['', '-']).contains(
-                    split_info_expr[i]),
-                split_info_expr[i]
+                (split_info_expr.length() > i)
+                & ~hl.array(["", "-"]).contains(split_info_expr[i]),
+                split_info_expr[i],
             )
             for i, n in enumerate(colnames)
         },
@@ -112,7 +112,7 @@ def convert_gencode_transcripts_fasta_to_table(fasta_file: str) -> hl.Table:
     )
 
     # Rename the indices to 'utr5', 'cds', and 'utr3'.
-    names = ['utr5', 'cds', 'utr3']
+    names = ["utr5", "cds", "utr3"]
     ht = ht.rename({f"index{i + 1}": n for i, n in enumerate(names)})
 
     # Split the 'utr5', 'cds', and 'utr3' annotations into start and end positions.
@@ -124,7 +124,7 @@ def convert_gencode_transcripts_fasta_to_table(fasta_file: str) -> hl.Table:
     )
 
     # Trim the sequence to the CDS range.
-    ht = ht.annotate(cds_sequence=ht.sequence[ht.cds[0] - 1:ht.cds[1]])
+    ht = ht.annotate(cds_sequence=ht.sequence[ht.cds[0] - 1 : ht.cds[1]])
 
     return ht
 
@@ -159,31 +159,7 @@ def read_structure_peptide(uniprot_id: str, mmcif_content: str) -> str:
     ppb = PPBuilder()
 
     # Return the sequence as a string.
-    return ''.join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
-
-
-@pandas_udf("uniprot_id string, sequence string")
-def process_file(
-    file_path_series: pd.Series,
-    file_content_series: pd.Series
-) -> pd.DataFrame:
-    """
-    Process a list of files in parallel using a Pandas UDF.
-
-    :param file_path_series: File paths.
-    :param file_content_series: File contents.
-    :return: Pandas DataFrame with UniProt IDs and sequences.
-    """
-    result = []
-    for file_path, file_content in zip(file_path_series, file_content_series):
-        # Extract UniProt ID from the file path.
-        uniprot_id = os.path.basename(file_path).split('-')[1]
-
-        # Process the file content.
-        sequence = read_structure_peptide(uniprot_id, file_content)
-        result.append((uniprot_id, sequence))
-
-    return pd.DataFrame(result, columns=["uniprot_id", "sequence"])
+    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
 
 
 def process_af2_structures(gcs_bucket_path: str) -> hl.Table:
@@ -201,20 +177,54 @@ def process_af2_structures(gcs_bucket_path: str) -> hl.Table:
     spark = hl.utils.java.Env.spark_session()
 
     # Define schema for loading the files.
-    schema = StructType([
-        StructField("file_content", StringType(), True),
-        StructField("af2_file", StringType(), True)
-    ])
+    schema = StructType(
+        [
+            StructField("file_content", StringType(), True),
+            StructField("af2_file", StringType(), True),
+        ]
+    )
 
     # Use Spark to read files in parallel.
     # This reads the entire content of each file as a (filename, content) pair.
-    af2_files_df = spark.read.format("text").load(f"{gcs_bucket_path}/*.cif.gz", schema=schema, wholetext=True).withColumn("af2_file", col("_metadata.file_path"))
+    af2_files_df = (
+        spark.read.format("text")
+        .load(f"{gcs_bucket_path}/*.cif.gz", schema=schema, wholetext=True)
+        .withColumn("af2_file", col("_metadata.file_path"))
+    )
+
+    @pandas_udf("uniprot_id string, sequence string")
+    def process_file(
+        file_path_series: pd.Series, file_content_series: pd.Series
+    ) -> pd.DataFrame:
+        """
+        Process a list of files in parallel using a Pandas UDF.
+
+        :param file_path_series: File paths.
+        :param file_content_series: File contents.
+        :return: Pandas DataFrame with UniProt IDs and sequences.
+        """
+        result = []
+        for file_path, file_content in zip(file_path_series, file_content_series):
+            # Extract UniProt ID from the file path.
+            uniprot_id = os.path.basename(file_path).split("-")[1]
+
+            # Process the file content.
+            sequence = read_structure_peptide(uniprot_id, file_content)
+            result.append((uniprot_id, sequence))
+
+        return pd.DataFrame(result, columns=["uniprot_id", "sequence"])
 
     # Apply the Pandas UDF to process the files.
-    result_df = af2_files_df.withColumn("uniprot_id_sequence", process_file(col("af2_file"), col("file_content")))
+    result_df = af2_files_df.withColumn(
+        "uniprot_id_sequence", process_file(col("af2_file"), col("file_content"))
+    )
 
     # Split the resulting column into separate columns.
-    result_df = result_df.select("af2_file", col("uniprot_id_sequence.uniprot_id"), col("uniprot_id_sequence.sequence"))
+    result_df = result_df.select(
+        "af2_file",
+        col("uniprot_id_sequence.uniprot_id"),
+        col("uniprot_id_sequence.sequence"),
+    )
 
     # Convert the Spark DataFrame to a Hail Table.
     ht = hl.Table.from_spark(result_df, key=["af2_file", "uniprot_id"])
@@ -234,7 +244,9 @@ def remove_multi_frag_uniprots(ht: hl.Table) -> hl.Table:
     :return: Hail Table with UniProt IDs with multiple fragments removed and
         keyed by 'uniprot_id'.
     """
-    uniprots_with_multifrags = ht.filter(ht.af2_file.contains("-F2-")).select().distinct()
+    uniprots_with_multifrags = (
+        ht.filter(ht.af2_file.contains("-F2-")).select().distinct()
+    )
 
     return ht.anti_join(uniprots_with_multifrags).key_by("uniprot_id").drop("af2_file")
 
@@ -242,6 +254,7 @@ def remove_multi_frag_uniprots(ht: hl.Table) -> hl.Table:
 ########################################################################################
 # Functions to perform tasks from gencode_alignment.R
 ########################################################################################
+
 
 def join_by_sequence(ht1: hl.Table, ht2: hl.Table) -> hl.Table:
     """
@@ -256,7 +269,7 @@ def join_by_sequence(ht1: hl.Table, ht2: hl.Table) -> hl.Table:
     :return: Hail Table with the two input tables joined based on 'sequence'.
     """
     # Overlap the tables based on sequence.
-    ht1 = ht1.key_by('sequence')
-    ht2 = ht2.key_by('sequence')
+    ht1 = ht1.key_by("sequence")
+    ht2 = ht2.key_by("sequence")
 
-    return ht1.join(ht2, how='inner')
+    return ht1.join(ht2, how="inner")
