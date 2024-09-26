@@ -4,19 +4,19 @@ import argparse
 import logging
 
 import hail as hl
-
-import gnomad_constraint.experimental.promis3d.resources as promis3d_res
-from gnomad_constraint.experimental.promis3d.utils import (
-    convert_gencode_transcripts_fasta_to_table,
-    convert_fasta_to_table,
-    COLNAMES_TRANSLATIONS,
-    process_af2_structures,
-    remove_multi_frag_uniprots,
-    join_by_sequence,
-)
 from gnomad_qc.resource_utils import (
     PipelineResourceCollection,
     PipelineStepResourceCollection,
+)
+
+import gnomad_constraint.experimental.promis3d.resources as promis3d_res
+from gnomad_constraint.experimental.promis3d.utils import (
+    COLNAMES_TRANSLATIONS,
+    convert_fasta_to_table,
+    convert_gencode_transcripts_fasta_to_table,
+    join_by_sequence,
+    process_af2_structures,
+    remove_multi_frag_uniprots,
 )
 
 logging.basicConfig(
@@ -25,7 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("promis3d_pipeline")
 logger.setLevel(logging.INFO)
-
 
 
 def get_promis3d_resources(
@@ -171,7 +170,7 @@ def main(args):
         )
         res = resources.gencode_alignment
         res.check_resource_existence()
-        ht = join_by_sequence(res.af2_ht, res.gencode_translation_ht)
+        ht = join_by_sequence(res.af2_ht.ht(), res.gencode_translation_ht.ht())
         ht = ht.checkpoint(res.matched_ht.path, overwrite=overwrite)
         ht.show()
 
@@ -180,9 +179,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--overwrite",
-        help="Whether to overwrite output files.",
-        action="store_true"
+        "--overwrite", help="Whether to overwrite output files.", action="store_true"
     )
     parser.add_argument(
         "--version",
