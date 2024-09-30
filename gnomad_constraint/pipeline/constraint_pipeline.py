@@ -26,7 +26,7 @@ import logging
 from typing import List
 
 import hail as hl
-from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
+from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS, all_sites_an
 from gnomad.utils.constraint import build_models, explode_downsamplings_oe
 from gnomad.utils.filtering import filter_x_nonpar, filter_y_nonpar
 from gnomad.utils.reference_genome import get_reference_genome
@@ -56,24 +56,49 @@ logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
 
 
-def filter_for_test(ht: hl.Table, data_type: str) -> hl.Table:
+def filter_for_test(
+    ht: hl.Table,
+    data_type: str,
+    use_gene_list: bool = False,
+) -> hl.Table:
     """
-    Filter `ht` to chr20, chrX, and chrY for testing.
+    Filter `ht` to chr20, chrX, and chrY or a gene list for testing.
 
     :param ht: Table to filter.
     :param data_type: Data type of `ht`.
+    :param use_gene_list: Whether to use a gene list for testing instead of all of
+        chr20, chrX, and chrY for testing.
     :return: Filtered Table for testing.
     """
     rg = get_reference_genome(ht.locus)
-    contigs_keep = [
-        hl.parse_locus_interval(c, reference_genome=rg)
-        for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
-    ]
-    logger.info(
-        "Filtering the %s HT to chr20, chrX, and chrY for testing...",
-        data_type,
-    )
-    ht = hl.filter_intervals(ht, contigs_keep)
+    if use_gene_list:
+        if rg == "GRCh37":
+            keep_regions = [
+                "20:49505585-49547958",  # ADNP
+                "20:853296-896977",  # ANGPT4
+                "X:13752832-13787480",  # OFD1
+                "X:57313139-57515629",  # FAAH2
+                "Y:2803112-2850547",  # ZFY
+            ]
+        else:
+            keep_regions = [
+                "chr20:50888916-50931437",  # ADNP
+                "chr20:869900-916334",  # ANGPT4
+                "chrX:13734743-13777955",  # OFD1
+                "chrX:57286706-57489193",  # FAAH2
+                "chrY:2935281-2982506",  # ZFY
+            ]
+        keep = [hl.parse_locus_interval(c, reference_genome=rg) for c in keep_regions]
+    else:
+        keep = [
+            hl.parse_locus_interval(c, reference_genome=rg)
+            for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
+        ]
+        logger.info(
+            "Filtering the %s HT to chr20, chrX, and chrY for testing...",
+            data_type,
+        )
+    ht = hl.filter_intervals(ht, keep)
 
     return ht
 
@@ -109,6 +134,12 @@ def get_constraint_resources(
         overwrite=overwrite,
     )
 
+    # Make dictionary for allele number tables.
+    an_hts = {}
+    if int(version[0]) >= 4:
+        an_hts["exomes_an_ht"] = all_sites_an("exomes")
+        an_hts["genomes_an_ht"] = all_sites_an("genomes")
+
     # Create resource collection for each step of the constraint pipeline.
     context_res = constraint_res.get_vep_context_ht(version)
     context_build = get_reference_genome(context_res.ht().locus).name
@@ -116,7 +147,7 @@ def get_constraint_resources(
         "--prepare-context-ht",
         output_resources={
             "annotated_context_ht": constraint_res.get_annotated_context_ht(
-                version, use_v2_release_context_ht
+                version, use_v2_release_context_ht, test
             )
         },
         input_resources={
@@ -127,6 +158,7 @@ def get_constraint_resources(
                     "genomes", version
                 ),
                 "methylation_ht": constraint_res.get_methylation_ht(context_build),
+                **an_hts,
             },
         },
     )
@@ -169,8 +201,14 @@ def get_constraint_resources(
     create_training_set = PipelineStepResourceCollection(
         "--create-training-set",
         output_resources={
-            f"train_{r}_ht": constraint_res.get_training_dataset(version, r, test)
-            for r in regions
+            **{
+                f"train_{r}_ht": constraint_res.get_training_dataset(version, r, test)
+                for r in regions
+            },
+            **{
+                f"train_{r}_tsv": constraint_res.get_training_tsv_path(version, r, test)
+                for r in regions
+            },
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
     )
@@ -242,7 +280,8 @@ def main(args):
     )
     regions = constraint_res.GENOMIC_REGIONS
     version = args.version
-    test = args.test
+    test_gene_list = args.test_gene_list
+    test = args.test or test_gene_list
     overwrite = args.overwrite
     skip_downsamplings = args.skip_downsamplings
 
@@ -252,6 +291,8 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     gerp_lower_cutoff = args.gerp_lower_cutoff
     gerp_upper_cutoff = args.gerp_upper_cutoff
+    coverage_metric = args.coverage_metric
+    coverage_model_type = args.coverage_model_type
 
     if version not in constraint_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -284,6 +325,17 @@ def main(args):
     # the coverage model.
     models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
 
+    # Check the version if 4.0 or later is using "exomes_AN_percent" as coverage_metric.
+    if coverage_metric == "exomes_AN_percent" and not version_4_and_above:
+        raise ValueError(
+            "Allele number tables are not available for versions prior to v4.0."
+        )
+
+    if coverage_model_type == "logarithmic":
+        log10_coverage = True
+    elif coverage_model_type == "linear":
+        log10_coverage = False
+
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
         version,
@@ -303,13 +355,25 @@ def main(args):
             res = resources.prepare_context
             res.check_resource_existence()
             context_ht = res.context_ht.ht()
+            if test:
+                context_ht = filter_for_test(
+                    context_ht, "raw context", use_gene_list=test_gene_list
+                )
+
             coverage_hts = {
                 "exomes": res.exomes_coverage_ht.ht(),
                 "genomes": res.genomes_coverage_ht.ht(),
             }
+            an_hts = (
+                {"exomes": res.exomes_an_ht.ht(), "genomes": res.genomes_an_ht.ht()}
+                if version_4_and_above
+                else {}
+            )
+
             annotate_context_ht(
                 context_ht,
                 coverage_hts,
+                an_hts,
                 res.methylation_ht.ht(),
                 constraint_res.get_gerp_ht(get_reference_genome(context_ht.locus).name),
             ).write(res.annotated_context_ht.path, overwrite)
@@ -331,7 +395,7 @@ def main(args):
                     ht = context_ht
 
                 if test:
-                    ht = filter_for_test(ht, data_type)
+                    ht = filter_for_test(ht, data_type, use_gene_list=test_gene_list)
 
                 # Add annotations from VEP context Table to genome and exome Tables.
                 if data_type != "context":
@@ -340,7 +404,9 @@ def main(args):
                 # Filter input Table and add annotations used in constraint
                 # calculations.
                 ht = prepare_ht_for_constraint_calculations(
-                    ht, require_exome_coverage=(data_type == "exomes")
+                    ht,
+                    require_exome_coverage=(data_type == "exomes"),
+                    coverage_metric=coverage_metric,
                 )
                 # Filter to locus that is on an autosome.
                 # TODO: Add back in pseudoautosomal regions once have X/Y methylation
@@ -421,17 +487,22 @@ def main(args):
                     res.mutation_ht.ht().select("mu_snp"),
                     max_af=max_af,
                     pops=pops,
+                    grouping=(coverage_metric,),
+                    coverage_metric=coverage_metric,
                     partition_hint=args.training_set_partition_hint,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
+                    # Switch to using MANE Select transcripts rather than canonical for
+                    # gnomAD v4 and later versions.
                     transcript_for_synonymous_filter=(
                         "mane_select" if version_4_and_above else "canonical"
-                    ),  # Switch to using MANE Select transcripts rather than canonical for gnomAD v4 and later versions.
+                    ),
                     global_annotation="training_dataset_params",
                     skip_downsamplings=skip_downsamplings,
                 )
                 if use_v2_release_mutation_ht:
                     op_ht = op_ht.annotate_globals(use_v2_release_mutation_ht=True)
-                # op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
+                #op_ht.write(getattr(res, f"train_{r}_ht").path, overwrite=overwrite)
+                #op_ht.export(getattr(res, f"train_{r}_tsv"))
                 op_ht.write(
                     "gs://gnomad-kristen/constraint/gen_anc/train.ht",
                     overwrite=overwrite,
@@ -454,12 +525,14 @@ def main(args):
 
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
-                    training_ht,
+                    coverage_ht=training_ht,
+                    coverage_expr=training_ht[coverage_metric],
                     weighted=args.use_weights,
                     pops=pops,
                     high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
+                    log10_coverage=log10_coverage,
                 )
                 hl.experimental.write_expression(
                     plateau_models,
@@ -487,8 +560,8 @@ def main(args):
 
             # Apply separate plateau models for sites on autosomes/pseudoautosomal
             # regions, chromosome X, and chromosome Y. Use autosomes/pseudoautosomal
-            # coverage models for all contigs (Note: should test separate coverage models
-            # for XX/XY in the future).
+            # coverage models for all contigs (Note: should test separate coverage
+            # models for XX/XY in the future).
             for r in regions:
                 logger.info(
                     "Applying %s plateau and autosome coverage models (if specified)"
@@ -509,6 +582,7 @@ def main(args):
                         if not args.skip_coverage_model
                         else None
                     ),
+                    log10_coverage=log10_coverage,
                     max_af=max_af,
                     pops=pops,
                     downsamplings=downsamplings,
@@ -516,14 +590,17 @@ def main(args):
                     obs_pos_count_partition_hint=args.apply_obs_pos_count_partition_hint,
                     expected_variant_partition_hint=args.apply_expected_variant_partition_hint,
                     custom_vep_annotation=custom_vep_annotation,
+                    coverage_metric=coverage_metric,
                     high_cov_definition=args.high_cov_definition,
                     low_coverage_filter=args.pipeline_low_coverage_filter,
+                    # Group by MANE Select transcripts in addition canonical for gnomAD
+                    # v4 and later versions.
                     use_mane_select=(
                         True
                         if version_4_and_above
                         and custom_vep_annotation != "worst_csq_by_gene"
                         else False
-                    ),  # Group by MANE Select transcripts in addition canonical for gnomAD v4 and later versions.
+                    ),
                 )
                 if use_v2_release_mutation_ht:
                     oe_ht = oe_ht.annotate_globals(use_v2_release_mutation_ht=True)
@@ -636,6 +713,15 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    parser.add_argument(
+        "--test-gene-list",
+        help=(
+            "Whether to filter the exome Table, genome Table and the context Table to"
+            " only a list of genes on chromosome 20, chromosome X, and chromosome Y for"
+            " testing."
+        ),
+        action="store_true",
+    )
 
     prepare_context_args = parser.add_argument_group(
         "Prepare context Table args", "Arguments used for preparing the context Table."
@@ -653,11 +739,7 @@ if __name__ == "__main__":
     preprocess_data_args = parser.add_argument_group(
         "Preprocess data args", "Arguments used for preprocessing the data."
     )
-    preprocess_data_args.add_argument(
-        "--use-v2-release-context-ht",
-        help="Whether to use the annotated context Table for the v2 release.",
-        action="store_true",
-    )
+
     preprocess_data_args.add_argument(
         "--preprocess-data",
         help=(
@@ -666,6 +748,22 @@ if __name__ == "__main__":
             " annotations."
         ),
         action="store_true",
+    )
+
+    preprocess_data_args.add_argument(
+        "--use-v2-release-context-ht",
+        help="Whether to use the annotated context Table for the v2 release.",
+        action="store_true",
+    )
+
+    preprocess_data_args.add_argument(
+        "--coverage-metric",
+        help=(
+            "Name of metric to use to assess coverage, such as 'exome_coverage' or "
+            "'exomes_AN_percent'. Default is 'exome_coverage'."
+        ),
+        type=str,
+        default="exome_coverage",
     )
 
     parser.add_argument(
@@ -785,7 +883,8 @@ if __name__ == "__main__":
         default=0.001,
     )
 
-    # `populations` is an arg for `--create-training-set`, `--apply-models`, `--build-models`, and `compute_constraint_args`
+    # `populations` is an arg for `--create-training-set`, `--apply-models`,
+    # `--build-models`, and `compute_constraint_args`
     populations = training_set_args.add_argument(
         "--pops",
         nargs="+",
@@ -854,6 +953,18 @@ if __name__ == "__main__":
         action="store_true",
     )
 
+    cov_model_type = build_models_args.add_argument(
+        "--coverage-model-type",
+        help=(
+            "Type of model to use for low coverage sites when building and applying "
+            "the coverage model, either 'linear' or 'logarithmic'. Default is "
+            "'logarithmic'."
+        ),
+        type=str,
+        choices=["linear", "logarithmic"],
+        default="logarithmic",
+    )
+
     build_models_args._group_actions.append(populations)
 
     apply_models_args = parser.add_argument_group(
@@ -901,6 +1012,7 @@ if __name__ == "__main__":
     apply_models_args._group_actions.append(maximum_af)
     apply_models_args._group_actions.append(populations)
     apply_models_args._group_actions.append(use_v2_release_mutation_rate)
+    apply_models_args._group_actions.append(cov_model_type)
 
     compute_constraint_args = parser.add_argument_group(
         "Computate constraint metrics args",

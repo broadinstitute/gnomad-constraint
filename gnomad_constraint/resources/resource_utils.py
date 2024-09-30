@@ -106,7 +106,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
-            return release_sites().versions[version]
+            return gnomad_grch38.public_release(data_type).versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
@@ -193,6 +193,7 @@ def get_mutation_ht(
 def get_annotated_context_ht(
     version: str = CURRENT_VERSION,
     use_v2_context_ht: bool = False,
+    test: bool = False,
 ) -> TableResource:
     """
     Return TableResource of annotated context Table.
@@ -201,6 +202,8 @@ def get_annotated_context_ht(
         `CURRENT_VERSION`.
     :param use_v2_context_ht: Whether to use annotated context Table that was produced
         for gnomAD v2. Default is False.
+    :param test: Whether the Table is for testing purposes and only contains sites in
+        chr20, chrX, and chrY. Default is False.
     :return: TableResource of annotated context Table.
     """
     if use_v2_context_ht:
@@ -210,7 +213,7 @@ def get_annotated_context_ht(
 
     check_param_scope(version)
     return TableResource(
-        f"{get_constraint_root(version)}/preprocessed_data/annotated_context.ht"
+        f"{get_constraint_root(version, test)}/preprocessed_data/annotated_context.ht"
     )
 
 
@@ -264,6 +267,27 @@ def get_training_dataset(
     return TableResource(
         f"{get_constraint_root(version, test)}/training_data/gnomad.v{version}.constraint_training.{genomic_region}.ht"
     )
+
+
+def get_training_tsv_path(
+    version: str = CURRENT_VERSION,
+    genomic_region: str = "autosome_par",
+    test: bool = False,
+) -> str:
+    """
+    Return tsv of training dataset with observed and possible variant count.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param genomic_region: The genomic region of the resource. One of "autosome_par",
+        "chrx_nonpar", or "chry_nonpar". Default is "autosome_par".
+    :param test: Whether the Table is for testing purpose and only contains sites in
+        chr20, chrX, and chrY. Default is False.
+    :return: TSV path of training dataset.
+    """
+    check_param_scope(version, genomic_region)
+
+    return f"{get_constraint_root(version, test)}/training_data/gnomad.v{version}.constraint_training.{genomic_region}.tsv.bgz"
 
 
 def get_models(
@@ -355,9 +379,7 @@ def get_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
-    )
+    return f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
 
 
 def get_downsampling_constraint_tsv_path(
@@ -374,9 +396,7 @@ def get_downsampling_constraint_tsv_path(
     """
     check_param_scope(version=version)
 
-    return (
-        f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
-    )
+    return f"{get_constraint_root(version, test)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
 
 
 def check_param_scope(
@@ -442,9 +462,7 @@ def get_checkpoint_path(
     :param bool mt: Whether path is for a MatrixTable. Default is False.
     :return: Output checkpoint path.
     """
-    return (
-        f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
-    )
+    return f'{get_constraint_root(version, test=True)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
 
 
 def get_gencode_ht(version: str) -> hl.Table:
