@@ -9,7 +9,6 @@
 # the tidyverse-gcs-access under OAuth 2.0 Client IDs. Then pass that file to the
 # interactive_authenticate_gcs function in an interactive session. The saved token
 # can be passed to this script.
-
 library(optparse)
 library(glue)
 
@@ -32,12 +31,36 @@ option_list <- list(
     type = "character",
     default = NA,
     help = "Path to the RDS file containing the GCS authentication token."
+  ),
+  make_option(
+    c("--use_presentation_sizes"),
+    type = "logical",
+    action = "store_true",
+    default = FALSE,
+    help = "Whether to use presentation sizes (larger text sizes) when generating plots."
+  ),
+  make_option(
+    c("--coverage_metric"),
+    type = "character",
+    default = "exomes_AN_percent",
+    help = "Name of coverage metric to use for plotting training data. Either 'exomes_AN_percent' or 'exome_coverage'."
+  ),
+  make_option(
+    c("--high_coverage_cutoff"),
+    type = "integer",
+    default = 66,
+    help = "Cutoff of coverage_metric above which a site will be considered high coverage when plotting training data."
   )
 )
 
+
 # Parse the options
 opt <- parse_args(OptionParser(option_list = option_list))
+
 output_basedir <- opt$output_directory
+use_presentation_sizes = opt$use_presentation_sizes
+coverage_metric = opt$coverage_metric
+high_coverage_cutoff = opt$high_coverage_cutoff
 
 # Set the working directory if supplied by user
 if (!is.na(opt$working_directory)) {
@@ -45,9 +68,10 @@ if (!is.na(opt$working_directory)) {
 }
 print(glue("Working directory is {getwd()}"))
 
-# Source the loading and plotting functions R files
+# Source the loading, plotting, and utils functions R files
 source("loading_functions.R")
 source("plotting_functions.R")
+source("plotting_utils.R")
 
 # Setup directory structure for output
 setup_directories(output_basedir)
@@ -56,6 +80,8 @@ setup_directories(output_basedir)
 if (!is.na(opt$gcs_auth_token)) {
   authenticate_gcs(opt$gcs_auth_token)
 }
+
+
 
 ####################################################################
 ####################################################################
@@ -71,9 +97,6 @@ v4_constraint_data <- load_constraint_metrics(
   version = "v4",
   output_basedir = output_basedir,
 )
-
-v2_constraint_data <- mutate(v2_constraint_data, v2 = TRUE)
-v4_constraint_data <- mutate(v4_constraint_data, v4 = TRUE)
 
 constraint_data <- full_join(
   v2_constraint_data,
@@ -97,7 +120,9 @@ or_genes <- constraint_data %>%
   transmute(gene = gene, gene_list = as.factor("Olfactory Genes"))
 
 # Add olfactory genes to gene list
-gene_lists <- gene_lists %>% bind_rows(or_genes)
+gene_lists <- gene_lists %>%
+  bind_rows(or_genes) %>%
+  distinct()
 
 # Obtain just haploinsufficient genes
 hi_genes <- gene_lists %>% filter(gene_list == "Haploinsufficient")
@@ -111,13 +136,24 @@ gene_data <- left_join(constraint_data, gene_lists, by = "gene")
 ####################################################################
 ####################################################################
 versions_to_plot <- c("v2", "v4")
-lof_upper_bin <- list(
-  v2 = "oe_lof_upper_bin",
-  v4 = "lof.oe_ci.upper_bin_decile"
+
+preferred_transcripts <- list(
+  v2 = "canonical",
+  v4 = "mane_select"
 )
 
 for (version in versions_to_plot) {
-  gene_list_sums <- summarize_gene_lists(gene_data, lof_upper_bin[[version]], version)
+  # Filter to preferred Ensembl transcripts (mane select or canonical) without any constraint flags
+  filtered_data <- filter_transcripts(gene_data, version)
+
+  # Define metric (lof.oe_ci.upper_bin_decile + version)
+  metric <- paste0("lof.oe_ci.upper_bin_decile", ".", version)
+  
+  gene_list_sums <- summarize_gene_lists(
+    filtered_data,
+    metric, 
+    version
+  )
   summary_gene_list_per_sums <- gene_list_sums %>% spread(.data$gene_list, .data$count)
 
   # Write out table of gene list membership
@@ -130,7 +166,7 @@ for (version in versions_to_plot) {
   write.table(summary_gene_list_per_sums, file = txt_path, quote = FALSE)
 
   # Plot gene list distribution
-  p <- plot_gene_lists(gene_list_sums, lof_upper_bin[version])
+  p <- plot_gene_lists(gene_list_sums, metric, use_presentation_sizes=use_presentation_sizes)
   plot_path <- get_plot_path(
     "gene_list_barplot",
     version = version,
@@ -144,22 +180,14 @@ for (version in versions_to_plot) {
 # Plot ROC Curves
 ####################################################################
 ####################################################################
-metric_by_version <- list(
-  loeuf = list(
-    v2 = "oe_lof_upper",
-    v4 = "lof.oe_ci.upper",
-    title_label = "LOEUF"
-  ),
-  pli = list(
-    v2 = "pLI",
-    v4 = "lof.pLI",
-    title_label = "pLI"
-  )
-)
-for (metric in names(metric_by_version)) {
-  v2_metric <- metric_by_version[[metric]]$v2
-  v4_metric <- metric_by_version[[metric]]$v4
-  metric_title <- metric_by_version[[metric]]$title_label
+metric_titles <- list(
+  "lof.oe_ci.upper" = "LOEUF",
+  "lof.pLI" = "pLI")
+
+for (metric in names(metric_titles)) {
+  v2_metric <- glue("{metric}.v2")
+  v4_metric <- glue("{metric}.v4")
+  metric_title <- metric_titles[metric]
 
   # Filter to where the metric is defined in both v2 and v4
   roc_df <- constraint_data %>%
@@ -168,10 +196,11 @@ for (metric in names(metric_by_version)) {
   v4_roc <- plot_roc(roc_df, hi_genes, v4_metric)
 
   # Get combine ROC curve plot
-  roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title)
-  plot_path <- get_plot_path(glue("roc_plot_{metric}"), output_basedir = output_basedir)
+  roc_plot <- combine_roc_plots(v2_roc, v4_roc, "v2", "v4", metric_title, use_presentation_sizes=use_presentation_sizes)
+  plot_path <- get_plot_path(glue("roc_plot_{metric_title}"), output_basedir = output_basedir)
   ggsave(roc_plot, filename = plot_path, dpi = 300, width = 6, height = 6, units = "in")
 }
+
 
 ####################################################################
 ####################################################################
@@ -186,32 +215,26 @@ v2_ds <- load_constraint_metrics(
   output_basedir = output_basedir,
   downsamplings = TRUE
 )
+
 v4_ds <- load_constraint_metrics(
   version = "v4",
   output_basedir = output_basedir,
   downsamplings = TRUE,
   release = FALSE,
   public = FALSE,
-) %>%
-  rename(
-    exp_syn = syn.exp,
-    exp_mis = mis.exp,
-    exp_lof = lof.exp,
-    obs_syn = syn.obs,
-    obs_mis = mis.obs,
-    obs_lof = lof.obs
-  )
+)
+
 
 # Filter to canoncial/MANE Select transcripts and fit linear models
 v2_ds <- filter(
   v2_ds,
-  (.data$canonical == "true") &
+  (.data$canonical) &
     (.data$pop == "global") &
     (.data$downsampling >= 100)
 )
 v4_ds <- filter(
   v4_ds,
-  (.data$mane_select == "true") &
+  (.data$mane_select) &
     grepl("^ENST", .data$transcript) &
     (.data$gen_anc == "global") &
     # Note ">" rather than ">=" difference from v2 to avoid dropping too many rows
@@ -219,7 +242,6 @@ v4_ds <- filter(
     # Remove 8 genes with missing gene names
     (!is.na(.data$gene))
 )
-
 
 # Fit linear models for lof, mis, and syn
 # Define datasets and versions
@@ -230,11 +252,11 @@ for (version in names(datasets)) {
   df <- datasets[[version]]
 
   # Generate plots
-  plots <- plot_projected_sample_size(df)
+  plots <- plot_projected_sample_size(df, use_presentation_sizes=use_presentation_sizes)
 
   for (var_type in c("lof", "mis")) {
     p <- plots[[var_type]]
-
+    
     # Construct output path and save plot
     plot_path <- get_plot_path(
       glue("{var_type}_ds_projections_{version}"),
@@ -243,3 +265,155 @@ for (version in names(datasets)) {
     ggsave(p, filename = plot_path, dpi = 300, width = 8, height = 6, units = "in")
   }
 }
+
+
+####################################################################
+####################################################################
+# Plot LOEUF decile change from v2 to v4
+####################################################################
+####################################################################
+# Filter to MANE Select Ensembl transcripts that are present in both v2 and v4
+# and that have no constraint flags
+decile_data <- filter_transcripts(constraint_data, "v4") %>% filter(.data$v2 == TRUE)
+decile_plot <- plot_decile_change(decile_data, use_presentation_sizes=use_presentation_sizes)
+
+plot_path <- get_plot_path(
+  "decile_change",
+  output_basedir = output_basedir
+)
+ggsave(
+  decile_plot,
+  filename = plot_path,
+  dpi = 300,
+  width = 8,
+  height = 4,
+  units = "in"
+)
+
+
+####################################################################
+####################################################################
+# Plot LOEUF and Z-Score comparison between v2 and v4
+####################################################################
+####################################################################
+# Filter to MANE Select Ensembl transcripts that are present in both v2 and v4
+# and that have no constraint flags
+comparison_df <- filter_transcripts(constraint_data, "v4") %>% filter(.data$v2 == TRUE)
+
+comparison_df <- comparison_df %>%
+  select(
+    all_of(
+      c(
+        "transcript",
+        "v2",
+        "v4",
+        "lof.oe_ci.upper.v2",
+        "lof.oe_ci.upper.v4",
+        "lof.z_score.v2",
+        "lof.z_score.v4",
+        "lof.oe.v2",
+        "lof.oe.v4"
+      )
+    )
+  )
+
+# Reformat the data for plotting
+comparison_df <- reformat_for_metric_comparison(comparison_df)
+
+comparison_plot <- plot_metric_comparison(comparison_df, use_presentation_sizes=use_presentation_sizes)
+
+plot_path <- get_plot_path(
+  "v2_v4_compare_values",
+  output_basedir = output_basedir
+)
+
+ggsave(
+  comparison_plot,
+  filename = plot_path,
+  dpi = 300,
+  width = 8,
+  height = 4,
+  units = "in"
+)
+
+
+####################################################################
+####################################################################
+# Plot observed vs expected values
+####################################################################
+####################################################################
+for (version in versions_to_plot) {
+  # Filter to preferred Ensembl transcripts (mane select or canonical) without any constraint flags
+  filtered_data <- filter_transcripts(
+    constraint_data,
+    version,
+    preferred_transcripts_only = TRUE,
+    enst_only = TRUE,
+    include_flagged_transcripts = FALSE
+  )
+  
+  # Reformat the data for plotting
+  oe_data <- reformat_for_observed_vs_expected(filtered_data, version)
+  # Plot observed vs expected values
+  oe_plot <- plot_observed_vs_expected(oe_data, version)
+
+  plot_path <- get_plot_path(
+    "obs_vs_exp",
+    version = version,
+    output_basedir = output_basedir
+  )
+  ggsave(oe_plot, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+}
+
+
+####################################################################
+####################################################################
+# Plot proportion observed vs mu for v4
+####################################################################
+####################################################################
+training_data <- load_constraint_metrics(
+  version = "v4",
+  output_basedir = output_basedir,
+  training_set = TRUE,
+  release = FALSE,
+  public = FALSE,
+)
+
+# Remove version suffix from the training data to prepare for plotting
+training_data <- remove_version_suffix(training_data)
+
+
+data_with_predictions <- get_predicted_proportion_observed(df = training_data,
+                                                           coverage_metric=coverage_metric,
+                                                           high_coverage_cutoff=high_coverage_cutoff)
+
+po_v_mu <- plot_proportion_observed_vs_mu(df=data_with_predictions,
+                                          coverage_metric=coverage_metric,
+                                          high_coverage_cutoff=high_coverage_cutoff,
+                                          use_presentation_sizes=use_presentation_sizes)
+
+plot_path <- get_plot_path(
+  glue("ov_v_mu"),
+  version = version,
+  output_basedir = output_basedir
+)
+ggsave(po_v_mu, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+
+####################################################################
+####################################################################
+# Plot observed to expected ratio vs coverage metric for v4
+####################################################################
+####################################################################
+oe_v_cov <- plot_oe_vs_cov_metric(df=data_with_predictions,
+                                  coverage_metric=coverage_metric,
+                                  high_coverage_cutoff=high_coverage_cutoff,
+                                  add_best_fit=TRUE,
+                                  use_presentation_sizes=use_presentation_sizes)
+
+plot_path <- get_plot_path(
+  "oe_v_cov",
+  version = version,
+  output_basedir = output_basedir
+)
+ggsave(oe_v_cov, filename = plot_path, dpi = 300, width = 7, height = 6, units = "in")
+plot_path
