@@ -74,7 +74,9 @@ def get_vep_context_ht(version: str) -> TableResource:
         raise ValueError("Not a valid gnomAD version -- must be either 2.1.1 or 4.x!")
 
 
-def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
+def get_constraint_root(
+    version: str = CURRENT_VERSION, test: bool = False, use_curr: bool = False
+) -> str:
     """
     Return path to constraint root folder.
 
@@ -82,11 +84,12 @@ def get_constraint_root(version: str = CURRENT_VERSION, test: bool = False) -> s
     :param test: Whether to use a tmp path.
     :return: Root path to constraint resources.
     """
-    return (
-        f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
-        if test
-        else f"gs://gnomad/v{version}/constraint"
-    )
+    if test:
+        return f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint"
+    if use_curr:
+        return f"gs://gnomad/v{version}/constraint_an"
+
+    return f"gs://gnomad-julia/constraint/v{version}"
 
 
 def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseResource:
@@ -106,7 +109,7 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
-            return release_sites().versions[version]
+            return gnomad_grch38.public_release(data_type).versions[version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
