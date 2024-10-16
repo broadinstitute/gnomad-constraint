@@ -159,7 +159,7 @@ def get_gencode_ht(version: str = CURRENT_VERSION) -> TableResource:
     else:
         raise ValueError(f"Invalid version: {version}")
 
-    return gencode.versions[f"v{GENCODE_VERSION_MAP[version]}"].ht()
+    return gencode.versions[f"v{GENCODE_VERSION_MAP[version]}"]
 
 
 def get_gencode_pos_ht(
