@@ -31,6 +31,7 @@ GENCODE_VERSION_MAP = {
 }
 """GENCODE version map for each gnomAD version."""
 
+
 def get_promis3d_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
     """
     Get root path to promis3d resources.
@@ -60,8 +61,8 @@ def get_gencode_fasta(
     """
     # TODO: Change this path when moved to a more permanent location.
     return (
-        f'gs://gnomad-julia/promis3d/resources/'
-        f'gencode.v{GENCODE_VERSION_MAP[version]}.{name}.fa.gz'
+        f"gs://gnomad-julia/promis3d/resources/"
+        f"gencode.v{GENCODE_VERSION_MAP[version]}.{name}.fa.gz"
     )
 
 
@@ -74,7 +75,7 @@ def get_alpha_fold2_dir(version: str = CURRENT_VERSION) -> str:
     """
     # TODO: Change this path when moved to a more permanent location and add any
     #  needed versioning.
-    return 'gs://gnomad-julia/alphafold2'
+    return "gs://gnomad-julia/alphafold2"
 
 
 def get_gencode_seq_ht(
@@ -108,8 +109,22 @@ def get_af2_ht(
     :param test: Whether to use a tmp path for testing. Default is False.
     :return: GENCODE sequences Hail Table resource.
     """
+    return TableResource(f"{get_promis3d_root(version, test)}/preprocessed_data/af2.ht")
+
+
+def get_af2_dist_ht(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> TableResource:
+    """
+    Get alphafold2 distance matrix Hail Table resource.
+
+    :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
+    :param test: Whether to use a tmp path for testing. Default is False.
+    :return: AlphaFold2 distance matrix Hail Table resource.
+    """
     return TableResource(
-        f"{get_promis3d_root(version, test)}/preprocessed_data/af2.ht"
+        f"{get_promis3d_root(version, test)}/preprocessed_data/af2_dist.ht"
     )
 
 
@@ -130,12 +145,12 @@ def get_gencode_translations_matched_ht(
     )
 
 
-def get_gencode_cds_ht(version: str = CURRENT_VERSION) -> TableResource:
+def get_gencode_ht(version: str = CURRENT_VERSION) -> TableResource:
     """
-    Get GENCODE CDS Hail Table resource.
+    Get GENCODE Hail Table resource.
 
     :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
-    :return: GENCODE CDS Hail Table resource.
+    :return: GENCODE Hail Table resource.
     """
     if version == "2.1.1":
         gencode = grch37_gencode
@@ -144,9 +159,50 @@ def get_gencode_cds_ht(version: str = CURRENT_VERSION) -> TableResource:
     else:
         raise ValueError(f"Invalid version: {version}")
 
-    ht = gencode.versions[f"v{GENCODE_VERSION_MAP[version]}"].ht()
-    ht = ht.filter(
-        (ht.feature == "CDS") & (ht.transcript_type == "protein_coding")
+    return gencode.versions[f"v{GENCODE_VERSION_MAP[version]}"].ht()
+
+
+def get_gencode_pos_ht(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> TableResource:
+    """
+    Get GENCODE positions Hail Table resource.
+
+    :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
+    :param test: Whether to use a tmp path for testing. Default is False.
+    :return: GENCODE positions Hail Table resource.
+    """
+    return TableResource(
+        f"{get_promis3d_root(version, test)}/preprocessed_data/gencode_positions.ht"
     )
 
-    return ht
+
+def get_obs_exp_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get observed/expected Hail Table resource.
+
+    :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
+    :return: Observed/expected Hail Table resource.
+    """
+    # TODO: Change this path when moved to a more permanent location, and add support
+    #  for v4.
+    return TableResource(
+        "gs://regional_missense_constraint/model/2.1.1/7/context_coding_snps_annot.ht"
+    )
+
+
+def get_greedy_ht(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> TableResource:
+    """
+    Get Promis3D greedy algorithm Hail Table resource.
+
+    :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
+    :param test: Whether to use a tmp path for testing. Default is False.
+    :return: Promis3D greedy algorithm Hail Table resource.
+    """
+    return TableResource(
+        f"{get_promis3d_root(version, test)}/preprocessed_data/promis3D_greedy.ht"
+    )
