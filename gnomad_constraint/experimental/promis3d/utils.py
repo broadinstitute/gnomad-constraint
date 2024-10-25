@@ -1,8 +1,9 @@
 """Script with utility functions for the Promis3D pipeline."""
 
+import logging
 import os
 from io import StringIO
-from typing import List, Optional, Union
+from typing import Iterator, List, Optional, Union
 
 import hail as hl
 import numpy as np
@@ -13,6 +14,13 @@ from Bio.PDB.Polypeptide import is_aa
 from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
+
+logging.basicConfig(
+    format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
+logger = logging.getLogger("promis3d_utils")
+logger.setLevel(logging.INFO)
 
 ########################################################################################
 # Functions to perform tasks from convert_gencode_fastn_to_dt.R and
@@ -232,6 +240,10 @@ def process_af2_structures(
     """
     # Get Spark session for file distribution and processing.
     spark = hl.utils.java.Env.spark_session()
+    spark.conf.set(
+        "spark.sql.execution.arrow.maxRecordsPerBatch",
+        1000,
+    )
 
     # Define schema for loading the files.
     schema = StructType(
@@ -288,12 +300,26 @@ def process_af2_structures(
         col("uniprot_id_sequence.uniprot_id"),
         col(f"uniprot_id_sequence.{col_name}"),
     )
+    if distance_matrix:
+        from pyspark.sql.functions import posexplode
+
+        result_df = result_df.select(
+            "af2_file",
+            "uniprot_id",
+            posexplode(col(col_name)).alias("aa_index", col_name),
+        )
     tmp_path = hl.utils.new_temp_file("process_af2_structures", "parquet")
+    logger.info(f"Writing processed AlphaFold2 structures to {tmp_path}")
     result_df.write.mode("overwrite").save(tmp_path)
+    logger.info(f"Finished writing.")
     result_df = spark.read.parquet(tmp_path)
 
     # Convert the Spark DataFrame to a Hail Table.
-    ht = hl.Table.from_spark(result_df, key=["af2_file", "uniprot_id"])
+    key = ["af2_file", "uniprot_id"]
+    if distance_matrix:
+        key.append("aa_index")
+
+    ht = hl.Table.from_spark(result_df, key=key)
 
     return ht
 
@@ -548,10 +574,14 @@ def run_greedy(af2_ht: hl.Table, oe_codon_ht: hl.Table) -> hl.Table:
     :return: Hail Table with the most intolerant region for each UniProt ID and residue
         index
     """
-    af2_ht = af2_ht.annotate(oe=oe_codon_ht[af2_ht.uniprot_id].oe)
+    af2_ht = af2_ht.annotate(
+        min_loeuf=get_3d_residue(af2_ht.dist_mat, oe_codon_ht[af2_ht.uniprot_id].oe)
+    )
+    af2_ht = af2_ht.group_by("uniprot_id").aggregate(
+        min_loeuf=hl.agg.collect(af2_ht.min_loeuf)
+    )
 
-    min_loeuf_expr = af2_ht.dist_mat.map(lambda x: get_3d_residue(x, af2_ht.oe))
-    min_loeuf_expr = hl.sorted(min_loeuf_expr, key=lambda x: x.oe)
+    min_loeuf_expr = hl.sorted(af2_ht.min_loeuf, key=lambda x: x.oe)
     min_loeuf_expr = add_idx_to_array(min_loeuf_expr, "region_index")
 
     initial_score_expr = min_loeuf_expr.map(
