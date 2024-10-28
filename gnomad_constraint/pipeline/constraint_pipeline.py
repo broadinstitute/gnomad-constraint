@@ -240,6 +240,7 @@ def main(args):
         log="/constraint_pipeline.log",
         tmp_dir="gs://gnomad-tmp-4day",
     )
+    # NOTE: remove this flag when the new shuffle method is the default.
     regions = constraint_res.GENOMIC_REGIONS
     version = args.version
     test_gene_list = args.test_gene_list
@@ -477,6 +478,9 @@ def main(args):
             res = resources.apply_models
             res.check_resource_existence()
 
+            # Use new shuffle method for apply models to prevent shuffle errors.
+            hl._set_flags(use_new_shuffle="1")
+
             # TODO: Remove repartition once partition write bugs are resolved.
             mutation_ht = res.mutation_ht.ht().select("mu_snp")
             mutation_ht = mutation_ht.repartition(args.mutation_rate_partitions)
@@ -513,6 +517,7 @@ def main(args):
             )
             oe_ht.write(res.apply_ht.path, overwrite=overwrite)
 
+            hl._set_flags(use_new_shuffle=None)
             logger.info(
                 "Done computing expected variant count and observed:expected ratio."
             )
