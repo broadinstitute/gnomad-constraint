@@ -489,7 +489,7 @@ def generate_codon_oe_table(obs_exp_ht: hl.Table, pos_ht: hl.Table) -> hl.Table:
         oe=hl.sorted(oe_codon_ht.oe, key=lambda x: x[0]).map(lambda x: x[1])
     ).key_by("uniprot_id")
 
-    return oe_codon_ht
+    return oe_codon_ht.collect_by_key("oe_by_transcript")
 
 
 def add_idx_to_array(
@@ -574,10 +574,13 @@ def run_greedy(af2_ht: hl.Table, oe_codon_ht: hl.Table) -> hl.Table:
     :return: Hail Table with the most intolerant region for each UniProt ID and residue
         index
     """
-    af2_ht = af2_ht.annotate(
-        min_loeuf=get_3d_residue(af2_ht.dist_mat, oe_codon_ht[af2_ht.uniprot_id].oe)
+    af2_ht = af2_ht.annotate(oe=oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript)
+    af2_ht = af2_ht.explode(af2_ht.oe)
+    af2_ht = af2_ht.annotate(**af2_ht.oe)
+    af2_ht = af2_ht.transmute(
+        transcript_id=af2_ht.enst, min_loeuf=get_3d_residue(af2_ht.dist_mat, af2_ht.oe)
     )
-    af2_ht = af2_ht.group_by("uniprot_id").aggregate(
+    af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
         min_loeuf=hl.agg.collect(af2_ht.min_loeuf)
     )
 
@@ -599,4 +602,6 @@ def run_greedy(af2_ht: hl.Table, oe_codon_ht: hl.Table) -> hl.Table:
     af2_ht = af2_ht.select(score=score_expr.map(lambda x: x.select(*ann_keep)))
     af2_ht = af2_ht.explode("score")
 
-    return af2_ht.select(**af2_ht.score).key_by("uniprot_id", "residue_index")
+    return af2_ht.select(**af2_ht.score).key_by(
+        "uniprot_id", "transcript_id", "residue_index"
+    )
