@@ -188,7 +188,8 @@ def get_obs_exp_ht(version: str = CURRENT_VERSION) -> TableResource:
     # TODO: Change this path when moved to a more permanent location, and add support
     #  for v4.
     return TableResource(
-        "gs://regional_missense_constraint/model/2.1.1/7/context_coding_snps_annot.ht"
+        # "gs://regional_missense_constraint/model/2.1.1/7/context_coding_snps_annot.ht"
+        "gs://gnomad/v2.1.1/constraint/temp/gnomad.v2.1.1.per_base_expected.ht"
     )
 
 

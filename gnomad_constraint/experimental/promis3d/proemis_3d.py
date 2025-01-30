@@ -10,6 +10,7 @@ from gnomad_qc.resource_utils import (
 )
 
 import gnomad_constraint.experimental.promis3d.resources as promis3d_res
+from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
 from gnomad_constraint.experimental.promis3d.utils import (
     COLNAMES_TRANSLATIONS,
     convert_fasta_to_table,
@@ -245,8 +246,11 @@ def main(args):
             obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
         )
         ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
-        ht = ht.checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
-        ht = run_greedy(res.af2_dist_ht.ht(), ht)
+        ht = ht.repartition(1000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
+
+        # Use new shuffle method for apply models to prevent shuffle errors.
+        hl._set_flags(use_new_shuffle="1")
+        ht = run_greedy(res.af2_dist_ht.ht(), ht, min_exp_mis=args.min_exp_mis)
         ht = ht.checkpoint(res.greedy_ht.path, overwrite=overwrite)
         ht.show()
 
@@ -305,6 +309,15 @@ if __name__ == "__main__":
         "--run-greedy",
         help="",
         action="store_true",
+    )
+    parser.add_argument(
+        "--min-exp-mis",
+        help=(
+            "Minimum expected number of missense variants to consider for the greedy "
+            f"algorithm. Default is {MIN_EXP_MIS}."
+        ),
+        type=int,
+        default=MIN_EXP_MIS,
     )
 
     args = parser.parse_args()
