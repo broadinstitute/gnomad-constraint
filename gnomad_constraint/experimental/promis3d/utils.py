@@ -15,6 +15,8 @@ from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
 
+from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
+
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
@@ -523,6 +525,7 @@ def get_3d_residue(
     dist_mat_expr: hl.expr.ArrayExpression,
     oe_expr: hl.expr.ArrayExpression,
     alpha: float = 0.05,
+    min_exp_mis: int = MIN_EXP_MIS,
 ) -> hl.expr.StructExpression:
     """
     Get the 3D residue with the lowest upper bound of the OE confidence interval.
@@ -530,6 +533,8 @@ def get_3d_residue(
     :param dist_mat_expr: Array expression with distance matrix.
     :param oe_expr: Array expression with observed and expected values.
     :param alpha: Significance level for the OE confidence interval. Default is 0.05.
+    :param min_exp_mis: Minimum number of expected missense variants in a region to be
+        considered for constraint calculation. Default is MIN_EXP_MIS.
     :return: Struct expression with the 3D residue with the lowest upper bound of the OE
         confidence interval.
     """
@@ -545,10 +550,12 @@ def get_3d_residue(
         oe_expr[0],
         oe_expr[1:],
     )
+    filtered_oe_expr = oe_expr.filter(lambda x: x.exp >= min_exp_mis)
+    filtered_oe_expr = hl.or_missing(filtered_oe_expr.length() > 0, filtered_oe_expr)
 
     # Calculate upper bound of oe confidence interval.
-    min_loeuf_expr = hl.sorted(
-        oe_expr.map(
+    min_moeuf_expr = hl.sorted(
+        filtered_oe_expr.map(
             lambda x: x.annotate(
                 oe=divide_null(x.obs, x.exp),
                 oe_upper=(
@@ -559,18 +566,24 @@ def get_3d_residue(
         ),
         key=lambda x: x.oe_upper,
     )[0]
-    oe_expr = oe_expr[: min_loeuf_expr.dist_index]
-    min_loeuf_expr = min_loeuf_expr.drop("dist_index")
+    oe_expr = hl.or_missing(
+        hl.is_defined(filtered_oe_expr), oe_expr[: min_moeuf_expr.dist_index]
+    )
+    min_moeuf_expr = min_moeuf_expr.drop("dist_index")
 
-    return min_loeuf_expr.annotate(region=oe_expr.map(lambda x: x.aa_index))
+    return min_moeuf_expr.annotate(region=oe_expr.map(lambda x: x.aa_index))
 
 
-def run_greedy(af2_ht: hl.Table, oe_codon_ht: hl.Table) -> hl.Table:
+def run_greedy(
+    af2_ht: hl.Table, oe_codon_ht: hl.Table, min_exp_mis: int = MIN_EXP_MIS
+) -> hl.Table:
     """
     Run the greedy algorithm to find the most intolerant region.
 
     :param af2_ht: Hail Table with AlphaFold2 data.
     :param oe_codon_ht: Hail Table with observed and expected values for codons.
+    :param min_exp_mis: Minimum number of expected missense variants in a region to be
+        considered for constraint calculation. Default is MIN_EXP_MIS.
     :return: Hail Table with the most intolerant region for each UniProt ID and residue
         index
     """
@@ -578,24 +591,25 @@ def run_greedy(af2_ht: hl.Table, oe_codon_ht: hl.Table) -> hl.Table:
     af2_ht = af2_ht.explode(af2_ht.oe)
     af2_ht = af2_ht.annotate(**af2_ht.oe)
     af2_ht = af2_ht.transmute(
-        transcript_id=af2_ht.enst, min_loeuf=get_3d_residue(af2_ht.dist_mat, af2_ht.oe)
+        transcript_id=af2_ht.enst,
+        min_moeuf=get_3d_residue(af2_ht.dist_mat, af2_ht.oe, min_exp_mis=min_exp_mis),
     )
     af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
-        min_loeuf=hl.agg.collect(af2_ht.min_loeuf)
+        min_moeuf=hl.agg.collect(af2_ht.min_moeuf)
     )
 
-    min_loeuf_expr = hl.sorted(af2_ht.min_loeuf, key=lambda x: x.oe)
-    min_loeuf_expr = add_idx_to_array(min_loeuf_expr, "region_index")
+    min_moeuf_expr = hl.sorted(af2_ht.min_moeuf, key=lambda x: x.oe)
+    min_moeuf_expr = add_idx_to_array(min_moeuf_expr, "region_index")
 
-    initial_score_expr = min_loeuf_expr.map(
-        lambda x: hl.missing(min_loeuf_expr.dtype.element_type)
+    initial_score_expr = min_moeuf_expr.map(
+        lambda x: hl.missing(min_moeuf_expr.dtype.element_type)
     )
     score_expr = hl.fold(
         lambda i, j: hl.enumerate(i).map(
             lambda x: hl.coalesce(x[1], hl.or_missing(j.region.contains(x[0]), j))
         ),
         initial_score_expr,
-        min_loeuf_expr,
+        min_moeuf_expr,
     )
     score_expr = add_idx_to_array(score_expr, "residue_index")
     ann_keep = ["residue_index", "region_index", "obs", "exp", "oe", "oe_upper"]
