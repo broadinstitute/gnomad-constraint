@@ -262,7 +262,7 @@ def main(args):
             obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
         )
         ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
-        ht = ht.repartition(1000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
+        ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
 
         ht = determine_regions_with_min_oe_upper(
             res.af2_dist_ht.ht(), ht, min_exp_mis=args.min_exp_mis
