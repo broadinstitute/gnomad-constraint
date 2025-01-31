@@ -15,11 +15,13 @@ from gnomad_constraint.experimental.promis3d.utils import (
     COLNAMES_TRANSLATIONS,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
+    determine_regions_with_min_oe_upper,
     generate_codon_oe_table,
     get_gencode_positions,
     join_by_sequence,
     process_af2_structures,
     remove_multi_frag_uniprots,
+    run_forward,
     run_greedy,
 )
 
@@ -129,6 +131,14 @@ def get_promis3d_resources(
         },
         output_resources={"greedy_ht": promis3d_res.get_greedy_ht(version, test)},
     )
+    run_forward = PipelineStepResourceCollection(
+        "--run-forward",
+        pipeline_input_steps=[compute_af2_distance_matrices, get_gencode_positions],
+        add_input_resources={
+            "RMC OE Table": {"obs_exp_ht": promis3d_res.get_obs_exp_ht(version)}
+        },
+        output_resources={"forward_ht": promis3d_res.get_forward_ht(version, test)},
+    )
 
     # Add all steps to the promis3D pipeline resource collection.
     promis3d_pipeline.add_steps(
@@ -140,6 +150,7 @@ def get_promis3d_resources(
             "gencode_alignment": gencode_alignment,
             "get_gencode_positions": get_gencode_positions,
             "run_greedy": run_greedy,
+            "run_forward": run_forward,
         }
     )
 
@@ -234,10 +245,15 @@ def main(args):
         ht = ht.checkpoint(res.gencode_pos_ht.path, overwrite=overwrite)
         ht.show()
 
-    if args.run_greedy:
-        logger.info("Running greedy algorithm.")
-        res = resources.run_greedy
-        res.check_resource_existence()
+    if args.run_greedy or args.run_forward:
+        logger.info("Preparing to run greedy and/or forward algorithms.")
+        if args.run_greedy:
+            res = resources.run_greedy
+            res.check_resource_existence()
+        if args.run_forward:
+            res = resources.run_forward
+            res.check_resource_existence()
+
         ht = res.obs_exp_ht.ht()
         if test:
             ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
@@ -248,11 +264,27 @@ def main(args):
         ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
         ht = ht.repartition(1000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
 
+        ht = determine_regions_with_min_oe_upper(
+            res.af2_dist_ht.ht(), ht, min_exp_mis=args.min_exp_mis
+        )
+        ht = ht.checkpoint(hl.utils.new_temp_file("sort_regions_by_oe", "ht"))
+
         # Use new shuffle method for apply models to prevent shuffle errors.
         hl._set_flags(use_new_shuffle="1")
-        ht = run_greedy(res.af2_dist_ht.ht(), ht, min_exp_mis=args.min_exp_mis)
-        ht = ht.checkpoint(res.greedy_ht.path, overwrite=overwrite)
-        ht.show()
+
+        if args.run_greedy:
+            logger.info("Running greedy algorithm.")
+            res = resources.run_greedy
+            greedy_ht = run_greedy(ht)
+            greedy_ht = greedy_ht.checkpoint(res.greedy_ht.path, overwrite=overwrite)
+            greedy_ht.show()
+
+        if args.run_forward:
+            logger.info("Running forward algorithm.")
+            res = resources.run_forward
+            forward_ht = run_forward(ht)
+            forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
+            forward_ht.show()
 
 
 if __name__ == "__main__":
@@ -307,6 +339,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--run-greedy",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--run-forward",
         help="",
         action="store_true",
     )
