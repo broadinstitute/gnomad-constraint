@@ -458,7 +458,7 @@ def get_gencode_positions(
 
 
 ########################################################################################
-# Functions to perform tasks from run_greedy.R
+# Functions to perform tasks from run_greedy.R and run_forward.R
 ########################################################################################
 def generate_codon_oe_table(obs_exp_ht: hl.Table, pos_ht: hl.Table) -> hl.Table:
     """
@@ -521,6 +521,55 @@ def add_idx_to_array(
         return expr
 
 
+def get_cumulative_oe(oe_expr):
+    oe_expr = hl.array_scan(
+        lambda i, j: j.annotate(obs=i.obs + j.obs, exp=i.exp + j.exp),
+        oe_expr[0],
+        oe_expr[1:],
+    )
+
+    return oe_expr
+
+
+def calculate_oe_upper(oe_expr, alpha=0.05):
+    # Calculate upper bound of oe confidence interval.
+    oe_upper_expr = oe_expr.map(
+        lambda x: x.annotate(
+            oe=divide_null(x.obs, x.exp),
+            oe_upper=(
+                hl.qchisqtail(1 - alpha / 2, 2 * (x.obs + 1), lower_tail=True)
+                / (2 * x.exp)
+            ),
+        )
+    )
+
+    return oe_upper_expr
+
+
+def get_min_oe_upper(oe_expr, min_exp_mis=None):
+    oe_expr = add_idx_to_array(oe_expr, "dist_index")
+
+    if min_exp_mis is None:
+        filtered_oe_expr = oe_expr
+    else:
+        filtered_oe_expr = oe_expr.filter(lambda x: x.exp >= min_exp_mis)
+        filtered_oe_expr = hl.or_missing(
+            filtered_oe_expr.length() > 0, filtered_oe_expr
+        )
+
+    min_oe_upper_expr = hl.sorted(filtered_oe_expr, key=lambda x: x.oe_upper)[0]
+    dist_index_expr = min_oe_upper_expr.dist_index
+    oe_expr = hl.or_missing(
+        hl.is_defined(filtered_oe_expr), oe_expr[: dist_index_expr + 1]
+    )
+    min_oe_upper_expr = min_oe_upper_expr.drop("dist_index")
+    min_oe_upper_expr = min_oe_upper_expr.annotate(
+        region=oe_expr.map(lambda x: x.residue_index)
+    )
+
+    return min_oe_upper_expr
+
+
 def get_3d_residue(
     dist_mat_expr: hl.expr.ArrayExpression,
     oe_expr: hl.expr.ArrayExpression,
@@ -538,47 +587,31 @@ def get_3d_residue(
     :return: Struct expression with the 3D residue with the lowest upper bound of the OE
         confidence interval.
     """
-    dist_mat_expr = add_idx_to_array(dist_mat_expr, "aa_index", element_name="dist")
+    # Annotate neighbor order per residue.
+    dist_mat_expr = add_idx_to_array(
+        dist_mat_expr, "residue_index", element_name="dist"
+    )
     dist_mat_expr = hl.sorted(dist_mat_expr, key=lambda x: x.dist)
-    dist_mat_expr = add_idx_to_array(dist_mat_expr, "dist_index")
+    dist_mat_expr = dist_mat_expr.map(lambda x: x.drop("dist"))
 
-    oe_expr = dist_mat_expr.map(
-        lambda x: x.annotate(**oe_expr[x.aa_index]).drop("dist")
-    )
-    oe_expr = hl.array_scan(
-        lambda i, j: j.annotate(obs=i.obs + j.obs, exp=i.exp + j.exp),
-        oe_expr[0],
-        oe_expr[1:],
-    )
-    filtered_oe_expr = oe_expr.filter(lambda x: x.exp >= min_exp_mis)
-    filtered_oe_expr = hl.or_missing(filtered_oe_expr.length() > 0, filtered_oe_expr)
+    # Annotate neighbor observed and expected, cumulative observed and expected, and
+    # upper bound of OE confidence interval.
+    oe_expr = dist_mat_expr.map(lambda x: x.annotate(**oe_expr[x.residue_index]))
+    oe_expr = get_cumulative_oe(oe_expr)
+    oe_expr = calculate_oe_upper(oe_expr, alpha=alpha)
 
-    # Calculate upper bound of oe confidence interval.
-    min_moeuf_expr = hl.sorted(
-        filtered_oe_expr.map(
-            lambda x: x.annotate(
-                oe=divide_null(x.obs, x.exp),
-                oe_upper=(
-                    hl.qchisqtail(1 - alpha / 2, 2 * (x.obs + 1), lower_tail=True)
-                    / (2 * x.exp)
-                ),
-            )
-        ),
-        key=lambda x: x.oe_upper,
-    )[0]
-    oe_expr = hl.or_missing(
-        hl.is_defined(filtered_oe_expr), oe_expr[: min_moeuf_expr.dist_index]
-    )
-    min_moeuf_expr = min_moeuf_expr.drop("dist_index")
+    # Get the 3D region with the lowest upper bound of the OE confidence interval for
+    # each residue.
+    min_moeuf_expr = get_min_oe_upper(oe_expr, min_exp_mis=min_exp_mis)
 
-    return min_moeuf_expr.annotate(region=oe_expr.map(lambda x: x.aa_index))
+    return min_moeuf_expr
 
 
-def run_greedy(
+def determine_regions_with_min_oe_upper(
     af2_ht: hl.Table, oe_codon_ht: hl.Table, min_exp_mis: int = MIN_EXP_MIS
 ) -> hl.Table:
     """
-    Run the greedy algorithm to find the most intolerant region.
+    Determine the most intolerant region for each UniProt ID and residue index.
 
     :param af2_ht: Hail Table with AlphaFold2 data.
     :param oe_codon_ht: Hail Table with observed and expected values for codons.
@@ -592,30 +625,227 @@ def run_greedy(
     af2_ht = af2_ht.annotate(**af2_ht.oe)
     af2_ht = af2_ht.transmute(
         transcript_id=af2_ht.enst,
-        min_moeuf=get_3d_residue(af2_ht.dist_mat, af2_ht.oe, min_exp_mis=min_exp_mis),
+        oe=af2_ht.oe,
+        min_oe_upper=get_3d_residue(
+            af2_ht.dist_mat, af2_ht.oe, min_exp_mis=min_exp_mis
+        ),
     )
     af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
-        min_moeuf=hl.agg.collect(af2_ht.min_moeuf)
+        oe=hl.agg.take(af2_ht.oe, 1)[0],
+        min_oe_upper=hl.agg.collect(af2_ht.min_oe_upper),
+    )
+    af2_ht = af2_ht.annotate(
+        oe=hl.enumerate(af2_ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
+        min_oe_upper=hl.sorted(af2_ht.min_oe_upper, key=lambda x: x.oe),
     )
 
-    min_moeuf_expr = hl.sorted(af2_ht.min_moeuf, key=lambda x: x.oe)
-    min_moeuf_expr = add_idx_to_array(min_moeuf_expr, "region_index")
+    return af2_ht
 
-    initial_score_expr = min_moeuf_expr.map(
-        lambda x: hl.missing(min_moeuf_expr.dtype.element_type)
+
+########################################################################################
+# Functions specific to the greedy algorithm.
+########################################################################################
+def run_greedy(ht: hl.Table) -> hl.Table:
+    """
+    Run the greedy algorithm to find the most intolerant region.
+
+    :param ht
+    :return: Hail Table with the most intolerant region for each UniProt ID and residue
+        index
+    """
+    min_oe_upper_expr = add_idx_to_array(ht.min_oe_upper, "region_index")
+    initial_score_expr = min_oe_upper_expr.map(
+        lambda x: hl.missing(min_oe_upper_expr.dtype.element_type)
     )
     score_expr = hl.fold(
         lambda i, j: hl.enumerate(i).map(
             lambda x: hl.coalesce(x[1], hl.or_missing(j.region.contains(x[0]), j))
         ),
         initial_score_expr,
-        min_moeuf_expr,
+        min_oe_upper_expr,
     )
     score_expr = add_idx_to_array(score_expr, "residue_index")
     ann_keep = ["residue_index", "region_index", "obs", "exp", "oe", "oe_upper"]
-    af2_ht = af2_ht.select(score=score_expr.map(lambda x: x.select(*ann_keep)))
-    af2_ht = af2_ht.explode("score")
+    ht = ht.select(score=score_expr.map(lambda x: x.select(*ann_keep)))
+    ht = ht.checkpoint(hl.utils.new_temp_file("sort_regions_by_oe", "ht"))
+    ht = ht.explode("score")
 
-    return af2_ht.select(**af2_ht.score).key_by(
-        "uniprot_id", "transcript_id", "residue_index"
+    ht = ht.select(**ht.score).key_by("uniprot_id", "transcript_id", "residue_index")
+
+    return ht
+
+
+########################################################################################
+# Functions specific to the forward algorithm.
+########################################################################################
+def annotate_region_with_oe(region_expr, oe_expr):
+    return region_expr.map(lambda x: oe_expr[x])
+
+
+def get_agg_oe_for_region(region_expr):
+    return region_expr.aggregate(
+        lambda x: hl.struct(
+            obs=hl.agg.sum(x.obs),
+            exp=hl.agg.sum(x.exp),
+        )
     )
+
+
+def calculate_neg_log_likelihood(region_expr):
+    oe_agg_expr = get_agg_oe_for_region(region_expr)
+
+    # Calculate negative log-likelihood a region.
+    gamma_expr = divide_null(oe_agg_expr.obs, oe_agg_expr.exp)
+    return oe_agg_expr.annotate(
+        oe=gamma_expr,
+        nll=hl.sum(
+            region_expr.map(lambda x: -hl.dpois(x.obs, gamma_expr * x.exp, log_p=True))
+        ),
+    )
+
+
+def getAIC(region_expr, nll):
+    if isinstance(region_expr, hl.expr.ArrayExpression):
+        region_count = region_expr.length()
+    else:
+        region_count = hl.int(region_expr.region.length() > 0)
+
+    return 2 * region_count + 2 * nll
+
+
+def remove_residues_from_region(region_expr, remove_region_expr):
+    remove_region_residues = remove_region_expr.region.map(lambda x: x.residue_index)
+    updated_region_expr = region_expr.region.filter(
+        lambda x: ~remove_region_residues.contains(x.residue_index)
+    )
+    return region_expr.annotate(
+        region=updated_region_expr, length=hl.len(updated_region_expr)
+    )
+
+
+def get_min_region(regions_expr, min_field="oe_upper", min_exp_mis=None):
+    if min_exp_mis is None:
+        filtered_regions_expr = regions_expr
+    else:
+        filtered_regions_expr = regions_expr.filter(lambda x: x.exp >= min_exp_mis)
+        filtered_regions_expr = hl.or_missing(
+            filtered_regions_expr.length() > 0, filtered_regions_expr
+        )
+
+    min_region_expr = hl.sorted(filtered_regions_expr, key=lambda x: x[min_field])[0]
+
+    return min_region_expr
+
+
+def run_forward(ht):
+    """
+    Run the forward algorithm to find the most intolerant region.
+
+    :param ht: Hail Table with the most intolerant region for each UniProt ID and residue
+        index
+    :return: Hail Table annotated with the observed and expected values for each residue.
+    """
+    num_residues = ht.oe.length()
+    ht = ht.annotate(
+        regions=ht.min_oe_upper.map(lambda x: x.select("region")).filter(
+            lambda x: x.region.length() < num_residues
+        )
+    )
+    num_residues = ht.oe.length()
+
+    def _one_round(f, null_model, selected, regions, best_aic):
+        """
+        One round of the forward algorithm.
+
+        :param f: Function to run one round of the forward algorithm.
+        :param null_model: Null model.
+        :param selected: Selected regions.
+        :param regions: Regions to evaluate.
+        :param best_aic: Best AIC value.
+        :return: Updated selected regions.
+        """
+        # add each region one by one and evaluate likelihood.
+        selected_nll = hl.if_else(
+            selected.length() > 0, hl.sum(selected.map(lambda x: x.nll)), 0
+        )
+
+        # For each region in regions, update the list of selected by
+        # removing the residues in the region from the "catch all remaining"
+        # region, and adding the new region to the selected list.
+        regions = regions.map(
+            lambda x: hl.bind(
+                lambda updated_null: x.annotate(
+                    null_model=updated_null.annotate(
+                        **calculate_neg_log_likelihood(updated_null.region)
+                    ),
+                    **calculate_neg_log_likelihood(x.region),
+                ),
+                remove_residues_from_region(null_model, x),
+            )
+        )
+        regions = regions.map(
+            lambda x: x.annotate(nll=x.null_model.nll + selected_nll + x.nll)
+        )
+
+        # Get AIC of best candidate model.
+        best_region = get_min_region(regions, min_field="nll")
+        updated_null_model = best_region.null_model
+        candidate_model = selected.append(best_region.drop("null_model"))
+        candidate_aic = getAIC(updated_null_model, 0) + getAIC(
+            candidate_model, best_region.nll
+        )
+
+        # Update region list.
+        regions = regions.map(
+            lambda x: remove_residues_from_region(x, best_region).drop(
+                "null_model", "nll", "obs", "exp", "oe"
+            )
+        )
+
+        # Remove any regions that now have 0 residues.
+        regions = regions.filter(lambda x: x.length > 0)
+
+        # Stop if candidate model is not better.
+        return hl.if_else(
+            (hl.len(regions) == 0) | (candidate_aic >= best_aic),
+            selected.append(null_model),
+            f(updated_null_model, candidate_model, regions, candidate_aic),
+        )
+
+    null_region = annotate_region_with_oe(hl.range(num_residues), ht.oe)
+    null_model = hl.struct(
+        region=null_region,
+        length=num_residues,
+        is_null=True,
+        **calculate_neg_log_likelihood(null_region),
+    )
+
+    regions_expr = ht.regions.map(
+        lambda x: x.annotate(
+            region=annotate_region_with_oe(x.region, ht.oe),
+            length=x.region.length(),
+            is_null=False,
+        )
+    )
+
+    selected = hl.empty_array(null_model.dtype)
+    selected = hl.if_else(
+        regions_expr.length() == 0,
+        hl.array([null_model]),
+        hl.experimental.loop(
+            _one_round,
+            selected.dtype,
+            null_model,
+            selected,
+            regions_expr,
+            getAIC(null_model, null_model.nll),
+        ),
+    )
+
+    ht = ht.select(selected=add_idx_to_array(selected, "region_index"))
+    ht = ht.explode("selected")
+    ht = ht.select(**ht.selected).explode("region")
+    ht = ht.annotate(residue_index=ht.region.residue_index)
+    ht = ht.drop("region", "nll").order_by("residue_index")
+
+    return ht

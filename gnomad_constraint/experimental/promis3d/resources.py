@@ -204,6 +204,18 @@ def get_greedy_ht(
     :param test: Whether to use a tmp path for testing. Default is False.
     :return: Promis3D greedy algorithm Hail Table resource.
     """
-    return TableResource(
-        f"{get_promis3d_root(version, test)}/preprocessed_data/promis3D_greedy.ht"
-    )
+    return TableResource(f"{get_promis3d_root(version, test)}/promis3D_greedy.ht")
+
+
+def get_forward_ht(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> TableResource:
+    """
+    Get Promis3D forward algorithm Hail Table resource.
+
+    :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
+    :param test: Whether to use a tmp path for testing. Default is False.
+    :return: Promis3D forward algorithm Hail Table resource.
+    """
+    return TableResource(f"{get_promis3d_root(version, test)}/promis3D_forward.ht")
