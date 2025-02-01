@@ -254,6 +254,9 @@ def main(args):
             res = resources.run_forward
             res.check_resource_existence()
 
+        # Use new shuffle method for apply models to prevent shuffle errors.
+        hl._set_flags(use_new_shuffle="1")
+
         ht = res.obs_exp_ht.ht()
         if test:
             ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
@@ -263,14 +266,16 @@ def main(args):
         )
         ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
         ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
+        af2_ht = (
+            res.af2_dist_ht.ht()
+            .repartition(5000)
+            .checkpoint(hl.utils.new_temp_file("af2_dist", "ht"))
+        )
 
         ht = determine_regions_with_min_oe_upper(
-            res.af2_dist_ht.ht(), ht, min_exp_mis=args.min_exp_mis
+            af2_ht, ht, min_exp_mis=args.min_exp_mis
         )
         ht = ht.checkpoint(hl.utils.new_temp_file("sort_regions_by_oe", "ht"))
-
-        # Use new shuffle method for apply models to prevent shuffle errors.
-        hl._set_flags(use_new_shuffle="1")
 
         if args.run_greedy:
             logger.info("Running greedy algorithm.")
