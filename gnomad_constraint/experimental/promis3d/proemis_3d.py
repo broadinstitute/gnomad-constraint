@@ -257,25 +257,29 @@ def main(args):
         # Use new shuffle method for apply models to prevent shuffle errors.
         hl._set_flags(use_new_shuffle="1")
 
-        ht = res.obs_exp_ht.ht()
-        if test:
-            ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
-        ht = ht.filter(ht.annotation == "missense_variant")
-        ht = ht.group_by("locus", "transcript").aggregate(
-            obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
-        )
-        ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
-        ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
-        af2_ht = (
-            res.af2_dist_ht.ht()
-            .repartition(5000)
-            .checkpoint(hl.utils.new_temp_file("af2_dist", "ht"))
-        )
+        # ht = res.obs_exp_ht.ht()
+        # if test:
+        #    ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
+        # ht = ht.filter(ht.annotation == "missense_variant")
+        # ht = ht.group_by("locus", "transcript").aggregate(
+        #    obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
+        # )
+        # ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
+        # ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
+        # af2_ht = (
+        #    res.af2_dist_ht.ht()
+        #    .repartition(5000)
+        #    .checkpoint(hl.utils.new_temp_file("af2_dist", "ht"))
+        # )
 
-        ht = determine_regions_with_min_oe_upper(
-            af2_ht, ht, min_exp_mis=args.min_exp_mis
+        # ht = determine_regions_with_min_oe_upper(
+        #    af2_ht, ht, min_exp_mis=args.min_exp_mis
+        # )
+        # ht = ht.checkpoint(hl.utils.new_temp_file("sort_regions_by_oe", "ht"))
+        ht = hl.read_table(
+            "gs://gnomad-tmp-4day/sort_regions_by_oe-LfrKfnCyrLCb9WBXdHK2Cu.ht",
+            _n_partitions=9000,
         )
-        ht = ht.checkpoint(hl.utils.new_temp_file("sort_regions_by_oe", "ht"))
 
         if args.run_greedy:
             logger.info("Running greedy algorithm.")
@@ -287,7 +291,7 @@ def main(args):
         if args.run_forward:
             logger.info("Running forward algorithm.")
             res = resources.run_forward
-            forward_ht = run_forward(ht)
+            forward_ht = run_forward(ht, min_exp_mis=args.min_exp_mis)
             forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
             forward_ht.show()
 
