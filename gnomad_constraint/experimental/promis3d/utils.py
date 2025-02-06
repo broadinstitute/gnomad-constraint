@@ -548,7 +548,6 @@ def calculate_oe_upper(oe_expr, alpha=0.05):
 
 def get_min_oe_upper(oe_expr, min_exp_mis=None):
     oe_expr = add_idx_to_array(oe_expr, "dist_index")
-
     if min_exp_mis is None:
         filtered_oe_expr = oe_expr
     else:
@@ -630,10 +629,14 @@ def determine_regions_with_min_oe_upper(
             af2_ht.dist_mat, af2_ht.oe, min_exp_mis=min_exp_mis
         ),
     )
+
     af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
         oe=hl.agg.take(af2_ht.oe, 1)[0],
-        min_oe_upper=hl.agg.collect(af2_ht.min_oe_upper),
+        min_oe_upper=hl.agg.collect(
+            af2_ht.min_oe_upper.annotate(residue_index=af2_ht.aa_index)
+        ),
     )
+
     af2_ht = af2_ht.annotate(
         oe=hl.enumerate(af2_ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
         min_oe_upper=hl.sorted(af2_ht.min_oe_upper, key=lambda x: x.oe),
@@ -683,11 +686,14 @@ def annotate_region_with_oe(region_expr, oe_expr):
 
 
 def get_agg_oe_for_region(region_expr):
-    oe_agg_expr = region_expr.aggregate(
-        lambda x: hl.struct(
-            obs=hl.agg.sum(x.obs),
-            exp=hl.agg.sum(x.exp),
-        )
+    oe_agg_expr = hl.or_missing(
+        hl.is_defined(region_expr),
+        region_expr.aggregate(
+            lambda x: hl.struct(
+                obs=hl.agg.sum(x.obs),
+                exp=hl.agg.sum(x.exp),
+            )
+        ),
     )
     gamma_expr = divide_null(oe_agg_expr.obs, oe_agg_expr.exp)
 
@@ -711,14 +717,11 @@ def getAIC(region_expr, nll):
 
 
 def remove_residues_from_region(region_expr, remove_region_expr):
-    remove_region_residues = hl.set(
-        remove_region_expr.region.map(lambda x: x.residue_index)
-    )
-    updated_region_expr = region_expr.region.filter(
-        lambda x: ~remove_region_residues.contains(x.residue_index)
-    )
-    return region_expr.annotate(
-        region=updated_region_expr, length=hl.len(updated_region_expr)
+    remove_region_residues = hl.set(remove_region_expr.region)
+    updated_region_expr = hl.set(region_expr.region).difference(remove_region_residues)
+    return hl.or_missing(
+        hl.is_defined(region_expr.region) & hl.is_defined(remove_region_expr.region),
+        region_expr.annotate(region=hl.array(updated_region_expr)),
     )
 
 
@@ -737,6 +740,18 @@ def get_min_region(regions_expr, min_field="oe_upper", min_exp_mis=None):
     return min_region_expr
 
 
+def prep_region_struct(region_expr, oe_expr):
+    oe_expr = annotate_region_with_oe(region_expr, oe_expr)
+    oe_agg_expr = get_agg_oe_for_region(oe_expr)
+    nll_expr = calculate_neg_log_likelihood(oe_expr, oe_agg_expr.oe)
+    return hl.struct(
+        region=region_expr,
+        **oe_agg_expr,
+        region_nll=nll_expr,
+        nll=nll_expr,
+    )
+
+
 def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     """
     Run the forward algorithm to find the most intolerant region.
@@ -746,27 +761,15 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     :return: Hail Table annotated with the observed and expected values for each residue.
     """
     num_residues = ht.oe.length()
-    null_region = annotate_region_with_oe(hl.range(num_residues), ht.oe)
-    null_oe_agg = get_agg_oe_for_region(null_region)
-    null_model = hl.struct(
-        region=null_region,
-        length=num_residues,
-        is_null=True,
-        **null_oe_agg,
-        nll=calculate_neg_log_likelihood(null_region, null_oe_agg.oe),
-    )
+    null_region = hl.range(num_residues)
+    null_model = prep_region_struct(null_region, ht.oe)
     ht = ht.select(
+        "oe",
         num_residues=num_residues,
         null_model=null_model,
         regions=hl.enumerate(
-            ht.min_oe_upper.map(lambda x: x.select("region"))
-            .filter(lambda x: x.region.length() < num_residues)
-            .map(
-                lambda x: x.annotate(
-                    region=annotate_region_with_oe(x.region, ht.oe),
-                    length=x.region.length(),
-                    is_null=False,
-                )
+            ht.min_oe_upper.map(lambda x: x.select("region")).filter(
+                lambda x: x.region.length() < num_residues
             )
         ),
         selected=hl.empty_array(null_model.dtype),
@@ -775,129 +778,128 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
         found_best=False,
     )
     ht = ht.explode("regions")
-    ht = ht.annotate(idx=ht.regions[0], regions=ht.regions[1])
-    # ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    # ht = ht.annotate(
-    #    regions=ht.regions.annotate(**get_agg_oe_for_region(ht.regions.region))
-    # )
-    # ht = ht.annotate(
-    #    regions=ht.regions.annotate(
-    #        nll=calculate_neg_log_likelihood(ht.regions.region, ht.regions.oe)
-    #    )
-    # )
-    # ht = ht.repartition(8000, shuffle=True)
-    # ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_0", "ht"))
-    ht = hl.read_table(
-        "gs://gnomad-tmp-4day/forward_round_0.repartitioned-oH47gpuWmXHfWiTH8IZLRl.ht"
-    )
+    ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
+    ht = ht.key_by("uniprot_id", "transcript_id", "idx")
+    ht = ht.repartition(5000, shuffle=True)
+    ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
 
     round_num = 1
-    while ht.aggregate(hl.agg.any(hl.is_defined(ht.regions))):
+    while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
         # For each region in regions, update the list of selected by
         # removing the residues in the region from the "catch all remaining"
         # region, and adding the new region to the selected list.
-
-        ht = ht.annotate(
-            _updated_null=remove_residues_from_region(ht.null_model, ht.regions),
-        ).checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.null1", "ht"))
-        ht = ht.annotate(
-            _updated_null=ht._updated_null.annotate(
-                **get_agg_oe_for_region(ht._updated_null.region)
-            ),
-        ).checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.null2", "ht"))
-        ht = ht.annotate(
-            _updated_null=ht._updated_null.annotate(
-                nll=calculate_neg_log_likelihood(
-                    ht._updated_null.region, ht._updated_null.oe
-                )
-            ),
-        ).checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.null3", "ht"))
-        ht = ht.annotate(
-            _regions=ht.regions.annotate(
-                null_model=ht._updated_null,
-                nll=ht._updated_null.nll + ht.selected_nll + ht.regions.nll,
-            )
+        region_expr = prep_region_struct(ht.region, ht.oe)
+        # TODO: Consider adding a checkpoint here or after the next step.
+        ht = ht.annotate(_region=region_expr).checkpoint(
+            hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht")
         )
-        ht2 = ht.select(exp=ht._regions.exp, nll=ht._regions.nll).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.nll", "ht")
+        region_expr = ht._region
+        updated_null_expr = remove_residues_from_region(ht.null_model, region_expr)
+        ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
+            hl.utils.new_temp_file(f"forward_round_{round_num}.remove", "ht")
         )
-        ht2 = ht2.group_by("uniprot_id", "transcript_id").aggregate(
-            **hl.agg.fold(
-                hl.missing(hl.tstruct(min_idx=hl.tint, min_nll=hl.tfloat)),
-                lambda accum: (
-                    hl.case()
-                    .when(
-                        (ht2.exp >= min_exp_mis)
-                        & (hl.is_missing(accum) | (accum.min_nll > ht2.nll)),
-                        hl.struct(min_idx=ht2.idx, min_nll=ht2.nll),
-                    )
-                    .when(accum.min_nll <= ht2.nll, accum)
-                    .or_missing()
-                ),
-                lambda accum1, accum2: (
-                    hl.case()
-                    .when(accum1.min_nll <= accum2.min_nll, accum1)
-                    .default(accum2)
-                ),
-            )
+        updated_null_expr = ht._updated_null
+        updated_null_expr = prep_region_struct(updated_null_expr.region, ht.oe)
+        ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
+            hl.utils.new_temp_file(f"forward_round_{round_num}.prep2", "ht")
         )
-        ht2.describe()
-        ht2 = ht2.checkpoint(
+        updated_null_expr = ht._updated_null
+        region_expr = ht._region
+        region_expr = region_expr.annotate(
+            null_model=updated_null_expr,
+            region_nll=region_expr.nll,
+            nll=updated_null_expr.nll + ht.selected_nll + region_expr.nll,
+        )
+        ht2 = ht.select(exp=region_expr.exp, nll=region_expr.nll)
+        ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.scan1", "ht")
         )
-        ht2.show()
-
-        best_region = ht[
-            ht2.uniprot_id, ht2.transcript_id, ht2.min_nll.min_idx
-        ]._regions
-        ht2 = ht2.annotate(best_region=best_region)
-        ht2.describe()
+        ht2 = (
+            ht2.group_by("uniprot_id", "transcript_id")
+            .aggregate(
+                **hl.agg.fold(
+                    hl.missing(hl.tstruct(min_idx=hl.tint, min_nll=hl.tfloat)),
+                    lambda accum: (
+                        hl.case()
+                        .when(
+                            hl.is_missing(accum) | (accum.min_nll > ht2.nll),
+                            hl.struct(min_idx=ht2.idx, min_nll=ht2.nll),
+                        )
+                        .when(accum.min_nll <= ht2.nll, accum)
+                        .or_missing()
+                    ),
+                    lambda accum1, accum2: (
+                        hl.case()
+                        .when(hl.is_missing(accum1), accum2)
+                        .when(hl.is_missing(accum2), accum1)
+                        .when(accum1.min_nll <= accum2.min_nll, accum1)
+                        .default(accum2)
+                    ),
+                )
+            )
+            .checkpoint(
+                hl.utils.new_temp_file(f"forward_round_{round_num}.scan2", "ht")
+            )
+        )
+        _ht = ht.select(region=region_expr)
+        ht2 = ht2.annotate(
+            best_region=_ht[ht2.uniprot_id, ht2.transcript_id, ht2.min_idx].region
+        )
         ht2 = ht2.checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.scan2", "ht")
+            hl.utils.new_temp_file(f"forward_round_{round_num}.scan3", "ht")
         )
 
-        ht2.show()
         # Get AIC of best candidate model.
-        best_region = ht2[ht.uniprot_id, ht.transcript_id]
+        best_region = ht2[ht.uniprot_id, ht.transcript_id].best_region
+        region_expr = hl.struct(region=ht.region)
 
         # Update region list.
-        regions = remove_residues_from_region(ht.regions, best_region).drop(
-            "null_model",
-            "nll",
-            "obs",
-            "exp",
-            "oe",
-        )
-        regions = hl.or_missing(regions.length > 0, regions)
+        region_expr = remove_residues_from_region(region_expr, best_region).region
+        region_expr = hl.or_missing(region_expr.length() > 0, region_expr)
 
         updated_null_model = best_region.null_model
         candidate_model = ht.selected.append(best_region.drop("null_model"))
         updated_vals = {
             "null_model": updated_null_model,
             "selected": candidate_model,
-            "selected_nll": hl.sum(candidate_model.map(lambda x: x.nll)),
+            "selected_nll": best_region.region_nll + ht.selected_nll,
             "best_aic": getAIC(updated_null_model, 0)
             + getAIC(candidate_model, best_region.nll),
-            "regions": regions,
+            "region": region_expr,
         }
         curr_vals = {k: ht[k] for k in updated_vals}
-        curr_vals["regions"] = hl.missing(regions.dtype)
+        curr_vals["region"] = hl.missing(region_expr.dtype)
 
-        found_best = updated_vals["best_aic"] >= ht.best_aic
-        # Remove any regions that now have 0 residues.
+        found_best = (
+            ht.found_best
+            | hl.is_missing(best_region)
+            | (updated_vals["best_aic"] >= ht.best_aic)
+        )
+        curr_vals = hl.struct(**curr_vals)
+        updated_vals = hl.struct(**updated_vals)
         ht = ht.annotate(
             **hl.if_else(found_best, curr_vals, updated_vals),
             found_best=found_best,
         )
-        ht = ht.filter(hl.is_defined(ht.regions) | (ht.idx == 0))
+
+        ht = ht.filter(hl.is_defined(ht.region) | (ht.idx == 0))
         ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}", "ht"))
+        round_num += 1
 
     ht = ht.select(
         selected=add_idx_to_array(ht.selected.append(ht.null_model), "region_index")
     )
     ht = ht.explode("selected")
     ht = ht.select(**ht.selected).explode("region")
-    ht = ht.annotate(residue_index=ht.region.residue_index)
-    ht = ht.drop("region", "nll").order_by("residue_index")
+    ht = ht.annotate(
+        residue_index=ht.region,
+        oe_upper=(
+            hl.qchisqtail(1 - 0.05 / 2, 2 * (ht.obs + 1), lower_tail=True)
+            / (2 * ht.exp)
+        ),
+    )
+    ht = ht.key_by("uniprot_id", "transcript_id", "residue_index").select(
+        "region_index", "obs", "exp", "oe", "oe_upper"
+    )
 
     return ht
