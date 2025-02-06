@@ -886,8 +886,11 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
         ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}", "ht"))
         round_num += 1
 
+    selected_expr = ht.selected.map(lambda x: x.annotate(is_null=False))
     ht = ht.select(
-        selected=add_idx_to_array(ht.selected.append(ht.null_model), "region_index")
+        selected=add_idx_to_array(
+            selected_expr.append(ht.null_model.annotate(is_null=True)), "region_index"
+        )
     )
     ht = ht.explode("selected")
     ht = ht.select(**ht.selected).explode("region")
