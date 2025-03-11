@@ -524,7 +524,8 @@ def main(args):
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
             ht = create_per_variant_expected_ht(
-                annotate_with_mu(ht, res.mutation_ht.ht().select("mu_snp")),
+                ht,
+                res.mutation_ht.ht().select("mu_snp"),
                 res.model_plateau.he(),
                 coverage_model=None if skip_coverage_model else res.model_coverage.he(),
                 log10_coverage=log10_coverage,
@@ -754,10 +755,10 @@ if __name__ == "__main__":
             "Lower exome coverage cutoff to use throughout the pipeline. Sites with"
             " coverage below this cutoff will be excluded when creating the training"
             " set, building and applying models, and computing constraint metrics."
-            "  Default is 0."
+            "  Default is None."
         ),
         type=int,
-        default=0,
+        default=None,
     )
     preprocess_args.add_argument(
         "--max-af",

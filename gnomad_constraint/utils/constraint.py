@@ -461,6 +461,7 @@ def get_build_calibration_model_annotation(
         upper_cov_cutoff=upper_cov_cutoff,
         skip_coverage_model=skip_coverage_model,
         additional_grouping_exprs={"genomic_region": genomic_region_expr},
+        cpg_in_high_only=True,
     )
 
     return hl.or_missing(syn_csq_expr.length() > 0, build_expr)
@@ -649,6 +650,9 @@ def prepare_ht_for_constraint_calculations(
         **exomes_obs_pos_globals,
     )
 
+    # TODO: Remove this after we have all methylation.
+    ht = ht.filter(ht.locus.in_autosome())
+
     print_global_struct(ht)
 
     return ht
@@ -699,6 +703,7 @@ def create_training_set(
 
 def create_per_variant_expected_ht(
     ht: hl.Table,
+    mutation_ht: hl.Table,
     plateau_models: hl.StructExpression,
     coverage_model: Tuple[float, float],
     log10_coverage: bool = True,
@@ -714,6 +719,7 @@ def create_per_variant_expected_ht(
     for more information on the expected annotations.
 
     :param ht: Table prepared using `prepare_ht_for_constraint_calculations`.
+    :param mutation_ht: Mutation rate Table.
     :param plateau_models: Plateau models for the constraint calculations.
     :param coverage_model: Coverage model for the constraint calculations.
     :param log10_coverage: Whether to use log10 coverage. Default is True.
@@ -726,10 +732,12 @@ def create_per_variant_expected_ht(
     if filter_to_apply_variants:
         ht = ht.filter(hl.is_defined(ht.apply_model))
 
+    ht = annotate_with_mu(ht, mutation_ht)
+
     ht = ht.annotate(
         **apply_models(
             ht.mu_snp,
-            plateau_models.get(ht.apply_model),
+            plateau_models.get(ht.apply_model.model_group),
             ht.possible_variants,
             coverage_model=coverage_model,
             coverage_expr=ht.exomes_coverage,
@@ -771,37 +779,51 @@ def aggregate_per_variant_expected_ht(
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
     :return: Table with the observed and expected counts.
     """
-    include_canonical_group = False
-    include_mane_select_group = False
-    if custom_vep_annotation == "worst_csq_by_gene":
-        vep_annotation = "worst_csq_by_gene"
-        if use_mane_select:
-            raise ValueError(
-                "'mane_select' cannot be set to True when custom_vep_annotation is set"
-                " to 'worst_csq_by_gene'."
-            )
-    else:
-        vep_annotation = custom_vep_annotation
-        include_canonical_group = True
-        include_mane_select_group = use_mane_select
+    # include_canonical_group = False
+    # include_mane_select_group = False
+    # if custom_vep_annotation == "worst_csq_by_gene":
+    #    vep_annotation = "worst_csq_by_gene"
+    #    if use_mane_select:
+    #        raise ValueError(
+    #            "'mane_select' cannot be set to True when custom_vep_annotation is set"
+    #            " to 'worst_csq_by_gene'."
+    #        )
+    # else:
+    #    vep_annotation = custom_vep_annotation
+    #    include_canonical_group = True
+    #    include_mane_select_group = use_mane_select
 
-    ht = ht.select(
-        "genomic_region",
-        *MU_GROUPING,
-        *additional_grouping,
-        *AGGREGATE_SUM_FIELDS,
-        "vep",
+    # ht = ht.filter(hl.is_defined(ht.possible_variants))
+    # ht = ht.select(
+    #    "genomic_region",
+    #    *MU_GROUPING,
+    #    *additional_grouping,
+    #    *AGGREGATE_SUM_FIELDS,
+    #    "vep",
+    # )
+
+    # ht, groupings = annotate_exploded_vep_for_constraint_groupings(
+    #    ht=ht,
+    #    vep_annotation=vep_annotation,
+    #    include_canonical_group=include_canonical_group,
+    #    include_mane_select_group=include_mane_select_group,
+    # )
+    # ht = annotate_with_mu(ht, mutation_ht)
+    # t = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
+    ht = hl.read_table(
+        "gs://gnomad-tmp-4day/annotate_exploded_vep-JYgMWrtvv6cgCX9BRte85A.ht"
     )
 
-    ht, groupings = annotate_exploded_vep_for_constraint_groupings(
-        ht=ht,
-        vep_annotation=vep_annotation,
-        include_canonical_group=include_canonical_group,
-        include_mane_select_group=include_mane_select_group,
-    )
-    ht = annotate_with_mu(ht, mutation_ht)
-    ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
-
+    groupings = [
+        "annotation",
+        "modifier",
+        "gene",
+        "gene_id",
+        "transcript",
+        "canonical",
+        "mane_select",
+    ]
+    ht = ht.filter(hl.is_defined(ht.possible_variants))
     ht = ht.group_by(
         "genomic_region", *MU_GROUPING, *groupings, *additional_grouping
     ).aggregate(**aggregate_expected_variants_expr(ht))
@@ -1158,7 +1180,7 @@ def compute_constraint_metrics(
     # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
     ht = ht.filter(
         ~ht.no_variants
-        | hl.any(
+        & hl.any(
             ht.constraint_groups.map(
                 lambda x: (hl.or_else(x.expected_variants[0], 0) > 0)
             )
@@ -1249,6 +1271,7 @@ def compute_constraint_metrics(
     )
 
     # Compute z-score from raw z-score and standard deviations.
+    # TODO: Need to fix z_score
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, sd_raw_z: x.annotate(z_score=x.oe_info[0].z_raw / sd_raw_z),

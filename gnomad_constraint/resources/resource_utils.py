@@ -369,6 +369,7 @@ def get_apply_models(
         version=version,
         custom_vep_annotation=custom_vep_annotation,
     )
+    # TODO: Change this name.
     return TableResource(
         f"{get_constraint_root(version, test, post_fix)}/apply_models/{custom_vep_annotation}/gnomad.v{version}.apply.per_variant_expected.ht"
     )
