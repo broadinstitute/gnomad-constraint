@@ -1134,9 +1134,8 @@ def convert_multi_array_to_array_of_structs(
     ).drop(*array_fields_to_combine)
 
 
-def compute_constraint_metrics(
+def aggregate_by_constraint_groups(
     ht: hl.Table,
-    gencode_ht: hl.Table,
     keys: Tuple = ("gene", "transcript", "canonical"),
     classic_lof_annotations: Tuple = (
         "stop_gained",
@@ -1145,27 +1144,20 @@ def compute_constraint_metrics(
     ),
     additional_groupings: Dict[str, Dict[str, hl.expr.BooleanExpression]] = None,
     additional_grouping_combinations: List[List[str]] = None,
-    expected_values: Optional[Dict[str, float]] = None,
-    min_diff_convergence: float = 0.001,
-    raw_z_outlier_threshold_lower_lof: float = -8.0,
-    raw_z_outlier_threshold_lower_missense: float = -8.0,
-    raw_z_outlier_threshold_lower_syn: float = -8.0,
-    raw_z_outlier_threshold_upper_syn: float = 8.0,
-    use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
     """
-    Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+    Aggregate the observed and expected variant info for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
 
     .. note::
+
         The following annotations should be present in `ht`:
+
             - modifier
             - annotation
             - observed_variants
             - mu
             - possible_variants
             - expected_variants
-            - expected_variants_{pop} (if `pops` is specified)
-            - downsampling_counts_{pop} (if `pops` is specified)
 
     :param ht: Input Table with the number of expected variants (output of
         `get_proportion_observed()`).
@@ -1174,19 +1166,12 @@ def compute_constraint_metrics(
     :param classic_lof_annotations: Classic LoF Annotations used to filter the input
         Table. Default is {"stop_gained", "splice_donor_variant",
         "splice_acceptor_variant"}.
-    :param expected_values: Dictionary containing the expected values for 'Null',
-        'Rec', and 'LI' to use as starting values.
-    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
-        model convergence criteria as met. Default is 0.001.
-    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is considered an outlier for synonymous variants. Values below this threshold will be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  8.0.
-    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
-        If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
-    :param gencode_ht: Table containing GENCODE annotations.
-    :return: Table with pLI scores, observed:expected ratio, confidence interval of the
-        observed:expected ratio, and z scores.
+    :param additional_groupings: Additional groupings to add to the constraint groups.
+        Default is None.
+    :param additional_grouping_combinations: Additional grouping combinations to add to
+        the constraint groups. Default is None.
+    :return: Table with the aggregated observed and expected variant info for synonymous
+        variants, missense variants, and pLoF variants.
     """
     # Build constraint groups.
     constraint_group_filters_expr, meta = build_constraint_consequence_groups(
@@ -1203,7 +1188,7 @@ def compute_constraint_metrics(
     )
 
     # Group by keys and get an aggregate sum of mu_snp, observed_variants,
-    # possible_variants, predicted_propotion_observed, coverage_correction, and
+    # possible_variants, predicted_proportion_observed, coverage_correction, and
     # expected_variants for each constraint group.
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
@@ -1268,9 +1253,58 @@ def compute_constraint_metrics(
             )
         )
     )
-    ht = ht.checkpoint(
-        new_temp_file("constraint_metrics.constraint_group_filters.agg", "ht")
-    )
+
+    ht = ht.annotate_globals(constraint_group_meta=meta)
+
+    return ht
+
+
+def compute_constraint_metrics(
+    ht: hl.Table,
+    gencode_ht: hl.Table,
+    expected_values: Optional[Dict[str, float]] = None,
+    min_diff_convergence: float = 0.001,
+    raw_z_outlier_threshold_lower_lof: float = -8.0,
+    raw_z_outlier_threshold_lower_missense: float = -8.0,
+    raw_z_outlier_threshold_lower_syn: float = -8.0,
+    raw_z_outlier_threshold_upper_syn: float = 8.0,
+    use_mane_select_over_canonical: bool = True,
+) -> hl.Table:
+    """
+    Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+
+    .. note::
+        The following annotations should be present in `ht`:
+            - modifier
+            - annotation
+            - observed_variants
+            - mu
+            - possible_variants
+            - expected_variants
+            - expected_variants_{pop} (if `pops` is specified)
+            - downsampling_counts_{pop} (if `pops` is specified)
+
+    :param ht: Input Table with the number of expected variants (output of
+        `get_proportion_observed()`).
+    :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
+        'canonical').
+    :param classic_lof_annotations: Classic LoF Annotations used to filter the input
+        Table. Default is {"stop_gained", "splice_donor_variant",
+        "splice_acceptor_variant"}.
+    :param expected_values: Dictionary containing the expected values for 'Null',
+        'Rec', and 'LI' to use as starting values.
+    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
+        model convergence criteria as met. Default is 0.001.
+    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is considered an outlier for synonymous variants. Values below this threshold will be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  8.0.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
+        If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
+    :param gencode_ht: Table containing GENCODE annotations.
+    :return: Table with pLI scores, observed:expected ratio, confidence interval of the
+        observed:expected ratio, and z scores.
+    """
 
     def _add_oe_ci_z(
         oe_info: hl.expr.StructExpression,
@@ -1309,6 +1343,7 @@ def compute_constraint_metrics(
 
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
+    meta = ht.constraint_group_meta.collect()
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, m: x.annotate(
