@@ -769,6 +769,7 @@ def aggregate_per_variant_expected_ht(
     additional_grouping: Tuple = (),
     custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
+    include_mu_annotations_in_grouping: bool = False,
 ):
     """
     Aggregate the per-variant expected Table.
@@ -784,6 +785,8 @@ def aggregate_per_variant_expected_ht(
     :param additional_grouping: Additional fields to group by. Default is ().
     :param custom_vep_annotation: Custom VEP annotation to use. Default is
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
+    :param include_mu_annotations_in_grouping: Whether to include the mutation rate
+        key annotations in the grouping. Default is False.
     :return: Table with the observed and expected counts.
     """
     include_canonical_group = False
@@ -819,6 +822,7 @@ def aggregate_per_variant_expected_ht(
     ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
 
     groupings = [
+        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
         "annotation",
         "modifier",
         "gene",
@@ -826,10 +830,9 @@ def aggregate_per_variant_expected_ht(
         "transcript",
         "canonical",
         "mane_select",
+        *additional_grouping,
     ]
-    ht = ht.group_by(
-        "genomic_region", *MU_GROUPING, *groupings, *additional_grouping
-    ).aggregate(**aggregate_expected_variants_expr(ht))
+    ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
 
     return ht.naive_coalesce(1000)
 
