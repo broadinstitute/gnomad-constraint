@@ -38,6 +38,7 @@ from gnomad_constraint.resources.resource_utils import (
     CALIBRATION_GROUPING,
     COVERAGE_CUTOFF,
     MU_GROUPING,
+    MUTATION_TYPE_FIELDS,
 )
 
 logging.basicConfig(
@@ -695,10 +696,13 @@ def create_training_set(
     # Selecting the only fields that are needed for the training set and filtering out
     # the rows that are not needed, then checkpointing the Table. This is added to
     # help avoid memory and shuffle issues.
-    ht = ht.annotate(**ht.calibrate_mu)
+    ht = ht.transmute(**ht.calibrate_mu)
     ht = ht.filter(hl.is_defined(ht.build_model))
+    select_fields = {*MU_GROUPING, *MUTATION_TYPE_FIELDS, *CALIBRATION_GROUPING}
     ht = ht.select(
-        *MU_GROUPING, *CALIBRATION_GROUPING, "observed_variants", "possible_variants"
+        *select_fields,
+        "observed_variants",
+        "possible_variants",
     )
     ht = ht.checkpoint(new_temp_file("create_training_set", "ht"))
 
@@ -707,7 +711,9 @@ def create_training_set(
         ht,
         ht.possible_variants,
         ht.observed_variants,
-        additional_grouping=("methylation_level",) + CALIBRATION_GROUPING,
+        additional_grouping=("methylation_level",)
+        + MUTATION_TYPE_FIELDS
+        + CALIBRATION_GROUPING,
         partition_hint=partition_hint,
     )
 
@@ -798,40 +804,37 @@ def aggregate_per_variant_expected_ht(
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
     :return: Table with the observed and expected counts.
     """
-    # include_canonical_group = False
-    # include_mane_select_group = False
-    # if custom_vep_annotation == "worst_csq_by_gene":
-    #    vep_annotation = "worst_csq_by_gene"
-    #    if use_mane_select:
-    #        raise ValueError(
-    #            "'mane_select' cannot be set to True when custom_vep_annotation is set"
-    #            " to 'worst_csq_by_gene'."
-    #        )
-    # else:
-    #    vep_annotation = custom_vep_annotation
-    #    include_canonical_group = True
-    #    include_mane_select_group = use_mane_select
+    include_canonical_group = False
+    include_mane_select_group = False
+    if custom_vep_annotation == "worst_csq_by_gene":
+        vep_annotation = "worst_csq_by_gene"
+        if use_mane_select:
+            raise ValueError(
+                "'mane_select' cannot be set to True when custom_vep_annotation is set"
+                " to 'worst_csq_by_gene'."
+            )
+    else:
+        vep_annotation = custom_vep_annotation
+        include_canonical_group = True
+        include_mane_select_group = use_mane_select
 
-    # ht = ht.filter(hl.is_defined(ht.possible_variants))
-    # ht = ht.select(
-    #    "genomic_region",
-    #    *MU_GROUPING,
-    #    *additional_grouping,
-    #    *AGGREGATE_SUM_FIELDS,
-    #    "vep",
-    # )
-
-    # ht, groupings = annotate_exploded_vep_for_constraint_groupings(
-    #    ht=ht,
-    #    vep_annotation=vep_annotation,
-    #    include_canonical_group=include_canonical_group,
-    #    include_mane_select_group=include_mane_select_group,
-    # )
-    # ht = annotate_with_mu(ht, mutation_ht)
-    # t = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
-    ht = hl.read_table(
-        "gs://gnomad-tmp-4day/annotate_exploded_vep-JYgMWrtvv6cgCX9BRte85A.ht"
+    ht = ht.filter(hl.is_defined(ht.possible_variants))
+    ht = ht.select(
+        "genomic_region",
+        *MU_GROUPING,
+        *additional_grouping,
+        *AGGREGATE_SUM_FIELDS,
+        "vep",
     )
+
+    ht, groupings = annotate_exploded_vep_for_constraint_groupings(
+        ht=ht,
+        vep_annotation=vep_annotation,
+        include_canonical_group=include_canonical_group,
+        include_mane_select_group=include_mane_select_group,
+    )
+    ht = annotate_with_mu(ht, mutation_ht)
+    ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
 
     groupings = [
         "annotation",
@@ -842,7 +845,6 @@ def aggregate_per_variant_expected_ht(
         "canonical",
         "mane_select",
     ]
-    ht = ht.filter(hl.is_defined(ht.possible_variants))
     ht = ht.group_by(
         "genomic_region", *MU_GROUPING, *groupings, *additional_grouping
     ).aggregate(**aggregate_expected_variants_expr(ht))
