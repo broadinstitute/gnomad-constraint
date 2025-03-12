@@ -573,8 +573,9 @@ def prepare_ht_for_constraint_calculations(
         build model and apply model annotations. Default is None.
     :return: Table with the computed annotations.
     """
-    additional_grouping_exprs = {
-        "genomic_region": ht.genomic_region,
+    apply_model_grouping_exprs = {"genomic_region": ht.genomic_region}
+    build_model_grouping_exprs = {
+        **apply_model_grouping_exprs,
         **(additional_grouping_exprs or {}),
     }
 
@@ -619,7 +620,7 @@ def prepare_ht_for_constraint_calculations(
         high_cov_cutoff=build_model_high_cov_cutoff,
         upper_cov_cutoff=build_model_upper_cov_cutoff,
         skip_coverage_model=skip_coverage_model,
-        additional_grouping_exprs=additional_grouping_exprs,
+        additional_grouping_exprs=build_model_grouping_exprs,
     )
 
     # Get the annotations relevant for applying the calibration models.
@@ -629,7 +630,7 @@ def prepare_ht_for_constraint_calculations(
         low_cov_cutoff=apply_model_low_cov_cutoff,
         high_cov_cutoff=apply_model_high_cov_cutoff,
         skip_coverage_model=skip_coverage_model,
-        additional_grouping_exprs={"genomic_region": ht.genomic_region},
+        additional_grouping_exprs=apply_model_grouping_exprs,
     )
 
     # Annotate the Table with the computed annotations, and select only the relevant
@@ -656,13 +657,13 @@ def prepare_ht_for_constraint_calculations(
             high_cov_cutoff=build_model_high_cov_cutoff,
             upper_cov_cutoff=handle_none(build_model_upper_cov_cutoff),
             skip_coverage_model=skip_coverage_model,
-            additional_model_grouping=list(additional_grouping_exprs.keys()),
+            additional_model_grouping=list(build_model_grouping_exprs.keys()),
         ),
         apply_models_globals=hl.struct(
             low_cov_cutoff=handle_none(apply_model_low_cov_cutoff),
             high_cov_cutoff=apply_model_high_cov_cutoff,
             skip_coverage_model=skip_coverage_model,
-            additional_model_grouping=list(additional_grouping_exprs.keys()),
+            additional_model_grouping=list(apply_model_grouping_exprs.keys()),
         ),
         **exomes_obs_pos_globals,
     )
@@ -823,7 +824,8 @@ def aggregate_per_variant_expected_ht(
         "genomic_region",
         *MU_GROUPING,
         *additional_grouping,
-        *AGGREGATE_SUM_FIELDS,
+        # *AGGREGATE_SUM_FIELDS,
+        "expected_variants_by_sfs_bin",
         "vep",
     )
 
@@ -847,7 +849,12 @@ def aggregate_per_variant_expected_ht(
     ]
     ht = ht.group_by(
         "genomic_region", *MU_GROUPING, *groupings, *additional_grouping
-    ).aggregate(**aggregate_expected_variants_expr(ht))
+    ).aggregate(
+        expected_variants_by_sfs_bin=hl.agg.array_agg(
+            lambda x: aggregate_expected_variants_expr(x),
+            ht.expected_variants_by_sfs_bin,
+        )
+    )
 
     return ht.naive_coalesce(1000)
 
