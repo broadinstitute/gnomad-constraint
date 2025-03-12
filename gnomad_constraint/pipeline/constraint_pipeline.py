@@ -567,7 +567,12 @@ def main(args):
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
                 custom_vep_annotation=custom_vep_annotation,
-                additional_grouping=("am_per_98", "am_over_0_999", "am_per_99"),
+                additional_grouping=(
+                    "am_per_98",
+                    "am_over_0_999",
+                    "am_per_99",
+                    "sfs_bin",
+                ),
                 use_mane_select=True,
             )
             ht.write(res.apply_ht.path, overwrite=overwrite)
@@ -597,6 +602,7 @@ def main(args):
                         if i
                         in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
                     ]
+                    + ["sfs_bin"]
                 ),
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)

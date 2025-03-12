@@ -756,21 +756,18 @@ def create_per_variant_expected_ht(
     ht = ht.filter(hl.is_defined(ht.apply_model) & hl.is_defined(ht.possible_variants))
     ht = annotate_with_mu(ht, mutation_ht)
     sfs_bins = range(8)
-    sfs_plateau_models = [
-        plateau_models[ht.apply_model.model_group.annotate(sfs_bin=b)] for b in sfs_bins
-    ]
     ht = ht.annotate(
         expected_variants_by_sfs_bin=[
             apply_models(
                 ht.mu_snp,
-                m,
+                plateau_models[ht.apply_model.model_group.annotate(sfs_bin=b)],
                 ht.possible_variants,
                 coverage_model=coverage_model,
                 coverage_expr=ht.exomes_coverage,
                 model_group_expr=ht.apply_model,
                 log10_coverage=log10_coverage,
-            )
-            for m in sfs_plateau_models
+            ).annotate(sfs_bin=b)
+            for b in sfs_bins
         ]
     )
     ht = ht.annotate_globals(
@@ -824,10 +821,11 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group = True
         include_mane_select_group = use_mane_select
 
+    ht = ht.annotate(**ht.calibrate_mu)
     ht = ht.filter(hl.is_defined(ht.possible_variants))
     ht = ht.select(
         "genomic_region",
-        *MU_GROUPING,
+        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
         *additional_grouping,
         # *AGGREGATE_SUM_FIELDS,
         "mu_snp",
@@ -843,7 +841,22 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
-    ht = annotate_with_mu(ht, mutation_ht)
+    ht = ht.explode("expected_variants_by_sfs_bin")
+    zero_array = hl.zeros(ht.exomes_freq_meta.length())
+    ht = ht.annotate(
+        **hl.if_else(
+            ht.expected_variants_by_sfs_bin.sfs_bin == ht.sfs_bin,
+            {
+                "possible_variants": ht.possible_variants,
+                "observed_variants": ht.observed_variants,
+            },
+            {
+                "possible_variants": 0,
+                "observed_variants": zero_array,
+            },
+        ),
+        **ht.expected_variants_by_sfs_bin,
+    )
     ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
 
     groupings = [
@@ -857,22 +870,8 @@ def aggregate_per_variant_expected_ht(
         "mane_select",
         *additional_grouping,
     ]
-    ht = ht.group_by(groupings).aggregate(
-        **_sum_agg_expr(
-            fields_to_sum=["mu_snp", "observed_variants", "possible_variants"], t=ht
-        ),
-        expected_variants_by_sfs_bin=hl.agg.array_agg(
-            lambda x: _sum_agg_expr(
-                fields_to_sum=[
-                    "mu",
-                    "predicted_proportion_observed",
-                    "coverage_correction",
-                    "expected_variants",
-                ],
-                t=x,
-            ),
-            ht.expected_variants_by_sfs_bin,
-        ),
+    ht = ht.group_by(*groupings).aggregate(
+        **aggregate_expected_variants_expr(ht, additional_fields_to_sum=["mu"])
     )
 
     return ht.naive_coalesce(1000)
@@ -1196,29 +1195,7 @@ def aggregate_by_constraint_groups(
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
             lambda f: hl.agg.filter(
-                f,
-                hl.struct(
-                    **_sum_agg_expr(
-                        fields_to_sum=[
-                            "mu_snp",
-                            "observed_variants",
-                            "possible_variants",
-                        ],
-                        t=ht,
-                    ),
-                    expected_variants_by_sfs_bin=hl.agg.array_agg(
-                        lambda x: _sum_agg_expr(
-                            fields_to_sum=[
-                                "mu",
-                                "predicted_proportion_observed",
-                                "coverage_correction",
-                                "expected_variants",
-                            ],
-                            t=x,
-                        ),
-                        ht.expected_variants_by_sfs_bin,
-                    ),
-                ),
+                f, aggregate_expected_variants_expr(ht, additional_fields_to_sum=["mu"])
             ),
             ht.constraint_groups,
         )
