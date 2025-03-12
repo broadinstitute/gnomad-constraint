@@ -242,11 +242,17 @@ def get_constraint_resources(
         input_hts[f"{d}_sites_ht"] = constraint_res.get_sites_resource(d, version)
         input_hts[f"{d}_an_ht"] = all_sites_an(d)
 
+    common_params = {
+        "version": version,
+        "test": test,
+        "post_fix": post_fix,
+    }
+
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
         output_resources={
             "annotated_context_ht": constraint_res.get_annotated_context_ht(
-                version, test, post_fix
+                **common_params
             )
         },
         input_resources={"gnomAD resources": input_hts},
@@ -255,7 +261,7 @@ def get_constraint_resources(
         "preprocess data for downstream steps",
         output_resources={
             "temp_preprocess_data_ht": constraint_res.get_preprocessed_ht(
-                version, test, post_fix
+                **common_params
             ),
         },
         pipeline_input_steps=[prepare_context],
@@ -268,23 +274,22 @@ def get_constraint_resources(
     calculate_mutation_rate = PipelineStepResourceCollection(
         "--calculate-mutation-rate",
         output_resources={
-            "mutation_ht": constraint_res.get_mutation_ht(version, test, post_fix)
+            "mutation_ht": constraint_res.get_mutation_ht(**common_params)
         },
         pipeline_input_steps=[preprocess_data],
     )
     create_training_set = PipelineStepResourceCollection(
         "--create-training-set",
         output_resources={
-            f"train_ht": constraint_res.get_training_dataset(version, test, post_fix),
-            f"train_tsv": constraint_res.get_training_tsv_path(version, test, post_fix),
+            f"train_ht": constraint_res.get_training_dataset(**common_params),
+            f"train_tsv": constraint_res.get_training_tsv_path(**common_params),
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
     )
     build_models = PipelineStepResourceCollection(
         "--build-models",
         output_resources={
-            f"model_{m}": constraint_res.get_models(m, version, test, post_fix)
-            for m in models
+            f"model_{m}": constraint_res.get_models(m, **common_params) for m in models
         },
         pipeline_input_steps=[create_training_set],
     )
@@ -292,7 +297,7 @@ def get_constraint_resources(
         "--apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": constraint_res.get_per_variant_expected_dataset(
-                custom_vep_annotation, version, test, post_fix
+                custom_vep_annotation, **common_params
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -300,8 +305,8 @@ def get_constraint_resources(
     aggregate_per_variant_expected = PipelineStepResourceCollection(
         "--aggregate-per-variant-expected",
         output_resources={
-            f"apply_ht": constraint_res.get_apply_models(
-                custom_vep_annotation, version, test, post_fix
+            f"apply_ht": constraint_res.get_aggregated_per_variant_expected(
+                custom_vep_annotation, **common_params
             )
         },
         pipeline_input_steps=[
@@ -314,7 +319,7 @@ def get_constraint_resources(
         "--compute-constraint-metrics",
         output_resources={
             "constraint_metrics_ht": constraint_res.get_constraint_metrics_dataset(
-                custom_vep_annotation, version, test, post_fix
+                custom_vep_annotation, **common_params
             )
         },
         pipeline_input_steps=[aggregate_per_variant_expected],
@@ -324,12 +329,10 @@ def get_constraint_resources(
         "--export-tsv",
         output_resources={
             "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
-                version, test, post_fix
+                **common_params
             ),
             "downsampling_constraint_metrics_tsv": (
-                constraint_res.get_downsampling_constraint_tsv_path(
-                    version, test, post_fix
-                )
+                constraint_res.get_downsampling_constraint_tsv_path(**common_params)
             ),
         },
         pipeline_input_steps=[compute_constraint_metrics],
@@ -430,8 +433,9 @@ def main(args):
             res = resources.preprocess_data
             res.check_resource_existence()
             ht = res.annotated_context_ht.ht()
+            ht = filter_for_test(ht, use_gene_list=test_gene_list) if test else ht
             ht = prepare_ht_for_constraint_calculations(
-                (filter_for_test(ht, use_gene_list=test_gene_list) if test else ht),
+                ht,
                 exome_coverage_metric=args.exome_coverage_metric,
                 gen_ancs=args.genetic_ancestry_groups,
                 include_downsamplings=args.include_downsamplings,
@@ -446,6 +450,7 @@ def main(args):
                 apply_model_low_cov_cutoff=args.pipeline_low_coverage_filter,
                 apply_model_high_cov_cutoff=args.apply_model_high_cov_definition,
                 skip_coverage_model=skip_coverage_model,
+                additional_grouping_exprs={"sfs_bin": ht.sfs_bin},
             )
             ht.write(res.temp_preprocess_data_ht.path, overwrite=overwrite)
 
@@ -631,7 +636,9 @@ def main(args):
 
     finally:
         logger.info("Copying log to logging bucket...")
-        hl.copy_log(constraint_res.get_logging_path("constraint_pipeline", version))
+        hl.copy_log(
+            constraint_res.get_logging_path("constraint_pipeline", version=version)
+        )
 
 
 if __name__ == "__main__":

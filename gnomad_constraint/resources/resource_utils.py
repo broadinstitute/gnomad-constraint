@@ -14,7 +14,6 @@ from gnomad.resources.resource_utils import (
     TableResource,
     VersionedTableResource,
 )
-from gnomad_qc.v4.resources.release import release_coverage, release_sites
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -23,6 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
 
+EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 VERSIONS = ["2.1.1", "4.0", "4.1"]
 CURRENT_VERSION = "4.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
@@ -77,6 +77,56 @@ AGGREGATE_SUM_FIELDS = (
 Fields to sum (or array sum) when aggregating the expected counts Table.
 """
 
+MUTATION_TYPE_FIELDS = (
+    "cpg",
+    "transition",
+    "mutation_type",
+    "mutation_type_model",
+)
+"""
+Fields added by `annotate_mutation_type`.
+"""
+
+
+def check_param_scope(
+    version: Optional[str] = None,
+    model_type: Optional[str] = None,
+    custom_vep_annotation: Optional[str] = None,
+    extension: Optional[str] = None,
+    data_type: Optional[str] = None,
+) -> Union[str, None]:
+    """
+    Check if the specified version, genomic region, and other parameters are in the scope of the constraint pipeline.
+
+    If version is specified, return the genome build of the version as a string.
+
+    :param version: One of the release versions (`VERSIONS`). Default is None.
+    :param model_type: One of "plateau", "coverage". Default is None.
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is None.
+    :param extension: File extension. Default is None.
+    :param data_type: One of "exomes", "genomes". Default is None.
+    :return: Genome build of version as a string or None.
+    """
+    if data_type and data_type not in DATA_TYPES:
+        raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
+    if model_type and model_type not in MODEL_TYPES:
+        raise ValueError(f"model_type must be one of: {MODEL_TYPES}!")
+    if custom_vep_annotation and custom_vep_annotation not in CUSTOM_VEP_ANNOTATIONS:
+        raise ValueError(
+            f"custom_vep_annotation must be one of: {CUSTOM_VEP_ANNOTATIONS}!"
+        )
+    if extension and extension not in EXTENSIONS:
+        raise ValueError(f"extension must be one of: {EXTENSIONS}!")
+    if version:
+        if version not in VERSIONS:
+            raise ValueError("The requested version doesn't exist!")
+        else:
+            if version.startswith("2"):
+                return "GRCh37"
+            else:
+                return "GRCh38"
+
 
 def get_vep_context_ht(version: str) -> TableResource:
     """
@@ -93,31 +143,6 @@ def get_vep_context_ht(version: str) -> TableResource:
         return ref_grch38.vep_context.versions["105"]
     else:
         raise ValueError("Not a valid gnomAD version -- must be either 2.1.1 or 4.x!")
-
-
-def get_constraint_root(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix=None,
-    temp: bool = False,
-) -> str:
-    """
-    Return path to constraint root folder.
-
-    :param version: Version of constraint path to return.
-    :param test: Whether to use a tmp path.
-    :return: Root path to constraint resources.
-    """
-    post_fix = post_fix or ""
-    if post_fix:
-        post_fix = f"_{post_fix}"
-
-    if test:
-        return f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint{post_fix}"
-    if temp:
-        return f"gs://gnomad-tmp/gnomad_v{version}/constraint{post_fix}"
-
-    return f"gs://gnomad/v{version}/constraint{post_fix}"
 
 
 def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseResource:
@@ -169,7 +194,7 @@ def get_methylation_ht(build: str) -> TableResource:
         methylation_chrx = ref_grch38.methylation_sites_chrx.ht()
         methylation_autosomes = ref_grch38.methylation_sites.ht()
         methylation_ht = methylation_autosomes.union(methylation_chrx)
-        tmp_path = get_checkpoint_path(f"methylation_{build}")
+        tmp_path = get_checkpoint_path(f"methylation_{build}").path
         methylation_ht.checkpoint(tmp_path, _read_if_exists=True)
         return TableResource(path=tmp_path)
     else:
@@ -195,310 +220,6 @@ def get_coverage_ht(
         return gnomad_grch38.coverage(data_type)
 
 
-def get_mutation_ht(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return mutation Table that includes the baseline mutation rate for each substitution and context.
-
-    :param version: The version of the Table. Default is CURRENT_VERSION.
-    :param test: Whether the Table is for testing purposes and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-        released mutation rate table.
-    :return: Mutation rate Table.
-    """
-    check_param_scope(version)
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix)}/mutation_rate/gnomad.v{version}.mutation_rate.ht"
-    )
-
-
-def get_annotated_context_ht(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return TableResource of annotated context Table.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purposes and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: TableResource of annotated context Table.
-    """
-    check_param_scope(version)
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix)}/preprocessed_data/annotated_context.ht"
-    )
-
-
-def get_preprocessed_ht(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return TableResource of preprocessed genome, exomes, and context Table.
-
-    The exome and genome Table will have annotations added by
-    `prepare_ht_for_constraint_calculations()` and VEP annotation from context Table.
-
-    The context Table will have annotations added by
-    `prepare_ht_for_constraint_calculations()`.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purposes and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: TableResource of processed context Table.
-    """
-    check_param_scope(version)
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix, temp=True)}/preprocessed_data/gnomad.v{version}.context.preprocessed.ht"
-    )
-
-
-def get_training_dataset(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return TableResource of training dataset with observed and possible variant count.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purpose and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: TableResource of training dataset.
-    """
-    check_param_scope(version)
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix)}/training_data/gnomad.v{version}.constraint_training.ht"
-    )
-
-
-def get_training_tsv_path(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> str:
-    """
-    Return tsv of training dataset with observed and possible variant count.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purpose and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: TSV path of training dataset.
-    """
-    check_param_scope(version)
-
-    return f"{get_constraint_root(version, test, post_fix)}/training_data/gnomad.v{version}.constraint_training.tsv.bgz"
-
-
-def get_models(
-    model_type: str,
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> ExpressionResource:
-    """
-    Return path to a HailExpression that contains desired model type.
-
-    :param model_type: The type of model. One of "plateau", "coverage". Default is None.
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purpose and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: Path to the specified model.
-    """
-    check_param_scope(version=version, model_type=model_type)
-    return ExpressionResource(
-        f"{get_constraint_root(version, test, post_fix)}/models/gnomad.v{version}.{model_type}.he"
-    )
-
-
-def get_per_variant_expected_dataset(
-    custom_vep_annotation: str = "transcript_consequences",
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return TableResource containing the expected variant counts and observed:expected ratio.
-
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purpose and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: Path of the model.
-    """
-    check_param_scope(
-        version=version,
-        custom_vep_annotation=custom_vep_annotation,
-    )
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix)}/apply_models/{custom_vep_annotation}/gnomad.v{version}.per_variant_expected.ht"
-    )
-
-
-def get_apply_models(
-    custom_vep_annotation: str = "transcript_consequences",
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return TableResource containing the expected variant counts and observed:expected ratio.
-
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purpose and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: Path of the model.
-    """
-    check_param_scope(
-        version=version,
-        custom_vep_annotation=custom_vep_annotation,
-    )
-    # TODO: Change this name.
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix)}/apply_models/{custom_vep_annotation}/gnomad.v{version}.apply.per_variant_expected.ht"
-    )
-
-
-def get_constraint_metrics_dataset(
-    custom_vep_annotation: str = "transcript_consequences",
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> TableResource:
-    """
-    Return TableResource of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purposes and only contains sites in
-        chr20, chrX, and chrY. Default is False.
-    :return: TableResource of constraint metrics.
-    """
-    check_param_scope(version=version)
-
-    return TableResource(
-        f"{get_constraint_root(version, test, post_fix)}/metrics/{custom_vep_annotation}/gnomad.v{version}.constraint_metrics.ht"
-    )
-
-
-def get_constraint_tsv_path(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> str:
-    """
-    Return tsv path of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purposes. Default is False.
-    :return: TSV path of constraint metrics.
-    """
-    check_param_scope(version=version)
-
-    return f"{get_constraint_root(version, test, post_fix)}/metrics/tsv/gnomad.v{version}.constraint_metrics.tsv"
-
-
-def get_downsampling_constraint_tsv_path(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    post_fix: Optional[str] = None,
-) -> str:
-    """
-    Return tsv path of downsampling observed and expected counts.
-
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether the Table is for testing purposes. Default is False.
-    :return: TSV path of constraint metrics.
-    """
-    check_param_scope(version=version)
-
-    return f"{get_constraint_root(version, test, post_fix)}/metrics/tsv/gnomad.v{version}.downsampling_constraint_metrics.tsv.bgz"
-
-
-def check_param_scope(
-    version: Optional[str] = None,
-    data_type: Optional[str] = None,
-    model_type: Optional[str] = None,
-    custom_vep_annotation: Optional[str] = None,
-) -> Union[str, None]:
-    """
-    Check if the specified version, genomic region, and data type are in the scope of the constraint pipeline.
-
-    If version is specified, return the genome build of the version as a string.
-
-    :param version: One of the release versions (`VERSIONS`). Default is None.
-    :param data_type: One of "exomes", "genomes" or "context". Default is None.
-    :param model_type: One of "plateau", "coverage". Default is None.
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is None.
-    :return: Genome build of version as a string or None.
-    """
-    if data_type and data_type not in DATA_TYPES:
-        raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
-    if model_type and model_type not in MODEL_TYPES:
-        raise ValueError(f"model_type must be one of: {MODEL_TYPES}!")
-    if custom_vep_annotation and custom_vep_annotation not in CUSTOM_VEP_ANNOTATIONS:
-        raise ValueError(
-            f"custom_vep_annotation must be one of: {CUSTOM_VEP_ANNOTATIONS}!"
-        )
-    if version and version not in VERSIONS:
-        raise ValueError("The requested version doesn't exist!")
-    else:
-        if version.startswith("2"):
-            return "GRCh37"
-        else:
-            return "GRCh38"
-
-
-def get_logging_path(
-    name: str, version: str = CURRENT_VERSION, post_fix: Optional[str] = None
-) -> str:
-    """
-    Create a path for Hail log files.
-
-    :param name: Name of log file.
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :return: Output log path.
-    """
-    return f"{get_constraint_root(version, test=True, post_fix=post_fix)}/logging/{name}.log"
-
-
-def get_checkpoint_path(
-    name: str,
-    version: str = CURRENT_VERSION,
-    mt: bool = False,
-    post_fix: Optional[str] = None,
-) -> str:
-    """
-    Create a checkpoint path for Table or MatrixTable.
-
-    :param str name: Name of intermediate Table/MatrixTable.
-    :param version: Version of path to return.
-    :param bool mt: Whether path is for a MatrixTable. Default is False.
-    :return: Output checkpoint path.
-    """
-    return f'{get_constraint_root(version, test=True, post_fix=post_fix)}/checkpoint_files/{name}.{"mt" if mt else "ht"}'
-
-
 def get_gencode_ht(version: str) -> hl.Table:
     """
     Retrieve GENCODE Table.
@@ -512,3 +233,250 @@ def get_gencode_ht(version: str) -> hl.Table:
         return ref_grch38.gencode.ht(read_args={"_n_partitions": 500})
     else:
         raise ValueError("Version must be within gnomAD v2 or v4.")
+
+
+def get_constraint_root(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+    post_fix: Optional[str] = None,
+    temp: bool = False,
+    sub_dir: Optional[str] = None,
+) -> str:
+    """
+    Return path to constraint root folder.
+
+    :param version: Version of constraint path to return. Default is CURRENT_VERSION.
+    :param test: Whether to use a tmp path. Default is False.
+    :param post_fix: Postfix to append to the path. Default is None.
+    :param temp: Whether to use a temp path. Default is False.
+    :param sub_dir: Subdirectory to append to the path. Default is None.
+    :return: Root path to constraint resources folder.
+    """
+    post_fix = post_fix or ""
+    if post_fix:
+        post_fix = f"_{post_fix}"
+
+    sub_dir = sub_dir or ""
+    if sub_dir:
+        sub_dir = f"/{sub_dir}"
+
+    constraint_dir = f"constraint{post_fix}{sub_dir}"
+
+    if test:
+        return f"gs://gnomad-tmp/gnomad_v{version}_testing/{constraint_dir}"
+    if temp:
+        return f"gs://gnomad-tmp/gnomad_v{version}/{constraint_dir}"
+
+    return f"gs://gnomad/v{version}/{constraint_dir}"
+
+
+def get_constraint_data(
+    name: str,
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+    post_fix: Optional[str] = None,
+    sub_dir: Optional[str] = None,
+    custom_vep_annotation: Optional[str] = None,
+    extension: str = "ht",
+) -> Union[TableResource, str, ExpressionResource]:
+    """
+    Return path, TableResource, or ExpressionResource of requested constraint data.
+
+    :param name: Name of the constraint data to retrieve.
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param test: Whether the Table is for testing purpose and only contains a subset of
+        the data. Default is False.
+    :param post_fix: Postfix to append to the root path. Default is None.
+    :param sub_dir: Subdirectory to append to the path. Default is None.
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is
+        None.
+    :param extension: File extension. Default is "ht".
+    :return: Path, TableResource, or ExpressionResource of the constraint data.
+    """
+    check_param_scope(
+        version, custom_vep_annotation=custom_vep_annotation, extension=extension
+    )
+
+    if custom_vep_annotation:
+        sub_dir = f"{sub_dir}/" if sub_dir else ""
+        sub_dir = f"{sub_dir}{custom_vep_annotation}"
+
+    root_dir = get_constraint_root(
+        version=version,
+        test=test,
+        post_fix=post_fix,
+        sub_dir=sub_dir,
+    )
+    path = f"{root_dir}/gnomad.v{version}.{name}.{extension}"
+
+    if extension == "ht":
+        return TableResource(path)
+    if extension in {"tsv", "tsv.bgz", "log"}:
+        return path
+    if extension == "he":
+        return ExpressionResource(path)
+
+
+def get_mutation_ht(**kwargs) -> TableResource:
+    """
+    Return mutation Table that includes the baseline mutation rate for each substitution and context.
+
+    :return: Mutation rate Table.
+    """
+    return get_constraint_data("mutation_rate", sub_dir="mutation_rate", **kwargs)
+
+
+def get_annotated_context_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of annotated context Table.
+
+    :return: TableResource of annotated context Table.
+    """
+    return get_constraint_data(
+        "annotated_context", sub_dir="preprocessed_data", **kwargs
+    )
+
+
+def get_preprocessed_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of preprocessed genome, exomes, and context Table.
+
+    :return: TableResource of processed context Table.
+    """
+    return get_constraint_data(
+        "context.preprocessed", sub_dir="preprocessed_data", **kwargs
+    )
+
+
+def get_training_dataset(**kwargs) -> TableResource:
+    """
+    Return TableResource of training dataset with observed and possible variant count.
+
+    :return: TableResource of training dataset.
+    """
+    return get_constraint_data("constraint_training", sub_dir="training_data", **kwargs)
+
+
+def get_training_tsv_path(**kwargs) -> str:
+    """
+    Return tsv of training dataset with observed and possible variant count.
+
+    :return: TSV path of training dataset.
+    """
+    return get_constraint_data(
+        "constraint_training", sub_dir="training_data", extension="tsv.bgz", **kwargs
+    )
+
+
+def get_models(model_type: str, **kwargs) -> ExpressionResource:
+    """
+    Return path to a HailExpression that contains desired model type.
+
+    :param model_type: The type of model. One of "plateau", "coverage". Default is None.
+    :return: Path to the specified model.
+    """
+    check_param_scope(model_type=model_type)
+    return get_constraint_data(model_type, sub_dir="models", extension="he", **kwargs)
+
+
+def get_per_variant_expected_dataset(
+    custom_vep_annotation: str = "transcript_consequences", **kwargs
+) -> TableResource:
+    """
+    Return TableResource containing the expected variant counts and observed:expected ratio.
+
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :return: Path of the model.
+    """
+    return get_constraint_data(
+        "per_variant_expected",
+        sub_dir="apply_models",
+        custom_vep_annotation=custom_vep_annotation,
+        **kwargs,
+    )
+
+
+def get_aggregated_per_variant_expected(
+    custom_vep_annotation: str = "transcript_consequences", **kwargs
+) -> TableResource:
+    """
+    Return TableResource containing the expected variant counts and observed:expected ratio.
+
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :return: Path of the model.
+    """
+    return get_constraint_data(
+        "per_variant_expected.aggregated",
+        sub_dir="apply_models",
+        custom_vep_annotation=custom_vep_annotation,
+        **kwargs,
+    )
+
+
+def get_constraint_metrics_dataset(
+    custom_vep_annotation: str = "transcript_consequences", **kwargs
+) -> TableResource:
+    """
+    Return TableResource of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
+
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :return: TableResource of constraint metrics.
+    """
+    return get_constraint_data(
+        "constraint_metrics",
+        sub_dir="metrics",
+        custom_vep_annotation=custom_vep_annotation,
+        **kwargs,
+    )
+
+
+def get_constraint_tsv_path(**kwargs) -> str:
+    """
+    Return tsv path of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
+
+    :return: TSV path of constraint metrics.
+    """
+    return get_constraint_data(
+        "constraint_metrics", sub_dir="metrics/tsv", extension="tsv.bgz", **kwargs
+    )
+
+
+def get_downsampling_constraint_tsv_path(**kwargs) -> str:
+    """
+    Return tsv path of downsampling observed and expected counts.
+
+    :return: TSV path of constraint metrics.
+    """
+    return get_constraint_data(
+        "constraint_metrics.downsampling",
+        sub_dir="metrics/tsv",
+        extension="tsv.bgz",
+        **kwargs,
+    )
+
+
+def get_logging_path(name: str, **kwargs) -> str:
+    """
+    Create a path for Hail log files.
+
+    :param name: Name of log file.
+    :return: Output log path.
+    """
+    return get_constraint_data(
+        name, sub_dir="logging", extension="log", test=True, **kwargs
+    )
+
+
+def get_checkpoint_path(name: str, **kwargs) -> TableResource:
+    """
+    Create a checkpoint TableResource.
+
+    :param name: Name of intermediate Table.
+    :return: Output checkpoint TableResource.
+    """
+    return get_constraint_data(name, sub_dir="checkpoint_files", test=True, **kwargs)
