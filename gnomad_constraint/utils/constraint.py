@@ -10,6 +10,7 @@ import numpy as np
 from gnomad.assessment.summary_stats import generate_filter_combinations
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
 from gnomad.utils.constraint import (
+    _sum_agg_expr,
     add_gencode_transcript_annotations,
     aggregate_expected_variants_expr,
     annotate_exploded_vep_for_constraint_groupings,
@@ -826,6 +827,9 @@ def aggregate_per_variant_expected_ht(
         *MU_GROUPING,
         *additional_grouping,
         # *AGGREGATE_SUM_FIELDS,
+        "mu_snp",
+        "observed_variants",
+        "possible_variants",
         "expected_variants_by_sfs_bin",
         "vep",
     )
@@ -851,10 +855,21 @@ def aggregate_per_variant_expected_ht(
     ht = ht.group_by(
         "genomic_region", *MU_GROUPING, *groupings, *additional_grouping
     ).aggregate(
+        **_sum_agg_expr(
+            fields_to_sum=["mu_snp", "observed_variants", "possible_variants"], t=ht
+        ),
         expected_variants_by_sfs_bin=hl.agg.array_agg(
-            lambda x: aggregate_expected_variants_expr(x),
+            lambda x: _sum_agg_expr(
+                fields_to_sum=[
+                    "mu",
+                    "predicted_proportion_observed",
+                    "coverage_correction",
+                    "expected_variants",
+                ],
+                t=x,
+            ),
             ht.expected_variants_by_sfs_bin,
-        )
+        ),
     )
 
     return ht.naive_coalesce(1000)
@@ -1192,7 +1207,31 @@ def compute_constraint_metrics(
     # expected_variants for each constraint group.
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
-            lambda f: hl.agg.filter(f, aggregate_expected_variants_expr(ht)),
+            lambda f: hl.agg.filter(
+                f,
+                hl.struct(
+                    **_sum_agg_expr(
+                        fields_to_sum=[
+                            "mu_snp",
+                            "observed_variants",
+                            "possible_variants",
+                        ],
+                        t=ht,
+                    ),
+                    expected_variants_by_sfs_bin=hl.agg.array_agg(
+                        lambda x: _sum_agg_expr(
+                            fields_to_sum=[
+                                "mu",
+                                "predicted_proportion_observed",
+                                "coverage_correction",
+                                "expected_variants",
+                            ],
+                            t=x,
+                        ),
+                        ht.expected_variants_by_sfs_bin,
+                    ),
+                ),
+            ),
             ht.constraint_groups,
         )
     )
