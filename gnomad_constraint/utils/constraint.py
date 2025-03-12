@@ -406,6 +406,7 @@ def get_build_calibration_model_annotation(
     high_cov_cutoff: int = COVERAGE_CUTOFF,
     upper_cov_cutoff: Optional[int] = None,
     skip_coverage_model: bool = False,
+    additional_grouping_exprs: Optional[Dict[str, hl.expr.Expression]] = None,
 ) -> Tuple[hl.expr.StructExpression, hl.expr.StructExpression]:
     """
     Get the annotation and globals for building the calibration models.
@@ -429,6 +430,8 @@ def get_build_calibration_model_annotation(
         None.
     :param skip_coverage_model: Whether the coverage model should be skipped during the
         build models step. Default is False.
+    :param additional_grouping_exprs: Additional grouping expressions to include in the
+        build model. Default is None.
     :return: Tuple containing the build model expression and the global parameters.
     """
     # Determine the canonical and mane_select parameters for
@@ -460,7 +463,7 @@ def get_build_calibration_model_annotation(
         high_cov_cutoff=high_cov_cutoff,
         upper_cov_cutoff=upper_cov_cutoff,
         skip_coverage_model=skip_coverage_model,
-        additional_grouping_exprs={"genomic_region": genomic_region_expr},
+        additional_grouping_exprs=additional_grouping_exprs,
         cpg_in_high_only=True,
     )
 
@@ -516,6 +519,7 @@ def prepare_ht_for_constraint_calculations(
     apply_model_high_cov_cutoff: int = COVERAGE_CUTOFF,
     skip_coverage_model: bool = False,
     synonymous_transcript_filter_field: str = "mane_select",
+    additional_grouping_exprs: Optional[Dict[str, hl.expr.Expression]] = None,
 ) -> hl.Table:
     """
     Prepare Table for constraint calculations.
@@ -564,8 +568,15 @@ def prepare_ht_for_constraint_calculations(
         build and apply models steps. Default is False.
     :param synonymous_transcript_filter_field: Field used to filter to variants with a
         transcript consequence of "synonymous_variant". Default is "canonical".
+    :param additional_grouping_exprs: Additional grouping expressions to include in the
+        build model and apply model annotations. Default is None.
     :return: Table with the computed annotations.
     """
+    additional_grouping_exprs = {
+        "genomic_region": ht.genomic_region,
+        **(additional_grouping_exprs or {}),
+    }
+
     # Get the annotations relevant for computing the mutation rate.
     compute_mu_expr, compute_mu_globals = get_annotations_for_computing_mu(
         ht.locus,
@@ -607,6 +618,7 @@ def prepare_ht_for_constraint_calculations(
         high_cov_cutoff=build_model_high_cov_cutoff,
         upper_cov_cutoff=build_model_upper_cov_cutoff,
         skip_coverage_model=skip_coverage_model,
+        additional_grouping_exprs=additional_grouping_exprs,
     )
 
     # Get the annotations relevant for applying the calibration models.
@@ -625,7 +637,9 @@ def prepare_ht_for_constraint_calculations(
         exomes_coverage=exomes_coverage_expr,
         compute_mu=compute_mu_expr,
         calibrate_mu=hl.struct(
-            **exomes_obs_pos_expr, build_model=build_expr, apply_model=apply_expr
+            **exomes_obs_pos_expr,
+            build_model=hl.or_missing(hl.is_defined(ht.sfs_bin), build_expr),
+            apply_model=hl.or_missing(hl.is_defined(ht.sfs_bin), apply_expr),
         ),
     )
     ht = ht.drop("freq")
@@ -641,11 +655,13 @@ def prepare_ht_for_constraint_calculations(
             high_cov_cutoff=build_model_high_cov_cutoff,
             upper_cov_cutoff=handle_none(build_model_upper_cov_cutoff),
             skip_coverage_model=skip_coverage_model,
+            additional_model_grouping=list(additional_grouping_exprs.keys()),
         ),
         apply_models_globals=hl.struct(
             low_cov_cutoff=handle_none(apply_model_low_cov_cutoff),
             high_cov_cutoff=apply_model_high_cov_cutoff,
             skip_coverage_model=skip_coverage_model,
+            additional_model_grouping=list(additional_grouping_exprs.keys()),
         ),
         **exomes_obs_pos_globals,
     )
@@ -728,22 +744,25 @@ def create_per_variant_expected_ht(
     :return: Per-variant expected Table
     """
     ht = ht.annotate(**ht.calibrate_mu)
-
-    if filter_to_apply_variants:
-        ht = ht.filter(hl.is_defined(ht.apply_model))
-
+    ht = ht.filter(hl.is_defined(ht.apply_model) & hl.is_defined(ht.possible_variants))
     ht = annotate_with_mu(ht, mutation_ht)
-
+    sfs_bins = range(8)
+    sfs_plateau_models = [
+        plateau_models[ht.apply_model.model_group.annotate(sfs_bin=b)] for b in sfs_bins
+    ]
     ht = ht.annotate(
-        **apply_models(
-            ht.mu_snp,
-            plateau_models.get(ht.apply_model.model_group),
-            ht.possible_variants,
-            coverage_model=coverage_model,
-            coverage_expr=ht.exomes_coverage,
-            model_group_expr=ht.apply_model,
-            log10_coverage=log10_coverage,
-        )
+        expected_variants_by_sfs_bin=[
+            apply_models(
+                ht.mu_snp,
+                m,
+                ht.possible_variants,
+                coverage_model=coverage_model,
+                coverage_expr=ht.exomes_coverage,
+                model_group_expr=ht.apply_model,
+                log10_coverage=log10_coverage,
+            )
+            for m in sfs_plateau_models
+        ]
     )
     ht = ht.annotate_globals(
         apply_models_globals=ht.apply_models_globals.annotate(

@@ -446,6 +446,7 @@ def main(args):
                 apply_model_low_cov_cutoff=args.pipeline_low_coverage_filter,
                 apply_model_high_cov_cutoff=args.apply_model_high_cov_definition,
                 skip_coverage_model=skip_coverage_model,
+                additional_grouping_exprs={"sfs_bin": ht.sfs_bin},
             )
             ht.write(res.temp_preprocess_data_ht.path, overwrite=overwrite)
 
