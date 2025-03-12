@@ -315,6 +315,15 @@ def get_constraint_resources(
             build_models,
         ],
     )
+    aggregate_by_constraint_groups = PipelineStepResourceCollection(
+        "--aggregate-by-constraint-groups",
+        output_resources={
+            f"constraint_group_ht": constraint_res.get_constraint_group_ht(
+                custom_vep_annotation, **common_params
+            )
+        },
+        pipeline_input_steps=[aggregate_per_variant_expected],
+    )
     compute_constraint_metrics = PipelineStepResourceCollection(
         "--compute-constraint-metrics",
         output_resources={
@@ -322,9 +331,8 @@ def get_constraint_resources(
                 custom_vep_annotation, **common_params
             )
         },
-        pipeline_input_steps=[aggregate_per_variant_expected],
+        pipeline_input_steps=[aggregate_by_constraint_groups],
     )
-
     export_tsv = PipelineStepResourceCollection(
         "--export-tsv",
         output_resources={
@@ -349,6 +357,7 @@ def get_constraint_resources(
             "build_models": build_models,
             "apply_models_per_variant": apply_models_per_variant,
             "aggregate_per_variant_expected": aggregate_per_variant_expected,
+            "aggregate_by_constraint_groups": aggregate_by_constraint_groups,
             "compute_constraint_metrics": compute_constraint_metrics,
             "export_tsv": export_tsv,
         }
@@ -567,6 +576,30 @@ def main(args):
                 "consequence annotations, and consequence modifier annotations."
             )
 
+        if args.aggregate_by_constraint_groups:
+            logger.info(
+                "Aggregating observed and expected variant counts by constraint groups..."
+            )
+            res = resources.aggregate_by_constraint_groups
+            res.check_resource_existence()
+
+            # Use new shuffle method to prevent shuffle errors.
+            hl._set_flags(use_new_shuffle="1")
+            ht = res.apply_ht.ht()
+            aggregate_by_constraint_groups(
+                ht,
+                keys=tuple(
+                    [
+                        i
+                        for i in list(ht.key)
+                        if i
+                        in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
+                    ]
+                ),
+            ).write(res.constraint_group_ht.path, overwrite=overwrite)
+            hl._set_flags(use_new_shuffle=None)
+            logger.info("Done with aggregating by constraint groups.")
+
         if args.compute_constraint_metrics:
             logger.info(
                 "Computing constraint metrics, including pLI scores, z scores, oe"
@@ -579,18 +612,9 @@ def main(args):
             hl._set_flags(use_new_shuffle="1")
 
             # Compute constraint metrics.
-            ht = res.apply_ht.ht()
             compute_constraint_metrics(
                 ht=res.apply_ht.ht(),
                 gencode_ht=constraint_res.get_gencode_ht(version),
-                keys=tuple(
-                    [
-                        i
-                        for i in list(ht.key)
-                        if i
-                        in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
-                    ]
-                ),
                 expected_values={
                     "Null": args.expectation_null,
                     "Rec": args.expectation_rec,
@@ -946,6 +970,19 @@ if __name__ == "__main__":
         choices=constraint_res.CUSTOM_VEP_ANNOTATIONS,
     )
     aggregate_per_variant_expected_args._group_actions.append(cov_model_type)
+
+    aggregate_by_constraint_groups_args = parser.add_argument_group(
+        "Aggregate by constraint groups args",
+        "Arguments used for aggregating by constraint groups.",
+    )
+    aggregate_by_constraint_groups_args.add_argument(
+        "--aggregate-by-constraint-groups",
+        help=(
+            "Aggregate the observed and expected variant counts by constraint groups"
+            " to get the constraint metrics."
+        ),
+        action="store_true",
+    )
 
     compute_constraint_args = parser.add_argument_group(
         "Computate constraint metrics args",

@@ -417,6 +417,22 @@ def get_aggregated_per_variant_expected(
     )
 
 
+def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResource:
+    """
+    Return TableResource of constraint group Table.
+
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :return: TableResource of constraint group Table.
+    """
+    return get_constraint_data(
+        "constraint_group",
+        sub_dir="apply_models",
+        custom_vep_annotation=custom_vep_annotation,
+        **kwargs,
+    )
+
+
 def get_constraint_metrics_dataset(
     custom_vep_annotation: str = "transcript_consequences", **kwargs
 ) -> TableResource:

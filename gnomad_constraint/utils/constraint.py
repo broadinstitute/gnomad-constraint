@@ -1093,9 +1093,8 @@ def convert_multi_array_to_array_of_structs(
     ).drop(*array_fields_to_combine)
 
 
-def compute_constraint_metrics(
+def aggregate_by_constraint_groups(
     ht: hl.Table,
-    gencode_ht: hl.Table,
     keys: Tuple = ("gene", "transcript", "canonical"),
     classic_lof_annotations: Tuple = (
         "stop_gained",
@@ -1104,6 +1103,100 @@ def compute_constraint_metrics(
     ),
     additional_groupings: Dict[str, Dict[str, hl.expr.BooleanExpression]] = None,
     additional_grouping_combinations: List[List[str]] = None,
+) -> hl.Table:
+    """
+    Aggregate the observed and expected variant info for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+
+    .. note::
+
+        The following annotations should be present in `ht`:
+
+            - modifier
+            - annotation
+            - observed_variants
+            - mu
+            - possible_variants
+            - expected_variants
+
+    :param ht: Input Table with the number of expected variants (output of
+        `get_proportion_observed()`).
+    :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
+        'canonical').
+    :param classic_lof_annotations: Classic LoF Annotations used to filter the input
+        Table. Default is {"stop_gained", "splice_donor_variant",
+        "splice_acceptor_variant"}.
+    :param additional_groupings: Additional groupings to add to the constraint groups.
+        Default is None.
+    :param additional_grouping_combinations: Additional grouping combinations to add to
+        the constraint groups. Default is None.
+    :return: Table with the aggregated observed and expected variant info for synonymous
+        variants, missense variants, and pLoF variants.
+    """
+    # Build constraint groups.
+    constraint_group_filters_expr, meta = build_constraint_consequence_groups(
+        ht.annotation,
+        ht.modifier,
+        classic_lof_annotations=classic_lof_annotations,
+        additional_groupings=additional_groupings,
+        additional_grouping_combinations=additional_grouping_combinations,
+    )
+    ht = ht.annotate(constraint_groups=constraint_group_filters_expr)
+    ht = ht.annotate_globals(constraint_group_meta=meta)
+    ht = ht.checkpoint(
+        new_temp_file("constraint_metrics.constraint_group_filters", "ht")
+    )
+
+    # Group by keys and get an aggregate sum of mu_snp, observed_variants,
+    # possible_variants, predicted_proportion_observed, coverage_correction, and
+    # expected_variants for each constraint group.
+    ht = ht.group_by(*keys).aggregate(
+        constraint_groups=hl.agg.array_agg(
+            lambda f: hl.agg.filter(f, aggregate_expected_variants_expr(ht)),
+            ht.constraint_groups,
+        )
+    )
+
+    # Add a 'no_variants' annotation indicating that there are zero observed variants
+    # summed across pLoF, missense, and synonymous variants.
+    ht = ht.annotate(
+        no_variants=hl.sum(
+            ht.constraint_groups.map(lambda x: hl.or_else(x.observed_variants[0], 0))
+        )
+        == 0
+    )
+
+    # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
+    ht = ht.filter(
+        ~ht.no_variants
+        & hl.any(
+            ht.constraint_groups.map(
+                lambda x: (hl.or_else(x.expected_variants[0], 0) > 0)
+            )
+        )
+    )
+
+    # Change format of arrays in constraint_groups to an array of structs.
+    array_fields_to_combine = [
+        k
+        for k, v in ht.constraint_groups.dtype._element_type.items()
+        if isinstance(v, hl.tarray)
+    ]
+    ht = ht.annotate(
+        constraint_groups=ht.constraint_groups.map(
+            lambda x: convert_multi_array_to_array_of_structs(
+                x, array_fields_to_combine, "oe_info"
+            )
+        )
+    )
+
+    ht = ht.annotate_globals(constraint_group_meta=meta)
+
+    return ht
+
+
+def compute_constraint_metrics(
+    ht: hl.Table,
+    gencode_ht: hl.Table,
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
     raw_z_outlier_threshold_lower_lof: float = -8.0,
@@ -1147,65 +1240,6 @@ def compute_constraint_metrics(
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
-    # Build constraint groups.
-    constraint_group_filters_expr, meta = build_constraint_consequence_groups(
-        ht.annotation,
-        ht.modifier,
-        classic_lof_annotations=classic_lof_annotations,
-        additional_groupings=additional_groupings,
-        additional_grouping_combinations=additional_grouping_combinations,
-    )
-    ht = ht.annotate(constraint_groups=constraint_group_filters_expr)
-    ht = ht.annotate_globals(constraint_group_meta=meta)
-    ht = ht.checkpoint(
-        new_temp_file("constraint_metrics.constraint_group_filters", "ht")
-    )
-
-    # Group by keys and get an aggregate sum of mu_snp, observed_variants,
-    # possible_variants, predicted_propotion_observed, coverage_correction, and
-    # expected_variants for each constraint group.
-    ht = ht.group_by(*keys).aggregate(
-        constraint_groups=hl.agg.array_agg(
-            lambda f: hl.agg.filter(f, aggregate_expected_variants_expr(ht)),
-            ht.constraint_groups,
-        )
-    )
-
-    # Add a 'no_variants' annotation indicating that there are zero observed variants
-    # summed across pLoF, missense, and synonymous variants.
-    ht = ht.annotate(
-        no_variants=hl.sum(
-            ht.constraint_groups.map(lambda x: hl.or_else(x.observed_variants[0], 0))
-        )
-        == 0
-    )
-
-    # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
-    ht = ht.filter(
-        ~ht.no_variants
-        & hl.any(
-            ht.constraint_groups.map(
-                lambda x: (hl.or_else(x.expected_variants[0], 0) > 0)
-            )
-        )
-    )
-
-    # Change format of arrays in constraint_groups to an array of structs.
-    array_fields_to_combine = [
-        k
-        for k, v in ht.constraint_groups.dtype._element_type.items()
-        if isinstance(v, hl.tarray)
-    ]
-    ht = ht.annotate(
-        constraint_groups=ht.constraint_groups.map(
-            lambda x: convert_multi_array_to_array_of_structs(
-                x, array_fields_to_combine, "oe_info"
-            )
-        )
-    )
-    ht = ht.checkpoint(
-        new_temp_file("constraint_metrics.constraint_group_filters.agg", "ht")
-    )
 
     def _add_oe_ci_z(
         oe_info: hl.expr.StructExpression,
@@ -1244,6 +1278,7 @@ def compute_constraint_metrics(
 
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
+    meta = ht.constraint_group_meta.collect()
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, m: x.annotate(
