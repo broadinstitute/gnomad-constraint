@@ -42,6 +42,7 @@ from gnomad_qc.resource_utils import (
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.utils.constraint import (
+    aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
     calculate_gerp_cutoffs,
     calculate_mu_by_downsampling,
