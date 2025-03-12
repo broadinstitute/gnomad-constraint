@@ -733,6 +733,7 @@ def create_per_variant_expected_ht(
         model annotation. Default is True.
     :return: Per-variant expected Table
     """
+    calibrate_mu_fields = set(ht.calibrate_mu.keys())
     ht = ht.annotate(**ht.calibrate_mu)
 
     if filter_to_apply_variants:
@@ -759,7 +760,7 @@ def create_per_variant_expected_ht(
         )
     )
 
-    return ht
+    return ht.drop(*calibrate_mu_fields)
 
 
 def aggregate_per_variant_expected_ht(
