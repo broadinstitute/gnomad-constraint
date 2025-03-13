@@ -651,9 +651,6 @@ def prepare_ht_for_constraint_calculations(
         **exomes_obs_pos_globals,
     )
 
-    # TODO: Remove this after we have all methylation.
-    ht = ht.filter(ht.locus.in_autosome())
-
     print_global_struct(ht)
 
     return ht
@@ -819,7 +816,6 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
-    ht = annotate_with_mu(ht, mutation_ht)
     ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
 
     groupings = [

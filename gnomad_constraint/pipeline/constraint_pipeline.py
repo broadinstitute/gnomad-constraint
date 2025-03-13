@@ -542,7 +542,6 @@ def main(args):
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = ht.annotate(**{f"am_{k}": v for k, v in ht.alpha_missense.items()})
             ht = aggregate_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
