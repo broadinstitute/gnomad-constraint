@@ -803,10 +803,11 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group = True
         include_mane_select_group = use_mane_select
 
+    ht = ht.annotate(**ht.calibrate_mu)
     ht = ht.filter(hl.is_defined(ht.possible_variants))
     ht = ht.select(
         "genomic_region",
-        *MU_GROUPING,
+        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
         *additional_grouping,
         *AGGREGATE_SUM_FIELDS,
         "vep",
