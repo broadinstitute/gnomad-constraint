@@ -10,7 +10,6 @@ import numpy as np
 from gnomad.assessment.summary_stats import generate_filter_combinations
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
 from gnomad.utils.constraint import (
-    _sum_agg_expr,
     add_gencode_transcript_annotations,
     aggregate_expected_variants_expr,
     annotate_exploded_vep_for_constraint_groupings,
@@ -669,9 +668,6 @@ def prepare_ht_for_constraint_calculations(
         **exomes_obs_pos_globals,
     )
 
-    # TODO: Remove this after we have all methylation.
-    ht = ht.filter(ht.locus.in_autosome())
-
     print_global_struct(ht)
 
     return ht
@@ -841,6 +837,42 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
+    am_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/alpha_missense.esm.filters.ht"
+    )
+    new_loftee = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
+    )
+    am_keyed = am_ht[ht.locus, ht.alleles, ht.transcript]
+    new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
+    ann_expr = {
+        "am_0_999": hl.or_else(am_keyed.alpha_missense.am_0_999, False),
+        **{
+            f"am_per_{p}": hl.or_else(am_keyed.alpha_missense[f"am_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"am_tx_per_{p}": hl.or_else(
+                am_keyed.alpha_missense[f"am_tx_per_{p}"], False
+            )
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"esm_per_{p}": hl.or_else(am_keyed.esm[f"esm_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"esm_tx_per_{p}": hl.or_else(am_keyed.esm[f"esm_tx_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"new_loftee_{int(p*100)}": hl.or_else(
+                new_loftee_keyed[f"misannot_Pposterior_{p}"], False
+            )
+            for p in [0.2, 0.5, 0.8]
+        },
+    }
+    ht = ht.annotate(**ann_expr)
     ht = ht.explode("expected_variants_by_sfs_bin")
     zero_array = hl.zeros(ht.exomes_freq_meta.length())
     ht = ht.annotate(
@@ -869,6 +901,7 @@ def aggregate_per_variant_expected_ht(
         "canonical",
         "mane_select",
         *additional_grouping,
+        *list(ann_expr.keys()),
     ]
     ht = ht.group_by(*groupings).aggregate(
         **aggregate_expected_variants_expr(ht, additional_fields_to_sum=["mu"])

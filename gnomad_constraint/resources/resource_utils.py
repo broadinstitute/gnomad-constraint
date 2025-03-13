@@ -191,9 +191,29 @@ def get_methylation_ht(build: str) -> TableResource:
     if build == "GRCh37":
         return ref_grch37.methylation_sites
     elif build == "GRCh38":
-        methylation_chrx = ref_grch38.methylation_sites_chrx.ht()
+        # methylation_chrx = ref_grch38.methylation_sites_chrx.ht()
+        methylation_chrx_nonpar = hl.read_table(
+            "gs://gnomad/v4.1/constraint/resources/methylation_chrX.ht"
+        )
+        methylation_chrx_nonpar = methylation_chrx_nonpar.select(
+            methylation_level=methylation_chrx_nonpar.methy_level,
+        )
+        methylation_chrx_par = hl.read_table(
+            "gs://gnomad/v4.1/constraint/resources/methylation_chrX_par.ht"
+        )
+        methylation_chrx_par = methylation_chrx_par.select(
+            methylation_level=methylation_chrx_par.methy_level,
+        )
+        methylation_chry_nonpar = hl.read_table(
+            "gs://gnomad/v4.1/constraint/resources/methylation_chrY.ht"
+        )
+        methylation_chry_nonpar = methylation_chry_nonpar.select(
+            methylation_level=methylation_chry_nonpar.methy_level,
+        )
         methylation_autosomes = ref_grch38.methylation_sites.ht()
-        methylation_ht = methylation_autosomes.union(methylation_chrx)
+        methylation_ht = methylation_autosomes.union(
+            methylation_chrx_par, methylation_chrx_nonpar, methylation_chry_nonpar
+        )
         tmp_path = get_checkpoint_path(f"methylation_{build}").path
         methylation_ht.checkpoint(tmp_path, _read_if_exists=True)
         return TableResource(path=tmp_path)

@@ -169,16 +169,12 @@ def run_prepare_context(
     )
 
     # TODO: Make these resources.
-    am_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/alpha_missense_filters.ht"
-    )
-    adj_r_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
-    ).key_by("locus")
+    # adj_r_ht = hl.read_table(
+    #    "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
+    # ).key_by("locus")
     multisfs_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/julia/constraint/multisfs.dedup.ht"
+        "gs://gnomad/v4.1/constraint/resources/multisfs.dedup.ht"
     )
-    am_keyed = am_ht[ht.key]
     ht = ht.annotate(
         coverage=hl.struct(
             exomes=ht.coverage.exomes.select("mean", "median_approx"),
@@ -189,13 +185,7 @@ def run_prepare_context(
             genomes=ht.AN.genomes[0],
         ),
         genomic_region=genomic_region_expr,
-        alpha_missense=hl.struct(
-            pathogenicity=am_keyed.am_pathogenicity,
-            per_98=hl.or_else(am_keyed.am_per_98, False),
-            per_99=hl.or_else(am_keyed.am_per_99, False),
-            over_0_999=hl.or_else(am_keyed.am_0_999, False),
-        ),
-        adj_r=adj_r_ht[ht.locus].adj_r,
+        # adj_r=adj_r_ht[ht.locus].adj_r,
         sfs_bin=multisfs_ht[ht.key].Freq_bin_9,
     )
 
@@ -562,7 +552,6 @@ def main(args):
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = ht.annotate(**{f"am_{k}": v for k, v in ht.alpha_missense.items()})
             ht = aggregate_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
@@ -604,6 +593,37 @@ def main(args):
                     ]
                     + ["sfs_bin"]
                 ),
+                additional_groupings={
+                    "am": {
+                        "am_over_0_999": ht.am_0_999,
+                        **{f"am_per_{p}": ht[f"am_per_{p}"] for p in [90, 95, 98, 99]},
+                        **{
+                            f"am_tx_per_{p}": ht[f"am_tx_per_{p}"]
+                            for p in [90, 95, 98, 99]
+                        },
+                    },
+                    "esm": {
+                        **{
+                            f"esm_per_{p}": ht[f"esm_per_{p}"] for p in [90, 95, 98, 99]
+                        },
+                        **{
+                            f"esm_tx_per_{p}": ht[f"esm_tx_per_{p}"]
+                            for p in [90, 95, 98, 99]
+                        },
+                    },
+                    "new_loftee": {
+                        f"new_loftee_{p}": ht[f"new_loftee_{p}"] for p in [20, 50, 80]
+                    },
+                },
+                additional_grouping_combinations=[
+                    ["am"],
+                    ["esm"],
+                    ["new_loftee"],
+                    ["lof", "am"],
+                    ["lof", "esm"],
+                    ["new_loftee", "am"],
+                    ["new_loftee", "esm"],
+                ],
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
@@ -621,7 +641,7 @@ def main(args):
 
             # Compute constraint metrics.
             compute_constraint_metrics(
-                ht=res.apply_ht.ht(),
+                ht=res.constraint_group_ht.ht(),
                 gencode_ht=constraint_res.get_gencode_ht(version),
                 expected_values={
                     "Null": args.expectation_null,
