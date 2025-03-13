@@ -711,6 +711,8 @@ def create_per_variant_expected_ht(
     coverage_model: Tuple[float, float],
     log10_coverage: bool = True,
     filter_to_apply_variants: bool = True,
+    custom_vep_annotation: str = "transcript_consequences",
+    use_mane_select: bool = False,
 ) -> hl.Table:
     """
     Create the per-variant expected Table.
@@ -728,63 +730,9 @@ def create_per_variant_expected_ht(
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :param filter_to_apply_variants: Whether to filter to only the rows with an apply
         model annotation. Default is True.
-    :return: Per-variant expected Table
-    """
-    calibrate_mu_fields = set(ht.calibrate_mu.keys())
-    ht = ht.annotate(**ht.calibrate_mu)
-
-    if filter_to_apply_variants:
-        ht = ht.filter(hl.is_defined(ht.apply_model))
-
-    ht = annotate_with_mu(ht, mutation_ht)
-
-    ht = ht.annotate(
-        **apply_models(
-            ht.mu_snp,
-            plateau_models.get(ht.apply_model.model_group),
-            ht.possible_variants,
-            coverage_model=coverage_model,
-            coverage_expr=ht.exomes_coverage,
-            model_group_expr=ht.apply_model,
-            log10_coverage=log10_coverage,
-        )
-    )
-    ht = ht.annotate_globals(
-        apply_models_globals=ht.apply_models_globals.annotate(
-            plateau_models=plateau_models,
-            coverage_model=coverage_model,
-            log10_coverage=log10_coverage,
-        )
-    )
-
-    return ht.drop(*calibrate_mu_fields)
-
-
-def aggregate_per_variant_expected_ht(
-    ht,
-    mutation_ht: hl.Table,
-    additional_grouping: Tuple = (),
-    custom_vep_annotation: str = "transcript_consequences",
-    use_mane_select: bool = False,
-    include_mu_annotations_in_grouping: bool = False,
-):
-    """
-    Aggregate the per-variant expected Table.
-
-    The input `ht` should be the Table returned by `create_per_variant_expected_ht`.
-    The Table is exploded by the VEP annotation and aggregated by "genomic_region",
-    "context", "ref", "alt", "methylation_level", groupings returned by
-    `annotate_exploded_vep_for_constraint_groupings` and fields in
-    `additional_grouping` to get the observed and expected counts.
-
-    :param ht: Table returned by `create_per_variant_expected_ht`.
-    :param mutation_ht: Mutation rate Table.
-    :param additional_grouping: Additional fields to group by. Default is ().
     :param custom_vep_annotation: Custom VEP annotation to use. Default is
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
-    :param include_mu_annotations_in_grouping: Whether to include the mutation rate
-        key annotations in the grouping. Default is False.
-    :return: Table with the observed and expected counts.
+    :return: Per-variant expected Table.
     """
     include_canonical_group = False
     include_mane_select_group = False
@@ -800,14 +748,26 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group = True
         include_mane_select_group = use_mane_select
 
+    calibrate_mu_fields = set(ht.calibrate_mu.keys())
     ht = ht.annotate(**ht.calibrate_mu)
-    ht = ht.filter(hl.is_defined(ht.possible_variants))
-    ht = ht.select(
-        "genomic_region",
-        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
-        # *additional_grouping,
-        *AGGREGATE_SUM_FIELDS,
-        "vep",
+
+    if filter_to_apply_variants:
+        ht = ht.filter(
+            hl.is_defined(ht.apply_model) & hl.is_defined(ht.possible_variants)
+        )
+
+    ht = annotate_with_mu(ht, mutation_ht)
+
+    ht = ht.annotate(
+        **apply_models(
+            ht.mu_snp,
+            plateau_models.get(ht.apply_model.model_group),
+            ht.possible_variants,
+            coverage_model=coverage_model,
+            coverage_expr=ht.exomes_coverage,
+            model_group_expr=ht.apply_model,
+            log10_coverage=log10_coverage,
+        )
     )
 
     ht, groupings = annotate_exploded_vep_for_constraint_groupings(
@@ -816,55 +776,40 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
-    am_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/alpha_missense.esm.filters.ht"
-    )
-    new_loftee = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
-    )
-    am_keyed = am_ht[ht.locus, ht.alleles, ht.transcript]
-    new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
-    ann_expr = {
-        "am_0_999": hl.or_else(am_keyed.alpha_missense.am_0_999, False),
-        **{
-            f"am_per_{p}": hl.or_else(am_keyed.alpha_missense[f"am_per_{p}"], False)
-            for p in [90, 95, 98, 99]
-        },
-        **{
-            f"am_tx_per_{p}": hl.or_else(
-                am_keyed.alpha_missense[f"am_tx_per_{p}"], False
-            )
-            for p in [90, 95, 98, 99]
-        },
-        **{
-            f"esm_per_{p}": hl.or_else(am_keyed.esm[f"esm_per_{p}"], False)
-            for p in [90, 95, 98, 99]
-        },
-        **{
-            f"esm_tx_per_{p}": hl.or_else(am_keyed.esm[f"esm_tx_per_{p}"], False)
-            for p in [90, 95, 98, 99]
-        },
-        **{
-            f"new_loftee_{int(p*100)}": hl.or_else(
-                new_loftee_keyed[f"misannot_Pposterior_{p}"], False
-            )
-            for p in [0.2, 0.5, 0.8]
-        },
-    }
-    ht = ht.annotate(**ann_expr)
-    ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
 
+    ht = ht.annotate_globals(
+        apply_models_globals=ht.apply_models_globals.annotate(
+            plateau_models=plateau_models,
+            coverage_model=coverage_model,
+            log10_coverage=log10_coverage,
+            groupings=groupings,
+        )
+    )
+
+    return ht.drop(*calibrate_mu_fields).repartition(2000)
+
+
+def aggregate_per_variant_expected_ht(
+    ht,
+    include_mu_annotations_in_grouping: bool = False,
+):
+    """
+    Aggregate the per-variant expected Table.
+
+    The input `ht` should be the Table returned by `create_per_variant_expected_ht`.
+    The Table is exploded by the VEP annotation and aggregated by "genomic_region",
+    "context", "ref", "alt", "methylation_level", groupings returned by
+    `annotate_exploded_vep_for_constraint_groupings` and fields in
+    `additional_grouping` to get the observed and expected counts.
+
+    :param ht: Table returned by `create_per_variant_expected_ht`.
+    :param include_mu_annotations_in_grouping: Whether to include the mutation rate
+        key annotations in the grouping. Default is False.
+    :return: Table with the observed and expected counts.
+    """
     groupings = [
         *(MU_GROUPING if include_mu_annotations_in_grouping else []),
-        "annotation",
-        "modifier",
-        "gene",
-        "gene_id",
-        "transcript",
-        "canonical",
-        "mane_select",
-        # *additional_grouping,
-        *list(ann_expr.keys()),
+        ht.apply_models_globals.groupings,
     ]
     ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
 

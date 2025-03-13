@@ -533,6 +533,8 @@ def main(args):
                 res.model_plateau.he(),
                 coverage_model=None if skip_coverage_model else res.model_coverage.he(),
                 log10_coverage=log10_coverage,
+                custom_vep_annotation=custom_vep_annotation,
+                use_mane_select=True,
             )
             ht.write(res.per_variant_apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -554,9 +556,7 @@ def main(args):
             ht = aggregate_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
-                custom_vep_annotation=custom_vep_annotation,
                 additional_grouping=("am_per_98", "am_over_0_999", "am_per_99"),
-                use_mane_select=True,
             )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
