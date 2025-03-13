@@ -215,7 +215,7 @@ def get_methylation_ht(build: str) -> TableResource:
             methylation_chrx_par, methylation_chrx_nonpar, methylation_chry_nonpar
         )
         tmp_path = get_checkpoint_path(f"methylation_{build}").path
-        methylation_ht.checkpoint(tmp_path, overwrite=True)  # _read_if_exists=True)
+        methylation_ht.checkpoint(tmp_path, _read_if_exists=True)
         return TableResource(path=tmp_path)
     else:
         raise ValueError("Build must be one of 'GRCh37' or 'GRCh38'.")

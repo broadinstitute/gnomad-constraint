@@ -173,7 +173,7 @@ def run_prepare_context(
     #    "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
     # ).key_by("locus")
     multisfs_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/julia/constraint/multisfs.dedup.ht"
+        "gs://gnomad/v4.1/constraint/resources/multisfs.dedup.ht"
     )
     ht = ht.annotate(
         coverage=hl.struct(
