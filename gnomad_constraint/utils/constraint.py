@@ -651,9 +651,6 @@ def prepare_ht_for_constraint_calculations(
         **exomes_obs_pos_globals,
     )
 
-    # TODO: Remove this after we have all methylation.
-    ht = ht.filter(ht.locus.in_autosome())
-
     print_global_struct(ht)
 
     return ht
@@ -803,10 +800,11 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group = True
         include_mane_select_group = use_mane_select
 
+    ht = ht.annotate(**ht.calibrate_mu)
     ht = ht.filter(hl.is_defined(ht.possible_variants))
     ht = ht.select(
         "genomic_region",
-        *MU_GROUPING,
+        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
         # *additional_grouping,
         *AGGREGATE_SUM_FIELDS,
         "vep",
@@ -818,7 +816,6 @@ def aggregate_per_variant_expected_ht(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
-    ht = annotate_with_mu(ht, mutation_ht)
     am_ht = hl.read_table(
         "gs://gnomad/v4.1/constraint/resources/alpha_missense.esm.filters.ht"
     )
