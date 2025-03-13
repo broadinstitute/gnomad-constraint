@@ -614,7 +614,7 @@ def main(args):
 
             # Compute constraint metrics.
             compute_constraint_metrics(
-                ht=res.apply_ht.ht(),
+                ht=res.constraint_group_ht.ht(),
                 gencode_ht=constraint_res.get_gencode_ht(version),
                 expected_values={
                     "Null": args.expectation_null,
