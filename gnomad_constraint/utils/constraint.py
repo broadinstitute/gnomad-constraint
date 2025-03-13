@@ -807,7 +807,7 @@ def aggregate_per_variant_expected_ht(
     ht = ht.select(
         "genomic_region",
         *MU_GROUPING,
-        *additional_grouping,
+        # *additional_grouping,
         *AGGREGATE_SUM_FIELDS,
         "vep",
     )
@@ -819,6 +819,42 @@ def aggregate_per_variant_expected_ht(
         include_mane_select_group=include_mane_select_group,
     )
     ht = annotate_with_mu(ht, mutation_ht)
+    am_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/alpha_missense.esm.filters.ht"
+    )
+    new_loftee = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
+    )
+    am_keyed = am_ht[ht.locus, ht.alleles, ht.transcript]
+    new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
+    ann_expr = {
+        "am_0_999": hl.or_else(am_keyed.alpha_missense.am_0_999, False),
+        **{
+            f"am_per_{p}": hl.or_else(am_keyed.alpha_missense[f"am_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"am_tx_per_{p}": hl.or_else(
+                am_keyed.alpha_missense[f"am_tx_per_{p}"], False
+            )
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"esm_per_{p}": hl.or_else(am_keyed.esm[f"esm_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"esm_tx_per_{p}": hl.or_else(am_keyed.esm[f"esm_tx_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"new_loftee_{int(p*100)}": hl.or_else(
+                new_loftee_keyed[f"misannot_Pposterior_{p}"], False
+            )
+            for p in [0.2, 0.5, 0.8]
+        },
+    }
+    ht = ht.annotate(**ann_expr)
     ht = ht.checkpoint(new_temp_file("annotate_exploded_vep", "ht"))
 
     groupings = [
@@ -830,7 +866,8 @@ def aggregate_per_variant_expected_ht(
         "transcript",
         "canonical",
         "mane_select",
-        *additional_grouping,
+        # *additional_grouping,
+        *list(ann_expr.keys()),
     ]
     ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
 
