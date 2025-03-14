@@ -776,13 +776,51 @@ def create_per_variant_expected_ht(
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
+    ht = ht.checkpoint(new_temp_file(prefix="constraint", extension="ht"))
+
+    am_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/alpha_missense.esm.filters.ht"
+    )
+    new_loftee = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
+    )
+    am_keyed = am_ht[ht.locus, ht.alleles, ht.transcript]
+    new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
+    ann_expr = {
+        "am_0_999": hl.or_else(am_keyed.alpha_missense.am_0_999, False),
+        **{
+            f"am_per_{p}": hl.or_else(am_keyed.alpha_missense[f"am_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"am_tx_per_{p}": hl.or_else(
+                am_keyed.alpha_missense[f"am_tx_per_{p}"], False
+            )
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"esm_per_{p}": hl.or_else(am_keyed.esm[f"esm_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"esm_tx_per_{p}": hl.or_else(am_keyed.esm[f"esm_tx_per_{p}"], False)
+            for p in [90, 95, 98, 99]
+        },
+        **{
+            f"new_loftee_{int(p * 100)}": hl.or_else(
+                new_loftee_keyed[f"misannot_Pposterior_{p}"], False
+            )
+            for p in [0.2, 0.5, 0.8]
+        },
+    }
+    ht = ht.annotate(**ann_expr)
 
     ht = ht.annotate_globals(
         apply_models_globals=ht.apply_models_globals.annotate(
             plateau_models=plateau_models,
             coverage_model=coverage_model,
             log10_coverage=log10_coverage,
-            groupings=groupings,
+            groupings=groupings + tuple(ann_expr.keys()),
         )
     )
 

@@ -556,7 +556,6 @@ def main(args):
             ht = aggregate_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
-                additional_grouping=("am_per_98", "am_over_0_999", "am_per_99"),
             )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
