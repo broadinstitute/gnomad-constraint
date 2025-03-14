@@ -1342,7 +1342,7 @@ def compute_constraint_metrics(
 
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
-    meta = ht.constraint_group_meta.collect()
+    meta = hl.eval(ht.constraint_group_meta)
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, m: x.annotate(
