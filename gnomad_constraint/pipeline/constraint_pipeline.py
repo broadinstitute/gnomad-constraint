@@ -177,10 +177,9 @@ def run_prepare_context(
 
     sfs_bin_expr = sfs_bin_expr.or_missing()
 
-    # TODO: Make these resources.
-    # adj_r_ht = hl.read_table(
-    #    "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
-    # ).key_by("locus")
+    adj_r_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
+    )
 
     ht = ht.annotate(
         coverage=hl.struct(
@@ -192,7 +191,7 @@ def run_prepare_context(
             genomes=ht.AN.genomes[0],
         ),
         genomic_region=genomic_region_expr,
-        # adj_r=adj_r_ht[ht.locus].adj_r,
+        adj_r=adj_r_ht[ht.locus].adj_r[ht.context],
         sfs_bin=sfs_bin_expr,
     )
 
