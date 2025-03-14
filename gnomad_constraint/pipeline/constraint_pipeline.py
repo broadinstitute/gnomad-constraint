@@ -168,13 +168,19 @@ def run_prepare_context(
         .or_missing()
     )
 
-    # TODO: Make these resources.
-    # adj_r_ht = hl.read_table(
-    #    "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
-    # ).key_by("locus")
-    multisfs_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/multisfs.dedup.ht"
+    # Add annotation for SFS bin.
+    sfs_bin_cutoffs = [0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5]
+    af_expr = ht.freq.exomes[0].AF
+    sfs_bin_expr = hl.case().when(hl.is_missing(af_expr), 0)
+    for i, af in enumerate(sfs_bin_cutoffs):
+        sfs_bin_expr = sfs_bin_expr.when(af_expr <= af, i)
+
+    sfs_bin_expr = sfs_bin_expr.or_missing()
+
+    adj_r_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
     )
+
     ht = ht.annotate(
         coverage=hl.struct(
             exomes=ht.coverage.exomes.select("mean", "median_approx"),
@@ -185,8 +191,8 @@ def run_prepare_context(
             genomes=ht.AN.genomes[0],
         ),
         genomic_region=genomic_region_expr,
-        # adj_r=adj_r_ht[ht.locus].adj_r,
-        sfs_bin=multisfs_ht[ht.key].Freq_bin_9,
+        adj_r=adj_r_ht[ht.locus].adj_r[ht.context],
+        sfs_bin=sfs_bin_expr,
     )
 
     return ht
