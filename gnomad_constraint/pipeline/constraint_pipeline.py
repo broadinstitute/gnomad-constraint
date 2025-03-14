@@ -168,13 +168,20 @@ def run_prepare_context(
         .or_missing()
     )
 
+    # Add annotation for SFS bin.
+    sfs_bin_cutoffs = [0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5]
+    af_expr = ht.freq.exomes[0].AF
+    sfs_bin_expr = hl.case().when(hl.is_missing(af_expr), 0)
+    for i, af in enumerate(sfs_bin_cutoffs):
+        sfs_bin_expr = sfs_bin_expr.when(af_expr <= af, i)
+
+    sfs_bin_expr = sfs_bin_expr.or_missing()
+
     # TODO: Make these resources.
     # adj_r_ht = hl.read_table(
     #    "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
     # ).key_by("locus")
-    multisfs_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/multisfs.dedup.ht"
-    )
+
     ht = ht.annotate(
         coverage=hl.struct(
             exomes=ht.coverage.exomes.select("mean", "median_approx"),
@@ -186,7 +193,7 @@ def run_prepare_context(
         ),
         genomic_region=genomic_region_expr,
         # adj_r=adj_r_ht[ht.locus].adj_r,
-        sfs_bin=multisfs_ht[ht.key].Freq_bin_9,
+        sfs_bin=sfs_bin_expr,
     )
 
     return ht
@@ -593,37 +600,6 @@ def main(args):
                     ]
                     + ["sfs_bin"]
                 ),
-                additional_groupings={
-                    "am": {
-                        "am_over_0_999": ht.am_0_999,
-                        **{f"am_per_{p}": ht[f"am_per_{p}"] for p in [90, 95, 98, 99]},
-                        **{
-                            f"am_tx_per_{p}": ht[f"am_tx_per_{p}"]
-                            for p in [90, 95, 98, 99]
-                        },
-                    },
-                    "esm": {
-                        **{
-                            f"esm_per_{p}": ht[f"esm_per_{p}"] for p in [90, 95, 98, 99]
-                        },
-                        **{
-                            f"esm_tx_per_{p}": ht[f"esm_tx_per_{p}"]
-                            for p in [90, 95, 98, 99]
-                        },
-                    },
-                    "new_loftee": {
-                        f"new_loftee_{p}": ht[f"new_loftee_{p}"] for p in [20, 50, 80]
-                    },
-                },
-                additional_grouping_combinations=[
-                    ["am"],
-                    ["esm"],
-                    ["new_loftee"],
-                    ["lof", "am"],
-                    ["lof", "esm"],
-                    ["new_loftee", "am"],
-                    ["new_loftee", "esm"],
-                ],
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
