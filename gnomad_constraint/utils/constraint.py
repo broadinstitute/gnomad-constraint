@@ -866,10 +866,12 @@ def create_per_variant_expected_ht(
         )
     )
 
-    tmp_path = new_temp_file(prefix="constraint", extension="ht")
-    ht.drop(*calibrate_mu_fields).write(tmp_path)
+    # tmp_path = new_temp_file(prefix="constraint", extension="ht")
+    # ht.drop(*calibrate_mu_fields).write(tmp_path)
 
-    return hl.read_table(tmp_path, _n_partitions=2000)
+    # return hl.read_table(tmp_path, _n_partitions=2000)
+
+    return ht.drop(*calibrate_mu_fields)
 
 
 def aggregate_per_variant_expected_ht(
@@ -1362,31 +1364,31 @@ def compute_constraint_metrics(
     ht = ht.checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw", "ht"))
 
     # Add z-score 'sd' annotation to globals.
-    ht = ht.annotate_globals(
-        sd_raw_z=ht.aggregate(
-            hl.agg.filter(
-                ~ht.no_variants,
-                [
-                    calculate_raw_z_score_sd(
-                        ht.constraint_groups[i].oe_info[0].z_raw,
-                        ht.constraint_groups[i].oe_info[0].flags,
-                        mirror_neg_raw_z=m.get("csq_set") != "syn",
-                    )
-                    for i, m in enumerate(meta)
-                ],
-            )
-        )
-    )
+    # ht = ht.annotate_globals(
+    #    sd_raw_z=ht.aggregate(
+    #        hl.agg.filter(
+    #            ~ht.no_variants,
+    #            [
+    #                calculate_raw_z_score_sd(
+    #                    ht.constraint_groups[i].oe_info[0].z_raw,
+    #                    ht.constraint_groups[i].oe_info[0].flags,
+    #                    mirror_neg_raw_z=m.get("csq_set") != "syn",
+    #                )
+    #                for i, m in enumerate(meta)
+    #            ],
+    #        )
+    #    )
+    # )
 
     # Compute z-score from raw z-score and standard deviations.
     # TODO: Need to fix z_score
-    ht = ht.annotate(
-        constraint_groups=hl.map(
-            lambda x, sd_raw_z: x.annotate(z_score=x.oe_info[0].z_raw / sd_raw_z),
-            ht.constraint_groups,
-            ht.sd_raw_z,
-        )
-    )
+    # ht = ht.annotate(
+    #    constraint_groups=hl.map(
+    #        lambda x, sd_raw_z: x.annotate(z_score=x.oe_info[0].z_raw / sd_raw_z),
+    #        ht.constraint_groups,
+    #        ht.sd_raw_z,
+    #    )
+    # )
 
     # Add a rank and decile of the upper confidence interval for MANE Select or
     # canonical ensembl transcripts.
