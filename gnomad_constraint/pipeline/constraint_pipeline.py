@@ -541,6 +541,8 @@ def main(args):
                 res.model_plateau.he(),
                 coverage_model=None if skip_coverage_model else res.model_coverage.he(),
                 log10_coverage=log10_coverage,
+                custom_vep_annotation=custom_vep_annotation,
+                use_mane_select=True,
             )
             ht.write(res.per_variant_apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -562,14 +564,6 @@ def main(args):
             ht = aggregate_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
-                custom_vep_annotation=custom_vep_annotation,
-                additional_grouping=(
-                    "am_per_98",
-                    "am_over_0_999",
-                    "am_per_99",
-                    "sfs_bin",
-                ),
-                use_mane_select=True,
             )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -600,6 +594,37 @@ def main(args):
                     ]
                     + ["sfs_bin"]
                 ),
+                additional_groupings={
+                    "am": {
+                        "am_over_0_999": ht.am_0_999,
+                        **{f"am_per_{p}": ht[f"am_per_{p}"] for p in [90, 95, 98, 99]},
+                        **{
+                            f"am_tx_per_{p}": ht[f"am_tx_per_{p}"]
+                            for p in [90, 95, 98, 99]
+                        },
+                    },
+                    "esm": {
+                        **{
+                            f"esm_per_{p}": ht[f"esm_per_{p}"] for p in [90, 95, 98, 99]
+                        },
+                        **{
+                            f"esm_tx_per_{p}": ht[f"esm_tx_per_{p}"]
+                            for p in [90, 95, 98, 99]
+                        },
+                    },
+                    "new_loftee": {
+                        f"new_loftee_{p}": ht[f"new_loftee_{p}"] for p in [20, 50, 80]
+                    },
+                },
+                additional_grouping_combinations=[
+                    ["am"],
+                    ["esm"],
+                    ["new_loftee"],
+                    ["lof", "am"],
+                    ["lof", "esm"],
+                    ["new_loftee", "am"],
+                    ["new_loftee", "esm"],
+                ],
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
