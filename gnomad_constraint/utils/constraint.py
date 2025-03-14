@@ -678,7 +678,11 @@ def create_training_set(
     # the rows that are not needed, then checkpointing the Table. This is added to
     # help avoid memory and shuffle issues.
     ht = ht.transmute(**ht.calibrate_mu)
-    ht = ht.filter(hl.is_defined(ht.build_model))
+    # TODO: From Konrad's script parser.add_argument('--skip_af_filter_upfront',
+    #  help='Skip AF filter up front (to be applied later to ensure that it is not
+    #  affecting population-specific constraint): not generally recommended',
+    #  action='store_true')
+    ht = ht.filter(hl.is_defined(ht.build_model) & (ht.possible_variants > 0))
     select_fields = {*MU_GROUPING, *MUTATION_TYPE_FIELDS, *CALIBRATION_GROUPING}
     ht = ht.select(
         *select_fields,
@@ -752,9 +756,11 @@ def create_per_variant_expected_ht(
     ht = ht.annotate(**ht.calibrate_mu)
 
     if filter_to_apply_variants:
-        ht = ht.filter(
-            hl.is_defined(ht.apply_model) & hl.is_defined(ht.possible_variants)
-        )
+        # TODO: From Konrad's script parser.add_argument('--skip_af_filter_upfront',
+        #  help='Skip AF filter up front (to be applied later to ensure that it is not
+        #  affecting population-specific constraint): not generally recommended',
+        #  action='store_true')
+        ht = ht.filter(hl.is_defined(ht.apply_model) & (ht.possible_variants > 0))
 
     ht = annotate_with_mu(ht, mutation_ht)
 
