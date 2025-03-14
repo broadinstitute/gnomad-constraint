@@ -856,7 +856,7 @@ def create_per_variant_expected_ht(
             plateau_models=plateau_models,
             coverage_model=coverage_model,
             log10_coverage=log10_coverage,
-            groupings=groupings + tuple(ann_expr.keys()),
+            groupings=groupings + tuple(ann_expr.keys()) + ("sfs_bin",),
         )
     )
 

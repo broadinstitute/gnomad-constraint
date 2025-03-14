@@ -298,6 +298,7 @@ def get_constraint_data(
     sub_dir: Optional[str] = None,
     custom_vep_annotation: Optional[str] = None,
     extension: str = "ht",
+    temp_post_fix: Optional[str] = None,
 ) -> Union[TableResource, str, ExpressionResource]:
     """
     Return path, TableResource, or ExpressionResource of requested constraint data.
@@ -323,13 +324,17 @@ def get_constraint_data(
         sub_dir = f"{sub_dir}/" if sub_dir else ""
         sub_dir = f"{sub_dir}{custom_vep_annotation}"
 
+    temp_post_fix = temp_post_fix or ""
+    if temp_post_fix:
+        temp_post_fix = f".{temp_post_fix}"
+
     root_dir = get_constraint_root(
         version=version,
         test=test,
         post_fix=post_fix,
         sub_dir=sub_dir,
     )
-    path = f"{root_dir}/gnomad.v{version}.{name}.{extension}"
+    path = f"{root_dir}/gnomad.v{version}.{name}{temp_post_fix}.{extension}"
 
     if extension == "ht":
         return TableResource(path)
@@ -376,7 +381,12 @@ def get_training_dataset(**kwargs) -> TableResource:
 
     :return: TableResource of training dataset.
     """
-    return get_constraint_data("constraint_training", sub_dir="training_data", **kwargs)
+    return get_constraint_data(
+        "constraint_training",
+        sub_dir="training_data",
+        temp_post_fix="sfs_bin",
+        **kwargs,
+    )
 
 
 def get_training_tsv_path(**kwargs) -> str:
@@ -386,7 +396,11 @@ def get_training_tsv_path(**kwargs) -> str:
     :return: TSV path of training dataset.
     """
     return get_constraint_data(
-        "constraint_training", sub_dir="training_data", extension="tsv.bgz", **kwargs
+        "constraint_training",
+        sub_dir="training_data",
+        extension="tsv.bgz",
+        temp_post_fix="sfs_bin",
+        **kwargs,
     )
 
 
@@ -398,7 +412,9 @@ def get_models(model_type: str, **kwargs) -> ExpressionResource:
     :return: Path to the specified model.
     """
     check_param_scope(model_type=model_type)
-    return get_constraint_data(model_type, sub_dir="models", extension="he", **kwargs)
+    return get_constraint_data(
+        model_type, sub_dir="models", extension="he", temp_post_fix="sfs_bin", **kwargs
+    )
 
 
 def get_per_variant_expected_dataset(
@@ -415,6 +431,7 @@ def get_per_variant_expected_dataset(
         "per_variant_expected",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
+        temp_post_fix="sfs_bin",
         **kwargs,
     )
 
@@ -433,6 +450,7 @@ def get_aggregated_per_variant_expected(
         "per_variant_expected.aggregated",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
+        temp_post_fix="sfs_bin",
         **kwargs,
     )
 
@@ -449,6 +467,7 @@ def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResour
         "constraint_group",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
+        temp_post_fix="sfs_bin",
         **kwargs,
     )
 
@@ -467,6 +486,7 @@ def get_constraint_metrics_dataset(
         "constraint_metrics",
         sub_dir="metrics",
         custom_vep_annotation=custom_vep_annotation,
+        temp_post_fix="sfs_bin",
         **kwargs,
     )
 
@@ -478,7 +498,11 @@ def get_constraint_tsv_path(**kwargs) -> str:
     :return: TSV path of constraint metrics.
     """
     return get_constraint_data(
-        "constraint_metrics", sub_dir="metrics/tsv", extension="tsv.bgz", **kwargs
+        "constraint_metrics",
+        sub_dir="metrics/tsv",
+        extension="tsv.bgz",
+        temp_post_fix="sfs_bin",
+        **kwargs,
     )
 
 
