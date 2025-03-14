@@ -371,7 +371,10 @@ def get_preprocessed_ht(**kwargs) -> TableResource:
     :return: TableResource of processed context Table.
     """
     return get_constraint_data(
-        "context.preprocessed", sub_dir="preprocessed_data", **kwargs
+        "context.preprocessed",
+        sub_dir="preprocessed_data",
+        temp_post_fix="sfs_bin",
+        **kwargs,
     )
 
 

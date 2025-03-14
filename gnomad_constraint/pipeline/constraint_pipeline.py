@@ -822,7 +822,7 @@ if __name__ == "__main__":
             "training and applying models."
         ),
         type=float,
-        default=0.001,
+        default=0.5,
     )
     preprocess_args.add_argument(
         "--genetic-ancestry-groups",
