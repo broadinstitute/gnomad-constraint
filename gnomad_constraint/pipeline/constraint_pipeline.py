@@ -553,10 +553,7 @@ def main(args):
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = aggregate_per_variant_expected_ht(
-                ht,
-                res.mutation_ht.ht().select("mu_snp"),
-            )
+            ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
 
