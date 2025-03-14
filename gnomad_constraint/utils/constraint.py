@@ -871,7 +871,7 @@ def create_per_variant_expected_ht(
 
     # return hl.read_table(tmp_path, _n_partitions=2000)
 
-    return ht.drop(*calibrate_mu_fields)
+    return ht
 
 
 def aggregate_per_variant_expected_ht(
@@ -892,7 +892,6 @@ def aggregate_per_variant_expected_ht(
         key annotations in the grouping. Default is False.
     :return: Table with the observed and expected counts.
     """
-    ht = ht.transmute(**ht.calibrate_mu)
     groupings = [
         *(MU_GROUPING if include_mu_annotations_in_grouping else []),
         *[
