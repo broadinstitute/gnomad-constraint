@@ -559,7 +559,7 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
-            ht = res.per_variant_apply_ht.ht()
+            ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 2000})
             ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -579,6 +579,7 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
             ht = res.apply_ht.ht()
+            ht = ht.transmute(**ht.grouping)
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(
@@ -592,24 +593,28 @@ def main(args):
                 ),
                 additional_groupings={
                     "am": {
-                        "am_over_0_999": ht.am_0_999,
-                        **{f"am_per_{p}": ht[f"am_per_{p}"] for p in [90, 95, 98, 99]},
+                        #    "am_over_0_999": ht.am_0_999,
+                        **{
+                            f"am_per_{p}": ht[f"am_per_{p}"] for p in [95, 99]
+                        },  # [90, 95, 98, 99]},
                         **{
                             f"am_tx_per_{p}": ht[f"am_tx_per_{p}"]
-                            for p in [90, 95, 98, 99]
+                            for p in [95, 99]  # [90, 95, 98, 99]
                         },
                     },
                     "esm": {
                         **{
-                            f"esm_per_{p}": ht[f"esm_per_{p}"] for p in [90, 95, 98, 99]
+                            f"esm_per_{p}": ht[f"esm_per_{p}"]
+                            for p in [95, 99]  # [90, 95, 98, 99]
                         },
                         **{
                             f"esm_tx_per_{p}": ht[f"esm_tx_per_{p}"]
-                            for p in [90, 95, 98, 99]
+                            for p in [95, 99]  # [90, 95, 98, 99]
                         },
                     },
                     "new_loftee": {
-                        f"new_loftee_{p}": ht[f"new_loftee_{p}"] for p in [20, 50, 80]
+                        f"new_loftee_{p}": ht[f"new_loftee_{p}"]
+                        for p in ["95", "99", "99_5"]
                     },
                 },
                 additional_grouping_combinations=[

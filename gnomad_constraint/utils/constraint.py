@@ -786,7 +786,7 @@ def create_per_variant_expected_ht(
         expected_variants_by_sfs_bin=[
             apply_models(
                 ht.mu_snp,
-                plateau_models[ht.apply_model.model_group.annotate(sfs_bin=b)],
+                plateau_models.get(ht.apply_model.model_group.annotate(sfs_bin=b)),
                 ht.possible_variants,
                 coverage_model=coverage_model,
                 coverage_expr=ht.exomes_coverage,
@@ -892,15 +892,16 @@ def aggregate_per_variant_expected_ht(
         key annotations in the grouping. Default is False.
     :return: Table with the observed and expected counts.
     """
-    groupings = [
-        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
-        *[
-            g
-            for g in hl.eval(ht.apply_models_globals.groupings)
-            if g not in MU_GROUPING
-        ],
-    ]
-    ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
+    # groupings = [
+    #    *(MU_GROUPING if include_mu_annotations_in_grouping else []),
+    #    *[
+    #        g
+    #        for g in hl.eval(ht.apply_models_globals.groupings)
+    #        if g not in MU_GROUPING
+    #    ],
+    # ]
+    # ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
+    ht = ht.group_by("grouping").aggregate(**aggregate_expected_variants_expr(ht))
 
     return ht.naive_coalesce(1000)
 
