@@ -1217,7 +1217,7 @@ def aggregate_by_constraint_groups(
     # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
     ht = ht.filter(
         ~ht.no_variants
-        & hl.any(
+        | hl.any(
             ht.constraint_groups.map(
                 lambda x: (hl.or_else(x.expected_variants[0], 0) > 0)
             )
