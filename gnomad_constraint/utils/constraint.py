@@ -813,10 +813,10 @@ def create_per_variant_expected_ht(
             for p in [90, 95, 98, 99]
         },
         **{
-            f"new_loftee_{int(p * 100)}": hl.or_else(
-                new_loftee_keyed[f"misannot_Pposterior_{p}"], False
+            f"new_loftee_{n}": hl.or_else(
+                new_loftee_keyed.misannot_Pposterior < p, False
             )
-            for p in [0.2, 0.5, 0.8]
+            for n, p in [("95", 0.95), ("99", 0.99), ("99_5", 0.995)]
         },
     }
     ht = ht.annotate(**ann_expr)
@@ -857,14 +857,14 @@ def aggregate_per_variant_expected_ht(
     :return: Table with the observed and expected counts.
     """
     ht = ht.transmute(**ht.calibrate_mu)
-    groupings = [
-        *(MU_GROUPING if include_mu_annotations_in_grouping else []),
-        *[
-            g
-            for g in hl.eval(ht.apply_models_globals.groupings)
-            if g not in MU_GROUPING
-        ],
-    ]
+    groupings = ["new_loftee_95", "new_loftee_99", "new_loftee_99_5"]
+    # *(MU_GROUPING if include_mu_annotations_in_grouping else []),
+    # *[
+    #    g
+    #    for g in hl.eval(ht.apply_models_globals.groupings)
+    #    if g not in MU_GROUPING
+    #    ],
+    # ]
     ht = ht.group_by(*groupings).aggregate(
         **aggregate_expected_variants_expr(
             ht,

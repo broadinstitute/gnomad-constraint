@@ -607,15 +607,16 @@ def main(args):
                         },
                     },
                     "new_loftee": {
-                        f"new_loftee_{p}": ht[f"new_loftee_{p}"] for p in [20, 50, 80]
+                        f"new_loftee_{p}": ht[f"new_loftee_{p}"]
+                        for p in ["95", "99", "99_5"]
                     },
                 },
                 additional_grouping_combinations=[
-                    ["am"],
-                    ["esm"],
+                    # ["am"],
+                    # ["esm"],
                     ["new_loftee"],
-                    ["lof", "am"],
-                    ["lof", "esm"],
+                    # ["lof", "am"],
+                    # ["lof", "esm"],
                     ["new_loftee", "am"],
                     ["new_loftee", "esm"],
                 ],
