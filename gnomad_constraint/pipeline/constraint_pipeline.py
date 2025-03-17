@@ -579,13 +579,14 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
             ht = res.apply_ht.ht()
+            keys = list(ht.grouping.keys())
             ht = ht.transmute(**ht.grouping)
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(
                     [
                         i
-                        for i in list(ht.key)
+                        for i in list(keys)
                         if i
                         in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
                     ]
