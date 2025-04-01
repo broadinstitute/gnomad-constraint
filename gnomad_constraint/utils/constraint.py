@@ -381,11 +381,12 @@ def get_exomes_observed_and_possible(
     # set the observed and possible variant annotations to missing. Otherwise, set the
     # observed and possible variant annotations based on the frequency array.
     obs_pos_expr = hl.struct(
+        exomes_freq=exomes_freq_expr,
         **hl.or_missing(
             hl.is_defined(exomes_coverage_expr)
             & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
             single_variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
-        )
+        ),
     )
     obs_pos_globals = hl.struct(
         exomes_freq_meta=exomes_freq_meta,
@@ -792,10 +793,11 @@ def create_per_variant_expected_ht(
         )
     )
 
-    tmp_path = new_temp_file(prefix="constraint", extension="ht")
-    ht.drop(*calibrate_mu_fields).write(tmp_path)
+    # TODO: Check that this is needed
+    # tmp_path = new_temp_file(prefix="constraint", extension="ht")
+    # ht.drop(*calibrate_mu_fields).write(tmp_path)
 
-    return hl.read_table(tmp_path, _n_partitions=2000)
+    return ht.drop(*calibrate_mu_fields)  # hl.read_table(tmp_path, _n_partitions=2000)
 
 
 def aggregate_per_variant_expected_ht(
@@ -1164,7 +1166,7 @@ def aggregate_by_constraint_groups(
     # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
     ht = ht.filter(
         ~ht.no_variants
-        & hl.any(
+        | hl.any(
             ht.constraint_groups.map(
                 lambda x: (hl.or_else(x.expected_variants[0], 0) > 0)
             )
@@ -1240,6 +1242,7 @@ def compute_constraint_metrics(
     def _add_oe_ci_z(
         oe_info: hl.expr.StructExpression,
         m: Dict[str, str],
+        add_flags: bool = False,
     ) -> hl.expr.StructExpression:
         """
         Add oe, oe_ci, and z_raw to the oe_info struct.
@@ -1269,16 +1272,22 @@ def compute_constraint_metrics(
             oe=divide_null(obs, exp),
             oe_ci=oe_confidence_interval(obs, exp),
             z_raw=z_raw,
-            flags=add_filters_expr(filters=flags),
+            flags=(
+                add_filters_expr(filters=flags) if add_flags else hl.empty_set(hl.tstr)
+            ),
         )
 
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
     meta = hl.eval(ht.constraint_group_meta)
+    freq_meta_len = len(hl.eval(ht.exomes_freq_meta))
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, m: x.annotate(
-                oe_info=x.oe_info.map(lambda oe: _add_oe_ci_z(oe, m))
+                oe_info=[
+                    _add_oe_ci_z(x.oe_info[i], m, add_flags=i == 0)
+                    for i in range(freq_meta_len)
+                ]
             ),
             ht.constraint_groups,
             meta,

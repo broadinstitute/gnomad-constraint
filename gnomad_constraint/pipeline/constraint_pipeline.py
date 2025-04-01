@@ -168,6 +168,19 @@ def run_prepare_context(
         .or_missing()
     )
 
+    # Add annotation for SFS bin.
+    sfs_bin_cutoffs = [0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5]
+    af_expr = ht.freq.exomes[0].AF
+    sfs_bin_expr = hl.case().when(hl.is_missing(af_expr), 0)
+    for i, af in enumerate(sfs_bin_cutoffs):
+        sfs_bin_expr = sfs_bin_expr.when(af_expr <= af, i)
+
+    sfs_bin_expr = sfs_bin_expr.or_missing()
+
+    adj_r_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
+    )
+
     ht = ht.annotate(
         coverage=hl.struct(
             exomes=ht.coverage.exomes.select("mean", "median_approx"),
@@ -178,6 +191,8 @@ def run_prepare_context(
             genomes=ht.AN.genomes[0],
         ),
         genomic_region=genomic_region_expr,
+        adj_r=adj_r_ht[ht.locus].adj_r[ht.context],
+        sfs_bin=sfs_bin_expr,
     )
 
     return ht
@@ -189,7 +204,8 @@ def get_constraint_resources(
     overwrite: bool,
     test: bool,
     models: List[str] = ["plateau", "coverage"],
-    post_fix: Optional[str] = None,
+    directory_post_fix: Optional[str] = None,
+    path_post_fix: Optional[str] = None,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -200,7 +216,8 @@ def get_constraint_resources(
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
     :param models: List of models to use. Default is ["plateau", "coverage"].
-    :param post_fix: Optional post-fix to append to resource paths.
+    :param directory_post_fix: Post-fix to add to the directory path of the resources.
+    :param path_post_fix: Post-fix to add to the path of the resources.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -227,7 +244,7 @@ def get_constraint_resources(
     common_params = {
         "version": version,
         "test": test,
-        "post_fix": post_fix,
+        "directory_post_fix": directory_post_fix,
     }
 
     prepare_context = PipelineStepResourceCollection(
@@ -263,15 +280,22 @@ def get_constraint_resources(
     create_training_set = PipelineStepResourceCollection(
         "--create-training-set",
         output_resources={
-            f"train_ht": constraint_res.get_training_dataset(**common_params),
-            f"train_tsv": constraint_res.get_training_tsv_path(**common_params),
+            f"train_ht": constraint_res.get_training_dataset(
+                **common_params, path_post_fix=path_post_fix
+            ),
+            f"train_tsv": constraint_res.get_training_tsv_path(
+                **common_params, path_post_fix=path_post_fix
+            ),
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
     )
     build_models = PipelineStepResourceCollection(
         "--build-models",
         output_resources={
-            f"model_{m}": constraint_res.get_models(m, **common_params) for m in models
+            f"model_{m}": constraint_res.get_models(
+                m, **common_params, path_post_fix=path_post_fix
+            )
+            for m in models
         },
         pipeline_input_steps=[create_training_set],
     )
@@ -279,7 +303,7 @@ def get_constraint_resources(
         "--apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": constraint_res.get_per_variant_expected_dataset(
-                custom_vep_annotation, **common_params
+                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -288,7 +312,7 @@ def get_constraint_resources(
         "--aggregate-per-variant-expected",
         output_resources={
             f"apply_ht": constraint_res.get_aggregated_per_variant_expected(
-                custom_vep_annotation, **common_params
+                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[
@@ -301,7 +325,7 @@ def get_constraint_resources(
         "--aggregate-by-constraint-groups",
         output_resources={
             f"constraint_group_ht": constraint_res.get_constraint_group_ht(
-                custom_vep_annotation, **common_params
+                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[aggregate_per_variant_expected],
@@ -310,7 +334,7 @@ def get_constraint_resources(
         "--compute-constraint-metrics",
         output_resources={
             "constraint_metrics_ht": constraint_res.get_constraint_metrics_dataset(
-                custom_vep_annotation, **common_params
+                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[aggregate_by_constraint_groups],
@@ -319,7 +343,7 @@ def get_constraint_resources(
         "--export-tsv",
         output_resources={
             "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
-                **common_params
+                **common_params, path_post_fix=path_post_fix
             ),
             "downsampling_constraint_metrics_tsv": (
                 constraint_res.get_downsampling_constraint_tsv_path(**common_params)
@@ -357,7 +381,8 @@ def main(args):
     version = args.version
     test_gene_list = args.test_gene_list
     test = args.test or test_gene_list
-    post_fix = args.post_fix
+    directory_post_fix = args.directory_post_fix
+    path_post_fix = args.path_post_fix
     overwrite = args.overwrite
     custom_vep_annotation = args.custom_vep_annotation
     skip_coverage_model = args.skip_coverage_model
@@ -384,7 +409,8 @@ def main(args):
         overwrite,
         test,
         models,
-        post_fix,
+        directory_post_fix,
+        path_post_fix,
     )
 
     try:
@@ -585,12 +611,10 @@ def main(args):
             res = resources.compute_constraint_metrics
             res.check_resource_existence()
 
-            # Use new shuffle method to prevent shuffle errors.
-            hl._set_flags(use_new_shuffle="1")
-
             # Compute constraint metrics.
+            ht = res.constraint_group_ht.ht(read_args={"_n_partitions": 500})
             compute_constraint_metrics(
-                ht=res.constraint_group_ht.ht(),
+                ht=ht,
                 gencode_ht=constraint_res.get_gencode_ht(version),
                 expected_values={
                     "Null": args.expectation_null,
@@ -605,7 +629,6 @@ def main(args):
                 # ).select_globals(
                 #   "version", "apply_model_params", "constraint_meta", "sd_raw_z"
             ).write(res.constraint_metrics_ht.path, overwrite=overwrite)
-            hl._set_flags(use_new_shuffle=None)
             logger.info("Done with computing constraint metrics.")
 
         if args.export_tsv:
@@ -657,8 +680,14 @@ if __name__ == "__main__":
         default=constraint_res.CURRENT_VERSION,
     )
     parser.add_argument(
-        "--post-fix",
-        help="Post-fix to append to the output file names.",
+        "--directory-post-fix",
+        help="Post-fix to append to the output directory path.",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--path-post-fix",
+        help="Post-fix to append to the output file path.",
         type=str,
         default=None,
     )

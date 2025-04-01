@@ -294,10 +294,12 @@ def get_constraint_data(
     name: str,
     version: str = CURRENT_VERSION,
     test: bool = False,
-    post_fix: Optional[str] = None,
+    directory_post_fix: Optional[str] = None,
     sub_dir: Optional[str] = None,
     custom_vep_annotation: Optional[str] = None,
     extension: str = "ht",
+    path_post_fix: Optional[str] = None,
+    temp: bool = False,
 ) -> Union[TableResource, str, ExpressionResource]:
     """
     Return path, TableResource, or ExpressionResource of requested constraint data.
@@ -307,12 +309,13 @@ def get_constraint_data(
         `CURRENT_VERSION`.
     :param test: Whether the Table is for testing purpose and only contains a subset of
         the data. Default is False.
-    :param post_fix: Postfix to append to the root path. Default is None.
+    :param directory_post_fix: Postfix to append to the root path. Default is None.
     :param sub_dir: Subdirectory to append to the path. Default is None.
     :param custom_vep_annotation: The VEP annotation used to customize the constraint
         model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is
         None.
     :param extension: File extension. Default is "ht".
+    :param path_post_fix: Postfix to append to the file name. Default is None.
     :return: Path, TableResource, or ExpressionResource of the constraint data.
     """
     check_param_scope(
@@ -323,13 +326,18 @@ def get_constraint_data(
         sub_dir = f"{sub_dir}/" if sub_dir else ""
         sub_dir = f"{sub_dir}{custom_vep_annotation}"
 
+    path_post_fix = path_post_fix or ""
+    if path_post_fix:
+        path_post_fix = f".{path_post_fix}"
+
     root_dir = get_constraint_root(
         version=version,
         test=test,
-        post_fix=post_fix,
+        post_fix=directory_post_fix,
         sub_dir=sub_dir,
+        temp=temp,
     )
-    path = f"{root_dir}/gnomad.v{version}.{name}.{extension}"
+    path = f"{root_dir}/gnomad.v{version}.{name}{path_post_fix}.{extension}"
 
     if extension == "ht":
         return TableResource(path)
@@ -354,9 +362,7 @@ def get_annotated_context_ht(**kwargs) -> TableResource:
 
     :return: TableResource of annotated context Table.
     """
-    return get_constraint_data(
-        "annotated_context", sub_dir="preprocessed_data", **kwargs
-    )
+    return get_constraint_data("annotated_context", temp=True, **kwargs)
 
 
 def get_preprocessed_ht(**kwargs) -> TableResource:
