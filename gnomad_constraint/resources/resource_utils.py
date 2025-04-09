@@ -453,7 +453,7 @@ def get_aggregated_per_variant_expected(
         "per_variant_expected.aggregated",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="sfs_bin",
+        temp_post_fix="sfs_bin.add_new_loftee",
         **kwargs,
     )
 
@@ -470,7 +470,7 @@ def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResour
         "constraint_group",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="sfs_bin",
+        temp_post_fix="sfs_bin.add_new_loftee",
         **kwargs,
     )
 
@@ -489,7 +489,7 @@ def get_constraint_metrics_dataset(
         "constraint_metrics",
         sub_dir="metrics",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="sfs_bin",
+        temp_post_fix="sfs_bin.add_new_loftee",
         **kwargs,
     )
 

@@ -834,10 +834,10 @@ def create_per_variant_expected_ht(
             for p in [90, 95, 98, 99]
         },
         **{
-            f"new_loftee_{int(p * 100)}": hl.or_else(
-                new_loftee_keyed[f"misannot_Pposterior_{p}"], False
+            f"new_loftee_{n}": hl.or_else(
+                new_loftee_keyed.misannot_Pposterior < p, False
             )
-            for p in [0.2, 0.5, 0.8]
+            for n, p in [("99_5", 0.995)]
         },
     }
     ht = ht.annotate(**ann_expr)
@@ -892,16 +892,36 @@ def aggregate_per_variant_expected_ht(
         key annotations in the grouping. Default is False.
     :return: Table with the observed and expected counts.
     """
-    # groupings = [
-    #    *(MU_GROUPING if include_mu_annotations_in_grouping else []),
-    #    *[
-    #        g
-    #        for g in hl.eval(ht.apply_models_globals.groupings)
-    #        if g not in MU_GROUPING
+    # ht = ht.transmute(**ht.calibrate_mu)
+    # *(MU_GROUPING if include_mu_annotations_in_grouping else []),
+    # *[
+    #    g
+    #    for g in hl.eval(ht.apply_models_globals.groupings)
+    #    if g not in MU_GROUPING
     #    ],
     # ]
-    # ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
-    ht = ht.group_by("grouping").aggregate(**aggregate_expected_variants_expr(ht))
+    ht = ht.annotate(
+        grouping=ht.grouping.select(
+            "annotation",
+            "modifier",
+            "gene",
+            "gene_id",
+            "transcript",
+            "canonical",
+            "mane_select",
+            "new_loftee_99_5",
+            "sfs_bin",
+        )
+    )
+    ht = ht.group_by("grouping").aggregate(
+        **aggregate_expected_variants_expr(
+            ht,
+            additional_exprs_to_sum={
+                "adj_r": ht.adj_r,
+                "adj_r_expected": ht.expected_variants * hl.or_else(ht.adj_r, 1),
+            },
+        )
+    )
 
     return ht.naive_coalesce(1000)
 
@@ -1223,7 +1243,12 @@ def aggregate_by_constraint_groups(
     # expected_variants for each constraint group.
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
-            lambda f: hl.agg.filter(f, aggregate_expected_variants_expr(ht)),
+            lambda f: hl.agg.filter(
+                f,
+                aggregate_expected_variants_expr(
+                    ht, additional_fields_to_sum=["adj_r", "adj_r_expected"]
+                ),
+            ),
             ht.constraint_groups,
         )
     )
@@ -1316,6 +1341,7 @@ def compute_constraint_metrics(
     def _add_oe_ci_z(
         oe_info: hl.expr.StructExpression,
         m: Dict[str, str],
+        expected_field: str = "expected_variants",
     ) -> hl.expr.StructExpression:
         """
         Add oe, oe_ci, and z_raw to the oe_info struct.
@@ -1324,7 +1350,7 @@ def compute_constraint_metrics(
         :return: Struct containing oe, oe_ci, and z_raw.
         """
         obs = oe_info.observed_variants
-        exp = oe_info.expected_variants
+        exp = oe_info[expected_field]
         z_raw = calculate_raw_z_score(obs, exp)
         z_threshold = dict(
             {
@@ -1354,7 +1380,10 @@ def compute_constraint_metrics(
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, m: x.annotate(
-                oe_info=x.oe_info.map(lambda oe: _add_oe_ci_z(oe, m))
+                oe_info=x.oe_info.map(lambda oe: _add_oe_ci_z(oe, m)),
+                adj_r_oe_info=x.oe_info.map(
+                    lambda oe: _add_oe_ci_z(oe, m, "adj_r_expected")
+                ),
             ),
             ht.constraint_groups,
             meta,
