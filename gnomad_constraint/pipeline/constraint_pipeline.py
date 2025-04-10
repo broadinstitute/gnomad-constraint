@@ -558,8 +558,8 @@ def main(args):
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
-            res.per_variant_apply_ht.ht().describe()
-            ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 7000})
+            ht = res.per_variant_apply_ht.ht()
+            # ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 7000})
             ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -630,8 +630,19 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
             ht = res.apply_ht.ht()
-            keys = list(ht.grouping.keys())
-            ht = ht.transmute(**ht.grouping)
+            keys = [
+                "annotation",
+                "modifier",
+                "gene",
+                "gene_id",
+                "transcript",
+                "canonical",
+                "mane_select",
+                "new_loftee_99_5",
+                "sfs_bin",
+            ]
+            # keys = list(ht.grouping.keys())
+            # ht = ht.transmute(**ht.grouping)
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(

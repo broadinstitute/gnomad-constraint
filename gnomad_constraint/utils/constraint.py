@@ -900,20 +900,71 @@ def aggregate_per_variant_expected_ht(
     #    if g not in MU_GROUPING
     #    ],
     # ]
-    ht = ht.annotate(
-        grouping=ht.grouping.select(
-            "annotation",
-            "modifier",
-            "gene",
-            "gene_id",
-            "transcript",
-            "canonical",
-            "mane_select",
-            "new_loftee_99_5",
-            "sfs_bin",
+    CSQ_CODING_HIGH_IMPACT = [
+        "transcript_ablation",
+        "splice_acceptor_variant",
+        "splice_donor_variant",
+        "stop_gained",
+        "frameshift_variant",
+        "stop_lost",
+    ]
+
+    CSQ_CODING_MEDIUM_IMPACT = [
+        "start_lost",  # considered high impact in v105, previously medium
+        "initiator_codon_variant",  # deprecated
+        "transcript_amplification",  # considered high impact in v105, previously medium
+        "inframe_insertion",
+        "inframe_deletion",
+        "missense_variant",
+        "protein_altering_variant",  # new in v79
+    ]
+    ht = ht.filter(
+        (ht.grouping.modifier != "None")
+        | ht.grouping.new_loftee_99_5
+        | (
+            hl.set(
+                {
+                    "synonymous_variant",
+                    *CSQ_CODING_HIGH_IMPACT,
+                    *CSQ_CODING_MEDIUM_IMPACT,
+                }
+            ).contains(ht.grouping.annotation)
         )
     )
-    ht = ht.group_by("grouping").aggregate(
+    ht = ht.annotate(**ht.grouping)
+    ht = ht.select(
+        "annotation",
+        "modifier",
+        "gene",
+        "gene_id",
+        "transcript",
+        "canonical",
+        "mane_select",
+        "new_loftee_99_5",
+        "sfs_bin",
+        "adj_r",
+        "mu_snp",
+        "mu",
+        "observed_variants",
+        "possible_variants",
+        "predicted_proportion_observed",
+        "coverage_correction",
+        "expected_variants",
+    )
+    ht = ht.checkpoint(
+        "gs://gnomad-tmp-4day/sfs_constraint-6S0RJHbVTsn49RROcW3VrX.ht", overwrite=True
+    )
+    ht = ht.group_by(
+        "annotation",
+        "modifier",
+        "gene",
+        "gene_id",
+        "transcript",
+        "canonical",
+        "mane_select",
+        "new_loftee_99_5",
+        "sfs_bin",
+    ).aggregate(
         **aggregate_expected_variants_expr(
             ht,
             additional_exprs_to_sum={
