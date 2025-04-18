@@ -163,6 +163,22 @@ def get_structure_peptide(structure) -> str:
     return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
 
 
+def get_structure_plddt(structure: MMCIFParser) -> List[float]:
+    """
+    Extract pLDDT scores from the structure. Assumes B-factor field holds pLDDT.
+    Returns a list of per-residue scores (averaged across atoms if needed).
+    """
+    plddt_scores = []
+    for model in structure:
+        for chain in model:
+            for residue in chain:
+                if is_aa(residue, standard=True):
+                    scores = [atom.get_bfactor() for atom in residue.get_atoms()]
+                    if scores:
+                        plddt_scores.append(np.mean(scores))
+    return plddt_scores
+
+
 def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
     """
     Calculate the "calpha" distance matrix from a structure.
@@ -200,33 +216,25 @@ def process_af2_mmcif(
     uniprot_id: str,
     mmcif_content: str,
     distance_matrix: bool = False,
-) -> Union[str, np.ndarray]:
+    plddt: bool = False,
+) -> Union[str, np.ndarray, List[float]]:
     """
     Process AlphaFold2 MMCIF content.
-
-    :param uniprot_id: UniProt ID.
-    :param mmcif_content: MMCIF content.
-    :param distance_matrix: Whether to return the distance matrix. Default is False,
-        which returns the peptide sequence.
-    :return: Peptide sequence as a string or distance matrix as a NumPy array.
+    Return either sequence, distance matrix, or pLDDT scores.
     """
-    # Create an MMCIFParser object with quiet mode to suppress warnings.
     parser = MMCIFParser(QUIET=True)
-
-    # Create a StringIO object from the file content.
-    mmcif_io = StringIO(mmcif_content)
-
-    # Parse the MMCIF content.
-    structure = parser.get_structure(uniprot_id, mmcif_io)
+    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
 
     if distance_matrix:
         return get_structure_dist_matrix(structure)
+    elif plddt:
+        return get_structure_plddt(structure)
     else:
         return get_structure_peptide(structure)
 
 
 def process_af2_structures(
-    gcs_bucket_glob: str, distance_matrix: bool = False
+    gcs_bucket_glob: str, distance_matrix: bool = False, plddt: bool = False
 ) -> hl.Table:
     """
     Process AlphaFold2 structures from a GCS bucket.
@@ -238,6 +246,8 @@ def process_af2_structures(
     :param gcs_bucket_glob: GCS bucket glob pattern.
     :param distance_matrix: Whether to return the distance matrix. Default is False,
         which returns the peptide sequence.
+    :param plddt: Whether to return the pLDDT scores. Default is False, which returns
+        the peptide sequence.
     :return: Hail Table with UniProt IDs and sequences or distance matrices.
     """
     # Get Spark session for file distribution and processing.
@@ -265,6 +275,9 @@ def process_af2_structures(
     if distance_matrix:
         col_name = "dist_mat"
         rtype = "array<array<float>>"
+    elif plddt:
+        col_name = "plddt"
+        rtype = "array<float>"
     else:
         col_name = "sequence"
         rtype = "string"
@@ -286,7 +299,9 @@ def process_af2_structures(
             uniprot_id = os.path.basename(file_path).split("-")[1]
 
             # Process the file content.
-            af2_data = process_af2_mmcif(uniprot_id, file_content, distance_matrix)
+            af2_data = process_af2_mmcif(
+                uniprot_id, file_content, distance_matrix, plddt
+            )
             result.append((uniprot_id, af2_data))
 
         return pd.DataFrame(result, columns=["uniprot_id", col_name])
