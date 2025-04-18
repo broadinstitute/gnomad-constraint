@@ -104,6 +104,10 @@ def get_promis3d_resources(
         "--compute-af2-distance-matrices",
         output_resources={"af2_dist_ht": promis3d_res.get_af2_dist_ht(version, test)},
     )
+    extract_af2_plddt = PipelineStepResourceCollection(
+        "--extract-af2-plddt",
+        output_resources={"af2_plddt_ht": promis3d_res.get_af2_plddt_ht(version, test)},
+    )
     gencode_alignment = PipelineStepResourceCollection(
         "--gencode-alignment",
         pipeline_input_steps=[gencode_translation, read_af2_sequences],
@@ -147,6 +151,7 @@ def get_promis3d_resources(
             "gencode_translation": gencode_translation,
             "read_af2_sequences": read_af2_sequences,
             "compute_af2_distance_matrices": compute_af2_distance_matrices,
+            "extract_af2_plddt": extract_af2_plddt,
             "gencode_alignment": gencode_alignment,
             "get_gencode_positions": get_gencode_positions,
             "run_greedy": run_greedy,
@@ -219,6 +224,15 @@ def main(args):
         ht = process_af2_structures(resources.af2_dir_path, distance_matrix=True)
         ht = remove_multi_frag_uniprots(ht)
         ht = ht.checkpoint(res.af2_dist_ht.path, overwrite=overwrite)
+        ht.show()
+
+    if args.extract_af2_plddt:
+        logger.info("Extracting pLDDT scores from AlphaFold2 structures.")
+        res = resources.extract_af2_plddt
+        res.check_resource_existence()
+        ht = process_af2_structures(resources.af2_dir_path, plddt=True)
+        ht = remove_multi_frag_uniprots(ht)
+        ht = ht.checkpoint(res.af2_plddt_ht.path, overwrite=overwrite)
         ht.show()
 
     if args.gencode_alignment:
@@ -331,6 +345,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--compute-af2-distance-matrices",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--extract-af2-plddt",
         help="",
         action="store_true",
     )

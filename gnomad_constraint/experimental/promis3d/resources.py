@@ -128,6 +128,22 @@ def get_af2_dist_ht(
     )
 
 
+def get_af2_plddt_ht(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+) -> TableResource:
+    """
+    Get alphafold2 pLDDT Hail Table resource.
+
+    :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
+    :param test: Whether to use a tmp path for testing. Default is False.
+    :return: AlphaFold2 pLDDT Hail Table resource.
+    """
+    return TableResource(
+        f"{get_promis3d_root(version, test)}/preprocessed_data/af2_plddt.ht"
+    )
+
+
 def get_gencode_translations_matched_ht(
     version: str = CURRENT_VERSION,
     test: bool = False,
