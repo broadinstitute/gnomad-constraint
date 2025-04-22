@@ -1,5 +1,6 @@
 """Script with utility functions for the Promis3D pipeline."""
 
+import json
 import logging
 import os
 from io import StringIO
@@ -150,6 +151,16 @@ def convert_gencode_transcripts_fasta_to_table(fasta_file: str) -> hl.Table:
 ########################################################################################
 # Functions to perform tasks from read_af2_sequences.R
 ########################################################################################
+def get_plddt_from_confidence_json(plddt_content: str) -> List[float]:
+    data = json.loads(plddt_content)
+    return data["confidenceScore"]
+
+
+def get_pae_from_json(pae_content: str) -> List[List[int]]:
+    data = json.loads(pae_content)
+    return data[0]["predicted_aligned_error"]
+
+
 def get_structure_peptide(structure) -> str:
     """
     Get the sequence from a structure.
@@ -161,22 +172,6 @@ def get_structure_peptide(structure) -> str:
 
     # Return the sequence as a string.
     return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
-
-
-def get_structure_plddt(structure: MMCIFParser) -> List[float]:
-    """
-    Extract pLDDT scores from the structure. Assumes B-factor field holds pLDDT.
-    Returns a list of per-residue scores (averaged across atoms if needed).
-    """
-    plddt_scores = []
-    for model in structure:
-        for chain in model:
-            for residue in chain:
-                if is_aa(residue, standard=True):
-                    scores = [atom.get_bfactor() for atom in residue.get_atoms()]
-                    if scores:
-                        plddt_scores.append(np.mean(scores))
-    return plddt_scores
 
 
 def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
@@ -216,25 +211,48 @@ def process_af2_mmcif(
     uniprot_id: str,
     mmcif_content: str,
     distance_matrix: bool = False,
-    plddt: bool = False,
 ) -> Union[str, np.ndarray, List[float]]:
     """
     Process AlphaFold2 MMCIF content.
-    Return either sequence, distance matrix, or pLDDT scores.
+
+    :param uniprot_id: UniProt ID.
+    :param mmcif_content: MMCIF content as a string.
+    :param distance_matrix: Whether to return the distance matrix. Default is False.
+    :return: Sequence or distance matrix.
     """
     parser = MMCIFParser(QUIET=True)
     structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
 
     if distance_matrix:
         return get_structure_dist_matrix(structure)
-    elif plddt:
-        return get_structure_plddt(structure)
     else:
         return get_structure_peptide(structure)
 
 
+def process_af2_file_by_mode(
+    uniprot_id: str,
+    file_content: str,
+    mode: str,
+) -> Union[str, np.ndarray, List[float]]:
+    """
+    Dispatcher to handle different AF2 modes based on filename suffix and mode.
+    """
+    if mode in {"sequence", "distance_matrix"}:
+        return process_af2_mmcif(
+            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
+        )
+    if mode == "plddt":
+        return get_plddt_from_confidence_json(file_content)
+
+    if mode == "pae":
+        return get_pae_from_json(file_content)
+
+    raise ValueError(f"Unsupported mode: {mode}")
+
+
 def process_af2_structures(
-    gcs_bucket_glob: str, distance_matrix: bool = False, plddt: bool = False
+    gcs_bucket_glob: str,
+    mode: str = "sequence",
 ) -> hl.Table:
     """
     Process AlphaFold2 structures from a GCS bucket.
@@ -244,10 +262,8 @@ def process_af2_structures(
         All files in the bucket must be in CIF format with a '.cif.gz' extension.
 
     :param gcs_bucket_glob: GCS bucket glob pattern.
-    :param distance_matrix: Whether to return the distance matrix. Default is False,
-        which returns the peptide sequence.
-    :param plddt: Whether to return the pLDDT scores. Default is False, which returns
-        the peptide sequence.
+    :param mode: Mode for processing files. Options are 'sequence', 'distance_matrix',
+        'plddt', or 'pae'. Default is 'sequence'.
     :return: Hail Table with UniProt IDs and sequences or distance matrices.
     """
     # Get Spark session for file distribution and processing.
@@ -272,10 +288,13 @@ def process_af2_structures(
         .load(gcs_bucket_glob, schema=schema, wholetext=True)
         .withColumn("af2_file", col("_metadata.file_path"))
     )
-    if distance_matrix:
+    if mode == "distance_matrix":
         col_name = "dist_mat"
         rtype = "array<array<float>>"
-    elif plddt:
+    elif mode == "pae":
+        col_name = "pae"
+        rtype = "array<array<int>>"
+    elif mode == "plddt":
         col_name = "plddt"
         rtype = "array<float>"
     else:
@@ -299,9 +318,7 @@ def process_af2_structures(
             uniprot_id = os.path.basename(file_path).split("-")[1]
 
             # Process the file content.
-            af2_data = process_af2_mmcif(
-                uniprot_id, file_content, distance_matrix, plddt
-            )
+            af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
             result.append((uniprot_id, af2_data))
 
         return pd.DataFrame(result, columns=["uniprot_id", col_name])
@@ -317,7 +334,7 @@ def process_af2_structures(
         col("uniprot_id_sequence.uniprot_id"),
         col(f"uniprot_id_sequence.{col_name}"),
     )
-    if distance_matrix:
+    if mode in {"distance_matrix", "pae"}:
         from pyspark.sql.functions import posexplode
 
         result_df = result_df.select(
@@ -333,7 +350,7 @@ def process_af2_structures(
 
     # Convert the Spark DataFrame to a Hail Table.
     key = ["af2_file", "uniprot_id"]
-    if distance_matrix:
+    if mode in {"distance_matrix", "pae"}:
         key.append("aa_index")
 
     ht = hl.Table.from_spark(result_df, key=key)
