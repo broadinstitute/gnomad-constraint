@@ -54,15 +54,37 @@ def get_promis3d_resources(
     # Get glob for AlphaFold2 structures.
     af2_dir_path = promis3d_res.get_alpha_fold2_dir(version=version)
     if test:
-        af2_dir_path = f"{af2_dir_path}/AF-{TEST_UNIPROT_ID}-*.cif.gz"
+        af2_struct_dir_path = f"{af2_dir_path}/AF-{TEST_UNIPROT_ID}-*.cif.gz"
     else:
-        af2_dir_path = f"{af2_dir_path}/*.cif.gz"
+        af2_struct_dir_path = f"{af2_dir_path}/*.cif.gz"
+
+    # Get glob for AlphaFold2 confidence.
+    if test:
+        af2_conf_dir_path = (
+            f"{af2_dir_path}/AF-{TEST_UNIPROT_ID}-*confidence_v4.json.gz"
+        )
+    else:
+        af2_conf_dir_path = f"{af2_dir_path}/*confidence_v4.json.gz"
+
+    # Get glob for AlphaFold2 pAE.
+    if test:
+        af2_pae_dir_path = (
+            f"{af2_dir_path}/AF-{TEST_UNIPROT_ID}-*predicted_aligned_error_v4.json.gz"
+        )
+    else:
+        af2_pae_dir_path = f"{af2_dir_path}/*predicted_aligned_error_v4.json.gz"
 
     # Initialize promis3D pipeline resource collection.
     promis3d_pipeline = PipelineResourceCollection(
         pipeline_name="promis3d",
         overwrite=overwrite,
-        pipeline_resources={"AlphaFold2 directory": {"af2_dir_path": af2_dir_path}},
+        pipeline_resources={
+            "AlphaFold2 directory": {
+                "af2_struct_dir_path": af2_struct_dir_path,
+                "af2_conf_dir_path": af2_conf_dir_path,
+                "af2_pae_dir_path": af2_pae_dir_path,
+            }
+        },
     )
 
     # Create resource collection for each step of the promis3D pipeline.
@@ -108,6 +130,10 @@ def get_promis3d_resources(
         "--extract-af2-plddt",
         output_resources={"af2_plddt_ht": promis3d_res.get_af2_plddt_ht(version, test)},
     )
+    extract_af2_pae = PipelineStepResourceCollection(
+        "--extract-af2-pae",
+        output_resources={"af2_pae_ht": promis3d_res.get_af2_pae_ht(version, test)},
+    )
     gencode_alignment = PipelineStepResourceCollection(
         "--gencode-alignment",
         pipeline_input_steps=[gencode_translation, read_af2_sequences],
@@ -152,6 +178,7 @@ def get_promis3d_resources(
             "read_af2_sequences": read_af2_sequences,
             "compute_af2_distance_matrices": compute_af2_distance_matrices,
             "extract_af2_plddt": extract_af2_plddt,
+            "extract_af2_pae": extract_af2_pae,
             "gencode_alignment": gencode_alignment,
             "get_gencode_positions": get_gencode_positions,
             "run_greedy": run_greedy,
@@ -212,7 +239,7 @@ def main(args):
         )
         res = resources.read_af2_sequences
         res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_dir_path)
+        ht = process_af2_structures(resources.af2_struct_dir_path, mode="sequence")
         ht = remove_multi_frag_uniprots(ht)
         ht = ht.checkpoint(res.af2_ht.path, overwrite=overwrite)
         ht.show()
@@ -221,7 +248,7 @@ def main(args):
         logger.info("Computing distance matrices for AlphaFold2 structures.")
         res = resources.compute_af2_distance_matrices
         res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_dir_path, distance_matrix=True)
+        ht = process_af2_structures(resources.af2_struct_dir_path, mode="distance")
         ht = remove_multi_frag_uniprots(ht)
         ht = ht.checkpoint(res.af2_dist_ht.path, overwrite=overwrite)
         ht.show()
@@ -230,9 +257,18 @@ def main(args):
         logger.info("Extracting pLDDT scores from AlphaFold2 structures.")
         res = resources.extract_af2_plddt
         res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_dir_path, plddt=True)
+        ht = process_af2_structures(resources.af2_conf_dir_path, mode="plddt")
         ht = remove_multi_frag_uniprots(ht)
         ht = ht.checkpoint(res.af2_plddt_ht.path, overwrite=overwrite)
+        ht.show()
+
+    if args.extract_af2_pae:
+        logger.info("Extracting pAE scores from AlphaFold2 structures.")
+        res = resources.extract_af2_pae
+        res.check_resource_existence()
+        ht = process_af2_structures(resources.af2_pae_dir_path, mode="pae")
+        ht = remove_multi_frag_uniprots(ht)
+        ht = ht.checkpoint(res.af2_pae_ht.path, overwrite=overwrite)
         ht.show()
 
     if args.gencode_alignment:
@@ -350,6 +386,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--extract-af2-plddt",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--extract-af2-pae",
         help="",
         action="store_true",
     )
