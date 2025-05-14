@@ -380,11 +380,12 @@ def get_exomes_observed_and_possible(
     # If the exome coverage is undefined or the variant does not pass the exome filters,
     # set the observed and possible variant annotations to missing. Otherwise, set the
     # observed and possible variant annotations based on the frequency array.
+    exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
     obs_pos_expr = hl.struct(
         exomes_freq=exomes_freq_expr,
         **hl.or_missing(
-            hl.is_defined(exomes_coverage_expr)
-            & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
+            hl.is_defined(exomes_coverage_expr),
+            # & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
             single_variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
         ),
     )
