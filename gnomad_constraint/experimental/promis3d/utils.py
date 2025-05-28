@@ -1414,9 +1414,7 @@ def create_per_snv_combined_ht(
     return ht.key_by("locus", "alleles", "transcript_id", "uniprot_id")
 
 
-def create_per_residue_ht_from_snv_ht(
-    per_snv_ht: hl.Table, final_checkpoint: str, overwrite: bool = False
-) -> hl.Table:
+def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
     """
     Create a per-residue Hail Table from a fully annotated per-SNV Hail Table.
 
@@ -1425,22 +1423,19 @@ def create_per_residue_ht_from_snv_ht(
     2. Deduplicates rows at the residue level.
     3. Aggregates mean coverage and RMC sets per residue.
     4. Extracts flattened annotations from residue and gene level.
-    5. Writes the final table to the provided checkpoint path.
-
-    Intermediate results are checkpointed using temp files.
 
     :param per_snv_ht: Annotated per-SNV Hail Table from `create_per_snv_combined_ht`.
-    :param final_checkpoint: Destination to write the final per-residue Hail Table.
-    :param overwrite: Whether to overwrite the final checkpoint path. Default is False.
     :return: Final aggregated per-residue Hail Table.
     """
     # Step 1: Extract and deduplicate
     ht = (
         per_snv_ht.select(
-            residue_index=per_snv_ht.residue_level_annotations.residue_index,
+            residue_index=per_snv_ht.residue_index,
             exomes_coverage=per_snv_ht.variant_level_annotations.exomes_coverage,
             rmc=per_snv_ht.variant_level_annotations.rmc,
-            residue_level_annotations=per_snv_ht.residue_level_annotations,
+            residue_level_annotations=per_snv_ht.residue_level_annotations.annotate(
+                residue_ref=per_snv_ht.residue_ref,
+            ),
             gene_level_annotations=per_snv_ht.gene_level_annotations,
         )
         .key_by("locus", "transcript_id", "uniprot_id")
@@ -1475,14 +1470,10 @@ def create_per_residue_ht_from_snv_ht(
         gene_level_annotations=ht.gene_level_annotations,
     )
 
-    ht = ht.naive_coalesce(2000).checkpoint(final_checkpoint, overwrite=overwrite)
-
-    return ht
+    return ht.naive_coalesce(2000)
 
 
-def create_per_promis3d_region_ht_from_residue_ht(
-    ht: hl.Table, final_checkpoint: str, overwrite: bool = False
-) -> hl.Table:
+def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
     """
     Create a PROMIS3D region-level Hail Table from a per-residue annotated Hail Table.
 
@@ -1491,11 +1482,8 @@ def create_per_promis3d_region_ht_from_residue_ht(
     2. Groups rows by (transcript_id, uniprot_id, region_index).
     3. Aggregates exomes coverage, collects RMC regions, computes per-region pLDDT stats.
     4. Annotates PROMIS3D region-level alphaFold2 info with region-level pLDDT stats.
-    5. Saves the result to a final checkpoint path.
 
     :param ht: Hail Table with residue-level annotations including PROMIS3D and coverage.
-    :param final_checkpoint: Path to save the per-region output table.
-    :param overwrite: Whether to overwrite the final output. Default is False.
     :return: Aggregated region-level Hail Table.
     """
     ht = ht.annotate(region_index=ht.promis3d.region_level_annotations.region_index)
@@ -1531,5 +1519,4 @@ def create_per_promis3d_region_ht_from_residue_ht(
         ).drop("region_plddt_stats")
     )
 
-    ht = ht.checkpoint(final_checkpoint, overwrite=overwrite)
     return ht
