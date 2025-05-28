@@ -202,7 +202,7 @@ def get_promis3d_resources(
     )
     write_per_residue = PipelineStepResourceCollection(
         "--write-per-residue",
-        pipeline_input_steps=[get_gencode_positions, write_per_variant],
+        pipeline_input_steps=[write_per_variant],
         output_resources={
             "per_residue_ht": promis3d_res.get_forward_annotation_ht(
                 "per_residue", version, test
@@ -444,9 +444,7 @@ def main(args):
         logger.info("Creating per-residue annotated Hail Table.")
         res = resources.write_per_residue
         res.check_resource_existence()
-        ht = create_per_residue_ht_from_snv_ht(
-            res.per_variant_ht.ht(), res.gencode_pos_ht.ht()
-        )
+        ht = create_per_residue_ht_from_snv_ht(res.per_variant_ht.ht())
         ht = ht.checkpoint(res.per_residue_ht.path, overwrite=overwrite)
         ht.show()
 
@@ -454,9 +452,7 @@ def main(args):
         logger.info("Creating per-region annotated Hail Table.")
         res = resources.write_per_region
         res.check_resource_existence()
-        ht = create_per_promis3d_region_ht_from_residue_ht(
-            res.per_residue_ht.ht(), res.gencode_pos_ht.ht()
-        )
+        ht = create_per_promis3d_region_ht_from_residue_ht(res.per_residue_ht.ht())
         ht = ht.checkpoint(res.per_region_ht.path, overwrite=overwrite)
         ht.show()
 
