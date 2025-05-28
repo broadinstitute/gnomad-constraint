@@ -13,9 +13,15 @@ import gnomad_constraint.experimental.promis3d.resources as promis3d_res
 from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
 from gnomad_constraint.experimental.promis3d.utils import (
     COLNAMES_TRANSLATIONS,
+    annotate_promis3d_with_af2_metrics,
+    annotate_snvs_with_variant_level_data,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
+    create_per_promis3d_region_ht_from_residue_ht,
+    create_per_residue_ht_from_snv_ht,
+    create_per_snv_combined_ht,
     determine_regions_with_min_oe_upper,
+    generate_all_possible_snvs_from_gencode_positions,
     generate_codon_oe_table,
     get_gencode_positions,
     join_by_sequence,
@@ -169,6 +175,49 @@ def get_promis3d_resources(
         },
         output_resources={"forward_ht": promis3d_res.get_forward_ht(version, test)},
     )
+    # Add resources for per-variant, per-residue, and per-region HTs.
+    write_per_variant = PipelineStepResourceCollection(
+        "--write-per-variant",
+        pipeline_input_steps=[
+            compute_af2_distance_matrices,
+            extract_af2_plddt,
+            extract_af2_pae,
+            get_gencode_positions,
+            run_forward,
+        ],
+        output_resources={
+            "per_variant_ht": promis3d_res.get_forward_annotation_ht(
+                "per_variant", version, test
+            ),
+        },
+    )
+    write_per_missense_variant = PipelineStepResourceCollection(
+        "--write-per-missense-variant",
+        pipeline_input_steps=[write_per_variant],
+        output_resources={
+            "per_missense_variant_ht": promis3d_res.get_forward_annotation_ht(
+                "per_missense_variant", version, test
+            ),
+        },
+    )
+    write_per_residue = PipelineStepResourceCollection(
+        "--write-per-residue",
+        pipeline_input_steps=[get_gencode_positions, write_per_variant],
+        output_resources={
+            "per_residue_ht": promis3d_res.get_forward_annotation_ht(
+                "per_residue", version, test
+            ),
+        },
+    )
+    write_per_region = PipelineStepResourceCollection(
+        "--write-per-region",
+        pipeline_input_steps=[write_per_residue],
+        output_resources={
+            "per_region_ht": promis3d_res.get_forward_annotation_ht(
+                "per_region", version, test
+            ),
+        },
+    )
 
     # Add all steps to the promis3D pipeline resource collection.
     promis3d_pipeline.add_steps(
@@ -183,6 +232,10 @@ def get_promis3d_resources(
             "get_gencode_positions": get_gencode_positions,
             "run_greedy": run_greedy,
             "run_forward": run_forward,
+            "write_per_variant": write_per_variant,
+            "write_per_missense_variant": write_per_missense_variant,
+            "write_per_residue": write_per_residue,
+            "write_per_region": write_per_region,
         }
     )
 
@@ -226,7 +279,7 @@ def main(args):
         res = resources.gencode_translation
         res.check_resource_existence()
         ht = convert_fasta_to_table(
-            res.gencode_translation_fasta_path, COLNAMES_TRANSLATIONS
+            res.gencode_translation_fasta_path, COLNAMES_TRANSLATIONS[version]
         )
         if test:
             ht = ht.filter(ht.enst == TEST_TRANSCRIPT_ID)
@@ -287,6 +340,7 @@ def main(args):
         res = resources.get_gencode_positions
         res.check_resource_existence()
         ht = res.gencode_gtf_ht.ht()
+
         if test:
             ht.filter(ht.transcript_id == TEST_TRANSCRIPT_ID)
         ht = get_gencode_positions(
@@ -312,9 +366,20 @@ def main(args):
             ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
 
         ht = ht.filter(ht.annotation == "missense_variant")
-        ht = ht.group_by("locus", "transcript").aggregate(
-            obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
-        )
+
+        if version == "2.1.1":
+            ht = ht.group_by("locus", "transcript").aggregate(
+                obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
+            )
+        elif version == "4.1":
+            ht = ht.group_by("locus", "transcript").aggregate(
+                obs=hl.agg.sum(ht.calibrate_mu.observed_variants[0]),
+                exp=hl.agg.sum(ht.expected_variants[0]),
+            )
+        else:
+            raise ValueError(
+                "The requested version of the resource Tables is not available."
+            )
         ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
         ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
         af2_ht = (
@@ -342,6 +407,58 @@ def main(args):
             forward_ht = run_forward(ht, min_exp_mis=args.min_exp_mis)
             forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
             forward_ht.show()
+
+    if args.write_per_variant:
+        logger.info("Creating per-variant annotated Hail Table.")
+        res = resources.write_per_variant
+        res.check_resource_existence()
+        # Use new shuffle method for apply models to prevent shuffle errors.
+        hl._set_flags(use_new_shuffle="1")
+        ht = create_per_snv_combined_ht(
+            res.gencode_pos_ht.ht(read_args={"_n_partitions": 2000}),
+            res.forward_ht.ht(),
+            res.af2_plddt_ht.ht(),
+            res.af2_pae_ht.ht(),
+            res.af2_dist_ht.ht(),
+        )
+        ht = ht.checkpoint(res.per_variant_ht.path, overwrite=overwrite)
+        ht.show()
+        hl._set_flags(use_new_shuffle=None)
+
+    if args.write_per_missense_variant:
+        logger.info("Filtering per-variant annotated Hail Table to missense variants.")
+        res = resources.write_per_missense_variant
+        res.check_resource_existence()
+        ht = res.per_variant_ht.ht()
+        ht = ht.filter(
+            hl.any(
+                ht.variant_level_annotations.transcript_consequences.map(
+                    lambda x: x == "missense_variant"
+                )
+            )
+        )
+        ht = ht.checkpoint(res.per_missense_variant_ht.path, overwrite=overwrite)
+        ht.show()
+
+    if args.write_per_residue:
+        logger.info("Creating per-residue annotated Hail Table.")
+        res = resources.write_per_residue
+        res.check_resource_existence()
+        ht = create_per_residue_ht_from_snv_ht(
+            res.per_variant_ht.ht(), res.gencode_pos_ht.ht()
+        )
+        ht = ht.checkpoint(res.per_residue_ht.path, overwrite=overwrite)
+        ht.show()
+
+    if args.write_per_region:
+        logger.info("Creating per-region annotated Hail Table.")
+        res = resources.write_per_region
+        res.check_resource_existence()
+        ht = create_per_promis3d_region_ht_from_residue_ht(
+            res.per_residue_ht.ht(), res.gencode_pos_ht.ht()
+        )
+        ht = ht.checkpoint(res.per_region_ht.path, overwrite=overwrite)
+        ht.show()
 
 
 if __name__ == "__main__":
@@ -422,6 +539,26 @@ if __name__ == "__main__":
         ),
         type=int,
         default=MIN_EXP_MIS,
+    )
+    parser.add_argument(
+        "--write-per-variant",
+        action="store_true",
+        help="Generate per-variant annotated HT",
+    )
+    parser.add_argument(
+        "--write-per-missense-variant",
+        action="store_true",
+        help="Generate per-variant annotated HT",
+    )
+    parser.add_argument(
+        "--write-per-residue",
+        action="store_true",
+        help="Generate per-residue HT from per-variant",
+    )
+    parser.add_argument(
+        "--write-per-region",
+        action="store_true",
+        help="Generate per-region HT from per-residue",
     )
 
     args = parser.parse_args()

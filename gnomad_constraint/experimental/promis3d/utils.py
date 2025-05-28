@@ -4,19 +4,33 @@ import json
 import logging
 import os
 from io import StringIO
-from typing import Iterator, List, Optional, Union
+from typing import Dict, Iterator, List, Optional, Union
 
 import hail as hl
 import numpy as np
 import pandas as pd
-from Bio.PDB import PPBuilder
-from Bio.PDB.MMCIFParser import MMCIFParser
-from Bio.PDB.Polypeptide import is_aa
+from gnomad.resources.grch38.gnomad import browser_variant
+from gnomad.utils.constraint import oe_confidence_interval
+from gnomad.utils.filtering import filter_gencode_ht
+from gnomad.utils.reference_genome import get_reference_genome
+
+# from Bio.PDB import PPBuilder
+# from Bio.PDB.MMCIFParser import MMCIFParser
+# from Bio.PDB.Polypeptide import is_aa
 from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
 
 from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
+from gnomad_constraint.experimental.promis3d.data_import import (
+    process_all_rmc_ht,
+    process_clinvar_ht,
+    process_constraint_metrics_ht,
+    process_context_ht,
+    process_cosmis_tsv_for_model,
+    process_interpro_ht,
+    process_kaplanis_variants_ht,
+)
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -45,15 +59,27 @@ COLNAMES_TRANSCRIPTS = [
 Column names for the GENCODE transcripts Hail Table.
 """
 
-COLNAMES_TRANSLATIONS = [
-    "enst",
-    "ensg",
-    "havana_g",
-    "havana_t",
-    "transcript",
-    "gene",
-    "aalength",
-]
+COLNAMES_TRANSLATIONS = {
+    "2.1.1": [
+        "enst",
+        "ensg",
+        "havana_g",
+        "havana_t",
+        "transcript",
+        "gene",
+        "aalength",
+    ],
+    "4.1": [
+        "ensp",
+        "enst",
+        "ensg",
+        "havana_g",
+        "havana_t",
+        "transcript",
+        "gene",
+        "aalength",
+    ],
+}
 """
 Column names for the GENCODE translations Hail Table.
 """
@@ -161,93 +187,93 @@ def get_pae_from_json(pae_content: str) -> List[List[int]]:
     return data[0]["predicted_aligned_error"]
 
 
-def get_structure_peptide(structure) -> str:
-    """
-    Get the sequence from a structure.
-
-    :param structure:
-    :return: Sequence as a string.
-    """
-    ppb = PPBuilder()
-
-    # Return the sequence as a string.
-    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
-
-
-def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
-    """
-    Calculate the "calpha" distance matrix from a structure.
-
-    :param structure: Structure object.
-    :return: Distance matrix as a NumPy array.
-    """
-    calpha_atoms = []
-    for model in structure:
-        for chain in model:
-            for residue in chain:
-                if is_aa(residue, standard=True) and "CA" in residue:
-                    calpha_atoms.append(residue["CA"].get_coord())
-
-    def _calc_dist_matrix(calpha_atoms: List[np.ndarray]) -> np.ndarray:
-        """
-        Calculate the pairwise distance matrix between Calpha atoms.
-
-        :param calpha_atoms: List of Calpha atoms.
-        :return: Distance matrix as a NumPy array.
-        """
-        num_atoms = len(calpha_atoms)
-        dist_matrix = np.zeros((num_atoms, num_atoms))
-        for i, atom1 in enumerate(calpha_atoms):
-            for j, atom2 in enumerate(calpha_atoms):
-                dist_matrix[i, j] = np.linalg.norm(atom1 - atom2)
-
-        return dist_matrix
-
-    # Calculate the distance matrix
-    return _calc_dist_matrix(calpha_atoms)
+# def get_structure_peptide(structure) -> str:
+#    """
+#    Get the sequence from a structure.
+#
+#    :param structure:
+#    :return: Sequence as a string.
+#    """
+#    ppb = PPBuilder()
+#
+#    # Return the sequence as a string.
+#    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
 
 
-def process_af2_mmcif(
-    uniprot_id: str,
-    mmcif_content: str,
-    distance_matrix: bool = False,
-) -> Union[str, np.ndarray, List[float]]:
-    """
-    Process AlphaFold2 MMCIF content.
+# def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
+#    """
+#    Calculate the "calpha" distance matrix from a structure.
+#
+#    :param structure: Structure object.
+#    :return: Distance matrix as a NumPy array.
+#    """
+#    calpha_atoms = []
+#    for model in structure:
+#        for chain in model:
+#            for residue in chain:
+#                if is_aa(residue, standard=True) and "CA" in residue:
+#                    calpha_atoms.append(residue["CA"].get_coord())
+#
+#    def _calc_dist_matrix(calpha_atoms: List[np.ndarray]) -> np.ndarray:
+#        """
+#        Calculate the pairwise distance matrix between Calpha atoms.
+#
+#        :param calpha_atoms: List of Calpha atoms.
+#        :return: Distance matrix as a NumPy array.
+#        """
+#        num_atoms = len(calpha_atoms)
+#        dist_matrix = np.zeros((num_atoms, num_atoms))
+#        for i, atom1 in enumerate(calpha_atoms):
+#            for j, atom2 in enumerate(calpha_atoms):
+#                dist_matrix[i, j] = np.linalg.norm(atom1 - atom2)
+#
+#        return dist_matrix
+#
+#    # Calculate the distance matrix
+#    return _calc_dist_matrix(calpha_atoms)
 
-    :param uniprot_id: UniProt ID.
-    :param mmcif_content: MMCIF content as a string.
-    :param distance_matrix: Whether to return the distance matrix. Default is False.
-    :return: Sequence or distance matrix.
-    """
-    parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
 
-    if distance_matrix:
-        return get_structure_dist_matrix(structure)
-    else:
-        return get_structure_peptide(structure)
+# def process_af2_mmcif(
+#    uniprot_id: str,
+#    mmcif_content: str,
+#    distance_matrix: bool = False,
+# ) -> Union[str, np.ndarray, List[float]]:
+#    """
+#    Process AlphaFold2 MMCIF content.
+#
+#    :param uniprot_id: UniProt ID.
+#    :param mmcif_content: MMCIF content as a string.
+#    :param distance_matrix: Whether to return the distance matrix. Default is False.
+#    :return: Sequence or distance matrix.
+#    """
+#    parser = MMCIFParser(QUIET=True)
+#    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
+#
+#    if distance_matrix:
+#        return get_structure_dist_matrix(structure)
+#    else:
+#        return get_structure_peptide(structure)
 
 
-def process_af2_file_by_mode(
-    uniprot_id: str,
-    file_content: str,
-    mode: str,
-) -> Union[str, np.ndarray, List[float]]:
-    """
-    Dispatcher to handle different AF2 modes based on filename suffix and mode.
-    """
-    if mode in {"sequence", "distance_matrix"}:
-        return process_af2_mmcif(
-            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
-        )
-    if mode == "plddt":
-        return get_plddt_from_confidence_json(file_content)
-
-    if mode == "pae":
-        return get_pae_from_json(file_content)
-
-    raise ValueError(f"Unsupported mode: {mode}")
+# def process_af2_file_by_mode(
+#    uniprot_id: str,
+#    file_content: str,
+#    mode: str,
+# ) -> Union[str, np.ndarray, List[float]]:
+#    """
+#    Dispatcher to handle different AF2 modes based on filename suffix and mode.
+#    """
+#    if mode in {"sequence", "distance_matrix"}:
+#        return process_af2_mmcif(
+#            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
+#        )
+#    if mode == "plddt":
+#        return get_plddt_from_confidence_json(file_content)
+#
+#    if mode == "pae":
+#        return get_pae_from_json(file_content)
+#
+#    raise ValueError(f"Unsupported mode: {mode}")
 
 
 def process_af2_structures(
@@ -318,7 +344,8 @@ def process_af2_structures(
             uniprot_id = os.path.basename(file_path).split("-")[1]
 
             # Process the file content.
-            af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
+            # af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
+            af2_data = None
             result.append((uniprot_id, af2_data))
 
         return pd.DataFrame(result, columns=["uniprot_id", col_name])
@@ -415,6 +442,8 @@ def get_gencode_positions(
     :param gencode_gtf_ht: Hail Table with GENCODE GTF data.
     :return: Hail Table with GENCODE positions.
     """
+    build = get_reference_genome(gencode_gtf_ht.interval.start).name
+
     # Filter GTF data to keep only CDS features.
     gencode_gtf_ht = gencode_gtf_ht.filter(gencode_gtf_ht.feature == "CDS")
 
@@ -479,7 +508,9 @@ def get_gencode_positions(
     ht = translations_ht.annotate(**cds_len_ht[translations_ht.enst])
     ht = ht.transmute(
         positions=hl.map(
-            lambda gp, r, ap: hl.struct(locus=hl.locus(ht.chrom, gp), ref=r, aapos=ap),
+            lambda gp, r, ap: hl.struct(
+                locus=hl.locus(ht.chrom, gp, reference_genome=build), ref=r, aapos=ap
+            ),
             ht.gtf_cds_pos,
             hl.range(hl.len(ht.ref)).map(lambda i: ht.ref[i]),
             ht.aapos,
@@ -784,6 +815,22 @@ def prep_region_struct(region_expr, oe_expr):
     )
 
 
+def calculate_oe_neq_1_chisq(
+    obs_expr: hl.expr.Int64Expression,
+    exp_expr: hl.expr.Float64Expression,
+) -> hl.expr.Float64Expression:
+    """
+    Check for significance that observed/expected values for regions are different from 1.
+
+    Formula is: (obs - exp)^2 / exp.
+
+    :param obs_expr: Observed variant counts.
+    :param exp_expr: Expected variant counts.
+    :return: Chi-squared value.
+    """
+    return ((obs_expr - exp_expr) ** 2) / exp_expr
+
+
 def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     """
     Run the forward algorithm to find the most intolerant region.
@@ -814,7 +861,8 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
     ht = ht.repartition(5000, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
-
+    ht.describe()
+    ht.show(5)
     round_num = 1
     while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
         # For each region in regions, update the list of selected by
@@ -925,16 +973,563 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
         )
     )
     ht = ht.explode("selected")
-    ht = ht.select(**ht.selected).explode("region")
+    ht = ht.select(**ht.selected)
+    ht = ht.annotate(region_length=hl.len(ht.region))
+    ht = ht.explode("region")
+    chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
     ht = ht.annotate(
         residue_index=ht.region,
         oe_upper=(
             hl.qchisqtail(1 - 0.05 / 2, 2 * (ht.obs + 1), lower_tail=True)
             / (2 * ht.exp)
         ),
+        chisq=chisq_expr,
+        p_value=hl.pchisqtail(chisq_expr, 1),
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "residue_index").select(
-        "region_index", "obs", "exp", "oe", "oe_upper"
+        "region_index", "obs", "exp", "oe", "oe_upper", "chisq", "p_value", "is_null"
     )
 
+    return ht
+
+
+def explode_af2_plddt_by_residue(af2_plddt_ht: hl.Table) -> hl.Table:
+    """
+    Explode AlphaFold2 pLDDT array into per-residue rows.
+
+    This function:
+    1. Takes an input Hail Table with a `plddt` array field containing per-residue
+       pLDDT scores.
+    2. Enumerates the array to associate each score with a 0-based residue index.
+    3. Explodes the table to produce one row per residue.
+    4. Extracts the `residue_index` and `plddt` values.
+    5. Keys the table by (`uniprot_id`, `residue_index`).
+
+    :param af2_plddt_ht: Input Hail Table containing AlphaFold2 pLDDT scores as an array.
+    :return: Transformed Hail Table with one row per residue and associated pLDDT score.
+    """
+    ht = af2_plddt_ht.annotate(plddt=hl.enumerate(af2_plddt_ht.plddt))
+    ht = ht.explode("plddt")
+    ht = ht.annotate(residue_index=ht.plddt[0], plddt=ht.plddt[1])
+    ht = ht.key_by("uniprot_id", "residue_index")
+
+    return ht
+
+
+def annotate_promis3d_with_af2_metrics(
+    promis3D_ht: hl.Table,
+    af2_plddt_ht: hl.Table,
+    af2_pae_ht: hl.Table,
+    af2_dist_ht: hl.Table,
+) -> hl.Table:
+    """
+    Annotate a PROMIS3D Hail Table with per-residue AlphaFold2 metrics (pLDDT, pAE, dist).
+
+    This function:
+    1. Explodes the pLDDT array into (residue_index, score) format.
+    2. Keys the pAE and distance matrices by (uniprot_id, aa_index).
+    3. Filters PROMIS3D rows to coding transcripts (ENST).
+    4. Annotates each region residue with pLDDT, pAE, and dist.
+    5. Aggregates residue-level and region-level metrics.
+    6. Outputs both residue-level and region-level structured annotations.
+
+    :param promis3D_ht: PROMIS3D region Hail Table keyed by (uniprot_id, transcript_id,
+        residue_index).
+    :param af2_plddt_ht: AlphaFold2 pLDDT Hail Table with array of scores.
+    :param af2_pae_ht: AlphaFold2 predicted aligned error matrix Hail Table.
+    :param af2_dist_ht: AlphaFold2 distance matrix Hail Table.
+    :return: Annotated PROMIS3D Hail Table keyed by (uniprot_id, transcript_id,
+        residue_index).
+    """
+    # Preprocess inputs
+    af2_plddt_ht = explode_af2_plddt_by_residue(af2_plddt_ht)
+    af2_pae_ht = af2_pae_ht.key_by("uniprot_id", "aa_index").checkpoint(
+        # hl.utils.new_temp_file("af2_pae.keyed", "ht")
+        "gs://gnomad-tmp-4day/af2_pae.keyed-tYsYM6AzQmNGYe7xXarBpN.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+    af2_dist_ht = af2_dist_ht.key_by("uniprot_id", "aa_index").checkpoint(
+        # hl.utils.new_temp_file("af2_dist.keyed", "ht")
+        "gs://gnomad-tmp-4day/af2_dist.keyed-hmgd1hDWQ2obLmBdEI0APq.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    # Filter transcripts
+    promis3D_ht = promis3D_ht.filter(promis3D_ht.transcript_id.startswith("ENST"))
+
+    # Annotate with per-residue metrics
+    promis3D_ht = promis3D_ht.annotate(
+        plddt=af2_plddt_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].plddt,
+        pae=af2_pae_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].pae,
+        dist=af2_dist_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].dist_mat,
+    ).checkpoint(
+        # hl.utils.new_temp_file("promis3D.annotated", "ht")
+        "gs://gnomad-tmp-4day/promis3D.annotated-GPdz8xypdAzfYuUOH0JkYK.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+    promis3D_ht = hl.read_table(
+        "gs://gnomad-tmp-4day/promis3D.annotated-GPdz8xypdAzfYuUOH0JkYK.ht"
+    )
+
+    # Group by region
+    promis3D_ht = promis3D_ht.key_by("uniprot_id", "transcript_id", "region_index")
+    promis3D_ht = promis3D_ht.checkpoint(
+        hl.utils.new_temp_file("promis3D.annotated.keyed", "ht")
+    )
+    promis3D_ht = hl.read_table(
+        "gs://gnomad-tmp-4day/promis3D.annotated.keyed-S9iovtBuLQeDFr3i5HXuNr.ht"
+    )
+    promis3D_ht = promis3D_ht.collect_by_key("by_residue")
+    promis3D_ht = promis3D_ht.checkpoint(
+        "gs://gnomad-tmp-4day/promis3D.annotated.keyed-S9iovtBuLQeDFr3i5HXuNr.by_residue.ht"
+    )
+
+    # Compute per-residue references
+    residues_expr = promis3D_ht.by_residue.map(lambda x: x.residue_index)
+    by_residue_expr = promis3D_ht.by_residue.map(
+        lambda x: x.annotate(
+            res=hl.array(hl.set(residues_expr).remove(x.residue_index))
+        )
+    )
+    by_residue_expr = by_residue_expr.map(
+        lambda x: x.annotate(
+            res=x.res.map(lambda y: hl.abs(x.residue_index - y)),
+            pae=x.res.map(lambda y: x.pae[y]),
+            dist=x.res.map(lambda y: x.dist[y]),
+        )
+    )
+
+    # Region-level aggregates
+    region_plddt = by_residue_expr.map(lambda x: x.plddt)
+    region_res = hl.flatten(by_residue_expr.map(lambda x: x.res))
+    region_pae = hl.flatten(by_residue_expr.map(lambda x: x.pae))
+    region_dist = hl.flatten(by_residue_expr.map(lambda x: x.dist))
+
+    promis3D_ht = promis3D_ht.annotate(
+        by_residue=by_residue_expr,
+        region_residues=residues_expr,
+        region_aa_dist_stats=region_res.aggregate(lambda x: hl.agg.stats(x)).annotate(
+            median=hl.median(region_res)
+        ),
+        alphafold2_info=hl.struct(
+            region_plddt=region_plddt.aggregate(lambda x: hl.agg.stats(x)).annotate(
+                median=hl.median(region_plddt)
+            ),
+            region_pae_stats=region_pae.aggregate(lambda x: hl.agg.stats(x)).annotate(
+                median=hl.median(region_pae)
+            ),
+            region_dist_stats=region_dist.aggregate(lambda x: hl.agg.stats(x)).annotate(
+                median=hl.median(region_dist)
+            ),
+        ),
+    )
+    promis3D_ht = promis3D_ht.checkpoint(
+        hl.utils.new_temp_file("promis3D.region_annotated", "ht")
+    )
+
+    # Flatten by residue
+    promis3D_ht = promis3D_ht.explode("by_residue")
+    promis3D_ht = (
+        promis3D_ht.transmute(**promis3D_ht.by_residue)
+        .key_by("uniprot_id", "transcript_id", "residue_index")
+        .checkpoint(hl.utils.new_temp_file("promis3D.by_residue.exploded", "ht"))
+    )
+
+    # Final structured output
+    promis3D_ht = promis3D_ht.select(
+        residue_level_annotations=hl.struct(
+            residue_to_region_aa_dist_stats=promis3D_ht.res.aggregate(
+                lambda x: hl.agg.stats(x)
+            ).annotate(median=hl.median(promis3D_ht.res)),
+            alphafold2_info=hl.struct(
+                residue_plddt=promis3D_ht.plddt,
+                residue_to_region_pae_stats=promis3D_ht.pae.aggregate(
+                    lambda x: hl.agg.stats(x)
+                ).annotate(median=hl.median(promis3D_ht.pae)),
+                residue_to_region_dist_stats=promis3D_ht.dist.aggregate(
+                    lambda x: hl.agg.stats(x)
+                ).annotate(median=hl.median(promis3D_ht.dist)),
+            ),
+        ),
+        region_level_annotations=hl.struct(
+            region_index=promis3D_ht.region_index,
+            region_residues=promis3D_ht.region_residues,
+            region_length=promis3D_ht.region_length,
+            obs=promis3D_ht.obs,
+            exp=promis3D_ht.exp,
+            oe=promis3D_ht.oe,
+            oe_upper=promis3D_ht.oe_upper,
+            oe_ci=oe_confidence_interval(promis3D_ht.obs, promis3D_ht.exp),
+            chisq=promis3D_ht.chisq,
+            p_value=promis3D_ht.p_value,
+            is_null=promis3D_ht.is_null,
+            region_aa_dist_stats=promis3D_ht.region_aa_dist_stats,
+            alphafold2_info=promis3D_ht.alphafold2_info,
+        ),
+    )
+
+    return promis3D_ht
+
+
+def generate_all_possible_snvs_from_gencode_positions(pos_ht: hl.Table) -> hl.Table:
+    """
+    Generate all possible single nucleotide variants (SNVs) from the GENCODE positions Hail Table.
+
+    This function:
+    1. Filters out mitochondrial contig ('chrM').
+    2. Computes all possible SNV alleles excluding the reference base.
+    3. Adds amino acid and transcript annotations.
+    4. Explodes each row into one per alternate allele.
+    5. Keys the table by (locus, alleles, transcript_id).
+
+    :param pos_ht: Input GENCODE positions Hail Table with reference base and amino acid sequence.
+    :return: Hail Table with all possible SNVs at each GENCODE position.
+    """
+    nucleotides = hl.set({"A", "T", "C", "G"})
+
+    ht = pos_ht.filter(pos_ht.locus.contig != "chrM")
+
+    ht = ht.annotate(
+        aminoacid_ref=ht.sequence[ht.aapos],
+        alleles=nucleotides.remove(ht.ref).map(lambda alt: [ht.ref, alt]),
+        residue_index=ht.aapos,
+        aminoacid_length=hl.int(ht.aalength),
+        cds_length=hl.int(ht.cds_len),
+        transcript_id=ht.enst,
+    )
+
+    ht = ht.explode("alleles")
+    ht = ht.key_by("locus", "alleles", "transcript_id")
+
+    ht = ht.select(
+        "uniprot_id",
+        "strand",
+        "cds_length",
+        "aminoacid_length",
+        "residue_index",
+        "aminoacid_ref",
+    )
+
+    return ht
+
+
+def annotate_snvs_with_variant_level_data(
+    snv_ht: hl.Table,
+    context_ht: hl.Table,
+    raw_gnomad_site_ht: hl.Table,
+    dd_denovo_ht: hl.Table,
+    clinvar_ht: hl.Table,
+    rmc_ht: hl.Table,
+) -> hl.Table:
+    """
+    Annotate a per-SNV Hail Table with variant-level annotations from multiple sources.
+
+    This function:
+    1. Selects relevant fields from the raw gnomAD site HT (in silico predictors, VRS, exome flags).
+    2. Joins context annotations using (locus, alleles).
+    3. Adds gnomAD site annotations using (locus, alleles).
+    4. Marks whether a variant is a de novo missense from the Kaplanis dataset using (locus, alleles, transcript_id).
+    5. Adds ClinVar annotations using (locus, alleles, gene).
+    6. Adds regional missense constraint (RMC) annotations using (locus, transcript_id).
+    7. Wraps all annotations under a `variant_level_annotations` struct.
+
+    :param snv_ht: Input SNV Hail Table keyed by (locus, alleles, transcript_id).
+    :param context_ht: Context Hail Table keyed by (locus, alleles).
+    :param raw_gnomad_site_ht: Full gnomAD v4.1 browser sites Hail Table.
+    :param dd_denovo_ht: Kaplanis de novo missense variant Hail Table keyed by (locus, alleles, transcript_id).
+    :param clinvar_ht: ClinVar Hail Table keyed by (locus, alleles, gene).
+    :param rmc_ht: Regional missense constraint (RMC) Hail Table keyed by (locus, transcript_id).
+    :return: Annotated Hail Table with a `variant_level_annotations` struct field.
+    """
+    gnomad_site_ht = raw_gnomad_site_ht.select(
+        "in_silico_predictors",
+        "vrs",
+        exomes_flags=raw_gnomad_site_ht.exome.flags,
+    )
+
+    transcript_to_gene = filter_gencode_ht(feature="transcript")
+    transcript_to_gene = hl.dict(
+        transcript_to_gene.aggregate(
+            hl.agg.collect_as_set(
+                (transcript_to_gene.transcript_id, transcript_to_gene.gene_name)
+            )
+        )
+    )
+
+    ht = snv_ht.annotate(
+        variant_level_annotations=hl.struct(
+            **context_ht[snv_ht.locus, snv_ht.alleles],
+            **gnomad_site_ht[snv_ht.locus, snv_ht.alleles],
+            dd_denovo=dd_denovo_ht[snv_ht.locus, snv_ht.alleles, snv_ht.transcript_id],
+            clinvar=clinvar_ht[
+                snv_ht.locus,
+                snv_ht.alleles,
+                transcript_to_gene.get(snv_ht.transcript_id),
+            ],
+            rmc=rmc_ht[snv_ht.locus, snv_ht.transcript_id],
+        )
+    )
+    ht = ht.annotate(
+        variant_level_annotations=ht.variant_level_annotations.annotate(
+            transcript_consequences=ht.variant_level_annotations.vep.transcript_consequences.filter(
+                lambda x: x.transcript_id == ht.transcript_id
+            ).map(
+                lambda x: x.most_severe_consequence
+            )
+        ).drop("vep")
+    )
+
+    return ht
+
+
+def combine_residue_level_annotations(
+    promis3d_ht: hl.Table,
+    interpro_ht: hl.Table,
+    cosmis_hts: Dict[str, hl.Table],
+) -> hl.Table:
+    """
+    Combine residue-level annotations by joining PROMIS3D regions with COSMIS (multiple sources) and InterPro data.
+
+    This function:
+    1. Extracts residue-level information from the input `promis3d_ht`.
+    2. Joins domain annotations from `interpro_ht`, keyed by (uniprot_id, transcript_id, residue_index).
+    3. Joins COSMIS scores from multiple sources (e.g., alphafold, pdb, swiss_model), passed as a dictionary.
+       Each COSMIS source is joined using the same composite key and stored as a subfield in a `cosmis` struct.
+    4. Returns a unified Hail Table containing `promis3d`, `interpro`, and structured `cosmis` annotations.
+
+    :param promis3d_ht: PROMIS3D Hail Table keyed by (uniprot_id, transcript_id, residue_index).
+    :param interpro_ht: InterPro domain annotation Hail Table keyed by the same composite key.
+    :param cosmis_hts: Dictionary mapping COSMIS source names (e.g., "alphafold", "pdb") to Hail Tables,
+                       all keyed by (uniprot_id, transcript_id, residue_index).
+    :return: Hail Table with combined residue-level annotations: `promis3d`, `interpro`, and nested `cosmis` struct.
+    """
+    ht = promis3d_ht.select(
+        interpro=interpro_ht[
+            promis3d_ht.uniprot_id, promis3d_ht.transcript_id, promis3d_ht.residue_index
+        ],
+        cosmis=hl.struct(
+            **{
+                k: v[
+                    promis3d_ht.uniprot_id,
+                    promis3d_ht.transcript_id,
+                    promis3d_ht.residue_index,
+                ]
+                for k, v in cosmis_hts.items()
+            }
+        ),
+        promis3d=promis3d_ht.row_value,
+    )
+    return ht
+
+
+def create_per_snv_combined_ht(
+    pos_ht: hl.Table,
+    promis3d_ht: hl.Table,
+    af2_plddt_ht: hl.Table,
+    af2_pae_ht: hl.Table,
+    af2_dist_ht: hl.Table,
+) -> hl.Table:
+    """
+    Create a fully annotated per-SNV Hail Table with structured variant-, residue-, and gene-level annotations.
+
+    This function:
+    1. Joins SNVs to gene-level constraint metrics using (transcript_id).
+    2. Joins variant-level data: context, gnomAD v4.1 site fields, de novo variants, ClinVar, and RMC.
+    3. Joins residue-level data: COSMIS (multi-model), InterPro, PROMIS3D.
+    4. Extracts and restructures gene, transcript, and residue annotations.
+    5. Assembles all fields into structured annotations (`variant_level_annotations`, `residue_level_annotations`, `gene_level_annotations`).
+    6. Writes and returns a checkpointed Hail Table keyed by (locus, alleles, transcript_id, uniprot_id).
+
+    :return: Annotated and checkpointed Hail Table.
+    """
+    ht = generate_all_possible_snvs_from_gencode_positions(pos_ht).checkpoint(
+        # hl.utils.new_temp_file("snvs_from_gencode", "ht")
+        "gs://gnomad-tmp-4day/snvs_from_gencode-0e182QVWZSAVcTYCPXadsq.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+    ht = annotate_snvs_with_variant_level_data(
+        ht,
+        process_context_ht(ht),
+        browser_variant().ht(),
+        process_kaplanis_variants_ht(),
+        process_clinvar_ht(),
+        process_all_rmc_ht(),
+    ).checkpoint(
+        # hl.utils.new_temp_file("annotated_snvs", "ht")
+        "gs://gnomad-tmp-4day/annotated_snvs-pMHF52hdEigABeTrycGHNH.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    promis3d_ht = annotate_promis3d_with_af2_metrics(
+        promis3d_ht, af2_plddt_ht, af2_pae_ht, af2_dist_ht
+    ).checkpoint(
+        # hl.utils.new_temp_file("promis3d_with_af2", "ht")
+        "gs://gnomad-tmp-4day/promis3d_with_af2-PbWaZsIWmDuW6jERqEC284.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+    residue_ht = combine_residue_level_annotations(
+        promis3d_ht,
+        process_interpro_ht(),
+        {
+            "alphafold": process_cosmis_tsv_for_model("alphafold"),
+            "pdb": process_cosmis_tsv_for_model("pdb"),
+            "swiss_model": process_cosmis_tsv_for_model("swiss_model"),
+        },
+    ).checkpoint(
+        # hl.utils.new_temp_file("residue_annotations", "ht"),
+        "gs://gnomad-tmp-4day/residue_annotations-ksvTtPMdnFCdcezBNdDWiw.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    # Join gene constraint info
+    gene_constraint_ht = process_constraint_metrics_ht()
+    gene_constraint_expr = gene_constraint_ht[ht.transcript_id]
+
+    # Structure final output.
+    ht = ht.annotate(
+        "uniprot_id",
+        gene=gene_constraint_expr.gene,
+        gene_id=gene_constraint_expr.gene_id,
+        canonical=gene_constraint_expr.canonical,
+        mane_select=gene_constraint_expr.mane_select,
+        residue_ref=ht.aminoacid_ref,
+        residue_level_annotations=residue_ht[
+            ht.uniprot_id, ht.transcript_id, ht.residue_index
+        ],
+        gene_level_annotations=gene_constraint_expr,
+    ).checkpoint(
+        # hl.utils.new_temp_file("residue_annotations", "ht"),
+        "gs://gnomad-tmp-4day/residue_annotations-7XU8pDwPOSGZvVSIt4b9c4.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    return ht.key_by("locus", "alleles", "transcript_id", "uniprot_id")
+
+
+def create_per_residue_ht_from_snv_ht(
+    per_snv_ht: hl.Table, final_checkpoint: str, overwrite: bool = False
+) -> hl.Table:
+    """
+    Create a per-residue Hail Table from a fully annotated per-SNV Hail Table.
+
+    This function:
+    1. Extracts residue-relevant fields and drops alleles.
+    2. Deduplicates rows at the residue level.
+    3. Aggregates mean coverage and RMC sets per residue.
+    4. Extracts flattened annotations from residue and gene level.
+    5. Writes the final table to the provided checkpoint path.
+
+    Intermediate results are checkpointed using temp files.
+
+    :param per_snv_ht: Annotated per-SNV Hail Table from `create_per_snv_combined_ht`.
+    :param final_checkpoint: Destination to write the final per-residue Hail Table.
+    :param overwrite: Whether to overwrite the final checkpoint path. Default is False.
+    :return: Final aggregated per-residue Hail Table.
+    """
+    # Step 1: Extract and deduplicate
+    ht = (
+        per_snv_ht.select(
+            residue_index=per_snv_ht.residue_level_annotations.residue_index,
+            exomes_coverage=per_snv_ht.variant_level_annotations.exomes_coverage,
+            rmc=per_snv_ht.variant_level_annotations.rmc,
+            residue_level_annotations=per_snv_ht.residue_level_annotations,
+            gene_level_annotations=per_snv_ht.gene_level_annotations,
+        )
+        .key_by("locus", "transcript_id", "uniprot_id")
+        .drop("alleles")
+    )
+
+    ht = ht.distinct()
+    ht = ht.checkpoint(hl.utils.new_temp_file("per_residue_dedup", "ht"))
+
+    # Step 2: Group and aggregate
+    ht = ht.group_by("transcript_id", "uniprot_id", "residue_index").aggregate(
+        residue_mean_exomes_coverage=hl.struct(
+            mean=hl.agg.mean(ht.exomes_coverage.mean),
+            median_approx=hl.agg.mean(ht.exomes_coverage.median_approx),
+            AN=hl.agg.mean(ht.exomes_coverage.AN),
+            percent_AN=hl.agg.mean(ht.exomes_coverage.percent_AN),
+        ),
+        rmc=hl.agg.collect_as_set(ht.rmc),
+        residue_level_annotations=hl.agg.take(ht.residue_level_annotations, 1)[0],
+        gene_level_annotations=hl.agg.take(ht.gene_level_annotations, 1)[0],
+    )
+    ht = ht.checkpoint(hl.utils.new_temp_file("per_residue_agg", "ht"))
+
+    # Step 3: Flatten and finalize
+    ht = ht.select(
+        residue_ref=ht.residue_level_annotations.residue_ref,
+        residue_mean_exomes_coverage=ht.residue_mean_exomes_coverage,
+        interpro=ht.residue_level_annotations.interpro,
+        rmc_regions=ht.rmc,
+        cosmis=ht.residue_level_annotations.cosmis,
+        promis3d=ht.residue_level_annotations.promis3d,
+        gene_level_annotations=ht.gene_level_annotations,
+    )
+
+    ht = ht.naive_coalesce(2000).checkpoint(final_checkpoint, overwrite=overwrite)
+
+    return ht
+
+
+def create_per_promis3d_region_ht_from_residue_ht(
+    ht: hl.Table, final_checkpoint: str, overwrite: bool = False
+) -> hl.Table:
+    """
+    Create a PROMIS3D region-level Hail Table from a per-residue annotated Hail Table.
+
+    This function:
+    1. Extracts region_index from PROMIS3D residue annotations.
+    2. Groups rows by (transcript_id, uniprot_id, region_index).
+    3. Aggregates exomes coverage, collects RMC regions, computes per-region pLDDT stats.
+    4. Annotates PROMIS3D region-level alphaFold2 info with region-level pLDDT stats.
+    5. Saves the result to a final checkpoint path.
+
+    :param ht: Hail Table with residue-level annotations including PROMIS3D and coverage.
+    :param final_checkpoint: Path to save the per-region output table.
+    :param overwrite: Whether to overwrite the final output. Default is False.
+    :return: Aggregated region-level Hail Table.
+    """
+    ht = ht.annotate(region_index=ht.promis3d.region_level_annotations.region_index)
+
+    ht = ht.group_by("transcript_id", "uniprot_id", "region_index").aggregate(
+        region_mean_exomes_coverage=hl.struct(
+            mean=hl.agg.mean(ht.residue_mean_exomes_coverage.mean),
+            median_approx=hl.agg.mean(ht.residue_mean_exomes_coverage.median_approx),
+            AN=hl.agg.mean(ht.residue_mean_exomes_coverage.AN),
+            percent_AN=hl.agg.mean(ht.residue_mean_exomes_coverage.percent_AN),
+        ),
+        rmc_regions=hl.agg.explode(lambda x: hl.agg.collect_as_set(x), ht.rmc_regions),
+        promis3d=hl.agg.take(ht.promis3d.region_level_annotations, 1)[0].annotate(
+            region_plddt_stats=hl.agg.stats(
+                ht.promis3d.residue_level_annotations.alphafold2_info.residue_plddt
+            ).annotate(
+                median=hl.median(
+                    hl.agg.collect(
+                        ht.promis3d.residue_level_annotations.alphafold2_info.residue_plddt
+                    )
+                )
+            )
+        ),
+        gene_level_annotations=hl.agg.take(ht.gene_level_annotations, 1)[0],
+    )
+
+    # Move pLDDT stats into alphaFold2 info
+    ht = ht.annotate(
+        promis3d=ht.promis3d.annotate(
+            alphafold2_info=ht.promis3d.alphafold2_info.annotate(
+                region_plddt_stats=ht.promis3d.region_plddt_stats
+            )
+        ).drop("region_plddt_stats")
+    )
+
+    ht = ht.checkpoint(final_checkpoint, overwrite=overwrite)
     return ht
