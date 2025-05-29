@@ -273,7 +273,7 @@ def get_forward_annotation_ht(
     :return: PROMIS3D annotated forward algorithm Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root(version, test)}/promis3D_forward.{name}.annotated.5_28_25.ht"
+        f"{get_promis3d_root(version, test)}/promis3D_forward.{name}.annotated.5_29_25.ht"
     )
 
 

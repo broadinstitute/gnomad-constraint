@@ -31,6 +31,7 @@ from gnomad_constraint.experimental.promis3d.data_import import (
     process_interpro_ht,
     process_kaplanis_variants_ht,
 )
+from gnomad_constraint.experimental.promis3d.resources import get_constraint_metrics_ht
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -993,6 +994,92 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     return ht
 
 
+def prioritize_transcripts_and_uniprots(
+    residue_ht: hl.Table,
+    gene_ht: hl.Table,
+) -> hl.Table:
+    """
+    Prioritize and label transcript/uniprot combinations for each gene.
+
+    This function:
+    1. De-duplicates both tables by key and selects relevant fields.
+    2. Annotates residue HT with gene-level info (canonical, mane_select, cds_length, etc.).
+    3. Adds a random number to break ties.
+    4. Orders transcripts by gene_id, MANE select, canonical, CDS length, and random.
+    5. Assigns an index for prioritization.
+    6. Aggregates per gene:
+       - All transcript/uniprot pairs with their priority.
+       - The lowest-index (prioritized) uniprot per transcript.
+       - The lowest-index (prioritized) transcript per gene.
+    7. Annotates flags indicating for each row if it’s the “one uniprot per transcript” and/or “one transcript per gene”.
+    8. Returns a de-nested table keyed by (uniprot_id, transcript_id).
+
+    :param residue_ht: Hail Table keyed by (uniprot_id, transcript_id).
+    :param gene_ht: Hail Table keyed by (transcript), with columns 'gene', 'gene_id', 'canonical', 'mane_select', 'cds_length'.
+    :return: Annotated and prioritized Hail Table keyed by (uniprot_id, transcript_id).
+    """
+    # Prepare keys and fields
+    ht = residue_ht.key_by("uniprot_id", "transcript_id").select().distinct()
+    ht2 = (
+        gene_ht.key_by("transcript")
+        .select("gene", "gene_id", "canonical", "mane_select", "cds_length")
+        .distinct()
+    )
+
+    # Annotate with gene info and add a random number for tie-breaking
+    ht = ht.annotate(**ht2[ht.transcript_id], rand_n=hl.rand_unif(0, 1))
+
+    # Order and add index
+    ht = ht.order_by(
+        "gene_id",
+        hl.desc(ht.mane_select),
+        hl.desc(ht.canonical),
+        hl.desc(ht.cds_length),
+        "rand_n",
+    )
+    ht = ht.add_index()
+    # idx is automatically named 'idx' by Hail's add_index
+
+    # Aggregate per gene for prioritization
+    ht = ht.group_by("gene", "gene_id").aggregate(
+        _all_rows=hl.agg.collect_as_set(
+            hl.struct(
+                **{
+                    k: ht[k]
+                    for k in [
+                        "uniprot_id",
+                        "transcript_id",
+                        "canonical",
+                        "mane_select",
+                        "idx",
+                    ]
+                }
+            )
+        ),
+        one_uniprot_per_transcript=hl.agg.group_by(
+            ht.transcript_id, hl.agg.min(ht.idx)
+        ),
+        one_transcript_per_gene=hl.agg.min(ht.idx),
+    )
+
+    # Mark priority flags
+    ht = ht.select(
+        _all_rows=ht._all_rows.map(
+            lambda x: x.annotate(
+                one_uniprot_per_transcript=ht.one_uniprot_per_transcript.get(
+                    x.transcript_id
+                )
+                == x.idx,
+                one_transcript_per_gene=ht.one_transcript_per_gene == x.idx,
+            ).drop("idx")
+        )
+    )
+
+    ht = ht.explode("_all_rows")
+
+    return ht.select(**ht._all_rows).key_by("uniprot_id", "transcript_id")
+
+
 def explode_af2_plddt_by_residue(af2_plddt_ht: hl.Table) -> hl.Table:
     """
     Explode AlphaFold2 pLDDT array into per-residue rows.
@@ -1365,6 +1452,15 @@ def create_per_snv_combined_ht(
         # overwrite=True,
     )
 
+    select_uniprot_transcript_ht = prioritize_transcripts_and_uniprots(
+        promis3d_ht, get_constraint_metrics_ht().ht()
+    ).checkpoint(
+        # hl.utils.new_temp_file("select_uniprot_transcript", "ht"),
+        "gs://gnomad-tmp-4day/select_uniprot_transcript-okm4r3LVXExz6b3pc7cbZy.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
     promis3d_ht = annotate_promis3d_with_af2_metrics(
         promis3d_ht, af2_plddt_ht, af2_pae_ht, af2_dist_ht
     ).checkpoint(
@@ -1393,20 +1489,25 @@ def create_per_snv_combined_ht(
     gene_constraint_expr = gene_constraint_ht[ht.transcript_id]
 
     # Structure final output.
-    ht = ht.annotate(
+    ht = ht.select(
         "uniprot_id",
-        gene=gene_constraint_expr.gene,
-        gene_id=gene_constraint_expr.gene_id,
-        canonical=gene_constraint_expr.canonical,
-        mane_select=gene_constraint_expr.mane_select,
-        residue_ref=ht.aminoacid_ref,
-        residue_level_annotations=residue_ht[
-            ht.uniprot_id, ht.transcript_id, ht.residue_index
-        ],
-        gene_level_annotations=gene_constraint_expr,
-    ).checkpoint(
+        **select_uniprot_transcript_ht[ht.uniprot_id, ht.transcript_id],
+        variant_level_annotations=ht.variant_level_annotations,
+        residue_level_annotations=hl.struct(
+            residue_index=ht.residue_index,
+            residue_ref=ht.aminoacid_ref,
+            **residue_ht[ht.uniprot_id, ht.transcript_id, ht.residue_index],
+        ),
+        gene_level_annotations=hl.struct(
+            strand=ht.strand,
+            cds_length=ht.cds_length,
+            aminoacid_length=ht.aminoacid_length,
+            **gene_constraint_expr,
+        ),
+    )
+    ht = ht.checkpoint(
         # hl.utils.new_temp_file("residue_annotations", "ht"),
-        "gs://gnomad-tmp-4day/residue_annotations-7XU8pDwPOSGZvVSIt4b9c4.ht",
+        "gs://gnomad-tmp-4day/residue_annotations-x3xH59KA4AG86HmVxRmSbW.ht",
         _read_if_exists=True,
         # overwrite=True,
     )
@@ -1427,15 +1528,23 @@ def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
     :param per_snv_ht: Annotated per-SNV Hail Table from `create_per_snv_combined_ht`.
     :return: Final aggregated per-residue Hail Table.
     """
+    keep_fields = [
+        "gene",
+        "gene_id",
+        "canonical",
+        "mane_select",
+        "one_uniprot_per_transcript",
+        "one_transcript_per_gene",
+    ]
+
     # Step 1: Extract and deduplicate
     ht = (
         per_snv_ht.select(
-            residue_index=per_snv_ht.residue_index,
+            *keep_fields,
+            residue_index=per_snv_ht.residue_level_annotations.residue_index,
             exomes_coverage=per_snv_ht.variant_level_annotations.exomes_coverage,
             rmc=per_snv_ht.variant_level_annotations.rmc,
-            residue_level_annotations=per_snv_ht.residue_level_annotations.annotate(
-                residue_ref=per_snv_ht.residue_ref,
-            ),
+            residue_level_annotations=per_snv_ht.residue_level_annotations,
             gene_level_annotations=per_snv_ht.gene_level_annotations,
         )
         .key_by("locus", "transcript_id", "uniprot_id")
@@ -1443,10 +1552,16 @@ def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
     )
 
     ht = ht.distinct()
-    ht = ht.checkpoint(hl.utils.new_temp_file("per_residue_dedup", "ht"))
+    ht = ht.checkpoint(
+        # hl.utils.new_temp_file("per_residue_dedup", "ht")
+        "gs://gnomad-tmp-4day/per_residue_dedup-PmPdtcOAfmLEWEh8tT0T4g.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
 
     # Step 2: Group and aggregate
     ht = ht.group_by("transcript_id", "uniprot_id", "residue_index").aggregate(
+        **{k: hl.agg.take(ht[k], 1)[0] for k in keep_fields},
         residue_mean_exomes_coverage=hl.struct(
             mean=hl.agg.mean(ht.exomes_coverage.mean),
             median_approx=hl.agg.mean(ht.exomes_coverage.median_approx),
@@ -1457,10 +1572,16 @@ def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
         residue_level_annotations=hl.agg.take(ht.residue_level_annotations, 1)[0],
         gene_level_annotations=hl.agg.take(ht.gene_level_annotations, 1)[0],
     )
-    ht = ht.checkpoint(hl.utils.new_temp_file("per_residue_agg", "ht"))
+    ht = ht.checkpoint(
+        # hl.utils.new_temp_file("per_residue_agg", "ht"),
+        "gs://gnomad-tmp-4day/per_residue_agg-fphZcBHZDHwoV1EHhbbUVk.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
 
     # Step 3: Flatten and finalize
     ht = ht.select(
+        *keep_fields,
         residue_ref=ht.residue_level_annotations.residue_ref,
         residue_mean_exomes_coverage=ht.residue_mean_exomes_coverage,
         interpro=ht.residue_level_annotations.interpro,
@@ -1486,16 +1607,28 @@ def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
     :param ht: Hail Table with residue-level annotations including PROMIS3D and coverage.
     :return: Aggregated region-level Hail Table.
     """
+    keep_fields = [
+        "gene",
+        "gene_id",
+        "canonical",
+        "mane_select",
+        "one_uniprot_per_transcript",
+        "one_transcript_per_gene",
+    ]
+
     ht = ht.annotate(region_index=ht.promis3d.region_level_annotations.region_index)
 
     ht = ht.group_by("transcript_id", "uniprot_id", "region_index").aggregate(
+        **{k: hl.agg.take(ht[k], 1)[0] for k in keep_fields},
         region_mean_exomes_coverage=hl.struct(
             mean=hl.agg.mean(ht.residue_mean_exomes_coverage.mean),
             median_approx=hl.agg.mean(ht.residue_mean_exomes_coverage.median_approx),
             AN=hl.agg.mean(ht.residue_mean_exomes_coverage.AN),
             percent_AN=hl.agg.mean(ht.residue_mean_exomes_coverage.percent_AN),
         ),
-        rmc_regions=hl.agg.explode(lambda x: hl.agg.collect_as_set(x), ht.rmc_regions),
+        rmc_regions=hl.agg.explode(
+            lambda x: hl.agg.collect_as_set(x), ht.rmc_regions
+        ).filter(lambda x: hl.is_defined(x)),
         promis3d=hl.agg.take(ht.promis3d.region_level_annotations, 1)[0].annotate(
             region_plddt_stats=hl.agg.stats(
                 ht.promis3d.residue_level_annotations.alphafold2_info.residue_plddt
@@ -1519,4 +1652,4 @@ def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
         ).drop("region_plddt_stats")
     )
 
-    return ht
+    return ht.naive_coalesce(100)
