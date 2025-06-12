@@ -243,7 +243,7 @@ def process_kaplanis_variants_ht() -> hl.Table:
     ht = ht.key_by(
         locus=ht.lift_locus,
         alleles=ht.alleles,
-        transcript_id=ht.transcript_id,
+        # transcript_id=ht.transcript_id,
     )
 
     ht = ht.select(
@@ -257,7 +257,11 @@ def process_kaplanis_variants_ht() -> hl.Table:
         "gene_name",
     )
 
-    ht = ht.checkpoint(get_kaplanis_variants_annotated_ht().path, _read_if_exists=True)
+    ht = ht.checkpoint(
+        get_kaplanis_variants_annotated_ht().path,
+        # _read_if_exists=True,
+        overwrite=True,
+    )
 
     return ht
 
