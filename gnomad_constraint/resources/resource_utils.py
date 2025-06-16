@@ -334,7 +334,12 @@ def get_constraint_data(
         post_fix=post_fix,
         sub_dir=sub_dir,
     )
-    path = f"{root_dir}/gnomad.v{version}.{name}{temp_post_fix}.{extension}"
+
+    post_fix = post_fix or ""
+    if post_fix:
+        post_fix = f".{post_fix}"
+
+    path = f"{root_dir}/gnomad.v{version}.{name}{post_fix}{temp_post_fix}.{extension}"
 
     if extension == "ht":
         return TableResource(path)
@@ -350,6 +355,7 @@ def get_mutation_ht(**kwargs) -> TableResource:
 
     :return: Mutation rate Table.
     """
+    kwargs.pop("post_fix", None)  # Remove post_fix if it exists
     return get_constraint_data("mutation_rate", sub_dir="mutation_rate", **kwargs)
 
 
@@ -371,7 +377,10 @@ def get_preprocessed_ht(**kwargs) -> TableResource:
     :return: TableResource of processed context Table.
     """
     return get_constraint_data(
-        "context.preprocessed", sub_dir="preprocessed_data", **kwargs
+        "context.preprocessed",
+        sub_dir="preprocessed_data",
+        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
+        **kwargs,
     )
 
 
@@ -420,6 +429,7 @@ def get_per_variant_expected_dataset(
         "per_variant_expected",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
+        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -438,7 +448,7 @@ def get_aggregated_per_variant_expected(
         "per_variant_expected.aggregated",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="add_new_loftee",
+        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -455,7 +465,7 @@ def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResour
         "constraint_group",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="add_new_loftee",
+        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -474,7 +484,7 @@ def get_constraint_metrics_dataset(
         "constraint_metrics",
         sub_dir="metrics",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="add_new_loftee",
+        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 

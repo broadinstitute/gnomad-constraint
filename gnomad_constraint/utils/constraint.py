@@ -816,7 +816,7 @@ def create_per_variant_expected_ht(
             f"new_loftee_{n}": hl.or_else(
                 new_loftee_keyed.misannot_Pposterior < p, False
             )
-            for n, p in [("95", 0.95), ("99", 0.99), ("99_5", 0.995)]
+            for n, p in [("99", 0.99), ("99_5", 0.995), ("99_9", 0.999)]
         },
     }
     ht = ht.annotate(**ann_expr)
@@ -857,7 +857,35 @@ def aggregate_per_variant_expected_ht(
     :return: Table with the observed and expected counts.
     """
     ht = ht.transmute(**ht.calibrate_mu)
-    groupings = ["new_loftee_95", "new_loftee_99", "new_loftee_99_5"]
+    groupings = (
+        "annotation",
+        "modifier",
+        "gene",
+        "gene_id",
+        "transcript",
+        "canonical",
+        "mane_select",
+        # 'am_0_999',
+        # 'am_per_90',
+        # 'am_per_95',
+        # 'am_per_98',
+        # 'am_per_99',
+        # 'am_tx_per_90',
+        # 'am_tx_per_95',
+        # 'am_tx_per_98',
+        # 'am_tx_per_99',
+        # 'esm_per_90',
+        # 'esm_per_95',
+        # 'esm_per_98',
+        # 'esm_per_99',
+        # 'esm_tx_per_90',
+        # 'esm_tx_per_95',
+        # 'esm_tx_per_98',
+        # 'esm_tx_per_99',
+        "new_loftee_99",
+        "new_loftee_99_5",
+        "new_loftee_99_9",
+    )
     # *(MU_GROUPING if include_mu_annotations_in_grouping else []),
     # *[
     #    g
@@ -865,6 +893,7 @@ def aggregate_per_variant_expected_ht(
     #    if g not in MU_GROUPING
     #    ],
     # ]
+
     ht = ht.group_by(*groupings).aggregate(
         **aggregate_expected_variants_expr(
             ht,
@@ -875,7 +904,7 @@ def aggregate_per_variant_expected_ht(
         )
     )
 
-    return ht.naive_coalesce(1000)
+    return ht  # .naive_coalesce(1000)
 
 
 # TODO: Move this up after review in this location.
@@ -1084,11 +1113,11 @@ def build_constraint_consequence_groups(
         "csq_set": {"syn": csq_expr == "synonymous_variant", "mis": mis_expr},
         "lof": {
             # Filter to classic LoF annotations.
-            "classic": lof_classic_expr,
+            # "classic": lof_classic_expr,
             # Filter to LOFTEE HC or LC.
             "hc_lc": lof_hc_lc_expr,
             # Filter to classic LoF annotations with LOFTEE HC or LC.
-            "classic_hc_lc": lof_classic_expr & lof_hc_lc_expr,
+            # "classic_hc_lc": lof_classic_expr & lof_hc_lc_expr,
             # Filter to LoF annotations with LOFTEE HC.
             "hc": lof_hc_expr,
         },

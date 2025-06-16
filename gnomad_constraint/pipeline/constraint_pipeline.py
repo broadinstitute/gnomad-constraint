@@ -558,7 +558,7 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
-            ht = res.per_variant_apply_ht.ht()
+            ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 50000})
             ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -574,6 +574,57 @@ def main(args):
             )
             res = resources.aggregate_by_constraint_groups
             res.check_resource_existence()
+            genes_NA = [
+                "CUL3",
+                "ARID1B",
+                "TNPO3",
+                "SRCAP",
+                "BAX",
+                "MIB1",
+                "SH2B3",
+                "KCNA1",
+                "ODC1",
+                "KDM5B",
+                "ARID1A",
+                "DNMT3A",
+                "PIWIL1",
+                "NARS1",
+                "HRK",
+                "SPRY2",
+                "CCDC115",
+                "SMAD6",
+                "TCF12",
+                "BCAS3",
+                "MALL",
+                "G3BP1",
+                "PHIP",
+                "GIGYF1",
+                "RASA2",
+                "DYRK1A",
+                "SKI",
+                "SIK3",
+                "CTNNB1",
+                "TET2",
+                "ROBO1",
+                "PPM1D",
+                "ASXL1",
+                "PTEN",
+                "SFT2D3",
+                "FOXG1",
+                "CHEK2",
+                "PURA",
+                "MMP23B",
+                "ZNF724",
+                "CGB7",
+                "NF1",
+                "PRRC2A",
+                "C1orf167",
+                "ZNF492",
+                "RBM12",
+                "TRNP1",
+                "SALL3",
+                "ZNF234",
+            ]
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
@@ -589,27 +640,69 @@ def main(args):
                     ]
                 ),
                 additional_groupings={
-                    "am": {
-                        "am_over_0_999": ht.am_0_999,
-                        **{f"am_per_{p}": ht[f"am_per_{p}"] for p in [90, 95, 98, 99]},
-                        **{
-                            f"am_tx_per_{p}": ht[f"am_tx_per_{p}"]
-                            for p in [90, 95, 98, 99]
-                        },
-                    },
-                    "esm": {
-                        **{
-                            f"esm_per_{p}": ht[f"esm_per_{p}"] for p in [90, 95, 98, 99]
-                        },
-                        **{
-                            f"esm_tx_per_{p}": ht[f"esm_tx_per_{p}"]
-                            for p in [90, 95, 98, 99]
-                        },
-                    },
+                    # "am": {
+                    #    "am_over_0_999": ht.am_0_999,
+                    #    **{f"am_per_{p}": ht[f"am_per_{p}"] for p in [90, 95, 98, 99]},
+                    #    **{
+                    #        f"am_tx_per_{p}": ht[f"am_tx_per_{p}"]
+                    #        for p in [90, 95, 98, 99]
+                    #    },
+                    # },
+                    # "esm": {
+                    #    **{
+                    #        f"esm_per_{p}": ht[f"esm_per_{p}"] for p in [90, 95, 98, 99]
+                    #    },
+                    #    **{
+                    #        f"esm_tx_per_{p}": ht[f"esm_tx_per_{p}"]
+                    #        for p in [90, 95, 98, 99]
+                    #    },
+                    # },
                     "new_loftee": {
-                        f"new_loftee_{p}": ht[f"new_loftee_{p}"]
-                        for p in ["95", "99", "99_5"]
-                    },
+                        **{
+                            f"new_loftee_{p}": ht[f"new_loftee_{p}"]
+                            for p in ["99", "99_5", "99_9"]
+                        },
+                        **{
+                            f"new_loftee_{p}_HC_LC": (
+                                ht[f"new_loftee_{p}"]
+                                | (
+                                    hl.is_missing(ht[f"new_loftee_{p}"])
+                                    & hl.set({"HC", "LC"}).contains(ht.modifier)
+                                )
+                            )
+                            for p in ["99", "99_5", "99_9"]
+                        },
+                        **{
+                            f"new_loftee_{p}_HC": (
+                                ht[f"new_loftee_{p}"]
+                                | (
+                                    hl.is_missing(ht[f"new_loftee_{p}"])
+                                    & (ht.modifier == "HC")
+                                )
+                            )
+                            for p in ["99", "99_5", "99_9"]
+                        },
+                        **{
+                            f"new_loftee_{p}_HC_LC_na_genes": (
+                                ht[f"new_loftee_{p}"]
+                                | (
+                                    hl.set(genes_NA).contains(ht.gene)
+                                    & hl.set({"HC", "LC"}).contains(ht.modifier)
+                                )
+                            )
+                            for p in ["99", "99_5", "99_9"]
+                        },
+                        **{
+                            f"new_loftee_{p}_HC_na_genes": (
+                                ht[f"new_loftee_{p}"]
+                                | (
+                                    hl.set(genes_NA).contains(ht.gene)
+                                    & (ht.modifier == "HC")
+                                )
+                            )
+                            for p in ["99", "99_5", "99_9"]
+                        },
+                    }
                 },
                 additional_grouping_combinations=[
                     # ["am"],
@@ -617,8 +710,8 @@ def main(args):
                     ["new_loftee"],
                     # ["lof", "am"],
                     # ["lof", "esm"],
-                    ["new_loftee", "am"],
-                    ["new_loftee", "esm"],
+                    # ["new_loftee", "am"],
+                    # ["new_loftee", "esm"],
                 ],
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
