@@ -1090,6 +1090,7 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     ht = ht.select(
         "oe",
         num_residues=num_residues,
+        full_region=hl.struct(region=hl.range(num_residues)),
         regions=hl.enumerate(
             ht.min_oe_upper.map(lambda x: x.select("region")).filter(
                 lambda x: x.region.length() < num_residues
@@ -1109,29 +1110,27 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     round_num = 1
 
     while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
-        region_expr = prep_region_struct(ht.region, ht.oe)
-        ht = ht.annotate(_region=region_expr).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht")
-        )
-        region_expr = ht._region
-
+        ht = ht.annotate(_region=prep_region_struct(ht.region, ht.oe))
+        
         # Compute background by excluding current region.
-        background_expr = remove_residues_from_region(
-            hl.range(ht.num_residues), ht.region
-        ).region
-        background_model = prep_region_struct(background_expr, ht.oe)
-
-        # Total nll = region + background + selected so far
-        region_expr = region_expr.annotate(
-            background_model=background_model,
-            region_nll=region_expr.nll,
-            nll=background_model.nll + region_expr.nll + ht.selected_nll,
+        ht = ht.annotate(_background=remove_residues_from_region(ht.full_region, ht._region))
+        ht = ht.annotate(
+            _region=ht._region.annotate(
+                background_model=prep_region_struct(ht._background.region, ht.oe),
+                region_nll=ht._region.nll,
+            )
         )
-
-        ht2 = ht.select(exp=region_expr.exp, nll=region_expr.nll)
-        ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.scan1", "ht")
+        ht = ht.annotate(
+            _region=ht._region.annotate(
+                nll=ht._region.background_model.nll + ht._region.region_nll + ht.selected_nll,
+            )
         )
+        ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht"))
+
+        ht2 = ht.select(exp=ht._region.exp, nll=ht._region.nll)
+        ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)) #.checkpoint(
+        #    hl.utils.new_temp_file(f"forward_round_{round_num}.scan1", "ht")
+        #)
         ht2 = (
             ht2.group_by("uniprot_id", "transcript_id")
             .aggregate(
@@ -1159,7 +1158,7 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
                 hl.utils.new_temp_file(f"forward_round_{round_num}.scan2", "ht")
             )
         )
-        _ht = ht.select(region=region_expr)
+        _ht = ht.select(region=ht._region)
         ht2 = ht2.annotate(
             best_region=_ht[ht2.uniprot_id, ht2.transcript_id, ht2.min_idx].region
         )
