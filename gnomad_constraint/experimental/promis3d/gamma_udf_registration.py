@@ -61,7 +61,22 @@ def qgamma(
         else:
             # For Hail expressions, we need to use a different approach
             # This is a placeholder that will be replaced by the Scala UDF
-            return shape * scale  # Fallback to approximation for now
+            # For now, use a better approximation that's closer to the actual Gamma PPF
+            # This is based on the relationship between Gamma and Chi-squared
+            # distributions
+            import math
+
+            # Use Wilson-Hilferty approximation for Gamma quantiles
+            # This is more accurate than just shape * scale
+            z = hl.qnorm(p)  # Standard normal quantile
+            shape_float = hl.float64(shape)
+            # Wilson-Hilferty approximation for Gamma distribution
+            result = (
+                shape_float
+                * scale
+                * (1 + z / hl.sqrt(9 * shape_float) - 1 / (9 * shape_float)) ** 3
+            )
+            return result
 
     except ImportError:
         # Fallback to approximation if scipy is not available
