@@ -40,11 +40,12 @@ def get_promis3d_root(version: str = CURRENT_VERSION, test: bool = False) -> str
     :param test: Whether to use a tmp path for testing.
     :return: Root path to promis3d resources.
     """
-    return (
-        f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint/promis3d"
-        if test
-        else f"gs://gnomad/v{version}/constraint/promis3d"
-    )
+    return "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run"
+    # return (
+    #    f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint/promis3d"
+    #    if test
+    #    else f"gs://gnomad/v{version}/constraint/promis3d"
+    # )
 
 
 def get_gencode_fasta(
@@ -247,6 +248,7 @@ def get_greedy_ht(
 def get_forward_ht(
     version: str = CURRENT_VERSION,
     test: bool = False,
+    name: str = "",
 ) -> TableResource:
     """
     Get Promis3D forward algorithm Hail Table resource.
@@ -255,7 +257,10 @@ def get_forward_ht(
     :param test: Whether to use a tmp path for testing. Default is False.
     :return: Promis3D forward algorithm Hail Table resource.
     """
-    return TableResource(f"{get_promis3d_root(version, test)}/promis3D_forward.ht")
+    name = f".{name}" if name else ""
+    return TableResource(
+        f"{get_promis3d_root(version, test)}/promis3D_forward{name}.ht"
+    )
 
 
 def get_forward_annotation_ht(

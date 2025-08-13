@@ -33,6 +33,7 @@ from gnomad_constraint.experimental.promis3d.data_import import (
     process_interpro_ht,
     process_kaplanis_variants_ht,
 )
+from gnomad_constraint.experimental.promis3d.gamma_udf_registration import qgamma
 from gnomad_constraint.experimental.promis3d.resources import get_constraint_metrics_ht
 
 logging.basicConfig(
@@ -597,23 +598,35 @@ def get_cumulative_oe(oe_expr):
     return oe_expr
 
 
-def make_gamma_upper_ci(alpha: float = 0.05) -> hl.expr.ArrayExpression:
-    @pandas_udf("double")
-    def _udf(obs: pd.Series, exp: pd.Series) -> pd.Series:
-        import numpy as np
-        from scipy.stats import gamma as gamma_dist
+def gamma_upper_ci(
+    obs: hl.expr.Int32Expression,
+    exp: hl.expr.Float64Expression,
+    alpha: float = 0.05,
+) -> hl.expr.Float64Expression:
+    """
+    Calculate the upper bound of the OE confidence interval using the Gamma distribution.
 
-        a = obs.to_numpy(dtype=np.float64) + 1.0
-        b = exp.to_numpy(dtype=np.float64)
+    This function uses the qgamma UDF to calculate the upper confidence interval
+    for observed/expected ratios.
 
-        return pd.Series(
-            gamma_dist.ppf(1.0 - alpha, a=a, scale=1.0 / b), dtype="float64"
-        )
+    :param obs: Observed count
+    :param exp: Expected count
+    :param alpha: Significance level for the confidence interval. Default is 0.05.
+    :return: Upper bound of the OE confidence interval
+    """
+    # Calculate shape and scale parameters for Gamma distribution
+    shape = obs + 1.0
+    scale = 1.0 / exp
+    p = 1.0 - alpha
 
-    return _udf
+    return qgamma(p, shape, scale)
 
 
-def chisq_upper_ci(obs: int, exp: int, alpha: float = 0.05) -> float:
+def chisq_upper_ci(
+    obs: hl.expr.Int32Expression,
+    exp: hl.expr.Float64Expression,
+    alpha: float = 0.05,
+) -> hl.expr.Float64Expression:
     """
     Calculate the upper bound of the OE confidence interval using the chi-squared
     distribution.
@@ -626,13 +639,16 @@ def chisq_upper_ci(obs: int, exp: int, alpha: float = 0.05) -> float:
     return hl.qchisqtail(1 - alpha / 2, 2 * (obs + 1), lower_tail=True) / (2 * exp)
 
 
-def calculate_oe_upper(oe_expr, alpha=0.05):
+def calculate_oe_upper(oe_expr, alpha=0.05, oe_upper_method: str = "gamma"):
     # Calculate upper bound of oe confidence interval.
-    gamma_upper_ci_func = make_gamma_upper_ci(alpha)
+    if oe_upper_method not in ["gamma", "chisq"]:
+        raise ValueError(f"Invalid OE upper method: {oe_upper_method}")
+
+    oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
     oe_upper_expr = oe_expr.map(
         lambda x: x.annotate(
             oe=divide_null(x.obs, x.exp),
-            oe_upper=gamma_upper_ci_func(x.obs, x.exp),
+            oe_upper=oe_upper_func(x.obs, x.exp, alpha),
         )
     )
 
@@ -667,6 +683,7 @@ def get_3d_residue(
     oe_expr: hl.expr.ArrayExpression,
     alpha: float = 0.05,
     min_exp_mis: int = MIN_EXP_MIS,
+    oe_upper_method: str = "gamma",
 ) -> hl.expr.StructExpression:
     """
     Get the 3D residue with the lowest upper bound of the OE confidence interval.
@@ -690,7 +707,7 @@ def get_3d_residue(
     # upper bound of OE confidence interval.
     oe_expr = dist_mat_expr.map(lambda x: x.annotate(**oe_expr[x.residue_index]))
     oe_expr = get_cumulative_oe(oe_expr)
-    oe_expr = calculate_oe_upper(oe_expr, alpha=alpha)
+    oe_expr = calculate_oe_upper(oe_expr, alpha=alpha, oe_upper_method=oe_upper_method)
 
     # Get the 3D region with the lowest upper bound of the OE confidence interval for
     # each residue.
@@ -700,7 +717,10 @@ def get_3d_residue(
 
 
 def determine_regions_with_min_oe_upper(
-    af2_ht: hl.Table, oe_codon_ht: hl.Table, min_exp_mis: int = MIN_EXP_MIS
+    af2_ht: hl.Table,
+    oe_codon_ht: hl.Table,
+    min_exp_mis: int = MIN_EXP_MIS,
+    oe_upper_method: str = "gamma",
 ) -> hl.Table:
     """
     Determine the most intolerant region for each UniProt ID and residue index.
@@ -719,7 +739,10 @@ def determine_regions_with_min_oe_upper(
         transcript_id=af2_ht.enst,
         oe=af2_ht.oe,
         min_oe_upper=get_3d_residue(
-            af2_ht.dist_mat, af2_ht.oe, min_exp_mis=min_exp_mis
+            af2_ht.dist_mat,
+            af2_ht.oe,
+            min_exp_mis=min_exp_mis,
+            oe_upper_method=oe_upper_method,
         ),
     )
 
@@ -861,7 +884,7 @@ def calculate_oe_neq_1_chisq(
     return ((obs_expr - exp_expr) ** 2) / exp_expr
 
 
-def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
+def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
     """
     Run the forward algorithm to find the most intolerant region.
 
@@ -869,6 +892,9 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
         index
     :return: Hail Table annotated with the observed and expected values for each residue.
     """
+    if oe_upper_method not in ["gamma", "chisq"]:
+        raise ValueError(f"Invalid OE upper method: {oe_upper_method}")
+
     num_residues = ht.oe.length()
     null_region = hl.range(num_residues)
     null_model = prep_region_struct(null_region, ht.oe)
@@ -889,7 +915,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     ht = ht.explode("regions")
     ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(5000, shuffle=True)
+    ht = ht.repartition(100, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
     ht.describe()
     ht.show(5)
@@ -900,14 +926,15 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
         # region, and adding the new region to the selected list.
         region_expr = prep_region_struct(ht.region, ht.oe)
         # TODO: Consider adding a checkpoint here or after the next step.
-        ht = ht.annotate(_region=region_expr).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht")
-        )
+        # ht = ht.annotate(_region=region_expr).checkpoint(
+        #    hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht")
+        # )
+        ht = ht.annotate(_region=region_expr)
         region_expr = ht._region
         updated_null_expr = remove_residues_from_region(ht.null_model, region_expr)
-        ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.remove", "ht")
-        )
+        ht = ht.annotate(_updated_null=updated_null_expr)  # .checkpoint(
+        #    hl.utils.new_temp_file(f"forward_round_{round_num}.remove", "ht")
+        # )
         updated_null_expr = ht._updated_null
         updated_null_expr = prep_region_struct(updated_null_expr.region, ht.oe)
         ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
@@ -921,9 +948,11 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
             nll=updated_null_expr.nll + ht.selected_nll + region_expr.nll,
         )
         ht2 = ht.select(exp=region_expr.exp, nll=region_expr.nll)
-        ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.scan1", "ht")
-        )
+        ht2 = ht2.filter(
+            hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)
+        )  # .checkpoint(
+        #    hl.utils.new_temp_file(f"forward_round_{round_num}.scan1", "ht")
+        # )
         ht2 = (
             ht2.group_by("uniprot_id", "transcript_id")
             .aggregate(
@@ -1007,12 +1036,10 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     ht = ht.annotate(region_length=hl.len(ht.region))
     ht = ht.explode("region")
     chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
+    oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
     ht = ht.annotate(
         residue_index=ht.region,
-        oe_upper=(
-            hl.qchisqtail(1 - 0.05 / 2, 2 * (ht.obs + 1), lower_tail=True)
-            / (2 * ht.exp)
-        ),
+        oe_upper=oe_upper_func(ht.obs, ht.exp, 0.05),
         chisq=chisq_expr,
         p_value=hl.pchisqtail(chisq_expr, 1),
     )
@@ -1076,7 +1103,8 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     ht = ht.explode("regions")
     ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(5000, shuffle=True)
+    # ht = ht.repartition(5000, shuffle=True)
+    ht = ht.repartition(100, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
     round_num = 1
 
@@ -1183,10 +1211,7 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
     ht = ht.annotate(
         residue_index=ht.region,
-        oe_upper=(
-            hl.qchisqtail(1 - 0.05 / 2, 2 * (ht.obs + 1), lower_tail=True)
-            / (2 * ht.exp)
-        ),
+        oe_upper=gamma_upper_ci(ht.obs, ht.exp, 0.05),
         chisq=chisq_expr,
         p_value=hl.pchisqtail(chisq_expr, 1),
     )
@@ -1214,7 +1239,7 @@ def prioritize_transcripts_and_uniprots(
        - All transcript/uniprot pairs with their priority.
        - The lowest-index (prioritized) uniprot per transcript.
        - The lowest-index (prioritized) transcript per gene.
-    7. Annotates flags indicating for each row if it’s the “one uniprot per transcript” and/or “one transcript per gene”.
+    7. Annotates flags indicating for each row if it's the "one uniprot per transcript" and/or "one transcript per gene".
     8. Returns a de-nested table keyed by (uniprot_id, transcript_id).
 
     :param residue_ht: Hail Table keyed by (uniprot_id, transcript_id).

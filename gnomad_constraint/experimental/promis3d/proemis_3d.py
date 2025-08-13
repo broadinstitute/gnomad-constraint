@@ -28,6 +28,7 @@ from gnomad_constraint.experimental.promis3d.utils import (
     process_af2_structures,
     remove_multi_frag_uniprots,
     run_forward,
+    run_forward_no_catch_all,
     run_greedy,
 )
 
@@ -130,7 +131,8 @@ def get_promis3d_resources(
     )
     compute_af2_distance_matrices = PipelineStepResourceCollection(
         "--compute-af2-distance-matrices",
-        output_resources={"af2_dist_ht": promis3d_res.get_af2_dist_ht(version, test)},
+        # output_resources={"af2_dist_ht": promis3d_res.get_af2_dist_ht(version, test)},
+        output_resources={"af2_dist_ht": promis3d_res.get_af2_dist_ht(version)},
     )
     extract_af2_plddt = PipelineStepResourceCollection(
         "--extract-af2-plddt",
@@ -156,7 +158,8 @@ def get_promis3d_resources(
             "GENCODE GTF": {"gencode_gtf_ht": promis3d_res.get_gencode_ht(version)}
         },
         output_resources={
-            "gencode_pos_ht": promis3d_res.get_gencode_pos_ht(version, test),
+            # "gencode_pos_ht": promis3d_res.get_gencode_pos_ht(version, test),
+            "gencode_pos_ht": promis3d_res.get_gencode_pos_ht(version),
         },
     )
     run_greedy = PipelineStepResourceCollection(
@@ -349,63 +352,133 @@ def main(args):
         ht = ht.checkpoint(res.gencode_pos_ht.path, overwrite=overwrite)
         ht.show()
 
-    if args.run_greedy or args.run_forward:
-        logger.info("Preparing to run greedy and/or forward algorithms.")
-        if args.run_greedy:
-            res = resources.run_greedy
-            res.check_resource_existence()
-        if args.run_forward:
-            res = resources.run_forward
-            res.check_resource_existence()
+    if True:
+        # if args.run_greedy or args.run_forward:
+        # logger.info("Preparing to run greedy and/or forward algorithms.")
+        # if args.run_greedy:
+        #    res = resources.run_greedy
+        # res.check_resource_existence()
+        # if args.run_forward:
+        #    res = resources.run_forward
+        # res.check_resource_existence()
 
         # Use new shuffle method for apply models to prevent shuffle errors.
         hl._set_flags(use_new_shuffle="1")
 
-        ht = res.obs_exp_ht.ht()
-        if test:
-            ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
+        # ht = res.obs_exp_ht.ht()
+        # gencode_pos_ht = res.gencode_pos_ht.ht()
+        # af2_dist_ht = res.af2_dist_ht.ht()
+        # if test:
+        #    genes_for_testing_ht = hl.import_table(
+        #        "gs://gnomad/v4.1/constraint/resources/genes_for_testing.txt"
+        #    ).cache()
+        #    test_transcripts = hl.set(genes_for_testing_ht.transcript_id.collect())
+        #    ht = ht.filter(test_transcripts.contains(ht.transcript))
+        #    gencode_pos_ht = gencode_pos_ht.filter(test_transcripts.contains(gencode_pos_ht.enst)).cache()
+        #    uniprot_ids = hl.set(gencode_pos_ht.aggregate(hl.agg.collect_as_set(gencode_pos_ht.uniprot_id)))
+        #    af2_dist_ht = af2_dist_ht.filter(uniprot_ids.contains(af2_dist_ht.uniprot_id))
+        #    #ht = ht.filter(ht.transcript == TEST_TRANSCRIPT_ID)
 
-        ht = ht.filter(ht.annotation == "missense_variant")
+        # ht = ht.filter(ht.annotation == "missense_variant")
 
-        if version == "2.1.1":
-            ht = ht.group_by("locus", "transcript").aggregate(
-                obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
-            )
-        elif version == "4.1":
-            ht = ht.group_by("locus", "transcript").aggregate(
-                obs=hl.agg.sum(ht.calibrate_mu.observed_variants[0]),
-                exp=hl.agg.sum(ht.expected_variants[0]),
-            )
-        else:
-            raise ValueError(
-                "The requested version of the resource Tables is not available."
-            )
-        ht = generate_codon_oe_table(ht, res.gencode_pos_ht.ht())
-        ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
-        af2_ht = (
-            res.af2_dist_ht.ht()
-            .repartition(5000)
-            .checkpoint(hl.utils.new_temp_file("af2_dist", "ht"))
+        # if version == "2.1.1":
+        #    ht = ht.group_by("locus", "transcript").aggregate(
+        #        obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
+        #    )
+        # elif version == "4.1":
+        #    ht = ht.group_by("locus", "transcript").aggregate(
+        #        obs=hl.agg.sum(ht.calibrate_mu.observed_variants[0]),
+        #        exp=hl.agg.sum(ht.expected_variants[0]),
+        #    )
+        # else:
+        #    raise ValueError(
+        #        "The requested version of the resource Tables is not available."
+        #    )
+        # ht = generate_codon_oe_table(ht, gencode_pos_ht)
+        # ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
+        # ht = ht.repartition(50).checkpoint(
+        #    "gs://gnomad-tmp-4day/codon_oe-TqnCxN8brzww1z7IkpWwVm.ht"
+        # )
+        # af2_ht = (
+        #    af2_dist_ht
+        #    #.repartition(5000)
+        #    .repartition(50)
+        #    .checkpoint(hl.utils.new_temp_file("af2_dist", "ht"))
+        # )
+        # af2_ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht")
+        # ht = determine_regions_with_min_oe_upper(
+        #    af2_ht, ht, min_exp_mis=args.min_exp_mis
+        # )
+        # ht = ht.repartition(5000).checkpoint(
+        # ht = ht.repartition(50).checkpoint(
+        #    hl.utils.new_temp_file("sort_regions_by_oe", "ht")
+        # )
+        # ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.ht")
+        af2_ht = hl.read_table(
+            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht"
         )
+        ht = hl.read_table(
+            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/codon_oe.ht"
+        )
+        # if args.run_greedy:
+        #    logger.info("Running greedy algorithm.")
+        #    res = resources.run_greedy
+        #    greedy_ht = run_greedy(ht)
+        #    greedy_ht = greedy_ht.checkpoint(res.greedy_ht.path, overwrite=overwrite)
+        #    greedy_ht.show()
+
+        min_exp_mis_out = (
+            ""
+            if args.min_exp_mis == MIN_EXP_MIS
+            else f".min_exp_mis_{args.min_exp_mis}"
+        )
+
+        if args.run_forward_original:
+            # logger.info("Running forward algorithm.")
+            # res = resources.run_forward
+            ht = determine_regions_with_min_oe_upper(
+                af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
+            )
+            ht = ht.repartition(50).checkpoint(
+                "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.chisq.ht",
+                _read_if_exists=True,
+            )
+            output_path = promis3d_res.get_forward_ht(
+                name=f"oe_upper_chisq{min_exp_mis_out}"
+            ).path
+            forward_ht = run_forward(
+                ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
+            )
+            # forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
+            forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
+            forward_ht.show()
+
         ht = determine_regions_with_min_oe_upper(
-            af2_ht, ht, min_exp_mis=args.min_exp_mis
+            af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
         )
-        ht = ht.repartition(5000).checkpoint(
-            hl.utils.new_temp_file("sort_regions_by_oe", "ht")
+        ht = ht.repartition(50).checkpoint(
+            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.gamma.ht",
+            _read_if_exists=True,
         )
-
-        if args.run_greedy:
-            logger.info("Running greedy algorithm.")
-            res = resources.run_greedy
-            greedy_ht = run_greedy(ht)
-            greedy_ht = greedy_ht.checkpoint(res.greedy_ht.path, overwrite=overwrite)
-            greedy_ht.show()
-
         if args.run_forward:
-            logger.info("Running forward algorithm.")
-            res = resources.run_forward
-            forward_ht = run_forward(ht, min_exp_mis=args.min_exp_mis)
-            forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
+            # logger.info("Running forward algorithm.")
+            # res = resources.run_forward
+            output_path = promis3d_res.get_forward_ht(
+                name=f"oe_upper_gamma{min_exp_mis_out}"
+            ).path
+            forward_ht = run_forward(
+                ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
+            )
+            # forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
+            forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
+            forward_ht.show()
+
+        if args.run_forward_no_catch_all:
+            output_path = promis3d_res.get_forward_ht(
+                name=f"oe_upper_gamma.no_catch_all{min_exp_mis_out}"
+            ).path
+            forward_ht = run_forward_no_catch_all(ht, min_exp_mis=args.min_exp_mis)
+            forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
             forward_ht.show()
 
     if args.write_per_variant:
@@ -524,6 +597,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--run-forward",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--run-forward-original",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--run-forward-no-catch-all",
         help="",
         action="store_true",
     )
