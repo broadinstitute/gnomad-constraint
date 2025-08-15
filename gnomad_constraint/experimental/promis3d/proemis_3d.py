@@ -457,8 +457,9 @@ def main(args):
             af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
         )
         ht = ht.repartition(50).checkpoint(
-            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.gamma.ht",
-            _read_if_exists=True,
+            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.gamma.with_dists.ht",
+            # _read_if_exists=True,
+            overwrite=True,
         )
         if args.run_forward:
             # logger.info("Running forward algorithm.")
