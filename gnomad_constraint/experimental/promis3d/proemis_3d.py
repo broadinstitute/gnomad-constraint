@@ -29,6 +29,7 @@ from gnomad_constraint.experimental.promis3d.utils import (
     remove_multi_frag_uniprots,
     run_forward,
     run_forward_no_catch_all,
+    run_forward_no_catch_all_standardized,
     run_greedy,
 )
 
@@ -439,8 +440,8 @@ def main(args):
             ht = determine_regions_with_min_oe_upper(
                 af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
             )
-            ht = ht.repartition(50).checkpoint(
-                "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.chisq.ht",
+            ht = ht.repartition(200).checkpoint(
+                f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.chisq.ht",
                 _read_if_exists=True,
             )
             output_path = promis3d_res.get_forward_ht(
@@ -456,10 +457,10 @@ def main(args):
         ht = determine_regions_with_min_oe_upper(
             af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
         )
-        ht = ht.repartition(50).checkpoint(
-            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.gamma.with_dists.ht",
-            # _read_if_exists=True,
-            overwrite=True,
+        ht = ht.repartition(200).checkpoint(
+            f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.gamma.ht",
+            _read_if_exists=True,
+            # overwrite=True,
         )
         if args.run_forward:
             # logger.info("Running forward algorithm.")
@@ -479,6 +480,16 @@ def main(args):
                 name=f"oe_upper_gamma.no_catch_all{min_exp_mis_out}"
             ).path
             forward_ht = run_forward_no_catch_all(ht, min_exp_mis=args.min_exp_mis)
+            forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
+            forward_ht.show()
+
+        if args.run_forward_no_catch_all_standardized:
+            output_path = promis3d_res.get_forward_ht(
+                name=f"oe_upper_gamma.no_catch_all_standardized{min_exp_mis_out}"
+            ).path
+            forward_ht = run_forward_no_catch_all_standardized(
+                ht, min_exp_mis=args.min_exp_mis
+            )
             forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
             forward_ht.show()
 
@@ -608,6 +619,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--run-forward-no-catch-all",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--run-forward-no-catch-all-standardized",
         help="",
         action="store_true",
     )

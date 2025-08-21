@@ -922,7 +922,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
     ht = ht.explode("regions")
     ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(100, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
+    ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
     ht.describe()
     ht.show(5)
@@ -1084,7 +1084,7 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
         _bg_after_selected=ht.full_region,
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(50, shuffle=True)
+    ht = ht.repartition(200, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file("forward_explode", "ht"))
     round_num = 1
 
@@ -1310,6 +1310,418 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     )
 
     return ht
+
+
+def run_forward_no_catch_all_standardized(
+    ht,
+    min_exp_mis: int = MIN_EXP_MIS,
+    # post-hoc assignment scoring params
+    alpha: float = 1.0,  # weight for standardized min distance
+    beta: float = 1.0,  # weight for standardized ΔOE
+):
+    num_residues = ht.oe.length()
+
+    # keep a full set for set ops; no growing catch-all
+    ht = ht.select(
+        "oe",
+        num_residues=num_residues,
+        full_region=hl.struct(region=hl.range(num_residues)),
+        regions=hl.enumerate(
+            ht.min_oe_upper.map(lambda x: x.select("region")).filter(
+                lambda x: x.region.length() < num_residues
+            )
+        ),
+        selected=hl.empty_array(
+            prep_region_struct(hl.range(num_residues), ht.oe).dtype
+        ),
+        selected_nll=0.0,
+        found_best=False,
+    )
+
+    ht = ht.explode("regions")
+    ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
+    ht = ht.annotate(
+        _region=prep_region_struct(ht.region, ht.oe),
+        _bg_after_selected=ht.full_region,
+    )
+    ht = ht.key_by("uniprot_id", "transcript_id", "idx")
+    ht = ht.repartition(200, shuffle=True)
+    ht = ht.checkpoint(hl.utils.new_temp_file("forward_explode", "ht"))
+    round_num = 1
+
+    while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
+        # Baseline this round: background after selected = full − union(selected)
+        # Candidate background = (full − selected) − candidate
+        ht = ht.annotate(
+            _bg_after_both=remove_residues_from_region(
+                ht._bg_after_selected, ht._region
+            ),
+            _current_model_nll=ht.selected_nll
+            + prep_region_struct(ht._bg_after_selected.region, ht.oe).nll,
+        )
+        ht = ht.annotate(
+            _cand_bg_model=prep_region_struct(ht._bg_after_both.region, ht.oe)
+        )
+
+        # candidate total nll vs baseline for this round
+        ht = ht.annotate(
+            _region=ht._region.annotate(
+                region_nll=ht._region.nll,
+                nll=ht.selected_nll + ht._region.nll + ht._cand_bg_model.nll,
+            ),
+        ).drop("_bg_after_selected", "_bg_after_both", "_cand_bg_model")
+        ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.1", "ht"))
+
+        # pick best (min nll) candidate per (uniprot, transcript)
+        ht2 = ht.select("_region", "_current_model_nll")
+        ht2 = ht2.filter(
+            hl.is_defined(ht2._region.nll) & (ht2._region.exp >= min_exp_mis)
+        )
+        ht2 = (
+            ht2.group_by("uniprot_id", "transcript_id")
+            .aggregate(
+                **hl.agg.fold(
+                    hl.missing(
+                        hl.tstruct(
+                            min_idx=hl.tint,
+                            min_nll=hl.tfloat,
+                            best_region=ht2._region.dtype,
+                            current_model_nll=ht2._current_model_nll.dtype,
+                        )
+                    ),
+                    lambda accum: (
+                        hl.case()
+                        .when(
+                            hl.is_missing(accum) | (accum.min_nll > ht2._region.nll),
+                            hl.struct(
+                                min_idx=ht2.idx,
+                                min_nll=ht2._region.nll,
+                                best_region=ht2._region,
+                                current_model_nll=ht2._current_model_nll,
+                            ),
+                        )
+                        .default(accum)
+                    ),
+                    lambda a, b: (
+                        hl.case()
+                        .when(hl.is_missing(a), b)
+                        .when(hl.is_missing(b), a)
+                        .when(a.min_nll <= b.min_nll, a)
+                        .default(b)
+                    ),
+                )
+            )
+            .checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.2", "ht"))
+        )
+
+        # remove chosen best_region’s residues from *every* remaining candidate region
+        ht2_keyed = ht2[ht.uniprot_id, ht.transcript_id]
+        region_expr = remove_residues_from_region(
+            hl.struct(region=ht.region), ht2_keyed.best_region
+        ).region
+        ht = ht.annotate(
+            region=hl.or_missing(region_expr.length() > 0, region_expr),
+            _best_region=ht2_keyed.best_region,
+            _found_best=(
+                hl.is_missing(ht2_keyed.best_region)
+                | (ht2_keyed.best_region.nll >= ht2_keyed.current_model_nll)
+            ),
+        )
+
+        # accept if candidate improves over current baseline
+        ht = ht.annotate(
+            **hl.if_else(
+                ht._found_best,
+                hl.struct(
+                    selected=ht.selected,
+                    selected_nll=ht.selected_nll,
+                    region=hl.missing(ht.region.dtype),
+                ),
+                hl.struct(
+                    selected=ht.selected.append(ht._best_region),
+                    selected_nll=ht._best_region.nll,
+                    region=ht.region,
+                ),
+            ),
+        ).drop("_found_best", "_best_region")
+
+        ht = ht.filter(hl.is_defined(ht.region) | (ht.idx == 0))
+        ht = ht.annotate(_region=prep_region_struct(ht.region, ht.oe))
+        ht = ht.filter(
+            (hl.is_defined(ht._region.nll) & (ht._region.exp >= min_exp_mis))
+            | (ht.idx == 0)
+        )
+        ht = ht.annotate(
+            _bg_after_selected=hl.fold(
+                lambda acc, r: remove_residues_from_region(acc, r),
+                ht.full_region,
+                ht.selected,
+            )
+        )
+
+        ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}", "ht"))
+        round_num += 1
+
+    # -------- post-hoc assignment with standardized score --------
+    # Tag selected with region_index for later bookkeeping
+    result_ht = ht.annotate(
+        selected=add_idx_to_array(ht.selected, "region_index")
+    ).checkpoint(
+        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht",
+        overwrite=True,
+    )
+
+    result_ht = result_ht.annotate(
+        oe=result_ht.oe.map(
+            lambda x: x.annotate(
+                oe=hl.if_else(x.obs == 0, 0, divide_null(x.obs, x.exp))
+            )
+        )
+    )
+    result_ht = result_ht.annotate(
+        oe=hl.enumerate(result_ht.oe).map(
+            lambda x: x[1].annotate(
+                d_oe_med=hl.mean(  # hl.median(
+                    hl.enumerate(result_ht.oe).map(
+                        lambda y: hl.or_missing(x[0] != y[0], hl.abs(x[1].oe - y[1].oe))
+                    )
+                )
+            )
+        )
+    )
+    result_ht = result_ht.annotate(
+        oe=hl.enumerate(result_ht.oe).map(
+            lambda x: x[1].annotate(
+                d_oe_mad=hl.mean(  # hl.median(
+                    hl.enumerate(result_ht.oe).map(
+                        lambda y: hl.or_missing(
+                            x[0] != y[0],
+                            hl.abs(hl.abs(x[1].oe - y[1].oe) - x[1].d_oe_med),
+                        )
+                    )
+                )
+            )
+        )
+    )
+
+    # Residual residues (not in any selected region)
+    ht = result_ht.select(
+        "oe",
+        "num_residues",
+        "selected",
+        "selected_nll",
+        residual=result_ht._bg_after_selected.region,
+    )
+    ht = ht.explode("residual")
+
+    # distance vectors: one row per (protein, residual_residue) → dist to all residues
+    af2_dist_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht"
+    )
+    dist_mat = (
+        hl.enumerate(af2_dist_ht.dist_mat)
+        .filter(lambda x: x[0] != af2_dist_ht.aa_index)
+        .map(lambda x: x[1])
+    )
+
+    d_med = hl.median(dist_mat)
+    af2_dist_ht = (
+        af2_dist_ht.annotate(
+            d_med=d_med,
+            d_min=hl.min(dist_mat),
+            d_max=hl.max(dist_mat),
+            d_mad=hl.median(dist_mat.map(lambda x: hl.abs(x - d_med))),
+        )
+        .key_by("uniprot_id", "aa_index")
+        .checkpoint(
+            "gs://gnomad-tmp-4day/persist_TableOIn8fLYabs.all_genes.ht",
+            _read_if_exists=True,
+            # overwrite=True,
+        )
+    )
+
+    # pass 1: per-protein medians
+    af2_dist_agg_ht = af2_dist_ht.group_by("uniprot_id").aggregate(
+        d_min_all=hl.agg.collect(af2_dist_ht.d_min)
+    )
+    af2_dist_agg_ht = af2_dist_agg_ht.annotate(
+        d_min_med=hl.median(af2_dist_agg_ht.d_min_all),
+    )
+
+    # pass 2: per-protein MADs (median absolute deviation)
+    af2_dist_agg_ht = (
+        af2_dist_agg_ht.annotate(
+            d_min_mad=hl.median(
+                af2_dist_agg_ht.d_min_all.map(
+                    lambda x: hl.abs(x - af2_dist_agg_ht.d_min_med)
+                )
+            ),
+        )
+        .drop("d_min_all")
+        .checkpoint(
+            "gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.all_genes.ht",
+            _read_if_exists=True,
+            # overwrite=True,
+        )
+    )
+
+    ht = ht.annotate(
+        **af2_dist_ht[ht.uniprot_id, ht.residual],
+        **af2_dist_agg_ht[ht.uniprot_id],
+        residual=ht.oe[ht.residual],
+    ).drop("oe")
+
+    # candidate features per selected region for THIS residual residue
+    ht = ht.annotate(
+        selected=ht.selected.map(
+            lambda x: x.annotate(
+                min_dist=hl.min(x.region.map(lambda i: ht.dist_mat[i])),
+                delta=hl.abs((ht.residual.obs / ht.residual.exp) - x.oe),
+            )
+        )
+    ).drop("dist_mat")
+
+    # nearest per-residual (for robust scalers)
+    ht = ht.annotate(
+        nearest_d=hl.min(ht.selected.map(lambda c: c.min_dist)),
+        nearest_dOE=hl.min(ht.selected.map(lambda c: c.delta)),
+    ).checkpoint(
+        "gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.finalize2.all_genes.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    def zscore(val, med, mad):
+        return (val - med) / mad
+
+    # add standardized terms and score to each candidate
+    ht = ht.annotate(
+        selected=ht.selected.map(
+            lambda c: c.annotate(
+                d_z=zscore(c.min_dist, ht.d_med, ht.d_mad),
+                deo_z=zscore(c.delta, ht.residual.d_oe_med, ht.residual.d_oe_mad),
+            )
+        ).map(lambda c: c.annotate(score=alpha * c.d_z + beta * hl.abs(c.deo_z)))
+    ).checkpoint(
+        "gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.finalize3.all_genes.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    # filter by z-thresholds, with fallback to nearest-distance only
+    ht = ht.annotate(
+        _choice=hl.or_missing(
+            hl.len(ht.selected) > 0, hl.sorted(ht.selected, key=lambda c: c.score)[0]
+        ),
+        _fallback=hl.sorted(ht.selected, key=lambda c: c.min_dist)[0],
+        has_selected=hl.len(ht.selected) > 0,
+    )
+
+    # final region assignment for this residual residue
+    ht = ht.annotate(
+        region_index=hl.if_else(
+            ~ht.has_selected,
+            hl.missing(hl.tint32),  # no regions exist for this protein
+            hl.if_else(
+                hl.is_defined(ht._choice),
+                ht._choice.region_index,
+                ht._fallback.region_index,
+            ),
+        )
+    ).drop("_choice", "_fallback")
+
+    # Group residuals by assigned region_index (drop missings)
+    ht_assigned = ht.filter(hl.is_defined(ht.region_index))
+    ht_assigned = (
+        ht_assigned.group_by("uniprot_id", "transcript_id").aggregate(
+            residuals=hl.agg.group_by(
+                ht_assigned.region_index,
+                hl.struct(
+                    obs=hl.agg.sum(ht_assigned.residual.obs),
+                    exp=hl.agg.sum(ht_assigned.residual.exp),
+                    residues=hl.agg.collect(
+                        hl.struct(
+                            residue_index=ht_assigned.residual.residue_index,
+                            assigned=True,
+                        )
+                    ),
+                ),
+            ),
+        )
+    ).checkpoint(
+        "gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.finalize4.all_genes.ht",
+        _read_if_exists=True,
+        # overwrite=True,
+    )
+
+    # stitch assignments back to selection result
+    assigned_keyed = ht_assigned[result_ht.uniprot_id, result_ht.transcript_id]
+    ht = result_ht.annotate(
+        residuals=assigned_keyed.residuals,
+    )
+
+    # extend each selected region with its assigned residuals and recompute stats
+    ht = ht.select(
+        selected=ht.selected.map(
+            lambda x: x.annotate(
+                region=x.region.map(
+                    lambda r: hl.struct(
+                        residue_index=r,
+                        assigned=False,
+                    )
+                ),
+                add_res=ht.residuals.get(x.region_index),
+            )
+        )
+        .map(
+            lambda x: hl.if_else(
+                hl.is_missing(x.add_res),
+                x.annotate(source="selected"),
+                x.annotate(
+                    region=x.region.extend(x.add_res.residues),
+                    obs=x.obs + x.add_res.obs,
+                    exp=x.exp + x.add_res.exp,
+                    source="selected_plus_assigned",
+                ),
+            ).drop("add_res")
+        )
+        .map(
+            lambda x: prep_region_struct(
+                x.region.map(lambda r: r.residue_index), ht.oe
+            ).annotate(
+                region=x.region,
+                region_index=x.region_index,
+                source=hl.or_else(x.source, "selected"),
+            )
+        )
+    )
+    ht = ht.explode("selected")
+    ht = ht.select(**ht.selected)
+    ht = ht.annotate(region_length=hl.len(ht.region))
+    ht = ht.explode("region")
+    ht = ht.annotate(**ht.region).drop("region")
+
+    chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
+    ht = ht.annotate(
+        oe_upper=gamma_upper_ci(ht.obs, ht.exp, 0.05),
+        chisq=chisq_expr,
+        p_value=hl.pchisqtail(chisq_expr, 1),
+    )
+
+    ht = ht.key_by("uniprot_id", "transcript_id", "residue_index").select(
+        "region_index",
+        "obs",
+        "exp",
+        "oe",
+        "region_nll",
+        "nll",
+        "oe_upper",
+        "chisq",
+        "p_value",
+        "source",
+        "assigned",
+        "region_length",
+    )
 
 
 def prioritize_transcripts_and_uniprots(

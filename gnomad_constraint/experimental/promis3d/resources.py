@@ -259,7 +259,7 @@ def get_forward_ht(
     """
     name = f".{name}" if name else ""
     return TableResource(
-        f"{get_promis3d_root(version, test)}/promis3D_forward{name}.ht"
+        f"{get_promis3d_root(version, test)}/output/promis3D_forward{name}.ht"
     )
 
 
