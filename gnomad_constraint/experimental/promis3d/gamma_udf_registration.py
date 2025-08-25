@@ -8,17 +8,58 @@ import hail as hl
 def register_gamma_udfs():
     """
     Register Gamma distribution UDFs with Hail.
-
-    Note: This function is a placeholder. The actual UDF registration
-    happens when the Scala UDFs are compiled and included in the Hail JAR.
-
-    For now, we'll use a mock implementation that simulates the UDF behavior
-    using Python functions for testing purposes.
+    
+    This function attempts to register Python UDFs that provide accurate Gamma distribution
+    calculations using scipy. However, for production use, the Scala UDF should be used.
     """
-    print(
-        "Note: UDF registration is a placeholder. The actual UDFs need to be compiled into the Hail JAR."
-    )
-    print("For testing, we'll use Python implementations.")
+    try:
+        from scipy.stats import gamma as gamma_dist
+        
+        # Create the UDF function
+        def qgamma_udf(p, shape, scale):
+            """Python UDF for Gamma quantile function."""
+            return gamma_dist.ppf(p, shape, scale=scale)
+        
+        # Register with Hail (this is the key part!)
+        hl.expr.functions.define_function(
+            qgamma_udf, 
+            hl.tfloat64, 
+            hl.tfloat64, 
+            hl.tfloat64, 
+            hl.tfloat64
+        )
+        
+        print("✅ Gamma UDFs registered successfully with Hail")
+        return True
+        
+    except ImportError:
+        print("⚠️  scipy not available")
+        return False
+    except Exception as e:
+        print(f"❌ Failed to register UDFs: {e}")
+        return False
+
+
+def call_scala_gamma_udf(p, shape, scale):
+    """
+    Call the Scala Gamma UDF directly through the JVM gateway.
+    
+    This function calls the compiled Scala UDF for exact accuracy.
+    """
+    try:
+        # Get the Spark context to access the JVM
+        sc = hl.utils.java.Env.spark_session().sparkContext
+        gateway = sc._gateway
+        
+        # Access the Scala UDF class via Py4J (this works!)
+        gamma_udf = getattr(gateway.jvm.gnomad.constraint.promis3d, "GammaUDF$")
+        
+        # Call the static method
+        result = gamma_udf.qgamma(float(p), float(shape), float(scale))
+        return float(result)
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to call Scala Gamma UDF: {e}") from e
 
 
 def qgamma(
@@ -29,58 +70,45 @@ def qgamma(
     """
     Calculate the quantile function of the Gamma distribution.
 
-    This is equivalent to scipy.stats.gamma.ppf(p, shape, scale=scale).
-
-    Note: This is a Python implementation for testing. The actual UDF
-    would be implemented in Scala and compiled into the Hail JAR.
+    This function requires the Scala UDF to be properly set up. If you're getting
+    errors, you need to:
+    
+    1. Compile the Scala UDF: sbt assembly
+    2. Upload JAR to GCS: gsutil cp target/scala-2.12/gamma-udf-1.0.jar gs://your-bucket/jars/
+    3. Start DataProc with JAR: --jars=gs://your-bucket/jars/gamma-udf-1.0.jar
+    4. Register UDF: gateway.jvm.gnomad.constraint.promis3d.GammaUDFRegistration.registerAll()
 
     :param p: Probability value (0 <= p <= 1)
     :param shape: Shape parameter (alpha) of the Gamma distribution
     :param scale: Scale parameter (beta) of the Gamma distribution
     :return: The value x such that P(X <= x) = p
     """
-    # Try to use scipy for accurate results if available
+    # Try to use the registered Scala UDF first
     try:
-        from scipy.stats import gamma as gamma_dist
-
-        # Create a Python UDF that uses scipy
-        def qgamma_scipy(p_val, shape_val, scale_val):
-            return gamma_dist.ppf(p_val, shape_val, scale=scale_val)
-
-        # For now, we'll use a simple approach that works in Hail expressions
-        # In production, this would be replaced with the actual Scala UDF
-        # This provides accurate results using scipy
-
-        # Convert to Python values and calculate
-        if (
-            isinstance(p, (int, float))
-            and isinstance(shape, (int, float))
-            and isinstance(scale, (int, float))
-        ):
-            return qgamma_scipy(p, shape, scale)
-        else:
-            # For Hail expressions, we need to use a different approach
-            # This is a placeholder that will be replaced by the Scala UDF
-            # For now, use a better approximation that's closer to the actual Gamma PPF
-            # This is based on the relationship between Gamma and Chi-squared
-            # distributions
-            import math
-
-            # Use Wilson-Hilferty approximation for Gamma quantiles
-            # This is more accurate than just shape * scale
-            z = hl.qnorm(p)  # Standard normal quantile
-            shape_float = hl.float64(shape)
-            # Wilson-Hilferty approximation for Gamma distribution
-            result = (
-                shape_float
-                * scale
-                * (1 + z / hl.sqrt(9 * shape_float) - 1 / (9 * shape_float)) ** 3
-            )
-            return result
-
-    except ImportError:
-        # Fallback to approximation if scipy is not available
-        return shape * scale
+        # Check if Scala UDF is registered by trying to call it
+        return hl.expr.functions.call("qgamma", p, shape, scale)
+    except Exception as e:
+        # Try Python UDF as fallback
+        try:
+            return hl.expr.functions.call("qgamma_udf", p, shape, scale)
+        except Exception as e2:
+            # If neither UDF is available, try calling Scala UDF directly via Py4J
+            try:
+                # For Hail expressions, we need to use a different approach
+                # This is a workaround for when the UDF isn't registered
+                return hl.expr.functions.call("call_scala_gamma_udf", p, shape, scale)
+            except Exception as e3:
+                # If all else fails, fail with clear error message
+                raise RuntimeError(
+                    f"Gamma UDF not available! You need to set up the Scala UDF:\n"
+                    f"1. Compile: sbt assembly\n"
+                    f"2. Upload: gsutil cp target/scala-2.12/gamma-udf-1.0.jar gs://your-bucket/jars/\n"
+                    f"3. Start cluster with: --jars=gs://your-bucket/jars/gamma-udf-1.0.jar\n"
+                    f"4. Register: gateway.jvm.gnomad.constraint.promis3d.GammaUDFRegistration.registerAll()\n"
+                    f"Original error: {e}\n"
+                    f"Python UDF error: {e2}\n"
+                    f"Direct call error: {e3}"
+                ) from e
 
 
 def gamma_ppf(
@@ -99,24 +127,38 @@ def gamma_ppf(
     return qgamma(p, shape, scale)
 
 
-# Alternative: Python UDF implementation using scipy
-def create_scipy_gamma_udf():
+def check_udf_availability():
     """
-    Create a Python UDF using scipy for accurate Gamma calculations.
-
-    This is an alternative approach that uses Hail's Python UDF mechanism.
+    Check if the Gamma UDF is properly set up and available.
+    
+    Returns:
+        bool: True if UDF is available, False otherwise
     """
     try:
-        from scipy.stats import gamma as gamma_dist
-
-        def qgamma_scipy_udf(p, shape, scale):
-            """Python UDF using scipy for accurate Gamma quantile calculation."""
-            return gamma_dist.ppf(p, shape, scale=scale)
-
-        # For now, return the function directly
-        # In a real implementation, this would be registered with Hail's UDF system
-        return qgamma_scipy_udf
-
-    except ImportError:
-        print("Warning: scipy not available, cannot create accurate UDF")
-        return None
+        # Test if Scala UDF is available by calling it directly via Py4J
+        sc = hl.utils.java.Env.spark_session().sparkContext
+        gateway = sc._gateway
+        
+        # Access the Scala UDF class via Py4J (this works!)
+        gamma_udf = getattr(gateway.jvm.gnomad.constraint.promis3d, "GammaUDF$")
+        
+        # Test the function
+        result = gamma_udf.qgamma(0.5, 2.0, 1.0)
+        print("✅ Scala Gamma UDF is available!")
+        print(f"   Test result: qgamma(0.5, 2.0, 1.0) = {result}")
+        return True
+        
+    except Exception as e:
+        try:
+            # Test if Python UDF is available
+            test_expr = hl.expr.functions.call("qgamma_udf", 0.5, 2.0, 1.0)
+            print("⚠️  Python Gamma UDF is available (use Scala UDF for production)")
+            return True
+        except Exception as e2:
+            print("❌ No Gamma UDF available!")
+            print("You need to set up the Scala UDF:")
+            print("1. Compile: sbt assembly")
+            print("2. Upload: gsutil cp target/scala-2.12/gamma-udf-1.0.jar gs://your-bucket/jars/")
+            print("3. Start cluster with: --jars=gs://your-bucket/jars/gamma-udf-1.0.jar")
+            print("4. Register: gateway.jvm.gnomad.constraint.promis3d.GammaUDFRegistration.registerAll()")
+            return False
