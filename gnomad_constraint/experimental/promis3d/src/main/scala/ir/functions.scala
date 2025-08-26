@@ -15,15 +15,15 @@ object ExtraMathFunctions extends RegistryFunctions {
                 val statsPackageClass = Class.forName("gnomad.constraint.promis3d.stats.package$")
 
                 registerScalaFunction(
-                    "qgamma",
+                    "gamma_quantile",  // Changed from "qgamma" to avoid conflicts
                     Array(TFloat64, TFloat64, TFloat64),
                     TFloat64,
                     null
                 )(
                     statsPackageClass,
-                    "qgamma",
+                    "qgamma"
                 )
-                println("✅ Successfully registered qgamma function!") 
+                println("✅ Successfully registered gamma_quantile function!") 
             } catch {
                 case e: ClassNotFoundException =>
                     println(s"❌ ClassNotFoundException: $e")
@@ -36,4 +36,4 @@ object ExtraMathFunctions extends RegistryFunctions {
     
     // Call registerAll when this object is loaded
     registerAll()
-}
+} 
