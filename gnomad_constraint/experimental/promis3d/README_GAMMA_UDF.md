@@ -11,6 +11,7 @@ We have successfully **switched from a complex Py4J UDF approach** to using a **
 - **Exact Gamma calculations** using native Hail implementation
 - **Production ready** for DataProc clusters
 - **Seamless integration** with existing Hail code
+- **Source**: Built from [jkgoodrich/hail add_qgamma branch](https://github.com/jkgoodrich/hail/tree/add_qgamma)
 
 ### 2. **Updated Python Code**
 - **Direct function calls** to `hl.qgamma()`
