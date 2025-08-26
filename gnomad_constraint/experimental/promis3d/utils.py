@@ -33,7 +33,6 @@ from gnomad_constraint.experimental.promis3d.data_import import (
     process_interpro_ht,
     process_kaplanis_variants_ht,
 )
-from gnomad_constraint.experimental.promis3d.gamma_udf_registration import qgamma
 from gnomad_constraint.experimental.promis3d.resources import get_constraint_metrics_ht
 
 logging.basicConfig(
@@ -606,8 +605,7 @@ def gamma_upper_ci(
     """
     Calculate the upper bound of the OE confidence interval using the Gamma distribution.
 
-    This function uses the qgamma UDF to calculate the upper confidence interval
-    for observed/expected ratios.
+    This function uses the built-in qgamma function from the custom Hail wheel.
 
     :param obs: Observed count
     :param exp: Expected count
@@ -619,7 +617,8 @@ def gamma_upper_ci(
     scale = 1.0 / exp
     p = 1.0 - alpha
 
-    return qgamma(p, shape, scale)
+    # Use the built-in qgamma function from the custom Hail wheel
+    return hl.qgamma(p, shape, scale)
 
 
 def chisq_upper_ci(
@@ -1153,7 +1152,7 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
             .checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.2", "ht"))
         )
 
-        # remove chosen best_region’s residues from *every* remaining candidate region
+        # remove chosen best_region's residues from *every* remaining candidate region
         ht2_keyed = ht2[ht.uniprot_id, ht.transcript_id]
         region_expr = remove_residues_from_region(
             hl.struct(region=ht.region), ht2_keyed.best_region
@@ -1414,7 +1413,7 @@ def run_forward_no_catch_all_standardized(
             .checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}.2", "ht"))
         )
 
-        # remove chosen best_region’s residues from *every* remaining candidate region
+        # remove chosen best_region's residues from *every* remaining candidate region
         ht2_keyed = ht2[ht.uniprot_id, ht.transcript_id]
         region_expr = remove_residues_from_region(
             hl.struct(region=ht.region), ht2_keyed.best_region

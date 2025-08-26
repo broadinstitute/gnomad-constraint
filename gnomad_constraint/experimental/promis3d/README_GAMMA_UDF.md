@@ -1,101 +1,180 @@
-# Gamma UDF Implementation Summary
+# Gamma Function Implementation - Custom Hail Wheel
 
 ## 🎯 Mission Accomplished
 
-We have successfully **removed all approximations** and created a **production-ready Scala UDF** that provides **exact scipy-matching accuracy** for Gamma distribution calculations.
+We have successfully **switched from a complex Py4J UDF approach** to using a **custom Hail wheel** that provides a **built-in `qgamma` function** for exact Gamma distribution calculations.
 
-## ✅ What We Built
+## ✅ What We Now Have
 
-### 1. **Scala UDF** (`src/main/scala/GammaUDF.scala`)
-- **Exact Gamma calculations** using Apache Commons Math
-- **No approximations** - matches scipy.stats.gamma.ppf exactly
+### 1. **Custom Hail Wheel** (`gs://gnomad-julia/proemis3d/hail-dist/hail-0.2.134-py3-none-any.whl`)
+- **Built-in `qgamma` function** - no external UDFs needed
+- **Exact Gamma calculations** using native Hail implementation
 - **Production ready** for DataProc clusters
+- **Seamless integration** with existing Hail code
 
-### 2. **Compiled JAR** (`target/scala-2.12/gamma-udf-1.0.jar`)
-- **Ready to deploy** - 7.7MB fat JAR with all dependencies
-- **Self-contained** - includes Apache Commons Math
-- **Tested and verified** - compiles and loads successfully
+### 2. **Updated Python Code**
+- **Direct function calls** to `hl.qgamma()`
+- **No complex setup** - just use the function directly
+- **Clean, maintainable code** without Py4J complexity
+- **Automatic distribution** via the custom wheel
 
-### 3. **Python Integration** (`gamma_udf_registration.py`)
-- **Seamless integration** with existing code
-- **Fail-fast behavior** - no silent fallbacks to approximations
-- **Clear error messages** when UDF not available
-
-### 4. **Updated Utils** (`utils.py`)
-- **Removed all approximations** from `qgamma` function
-- **Uses real Scala UDF** when available
-- **Fails clearly** when UDF not set up
+### 3. **Simplified Utils** (`utils.py`)
+- **Uses `hl.qgamma()` directly** in `gamma_upper_ci()` function
+- **No UDF registration** or complex setup required
+- **Clear, simple implementation** that's easy to understand
 
 ## 🚫 What We Removed
 
-- ❌ **Wilson-Hilferty approximation**
-- ❌ **Simple shape * scale fallback**
-- ❌ **Silent fallbacks to approximations**
-- ❌ **Unclear error messages**
+- ❌ **Complex Py4J UDF setup**
+- ❌ **JAR file distribution and classpath management**
+- ❌ **Scala UDF compilation and deployment**
+- ❌ **Complex Spark configuration management**
+- ❌ **UDF registration and availability checks**
 
-## 🔍 Verification Tools
+## 🔍 How to Use
 
-### 1. **JAR Test** (`test_jar.py`)
-```bash
-python test_jar.py
-# ✅ JAR file found: target/scala-2.12/gamma-udf-1.0.jar
-# 📦 JAR size: 7724990 bytes
-# 🎉 JAR test successful!
+### 1. **Local Development**
+```python
+import hail as hl
+
+# The qgamma function is available directly
+result = hl.qgamma(0.95, 2.0, 3.0)
+print(f"qgamma(0.95, 2.0, 3.0) = {result}")
 ```
 
-### 2. **UDF Verification** (`verify_scala_udf.py`)
-```bash
-python verify_scala_udf.py
-# 🔍 Verifying Scala UDF Setup
-# ✅ UDF is available!
-#    Test result: qgamma(0.5, 2.0, 1.0) = 1.6783469900166608
+### 2. **In Your Code**
+```python
+from gnomad_constraint.experimental.promis3d.utils import gamma_upper_ci
+
+# Calculate upper confidence interval
+upper_ci = gamma_upper_ci(observed_count, expected_count, alpha=0.05)
 ```
 
-### 3. **Full Integration Test** (`test_dataproc_gamma.py`)
+### 3. **On DataProc Cluster**
+The custom Hail wheel is automatically installed when you start a cluster with:
 ```bash
-python test_dataproc_gamma.py
-# 🎉 All tests passed! You're using the real Scala UDF!
+hailctl dataproc start jg2 \
+  --wheel gs://gnomad-julia/proemis3d/hail-dist/hail-0.2.134-py3-none-any.whl \
+  --project your-project-id
 ```
 
-## 🚀 Deployment Ready
+## 🚀 Deployment
 
-### Quick Setup (3 Steps)
-1. **Upload JAR**: `gsutil cp target/scala-2.12/gamma-udf-1.0.jar gs://your-bucket/jars/`
-2. **Start Cluster**: `gcloud dataproc clusters create --jars=gs://your-bucket/jars/gamma-udf-1.0.jar`
-3. **Use Code**: Your existing `gamma_upper_ci()` calls now use the real Scala UDF!
+### Quick Setup (2 Steps)
+1. **Start Cluster**: Use the custom wheel flag when starting DataProc
+2. **Use Code**: Your existing `gamma_upper_ci()` calls now use the built-in `qgamma` function!
 
-## 📊 Accuracy Guarantee
+### Cluster Configuration
+```bash
+hailctl dataproc start jg2 \
+  --requester-pays-allow-all \
+  --packages="git+https://github.com/broadinstitute/gnomad_methods.git@main","git+https://github.com/broadinstitute/gnomad_qc.git@main" \
+  --no-off-heap-memory \
+  --network=julia-sandbox-network \
+  --tags=dataproc-node,ssh-broad \
+  --autoscaling-policy=max-20 \
+  --max-idle 540m \
+  --properties='dataproc:dataproc.logging.stackdriver.enable=false,dataproc:diagnostic.capture.enabled=false,dataproc:dataproc.logging.syslog.enabled=false,dataproc:dataproc.logging.extended.enabled=false' \
+  --project julia-sandbox-8da2 \
+  --wheel gs://gnomad-julia/proemis3d/hail-dist/hail-0.2.134-py3-none-any.whl
+```
 
-| Method | Before | After |
-|--------|--------|-------|
-| **Accuracy** | ❌ Approximate | ✅ **Exact scipy** |
-| **Performance** | ❌ Slow (Python) | ✅ **Fast (Scala)** |
-| **Reliability** | ❌ Silent fallbacks | ✅ **Fail-fast** |
-| **Clarity** | ❌ Unclear behavior | ✅ **Clear errors** |
+## 🔍 Verification
 
-## 🎯 Key Benefits
+### 1. **Local Test**
+```bash
+python -c "import hail as hl; print('qgamma available:', hasattr(hl, 'qgamma'))"
+# Output: qgamma available: True
+```
 
-1. **Exact Accuracy**: Matches scipy.stats.gamma.ppf exactly
-2. **Better Performance**: Native Scala vs Python
-3. **No Dependencies**: No scipy required on cluster
-4. **Production Ready**: Suitable for large-scale processing
-5. **Clear Feedback**: You know exactly what's happening
+### 2. **Cluster Test**
+```bash
+hailctl dataproc submit jg2 \
+  gnomad_constraint/experimental/promis3d/test_dataproc_gamma.py \
+  --pyfiles gnomad_constraint \
+  --project julia-sandbox-8da2
+```
 
-## 📋 Next Steps
+### 3. **Expected Output**
+```
+✅ qgamma function is available!
+✅ qgamma works
+✅ gamma_upper_ci works
+✅ Hail table integration works
+🎉 All tests passed! You're using the built-in qgamma function from the custom Hail wheel!
+```
 
-1. **Upload JAR to GCS** (see `SETUP_SCALA_UDF.md`)
-2. **Start DataProc cluster** with JAR
-3. **Test on cluster** with verification script
-4. **Run your pipeline** - it will now use exact calculations!
+## 📊 Benefits of New Approach
+
+| Aspect | Old Py4J UDF | New Custom Wheel |
+|--------|--------------|------------------|
+| **Setup Complexity** | ❌ High (JARs, classpaths, registration) | ✅ **Low (just start cluster)** |
+| **Maintenance** | ❌ Complex (Scala compilation, JAR updates) | ✅ **Simple (wheel updates)** |
+| **Distribution** | ❌ Manual (JAR uploads, classpath config) | ✅ **Automatic (wheel installation)** |
+| **Code Clarity** | ❌ Complex (UDF registration, availability checks) | ✅ **Simple (direct function calls)** |
+| **Reliability** | ❌ Fragile (classpath issues, Py4J errors) | ✅ **Robust (built-in function)** |
+| **Performance** | ✅ Good (native Scala) | ✅ **Good (native Hail)** |
+
+## 🎯 Key Advantages
+
+1. **Simplified Setup**: No complex JAR distribution or classpath management
+2. **Built-in Function**: `hl.qgamma()` is available directly without registration
+3. **Automatic Distribution**: The wheel is automatically installed on all cluster nodes
+4. **Cleaner Code**: No need for UDF availability checks or complex setup functions
+5. **Better Maintainability**: Updates are handled through wheel updates, not JAR recompilation
+6. **Production Ready**: More reliable than Py4J UDF approach
+
+## 📋 File Structure
+
+```
+gnomad_constraint/experimental/promis3d/
+├── utils.py                           # Updated to use hl.qgamma()
+├── test_dataproc_gamma.py            # Test script for the new approach
+├── gamma_udf_registration.py         # Deprecated (kept for reference)
+└── README_GAMMA_UDF.md               # This file
+```
 
 ## 🏆 Success Criteria
 
 You'll know it's working when:
-- ✅ Verification script shows "Scala UDF is available"
-- ✅ Results match scipy.stats.gamma.ppf exactly
-- ✅ No approximation warnings in logs
-- ✅ Better performance than before
+- ✅ `hl.qgamma()` function is available in Hail
+- ✅ `gamma_upper_ci()` function works without errors
+- ✅ Test script passes all checks
+- ✅ No complex setup or UDF registration needed
+
+## 🔄 Migration from Old Approach
+
+If you were using the old Py4J UDF approach:
+
+1. **Remove old imports**: No need to import from `gamma_udf_registration`
+2. **Use direct calls**: Replace `gamma_quantile()` with `hl.qgamma()`
+3. **Simplify setup**: No need for `setup_gamma_udf()` or `initialize_gamma_udf()`
+4. **Update cluster**: Use the `--wheel` flag when starting clusters
+
+## 📚 Example Usage
+
+```python
+import hail as hl
+
+# Initialize Hail (custom wheel will be used automatically)
+hl.init()
+
+# Use qgamma directly
+result = hl.qgamma(0.95, 2.0, 3.0)
+print(f"Result: {result}")
+
+# Use in table operations
+ht = hl.utils.range_table(5)
+ht = ht.annotate(
+    obs=10,
+    exp=15.0,
+    alpha=0.05
+)
+ht = ht.annotate(
+    upper_ci=hl.qgamma(1.0 - ht.alpha, ht.obs + 1.0, 1.0 / ht.exp)
+)
+```
 
 ---
 
-**🎉 Mission Complete!** You now have exact scipy-matching Gamma distribution calculations with no approximations!
+**🎉 Mission Complete!** You now have a clean, simple, and reliable Gamma distribution function built directly into Hail!

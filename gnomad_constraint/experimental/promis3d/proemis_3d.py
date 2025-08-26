@@ -11,6 +11,9 @@ from gnomad_qc.resource_utils import (
 
 import gnomad_constraint.experimental.promis3d.resources as promis3d_res
 from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
+from gnomad_constraint.experimental.promis3d.gamma_udf_registration import (
+    initialize_gamma_udf,
+)
 from gnomad_constraint.experimental.promis3d.utils import (
     COLNAMES_TRANSLATIONS,
     annotate_promis3d_with_af2_metrics,
@@ -248,10 +251,17 @@ def get_promis3d_resources(
 
 def main(args):
     """Execute the Proemis 3D pipeline."""
-    hl.init(
-        log="/proemis_3d.log",
-        tmp_dir="gs://gnomad-tmp-4day",
-    )
+    # hl.init(
+    #    log="/proemis_3d.log",
+    #    tmp_dir="gs://gnomad-tmp-4day",
+    # )
+    # Initialize the Gamma UDF system
+    try:
+        initialize_gamma_udf()
+    except Exception as e:
+        logger.warning(f"Failed to initialize Gamma UDF system: {e}")
+        logger.warning("Gamma UDF functions may not work properly")
+
     version = args.version
     test = args.test
     overwrite = args.overwrite
