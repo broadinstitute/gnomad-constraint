@@ -1,0 +1,1102 @@
+"""This script builds a constraint pipeline that calculates genic constraint metrics.
+
+The constraint metrics pipeline will compute for LoF variants, missense variants, and
+synonymous variants:
+    - The number of observed variants
+    - The number of expected variants
+    - The observed: expected ratio
+    - The confidence interval around the observed: expected ratio
+    - pLI score (Probability of loss-of-function intolerance; probability that
+      transcript falls into distribution of haploinsufficient genes)
+    - pNull (Probability that transcript falls into distribution of unconstrained genes)
+    - pRec (Probability that transcript falls into distribution of recessive genes)
+    - z-scores (Measure how constrained or intolerant a gene or transcript is to
+      missense variants and synonymous variants)
+
+The constraint pipeline consists of the following parts:
+    - preprocess data
+    - create training set
+    - build models
+    - apply models
+    - calculate metrics
+"""
+
+import argparse
+import logging
+from typing import List, Optional
+
+import hail as hl
+from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS, all_sites_an
+from gnomad.utils.constraint import (
+    assemble_constraint_context_ht,
+    explode_downsamplings_oe,
+)
+from gnomad.utils.reference_genome import get_reference_genome
+from gnomad.utils.vep import update_loftee_end_trunc_filter
+from gnomad_qc.resource_utils import (
+    PipelineResourceCollection,
+    PipelineStepResourceCollection,
+)
+from hail.utils.misc import new_temp_file
+
+import gnomad_constraint.resources.resource_utils as constraint_res
+from gnomad_constraint.utils.constraint import (
+    aggregate_per_variant_expected_ht,
+    aggregate_per_variant_expected_ht_old,
+    calculate_gerp_cutoffs,
+    calculate_mu_by_downsampling,
+    compute_constraint_metrics,
+    compute_constraint_metrics_old,
+    create_per_variant_expected_ht,
+    create_training_set,
+    prepare_ht_for_constraint_calculations,
+    run_build_models,
+)
+
+logging.basicConfig(
+    format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
+logger = logging.getLogger("constraint_pipeline")
+logger.setLevel(logging.INFO)
+
+
+def filter_for_test(
+    ht: hl.Table,
+    use_gene_list: bool = False,
+) -> hl.Table:
+    """
+    Filter `ht` to chr20, chrX, and chrY or a gene list for testing.
+
+    :param ht: Table to filter.
+    :param use_gene_list: Whether to use a gene list for testing instead of all of
+        chr20, chrX, and chrY for testing.
+    :return: Filtered Table for testing.
+    """
+    rg = get_reference_genome(ht.locus)
+    if use_gene_list:
+        if rg == "GRCh37":
+            keep_regions = [
+                "20:49505585-49547958",  # ADNP
+                "20:853296-896977",  # ANGPT4
+                "X:13752832-13787480",  # OFD1
+                "X:57313139-57515629",  # FAAH2
+                "Y:2803112-2850547",  # ZFY
+            ]
+        else:
+            keep_regions = [
+                "chr20:50888916-50931437",  # ADNP
+                "chr20:869900-916334",  # ANGPT4
+                "chrX:13734743-13777955",  # OFD1
+                "chrX:57286706-57489193",  # FAAH2
+                "chrY:2935281-2982506",  # ZFY
+            ]
+        keep = [hl.parse_locus_interval(c, reference_genome=rg) for c in keep_regions]
+    else:
+        keep = [
+            hl.parse_locus_interval(c, reference_genome=rg)
+            for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
+        ]
+        logger.info("Filtering the context HT to chr20, chrX, and chrY for testing...")
+
+    ht = hl.filter_intervals(ht, keep)
+
+    return ht
+
+
+def get_constraint_resources(
+    version: str,
+    custom_vep_annotation: str,
+    overwrite: bool,
+    test: bool,
+    models: List[str] = ["plateau", "coverage"],
+    post_fix: Optional[str] = None,
+) -> PipelineResourceCollection:
+    """
+    Get PipelineResourceCollection for all resources needed in the constraint pipeline.
+
+    :param version: Version of constraint resources to use.
+    :param custom_vep_annotation: Custom VEP annotation to use for applying models
+        resources.
+    :param overwrite: Whether to overwrite existing resources.
+    :param test: Whether to use test resources.
+    :param models: List of models to use. Default is ["plateau", "coverage"].
+    :return: PipelineResourceCollection containing resources for all steps of the
+        constraint pipeline.
+    """
+    data_types = constraint_res.DATA_TYPES
+    regions = constraint_res.GENOMIC_REGIONS
+    # Initialize constraint pipeline resource collection.
+    constraint_pipeline = PipelineResourceCollection(
+        pipeline_name="constraint",
+        overwrite=overwrite,
+    )
+
+    # Create resource collection for each step of the constraint pipeline.
+    context_res = constraint_res.get_vep_context_ht(version)
+    context_build = get_reference_genome(context_res.ht().locus).name
+
+    # Make dictionary for prepare context input Tables.
+    input_hts = {
+        "context_ht": context_res,
+        "methylation_ht": constraint_res.get_methylation_ht(context_build),
+    }
+    for d in ["exomes", "genomes"]:
+        input_hts[f"{d}_coverage_ht"] = constraint_res.get_coverage_ht(d, version)
+        input_hts[f"{d}_sites_ht"] = constraint_res.get_sites_resource(d, version)
+        if int(version[0]) >= 4:
+            input_hts[f"{d}_an_ht"] = all_sites_an(d)
+
+    prepare_context = PipelineStepResourceCollection(
+        "--prepare-context-ht",
+        output_resources={
+            "annotated_context_ht": constraint_res.get_annotated_context_ht(
+                version, test, post_fix
+            )
+        },
+        input_resources={"gnomAD resources": input_hts},
+    )
+    # For genomes need a preprocessed ht for autosome_par.
+    # For exomes and context need a preprocessed ht for autosome_par, chrX,
+    # and chrY.
+    preprocess_data = PipelineStepResourceCollection(
+        "preprocess data for downstream steps",
+        output_resources={},
+        pipeline_input_steps=[prepare_context],
+    )
+    calculate_gerp_cutoffs = PipelineStepResourceCollection(
+        "--calculate-gerp-cutoffs",
+        output_resources={},
+        pipeline_input_steps=[prepare_context],
+    )
+    calculate_mutation_rate = PipelineStepResourceCollection(
+        "--calculate-mutation-rate",
+        output_resources={
+            "mutation_ht": constraint_res.get_mutation_ht(version, test, post_fix)
+        },
+        pipeline_input_steps=[prepare_context],
+    )
+    create_training_set = PipelineStepResourceCollection(
+        "--create-training-set",
+        output_resources={
+            f"train_ht": constraint_res.get_training_dataset(version, test, post_fix),
+            # f"train_tsv": constraint_res.get_training_tsv_path(version, test,
+            # post_fix),
+        },
+        pipeline_input_steps=[prepare_context, calculate_mutation_rate],
+    )
+    build_models = PipelineStepResourceCollection(
+        "--build-models",
+        output_resources={
+            f"model_{m}": constraint_res.get_models(m, version, test, post_fix)
+            for m in models
+        },
+        pipeline_input_steps=[create_training_set],
+    )
+    apply_models_per_variant = PipelineStepResourceCollection(
+        "--apply-models-per-variant",
+        output_resources={
+            "per_variant_apply_ht": constraint_res.get_per_variant_expected_dataset(
+                custom_vep_annotation, version, test, post_fix
+            )
+        },
+        pipeline_input_steps=[prepare_context, calculate_mutation_rate, build_models],
+    )
+    apply_models = PipelineStepResourceCollection(
+        "--apply-models",
+        output_resources={
+            f"apply_ht": constraint_res.get_apply_models(
+                custom_vep_annotation, version, test, post_fix
+            )
+        },
+        pipeline_input_steps=[
+            apply_models_per_variant,
+            calculate_mutation_rate,
+            build_models,
+        ],
+    )
+    compute_constraint_metrics = PipelineStepResourceCollection(
+        "--compute-constraint-metrics",
+        output_resources={
+            "constraint_metrics_ht": constraint_res.get_constraint_metrics_dataset(
+                custom_vep_annotation, version, test, post_fix
+            )
+        },
+        pipeline_input_steps=[apply_models],
+    )
+
+    export_tsv = PipelineStepResourceCollection(
+        "--export-tsv",
+        output_resources={
+            "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
+                version, test, post_fix
+            ),
+            "downsampling_constraint_metrics_tsv": (
+                constraint_res.get_downsampling_constraint_tsv_path(
+                    version, test, post_fix
+                )
+            ),
+        },
+        pipeline_input_steps=[compute_constraint_metrics],
+    )
+
+    # Add all steps to the constraint pipeline resource collection.
+    constraint_pipeline.add_steps(
+        {
+            "prepare_context": prepare_context,
+            "preprocess_data": preprocess_data,
+            "calculate_gerp_cutoffs": calculate_gerp_cutoffs,
+            "calculate_mutation_rate": calculate_mutation_rate,
+            "create_training_set": create_training_set,
+            "build_models": build_models,
+            "apply_models_per_variant": apply_models_per_variant,
+            "apply_models": apply_models,
+            "compute_constraint_metrics": compute_constraint_metrics,
+            "export_tsv": export_tsv,
+        }
+    )
+
+    return constraint_pipeline
+
+
+def main(args):
+    """Execute the constraint pipeline."""
+    hl.init(
+        log="/constraint_pipeline.log",
+        tmp_dir="gs://gnomad-tmp-4day",
+    )
+    regions = constraint_res.GENOMIC_REGIONS
+    version = args.version
+    test_gene_list = args.test_gene_list
+    test = args.test or test_gene_list
+    post_fix = args.post_fix
+    overwrite = args.overwrite
+
+    max_af = args.max_af
+    pops = args.pops
+    custom_vep_annotation = args.custom_vep_annotation
+    gerp_lower_cutoff = args.gerp_lower_cutoff
+    gerp_upper_cutoff = args.gerp_upper_cutoff
+    coverage_metric = args.coverage_metric
+    coverage_model_type = args.coverage_model_type
+
+    if version not in constraint_res.VERSIONS:
+        raise ValueError("The requested version of resource Tables is not available.")
+
+    # If "global" is the only population specified for v4, use the pared-down
+    # downsampling list.
+    # downsamplings = (
+    #    DOWNSAMPLINGS["v4"] if ((pops == ["global"]) & (int(version[0]) == 4)) else None
+    # )
+    # downsamplings = DOWNSAMPLINGS["v4"]
+    # logger.info("The following downsamplings will be used: %s", downsamplings)
+    downsamplings = None
+
+    # If pops not specified, set to empty Tuple
+    if not pops:
+        pops = ()
+
+    # Drop chromosome Y from version v4.0 (can add back in when obtain chrY
+    # methylation data).
+    if int(version[0]) >= 4:
+        # TODO: check why there is no Y-par in the context_ht.
+        regions.remove("chry_nonpar")
+        # TODO: Add chromosome X back in after complete evaluation for autosome_par.
+        regions.remove("chrx_nonpar")
+        # Define variable indicating whether the gnomAD version is greater than or
+        # equal to v4.
+        version_4_and_above = True
+    else:
+        version_4_and_above = False
+
+    # Generate both "plateau" and "coverage" models unless specified to skip
+    # the coverage model.
+    models = ["plateau", "coverage"] if not args.skip_coverage_model else ["plateau"]
+
+    # Check the version if 4.0 or later is using "exomes_AN_percent" as coverage_metric.
+    if coverage_metric == "exomes_AN_percent" and not version_4_and_above:
+        raise ValueError(
+            "Allele number tables are not available for versions prior to v4.0."
+        )
+
+    if coverage_model_type == "logarithmic":
+        log10_coverage = True
+    elif coverage_model_type == "linear":
+        log10_coverage = False
+
+    # Construct resources with paths for intermediate Tables generated in the pipeline.
+    resources = get_constraint_resources(
+        version,
+        custom_vep_annotation,
+        overwrite,
+        test,
+        models,
+        post_fix,
+    )
+
+    try:
+        if args.prepare_context_ht:
+            logger.info(
+                "Annotating methylation, coverage, and GERP on the VEP context Table..."
+            )
+            res = resources.prepare_context
+            res.check_resource_existence()
+            context_ht = res.context_ht.ht().naive_coalesce(5000)
+            if test:
+                context_ht = filter_for_test(context_ht, use_gene_list=test_gene_list)
+
+            def build_ht_dict(ht_name: str, keep: List[str] = None):
+                dts = ["exomes", "genomes"]
+                hts = {d: getattr(res, f"{d}_{ht_name}_ht").ht() for d in dts}
+                return {d: ht.select(*keep) for d, ht in hts.items()} if keep else hts
+
+            context_ht = context_ht.annotate(
+                vep=context_ht.vep.annotate(
+                    transcript_consequences=update_loftee_end_trunc_filter(
+                        context_ht.vep.transcript_consequences
+                    ),
+                    original_transcript_consequences=context_ht.vep.transcript_consequences,
+                )
+            )
+
+            ht = assemble_constraint_context_ht(
+                context_ht,
+                coverage_hts=build_ht_dict("coverage"),
+                an_hts=build_ht_dict("an") if version_4_and_above else None,
+                freq_hts=build_ht_dict("sites", ["freq"]),
+                filter_hts=build_ht_dict("sites", ["filters"]),
+                methylation_ht=res.methylation_ht.ht(),
+                gerp_ht=constraint_res.get_gerp_ht(
+                    get_reference_genome(context_ht.locus).name
+                ),
+                transformation_funcs=None,
+            )
+            # TODO: Make these resources.
+            am_ht = hl.read_table(
+                "gs://gnomad/v4.1/constraint/resources/alpha_missense_filters.ht"
+            )
+            adj_r_ht = hl.read_table(
+                "gs://gnomad/v4.1/constraint/resources/ncc_adj_r_per_base_WG.ht"
+            ).key_by("locus")
+            multisfs_ht = hl.read_table(
+                "gs://gnomad/v4.1/constraint/resources/julia/constraint/multisfs.dedup.ht"
+            )
+            am_keyed = am_ht[ht.key]
+            ht = ht.annotate(
+                alpha_missense=hl.struct(
+                    pathogenicity=am_keyed.am_pathogenicity,
+                    per_98=hl.or_else(am_keyed.am_per_98, False),
+                    per_99=hl.or_else(am_keyed.am_per_99, False),
+                    over_0_999=hl.or_else(am_keyed.am_0_999, False),
+                ),
+                adj_r=adj_r_ht[ht.locus].adj_r,
+                sfs_bin=multisfs_ht[ht.key].Freq_bin_9,
+            )
+            ht.describe()
+            ht.write(res.annotated_context_ht.path, overwrite)
+
+        if (
+            args.calculate_gerp_cutoffs
+            or args.calculate_mutation_rate
+            or args.create_training_set
+            or args.apply_models_per_variant
+        ):
+            res = resources.preprocess_data
+            res.check_resource_existence()
+            context_ht = res.annotated_context_ht.ht()
+            context_ht = prepare_ht_for_constraint_calculations(
+                (
+                    filter_for_test(context_ht, use_gene_list=test_gene_list)
+                    if test
+                    else context_ht
+                ),
+                exome_coverage_metric=coverage_metric,
+                pops=pops,
+                downsamplings=downsamplings,
+                min_cov=args.min_cov,
+                max_cov=args.max_cov,
+                gerp_lower_cutoff=gerp_lower_cutoff,
+                gerp_upper_cutoff=gerp_upper_cutoff,
+                max_af=max_af,
+                build_model_low_cov_cutoff=args.pipeline_low_coverage_filter,
+                build_model_high_cov_cutoff=args.high_cov_definition,
+                build_model_upper_cov_cutoff=args.upper_cov_cutoff,
+                apply_model_low_cov_cutoff=args.pipeline_low_coverage_filter,
+                apply_model_high_cov_cutoff=args.high_cov_definition,
+                skip_coverage_model=args.skip_coverage_model,
+            )
+            # context_ht = hl.read_table(
+            #    "gs://gnomad-tmp-4day/preprocess_data-gbrGwwddDgOr07CZRxu7CX.ht"
+            # )
+            context_ht.describe()
+            context_ht = context_ht.checkpoint(
+                new_temp_file(prefix="preprocess_data", extension="ht")
+            )
+            context_ht.show()
+
+        if args.calculate_gerp_cutoffs:
+            logger.warning(
+                "Calculating new GERP cutoffs to be used instead of"
+                " '--gerp-lower-cutoff' and '--gerp-upper-cutoff' defaults."
+            )
+            res = resources.calculate_gerp_cutoffs
+            res.check_resource_existence()
+            gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
+                context_ht.filter(context_ht.genomic_region == "autosome_par")
+            )
+            logger.info(
+                "Calculated new GERP cutoffs: using a lower GERP cutoff of %f "
+                "and an upper GERP cutoff of %f.",
+                gerp_lower_cutoff,
+                gerp_upper_cutoff,
+            )
+
+        if args.calculate_mutation_rate:
+            logger.info("Calculating mutation rate...")
+            res = resources.calculate_mutation_rate
+            res.check_resource_existence()
+
+            hl._set_flags(use_new_shuffle="1")
+            # Calculate mutation rate using the downsampling with size 1000 genomes
+            # in genome site Table.
+            calculate_mu_by_downsampling(
+                context_ht,
+            ).repartition(
+                args.mutation_rate_partitions
+            ).write(res.mutation_ht.path, overwrite=overwrite)
+            hl._set_flags(use_new_shuffle=None)
+
+        # Create training dataset that includes possible and observed variant counts
+        # for building models.
+        if args.create_training_set:
+            logger.info("Counting possible and observed variant counts...")
+            res = resources.create_training_set
+            res.check_resource_existence()
+
+            op_ht = create_training_set(
+                context_ht,
+                res.mutation_ht.ht(),
+                partition_hint=args.training_set_partition_hint,
+                low_coverage_filter=args.pipeline_low_coverage_filter,
+                # Switch to using MANE Select transcripts rather than canonical for
+                # gnomAD v4 and later versions.
+                synonymous_transcript_filter_field=(
+                    "mane_select" if version_4_and_above else "canonical"
+                ),
+            )
+            op_ht = op_ht.checkpoint(res.train_ht.path, overwrite=overwrite)
+            # op_ht.export(res.train_tsv)
+
+            logger.info("Done with creating training dataset.")
+
+        if args.build_models:
+            res = resources.build_models
+            res.check_resource_existence()
+            logger.info("Building plateau and coverage models...")
+
+            # TODO: Remove repartition once partition_hint bugs are resolved.
+            training_ht = res.train_ht.ht()
+            training_ht = training_ht.repartition(args.training_set_partition_hint)
+
+            coverage_model, plateau_models = run_build_models(
+                training_ht,
+                skip_coverage_model=True if args.skip_coverage_model else False,
+                log10_coverage=log10_coverage,
+                additional_grouping=("genomic_region",),
+            )
+            hl.experimental.write_expression(
+                plateau_models, res.model_plateau.path, overwrite=overwrite
+            )
+            if not args.skip_coverage_model:
+                hl.experimental.write_expression(
+                    coverage_model, res.model_coverage.path, overwrite=overwrite
+                )
+            logger.info("Done building models.")
+
+        if args.apply_models_per_variant:
+            res = resources.apply_models_per_variant
+            res.check_resource_existence()
+
+            # Use new shuffle method for apply models to prevent shuffle errors.
+            hl._set_flags(use_new_shuffle="1")
+
+            # TODO: Remove repartition once partition write bugs are resolved.
+            mutation_ht = res.mutation_ht.ht().select("mu_snp")
+            mutation_ht = mutation_ht.repartition(args.mutation_rate_partitions)
+
+            oe_ht = create_per_variant_expected_ht(
+                context_ht,
+                mutation_ht,
+                plateau_models=res.model_plateau.he(),
+                coverage_model=(
+                    res.model_coverage.he() if not args.skip_coverage_model else None
+                ),
+                log10_coverage=log10_coverage,
+                custom_vep_annotation=custom_vep_annotation,
+                # Group by MANE Select transcripts in addition canonical for gnomAD
+                # v4 and later versions.
+                use_mane_select=(
+                    True
+                    if version_4_and_above
+                    and custom_vep_annotation != "worst_csq_by_gene"
+                    else False
+                ),
+            )
+            oe_ht.write(res.per_variant_apply_ht.path, overwrite=overwrite)
+
+            hl._set_flags(use_new_shuffle=None)
+
+        if args.apply_models:
+            res = resources.apply_models
+            res.check_resource_existence()
+
+            # Use new shuffle method for apply models to prevent shuffle errors.
+            hl._set_flags(use_new_shuffle="1")
+
+            # TODO: Remove repartition once partition write bugs are resolved.
+            mutation_ht = res.mutation_ht.ht().select("mu_snp")
+            mutation_ht = mutation_ht.repartition(args.mutation_rate_partitions)
+
+            logger.info(
+                "Applying plateau and autosome coverage models (if specified) and "
+                "computing expected variant count and observed:expected ratio..."
+            )
+            per_variant_apply_ht = res.per_variant_apply_ht.ht()
+            per_variant_apply_ht = per_variant_apply_ht.annotate(
+                **{f"am_{k}": v for k, v in per_variant_apply_ht.alpha_missense.items()}
+            )
+            oe_ht = aggregate_per_variant_expected_ht_old(
+                # oe_ht = aggregate_per_variant_expected_ht(
+                per_variant_apply_ht,
+                mutation_ht,
+                plateau_models=res.model_plateau.he(),
+                coverage_model=(
+                    res.model_coverage.he() if not args.skip_coverage_model else None
+                ),
+                log10_coverage=log10_coverage,
+                include_genomic_constraint_adjustment=True,
+                additional_grouping=(
+                    "genomic_region",
+                    "am_per_98",
+                    "am_over_0_999",
+                    "am_per_99",
+                ),
+            )
+            oe_ht.write(res.apply_ht.path, overwrite=overwrite)
+
+            hl._set_flags(use_new_shuffle=None)
+            logger.info(
+                "Done computing expected variant count and observed:expected ratio."
+            )
+
+        if args.compute_constraint_metrics:
+            logger.info(
+                "Computing constraint metrics, including pLI scores, z scores, oe"
+                " ratio, and confidence interval around oe ratio..."
+            )
+            res = resources.compute_constraint_metrics
+            res.check_resource_existence()
+
+            # Use new shuffle method for apply models to prevent shuffle errors.
+            hl._set_flags(use_new_shuffle="1")
+
+            # Combine Tables of expected variant counts at autosomes/pseudoautosomal
+            # regions, chromosome X, and chromosome Y sites.
+            ht = res.apply_ht.ht()
+            # ht = ht.repartition(args.compute_constraint_metrics_partitions)
+            # ht = ht.checkpoint(
+            #    new_temp_file(prefix="compute_constraint_metrics.repartition", extension="ht")
+            # )
+            # ht = hl.read_table("gs://gnomad-tmp-4day/compute_constraint_metrics.repartition-oNbEEYP2sWBAOAd1pC0cKM.ht")
+
+            # Compute constraint metrics.
+            # compute_constraint_metrics(
+            compute_constraint_metrics_old(
+                ht=ht,
+                gencode_ht=constraint_res.get_gencode_ht(version),
+                pops=pops,
+                keys=tuple(
+                    [
+                        i
+                        for i in list(ht.key)
+                        if i
+                        in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
+                    ]
+                ),
+                expected_values={
+                    "Null": args.expectation_null,
+                    "Rec": args.expectation_rec,
+                    "LI": args.expectation_li,
+                },
+                min_diff_convergence=args.min_diff_convergence,
+                raw_z_outlier_threshold_lower_lof=args.raw_z_outlier_threshold_lower_lof,
+                raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
+                raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
+                raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
+                # OS (other splice) is not implemented for build 38.
+                include_os=not version_4_and_above,
+                use_mane_select_over_canonical=version_4_and_above,
+            ).select_globals(
+                "version", "apply_model_params", "constraint_meta", "sd_raw_z"
+            ).write(
+                res.constraint_metrics_ht.path, overwrite=overwrite
+            )
+            hl._set_flags(use_new_shuffle=None)
+            logger.info("Done with computing constraint metrics.")
+
+        if args.export_tsv:
+            res = resources.export_tsv
+            res.check_resource_existence()
+            logger.info("Exporting constraint tsv...")
+
+            ht = res.constraint_metrics_ht.ht()
+            # If downsamplings per genetic ancestry group are present, export
+            # downsamplings to a separate tsv and drop from the main metrics tsv.
+            if pops:
+                downsampling_ht = explode_downsamplings_oe(
+                    ht,
+                    downsampling_meta=hl.eval(ht.apply_model_params.downsampling_meta),
+                )
+
+                # Drop downsampling annotations from the main metrics Table.
+                ht = ht.annotate(
+                    **{
+                        i: ht[i].drop(*["gen_anc_exp", "gen_anc_obs"])
+                        for i in ["lof_hc_lc", "lof", "syn", "mis"]
+                    }
+                )
+                # Export separate downsampling Table.
+                downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
+            ht = ht.flatten()
+            ht.export(res.constraint_metrics_tsv)
+
+    finally:
+        logger.info("Copying log to logging bucket...")
+        hl.copy_log(constraint_res.get_logging_path("constraint_pipeline", version))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--overwrite", help="Whether to overwrite output files.", action="store_true"
+    )
+    parser.add_argument(
+        "--version",
+        help=(
+            "Which version of the resource Tables will be used. Default is"
+            f" {constraint_res.CURRENT_VERSION}."
+        ),
+        type=str,
+        default=constraint_res.CURRENT_VERSION,
+    )
+    parser.add_argument(
+        "--post-fix",
+        help="Post-fix to append to the output file names.",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--test",
+        help=(
+            "Whether to filter the exome Table, genome Table and the context Table to"
+            " only chromosome 20, chromosome X, and chromosome Y for testing."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--test-gene-list",
+        help=(
+            "Whether to filter the exome Table, genome Table and the context Table to"
+            " only a list of genes on chromosome 20, chromosome X, and chromosome Y for"
+            " testing."
+        ),
+        action="store_true",
+    )
+
+    prepare_context_args = parser.add_argument_group(
+        "Prepare context Table args", "Arguments used for preparing the context Table."
+    )
+    prepare_context_args.add_argument(
+        "--prepare-context-ht",
+        help=(
+            "Prepare the context Table by splitting multiallelic sites and adding "
+            "'methylation', 'coverage', and 'gerp' annotations to context Table with "
+            "VEP annotation."
+        ),
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--coverage-metric",
+        help=(
+            "Name of metric to use to assess coverage, such as 'median', 'AN', or"
+            "'AN_percent'. Default is 'median'."
+        ),
+        type=str,
+        default="median",
+    )
+
+    parser.add_argument(
+        "--calculate-gerp-cutoffs",
+        help=(
+            "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
+            " of GERP scores in the context Table. Note that if"
+            " '--calculate-gerp-cutoffs' is specified, the computed values will be used"
+            " in all downstream steps of the constraint pipeline instead of the values"
+            " defined by --gerp-lower-cutoff and --gerp-upper-cutoff."
+        ),
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--pipeline-low-coverage-filter",
+        help=(
+            "Lower median coverage cutoff to use throughout the pipeline. Sites with"
+            " coverage below this cutoff will be excluded when creating the training"
+            " set, building and applying models, and computing constraint metrics."
+            "  Default is 30."
+        ),
+        type=int,
+        default=30,
+    )
+
+    mutation_rate_args = parser.add_argument_group(
+        "Calculate mutation rate args",
+        "Arguments used for calculating the mutation rate.",
+    )
+
+    recalculate_mutation_rate = mutation_rate_args.add_argument(
+        "--calculate-mutation-rate",
+        help=(
+            "Calculate baseline mutation rate for each substitution and context using"
+            " downsampling data."
+        ),
+        action="store_true",
+    )
+
+    mutation_rate_args.add_argument(
+        "--min-cov",
+        help=(
+            "Minimum coverage required to keep a site when calculating the mutation"
+            " rate. Default is 15."
+        ),
+        type=int,
+        default=15,
+    )
+    mutation_rate_args.add_argument(
+        "--max-cov",
+        help=(
+            "Maximum coverage required to keep a site when calculating the mutation"
+            " rate. Default is 60."
+        ),
+        type=int,
+        default=60,
+    )
+    mutation_rate_args.add_argument(
+        "--gerp-lower-cutoff",
+        help=(
+            "Minimum GERP score for variant to be included when calculating the"
+            " mutation rate. Default is -3.9885 (precalculated on the GRCh37 context"
+            " Table to define the 95th percentile)."
+        ),
+        type=float,
+        default=-3.9885,
+    )
+    mutation_rate_args.add_argument(
+        "--gerp-upper-cutoff",
+        help=(
+            "Maximum GERP score for variant to be included when calculating the"
+            " mutation rate. Default is 2.6607 (precalculated on the GRCh37 context"
+            " Table to define the 5th percentile)."
+        ),
+        type=float,
+        default=2.6607,
+    )
+    mutation_rate_args.add_argument(
+        "--mutation-rate-partitions",
+        help=(
+            "Number of partitions to which the mutation rate Table should be"
+            " repartitioned."
+        ),
+        type=int,
+        default=1,
+    )
+
+    training_set_args = parser.add_argument_group(
+        "Training set args", "Arguments used for creating the training set."
+    )
+
+    training_set_args.add_argument(
+        "--create-training-set",
+        help=(
+            "Count the observed variants and possible variants by exome coverage at"
+            " synonymous sites."
+        ),
+        action="store_true",
+    )
+
+    training_set_args.add_argument(
+        "--training-set-partition-hint",
+        help=(
+            "Target number of partitions for aggregation when counting variants for"
+            " training datasets."
+        ),
+        type=int,
+        default=100,
+    )
+
+    # `max-af` is an arg for both `--create-training-set` and `--apply-models`
+    maximum_af = training_set_args.add_argument(
+        "--max-af",
+        help="Maximum variant allele frequency to keep.",
+        type=float,
+        default=0.001,
+    )
+
+    # `populations` is an arg for `--create-training-set`, `--apply-models`,
+    # `--build-models`, and `compute_constraint_args`
+    populations = training_set_args.add_argument(
+        "--pops",
+        nargs="+",
+        help=(
+            "Populations on which to train models, build models, apply models, and or"
+            " compute metrics on. Downsamplings for the specified population will be"
+            " included."
+        ),
+        choices=["global", "afr", "amr", "eas", "nfe", "sas"],
+        default=None,
+    )
+
+    mutation_rate_parser = parser.add_mutually_exclusive_group(required=False)
+    mutation_rate_parser._group_actions.append(recalculate_mutation_rate)
+
+    build_models_args = parser.add_argument_group(
+        "Build models args", "Arguments used for building models."
+    )
+
+    build_models_args.add_argument(
+        "--build-models",
+        help="Build plateau and coverage models.",
+        action="store_true",
+    )
+
+    build_models_args.add_argument(
+        "--use-weights",
+        help=(
+            "Whether to generalize the models to weighted least squares using"
+            "'possible_variants'."
+        ),
+        action="store_true",
+    )
+    build_models_args.add_argument(
+        "--upper-cov-cutoff",
+        help=(
+            "Upper median coverage cutoff. Sites with coverage above this cutoff are"
+            " excluded from the high coverage Table when building the models. Default"
+            " is 100."
+        ),
+        type=int,
+        default=100,
+    )
+
+    build_models_args.add_argument(
+        "--high-cov-definition",
+        help=(
+            "Lower median coverage cutoff to use to define high coverage sites. Sites"
+            " with coverage below this cutoff are excluded from the high coverage Table"
+            " when building and applying the models. Default is 30."
+        ),
+        type=int,
+        default=30,
+    )
+
+    build_models_args.add_argument(
+        "--skip-coverage-model",
+        help="Omit computing and applying the coverage model.",
+        action="store_true",
+    )
+
+    cov_model_type = build_models_args.add_argument(
+        "--coverage-model-type",
+        help=(
+            "Type of model to use for low coverage sites when building and applying "
+            "the coverage model, either 'linear' or 'logarithmic'. Default is "
+            "'logarithmic'."
+        ),
+        type=str,
+        choices=["linear", "logarithmic"],
+        default="logarithmic",
+    )
+
+    build_models_args._group_actions.append(populations)
+
+    apply_models_per_variant_args = parser.add_argument(
+        "--apply-models-per-variant",
+        help=(
+            "Apply plateau and coverage models to variants in exome sites Table and"
+            " context Table to compute expected variant counts per variant."
+        ),
+        action="store_true",
+    )
+
+    apply_models_args = parser.add_argument_group(
+        "Apply models args",
+        "Arguments used for applying the plateau and coverage models.",
+    )
+
+    apply_models_args.add_argument(
+        "--apply-models",
+        help=(
+            "Apply plateau and coverage models to variants in exome sites Table and"
+            " context Table to compute expected variant counts."
+        ),
+        action="store_true",
+    )
+
+    apply_models_args.add_argument(
+        "--apply-obs-pos-count-partition-hint",
+        help=(
+            "Target number of partitions for aggregation when counting observed and"
+            " expected variants for model application"
+        ),
+        type=int,
+        default=2000,
+    )
+    apply_models_args.add_argument(
+        "--apply-expected-variant-partition-hint",
+        help=(
+            "Target number of partitions for sum aggregators after applying models to"
+            " get expected variant counts."
+        ),
+        type=int,
+        default=1000,
+    )
+    apply_models_args.add_argument(
+        "--custom-vep-annotation",
+        help=(
+            "Custom VEP annotation to be used to annotate transcript when"
+            ' applying models (one of "transcript_consequences" or "worst_csq_by_gene")'
+        ),
+        type=str,
+        default="transcript_consequences",
+        # choices=constraint_res.CUSTOM_VEP_ANNOTATIONS,
+    )
+    apply_models_args._group_actions.append(maximum_af)
+    apply_models_args._group_actions.append(populations)
+    apply_models_args._group_actions.append(cov_model_type)
+
+    compute_constraint_args = parser.add_argument_group(
+        "Computate constraint metrics args",
+        "Arguments used for computing constraint metrics.",
+    )
+    compute_constraint_args.add_argument(
+        "--compute-constraint-metrics",
+        help=(
+            "Compute constraint metrics including pLI scores, z scores, oe ratio, and"
+            " confidence interval around oe ratio."
+        ),
+        action="store_true",
+    )
+    compute_constraint_args.add_argument(
+        "--compute-constraint-metrics-partitions",
+        help=(
+            "Number of partitions to which the unioned Table of expected variant counts"
+            " for autosomes/pseudoautosomal regions, chromosome X, and chromosome Y "
+            " should be reaprtitioned."
+        ),
+        type=int,
+        default=1000,
+    )
+
+    compute_constraint_args.add_argument(
+        "--min-diff-convergence",
+        help=(
+            "Minimum iteration change in pLI (Probability of loss-of-function"
+            " intolerance for haploinsufficient genes) to consider the EM"
+            " (expectation-maximization) model convergence criteria as met when"
+            " calculating pLI scores."
+        ),
+        type=float,
+        default=0.001,
+    )
+
+    compute_constraint_args.add_argument(
+        "--expectation-null",
+        help=(
+            "Expected observed/expected rate of truncating variation for genes where"
+            " protein truncating variation is completely tolerated by natural"
+            " selection. Default is 1.0"
+        ),
+        type=float,
+        default=1.0,
+    )
+    compute_constraint_args.add_argument(
+        "--expectation-rec",
+        help=(
+            "Expected observed/expected rate of truncating variation for recessive"
+            " disease genes. Default is 0.706. Note that v2 used a value of 0.463."
+        ),
+        type=float,
+        default=0.706,
+    )
+    compute_constraint_args.add_argument(
+        "--expectation-li",
+        help=(
+            "Expected observed/expected rate of truncating variation for severe"
+            " haploinsufficient genes. Default is 0.207. Note that v2 used a value of"
+            " 0.089."
+        ),
+        type=float,
+        default=0.207,
+    )
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-lower-lof",
+        help=(
+            "Value at which the raw z-score is considered an outlier for lof variants."
+            " Values below this threshold will be considered outliers. Default is -8.0."
+        ),
+        type=float,
+        default=-8.0,
+    )
+    # NOTE: gnomAD v2 used raw z thresholds of +/- 5.
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-lower-missense",
+        help=(
+            "Value at which the raw z-score is considered an outlier for missense"
+            " variants. Values below this threshold will be considered outliers."
+            " Default is -8.0."
+        ),
+        type=float,
+        default=-8.0,
+    )
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-lower-syn",
+        help=(
+            "Lower value at which the raw z-score is considered an outlier for"
+            " synonymous variants. Values below this threshold will be considered"
+            " outliers. Default is -8.0."
+        ),
+        type=float,
+        default=-8.0,
+    )
+    compute_constraint_args.add_argument(
+        "--raw-z-outlier-threshold-upper-syn",
+        help=(
+            "Upper value at which the raw z-score is considered an outlier for"
+            " synonymous variants. Values above this threshold will be considered"
+            " outliers. Default is 8.0."
+        ),
+        type=float,
+        default=8.0,
+    )
+    parser.add_argument(
+        "--export-tsv",
+        help="Export constraint metrics to tsv file.",
+        action="store_true",
+    )
+
+    compute_constraint_args._group_actions.append(populations)
+
+    args = parser.parse_args()
+    main(args)

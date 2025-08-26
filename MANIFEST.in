@@ -1,0 +1,23 @@
+include README.md
+include LICENSE
+include requirements-dev.txt
+include requirements-dev.in
+
+recursive-include gnomad_constraint *.py
+recursive-include gnomad_constraint *.scala
+
+exclude renv/*
+exclude venv/*
+exclude .git/*
+exclude .github/*
+exclude .vscode/*
+exclude .idea/*
+exclude .Rproj*
+exclude .R*
+exclude .DS_Store
+exclude __pycache__/*
+exclude *.pyc
+exclude *.pyo
+exclude *.pyd
+exclude .Python
+exclude *.so 
