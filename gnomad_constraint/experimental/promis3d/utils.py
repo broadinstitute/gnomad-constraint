@@ -613,11 +613,14 @@ def gamma_upper_ci(
     :return: Upper bound of the OE confidence interval
     """
     # Calculate shape and scale parameters for Gamma distribution
-    shape = obs + 1.0
-    scale = 1.0 / exp
-    p = 1.0 - alpha
+    shape = obs + hl.literal(1.0)
+    scale = divide_null(
+        hl.literal(1.0), exp
+    )  # Use divide_null to handle division by zero
+    p = hl.literal(1.0 - alpha)
 
     # Use the built-in qgamma function from the custom Hail wheel
+    # divide_null will return null if exp is 0, making the result null as well
     return hl.qgamma(p, shape, scale)
 
 
