@@ -421,6 +421,26 @@ def main(args):
         ht = hl.read_table(
             "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/codon_oe.ht"
         )
+
+        plddt_out = ""
+        if args.plddt_cutoff is not None:
+            #plddt_ht = promis3d_res.get_af2_plddt_ht("2.1.1", args.test).ht()
+            plddt_ht = hl.read_table(
+                "gs://gnomad/v2.1.1/constraint/promis3d/preprocessed_data/af2_plddt.ht"
+            )
+            #print(plddt_ht.filter(plddt_ht.uniprot_id == "A0A024R2K8").collect())
+            ht = ht.annotate(
+                oe_by_transcript=ht.oe_by_transcript.map(
+                    lambda x: x.annotate(
+                        oe=hl.zip(x.oe, plddt_ht[ht.uniprot_id].plddt).map(
+                            lambda y: hl.or_missing(y[1] >= args.plddt_cutoff, y[0])
+                        )
+                    )
+                )
+            )
+            #print(ht.filter(ht.uniprot_id == "A0A024R2K8").collect())
+            plddt_out = f".plddt_cutoff_{args.plddt_cutoff}"
+       
         # if args.run_greedy:
         #    logger.info("Running greedy algorithm.")
         #    res = resources.run_greedy
@@ -445,7 +465,7 @@ def main(args):
                 _read_if_exists=True,
             )
             output_path = promis3d_res.get_forward_ht(
-                name=f"oe_upper_chisq{min_exp_mis_out}"
+                name=f"oe_upper_chisq{min_exp_mis_out}{plddt_out}"
             ).path
             forward_ht = run_forward(
                 ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
@@ -458,15 +478,17 @@ def main(args):
             af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
         )
         ht = ht.repartition(200).checkpoint(
-            f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.gamma.ht",
-            _read_if_exists=True,
-            # overwrite=True,
+            f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
+            #_read_if_exists=True,
+            overwrite=True,
         )
+        ht.show(5)
+
         if args.run_forward:
             # logger.info("Running forward algorithm.")
             # res = resources.run_forward
             output_path = promis3d_res.get_forward_ht(
-                name=f"oe_upper_gamma{min_exp_mis_out}"
+                name=f"oe_upper_gamma{min_exp_mis_out}{plddt_out}"
             ).path
             forward_ht = run_forward(
                 ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
@@ -477,7 +499,7 @@ def main(args):
 
         if args.run_forward_no_catch_all:
             output_path = promis3d_res.get_forward_ht(
-                name=f"oe_upper_gamma.no_catch_all{min_exp_mis_out}"
+                name=f"oe_upper_gamma.no_catch_all{min_exp_mis_out}{plddt_out}"
             ).path
             forward_ht = run_forward_no_catch_all(ht, min_exp_mis=args.min_exp_mis)
             forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
@@ -485,7 +507,7 @@ def main(args):
 
         if args.run_forward_no_catch_all_standardized:
             output_path = promis3d_res.get_forward_ht(
-                name=f"oe_upper_gamma.no_catch_all_standardized{min_exp_mis_out}"
+                name=f"oe_upper_gamma.no_catch_all_standardized{min_exp_mis_out}{plddt_out}"
             ).path
             forward_ht = run_forward_no_catch_all_standardized(
                 ht, min_exp_mis=args.min_exp_mis
@@ -635,6 +657,12 @@ if __name__ == "__main__":
         ),
         type=int,
         default=MIN_EXP_MIS,
+    )
+    parser.add_argument(
+        "--plddt-cutoff",
+        help="Minimum pLDDT cutoff to filter on.",
+        type=float,
+        default=None,
     )
     parser.add_argument(
         "--write-per-variant",

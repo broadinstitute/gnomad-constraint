@@ -589,7 +589,10 @@ def add_idx_to_array(
 
 def get_cumulative_oe(oe_expr):
     oe_expr = hl.array_scan(
-        lambda i, j: j.annotate(obs=i.obs + j.obs, exp=i.exp + j.exp),
+        lambda i, j: j.annotate(
+            obs=i.obs + j.obs, 
+            exp=i.exp + j.exp,
+        ),
         oe_expr[0],
         oe_expr[1:],
     )
@@ -713,6 +716,7 @@ def get_3d_residue(
     # Annotate neighbor observed and expected, cumulative observed and expected, and
     # upper bound of OE confidence interval.
     oe_expr = dist_mat_expr.map(lambda x: x.annotate(**oe_expr[x.residue_index]))
+    oe_expr = oe_expr.filter(lambda x: hl.is_defined(x))
     oe_expr = get_cumulative_oe(oe_expr)
     oe_expr = calculate_oe_upper(oe_expr, alpha=alpha, oe_upper_method=oe_upper_method)
 
@@ -743,6 +747,7 @@ def determine_regions_with_min_oe_upper(
     af2_ht = af2_ht.annotate(oe=oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript)
     af2_ht = af2_ht.explode(af2_ht.oe)
     af2_ht = af2_ht.annotate(**af2_ht.oe)
+    af2_ht.show(5)
     af2_ht = af2_ht.transmute(
         transcript_id=af2_ht.enst,
         oe=af2_ht.oe,
@@ -754,6 +759,7 @@ def determine_regions_with_min_oe_upper(
             oe_upper_method=oe_upper_method,
         ),
     )
+    #print(af2_ht.filter(af2_ht.uniprot_id == "A0A024R2K8").collect())
 
     af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
         oe=hl.agg.take(af2_ht.oe, 1)[0],
@@ -928,6 +934,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
     ht.describe()
     ht.show(5)
+    #print(ht.oe.collect())
     round_num = 1
     while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
         # For each region in regions, update the list of selected by
@@ -938,16 +945,18 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
         # ht = ht.annotate(_region=region_expr).checkpoint(
         #    hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht")
         # )
-        ht = ht.annotate(_region=region_expr)
+        ht = ht.annotate(_region=region_expr).checkpoint(
+            hl.utils.new_temp_file(f"forward_round_{round_num}.prep1", "ht")
+        )
         region_expr = ht._region
         updated_null_expr = remove_residues_from_region(ht.null_model, region_expr)
-        ht = ht.annotate(_updated_null=updated_null_expr)  # .checkpoint(
-        #    hl.utils.new_temp_file(f"forward_round_{round_num}.remove", "ht")
-        # )
+        ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
+            hl.utils.new_temp_file(f"forward_round_{round_num}.prep2", "ht")
+        )
         updated_null_expr = ht._updated_null
         updated_null_expr = prep_region_struct(updated_null_expr.region, ht.oe)
         ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
-            hl.utils.new_temp_file(f"forward_round_{round_num}.prep2", "ht")
+            hl.utils.new_temp_file(f"forward_round_{round_num}.prep3", "ht")
         )
         updated_null_expr = ht._updated_null
         region_expr = ht._region
@@ -1321,6 +1330,7 @@ def run_forward_no_catch_all_standardized(
     alpha: float = 1.0,  # weight for standardized min distance
     beta: float = 1.0,  # weight for standardized ΔOE
 ):
+    """
     num_residues = ht.oe.length()
 
     # keep a full set for set ops; no growing catch-all
@@ -1472,6 +1482,8 @@ def run_forward_no_catch_all_standardized(
         "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht",
         overwrite=True,
     )
+    """
+    result_ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht")
 
     result_ht = result_ht.annotate(
         oe=result_ht.oe.map(
@@ -1506,6 +1518,7 @@ def run_forward_no_catch_all_standardized(
         )
     )
 
+    """
     # Residual residues (not in any selected region)
     ht = result_ht.select(
         "oe",
@@ -1655,6 +1668,8 @@ def run_forward_no_catch_all_standardized(
         _read_if_exists=True,
         # overwrite=True,
     )
+    """
+    ht_assigned = hl.read_table("gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.finalize4.all_genes.ht")
 
     # stitch assignments back to selection result
     assigned_keyed = ht_assigned[result_ht.uniprot_id, result_ht.transcript_id]
@@ -1724,6 +1739,8 @@ def run_forward_no_catch_all_standardized(
         "assigned",
         "region_length",
     )
+
+    return ht
 
 
 def prioritize_transcripts_and_uniprots(
