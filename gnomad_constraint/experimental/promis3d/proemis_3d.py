@@ -363,12 +363,20 @@ def main(args):
         #    res = resources.run_forward
         # res.check_resource_existence()
 
+        res = resources.run_forward
+
         # Use new shuffle method for apply models to prevent shuffle errors.
         hl._set_flags(use_new_shuffle="1")
 
         # ht = res.obs_exp_ht.ht()
-        # gencode_pos_ht = res.gencode_pos_ht.ht()
-        # af2_dist_ht = res.af2_dist_ht.ht()
+        # gencode_pos_ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/preprocessed_data/gencode_positions.ht")#res.gencode_pos_ht.ht()
+        # af2_dist_ht = hl.read_table("gs://gnomad/v2.1.1/constraint/promis3d/preprocessed_data/af2_dist.ht") #res.af2_dist_ht.ht()
+        # test_transcripts = hl.set(["ENST00000644876", "ENST00000233146", "ENST00000371953", "ENST00000347132", "ENST00000357654"])
+        # ht = ht.filter(test_transcripts.contains(ht.transcript))
+        # gencode_pos_ht = gencode_pos_ht.filter(test_transcripts.contains(gencode_pos_ht.enst)).cache()
+        # uniprot_ids = hl.set(gencode_pos_ht.aggregate(hl.agg.collect_as_set(gencode_pos_ht.uniprot_id)))
+        # af2_dist_ht = af2_dist_ht.filter(uniprot_ids.contains(af2_dist_ht.uniprot_id))
+
         # if test:
         #    genes_for_testing_ht = hl.import_table(
         #        "gs://gnomad/v4.1/constraint/resources/genes_for_testing.txt"
@@ -387,26 +395,33 @@ def main(args):
         #        obs=hl.agg.sum(ht.observed), exp=hl.agg.sum(ht.expected)
         #    )
         # elif version == "4.1":
-        #    ht = ht.group_by("locus", "transcript").aggregate(
+        # ht = ht.group_by("locus", "transcript").aggregate(
         #        obs=hl.agg.sum(ht.calibrate_mu.observed_variants[0]),
         #        exp=hl.agg.sum(ht.expected_variants[0]),
-        #    )
+        # )
         # else:
         #    raise ValueError(
         #        "The requested version of the resource Tables is not available."
         #    )
         # ht = generate_codon_oe_table(ht, gencode_pos_ht)
         # ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
-        # ht = ht.repartition(50).checkpoint(
-        #    "gs://gnomad-tmp-4day/codon_oe-TqnCxN8brzww1z7IkpWwVm.ht"
+        # ht = ht.repartition(1).checkpoint(
+        #    "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run/codon_oe.ht"
         # )
         # af2_ht = (
         #    af2_dist_ht
         #    #.repartition(5000)
         #    .repartition(50)
-        #    .checkpoint(hl.utils.new_temp_file("af2_dist", "ht"))
+        #    .repartition(1)
+        #    .checkpoint(
+        #        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run/af2_dist.ht",
+        #        overwrite=True
+        #    )
         # )
         # af2_ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht")
+        af2_ht = hl.read_table(
+            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run/af2_dist.ht"
+        )
         # ht = determine_regions_with_min_oe_upper(
         #    af2_ht, ht, min_exp_mis=args.min_exp_mis
         # )
@@ -415,20 +430,23 @@ def main(args):
         #    hl.utils.new_temp_file("sort_regions_by_oe", "ht")
         # )
         # ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.ht")
-        af2_ht = hl.read_table(
-            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht"
-        )
+        # af2_ht = hl.read_table(
+        #    "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht"
+        # )
+        # ht = hl.read_table(
+        #    "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/codon_oe.ht"
+        # )
         ht = hl.read_table(
-            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/codon_oe.ht"
+            "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run/codon_oe.ht"
         )
 
         plddt_out = ""
         if args.plddt_cutoff is not None:
-            #plddt_ht = promis3d_res.get_af2_plddt_ht("2.1.1", args.test).ht()
+            # plddt_ht = promis3d_res.get_af2_plddt_ht("2.1.1", args.test).ht()
             plddt_ht = hl.read_table(
                 "gs://gnomad/v2.1.1/constraint/promis3d/preprocessed_data/af2_plddt.ht"
             )
-            #print(plddt_ht.filter(plddt_ht.uniprot_id == "A0A024R2K8").collect())
+            # print(plddt_ht.filter(plddt_ht.uniprot_id == "A0A024R2K8").collect())
             ht = ht.annotate(
                 oe_by_transcript=ht.oe_by_transcript.map(
                     lambda x: x.annotate(
@@ -438,9 +456,9 @@ def main(args):
                     )
                 )
             )
-            #print(ht.filter(ht.uniprot_id == "A0A024R2K8").collect())
+            # print(ht.filter(ht.uniprot_id == "A0A024R2K8").collect())
             plddt_out = f".plddt_cutoff_{args.plddt_cutoff}"
-       
+
         # if args.run_greedy:
         #    logger.info("Running greedy algorithm.")
         #    res = resources.run_greedy
@@ -460,8 +478,12 @@ def main(args):
             ht = determine_regions_with_min_oe_upper(
                 af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
             )
-            ht = ht.repartition(200).checkpoint(
-                f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.chisq.ht",
+            # ht = ht.repartition(200).checkpoint(
+            #    f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.chisq.ht",
+            #    _read_if_exists=True,
+            # )
+            ht = ht.repartition(1).checkpoint(
+                f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.chisq.ht",
                 _read_if_exists=True,
             )
             output_path = promis3d_res.get_forward_ht(
@@ -477,10 +499,15 @@ def main(args):
         ht = determine_regions_with_min_oe_upper(
             af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
         )
-        ht = ht.repartition(200).checkpoint(
-            f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
-            #_read_if_exists=True,
-            overwrite=True,
+        # ht = ht.repartition(200).checkpoint(
+        #    f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
+        #    #_read_if_exists=True,
+        #    overwrite=True,
+        # )
+        ht = ht.repartition(1).checkpoint(
+            f"gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
+            _read_if_exists=True,
+            # overwrite=True,
         )
         ht.show(5)
 
@@ -492,6 +519,19 @@ def main(args):
             ).path
             forward_ht = run_forward(
                 ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
+            )
+            plddt_ht = hl.read_table(
+                "gs://gnomad/v2.1.1/constraint/promis3d/preprocessed_data/af2_plddt.ht"
+            )
+            plddt_ht = plddt_ht.annotate(plddt=hl.enumerate(plddt_ht.plddt))
+            plddt_ht = plddt_ht.explode("plddt")
+            plddt_ht = plddt_ht.annotate(
+                residue_index=plddt_ht.plddt[0],
+                plddt=plddt_ht.plddt[1],
+            )
+            plddt_ht = plddt_ht.key_by("uniprot_id", "residue_index")
+            forward_ht = forward_ht.annotate(
+                plddt=plddt_ht[forward_ht.uniprot_id, forward_ht.residue_index].plddt
             )
             # forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
             forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)

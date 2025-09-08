@@ -40,7 +40,7 @@ def get_promis3d_root(version: str = CURRENT_VERSION, test: bool = False) -> str
     :param test: Whether to use a tmp path for testing.
     :return: Root path to promis3d resources.
     """
-    return "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run"
+    return "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run"  # "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run"
     # return (
     #    f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint/promis3d"
     #    if test

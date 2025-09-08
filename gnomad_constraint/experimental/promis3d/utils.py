@@ -590,7 +590,7 @@ def add_idx_to_array(
 def get_cumulative_oe(oe_expr):
     oe_expr = hl.array_scan(
         lambda i, j: j.annotate(
-            obs=i.obs + j.obs, 
+            obs=i.obs + j.obs,
             exp=i.exp + j.exp,
         ),
         oe_expr[0],
@@ -759,7 +759,7 @@ def determine_regions_with_min_oe_upper(
             oe_upper_method=oe_upper_method,
         ),
     )
-    #print(af2_ht.filter(af2_ht.uniprot_id == "A0A024R2K8").collect())
+    # print(af2_ht.filter(af2_ht.uniprot_id == "A0A024R2K8").collect())
 
     af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
         oe=hl.agg.take(af2_ht.oe, 1)[0],
@@ -930,11 +930,12 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
     ht = ht.explode("regions")
     ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
+    # ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
+    ht = ht.repartition(1, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
     ht.describe()
     ht.show(5)
-    #print(ht.oe.collect())
+    # print(ht.oe.collect())
     round_num = 1
     while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
         # For each region in regions, update the list of selected by
@@ -1095,7 +1096,8 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
         _bg_after_selected=ht.full_region,
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(200, shuffle=True)
+    # ht = ht.repartition(200, shuffle=True)
+    ht = ht.repartition(1, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file("forward_explode", "ht"))
     round_num = 1
 
@@ -1483,7 +1485,9 @@ def run_forward_no_catch_all_standardized(
         overwrite=True,
     )
     """
-    result_ht = hl.read_table("gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht")
+    result_ht = hl.read_table(
+        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht"
+    )
 
     result_ht = result_ht.annotate(
         oe=result_ht.oe.map(
@@ -1669,7 +1673,9 @@ def run_forward_no_catch_all_standardized(
         # overwrite=True,
     )
     """
-    ht_assigned = hl.read_table("gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.finalize4.all_genes.ht")
+    ht_assigned = hl.read_table(
+        "gs://gnomad-tmp-4day/persist_TableOBsbLYS6NH.finalize4.all_genes.ht"
+    )
 
     # stitch assignments back to selection result
     assigned_keyed = ht_assigned[result_ht.uniprot_id, result_ht.transcript_id]
