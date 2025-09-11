@@ -9,7 +9,7 @@ from typing import Dict, Iterator, List, Optional, Union
 import hail as hl
 import numpy as np
 import pandas as pd
-from gnomad.resources.grch38.gnomad import browser_variant
+from gnomad.resources.grch38.gnomad import browser_gene, browser_variant, pext
 from gnomad.utils.constraint import oe_confidence_interval
 from gnomad.utils.filtering import filter_gencode_ht
 from gnomad.utils.reference_genome import get_reference_genome
@@ -21,17 +21,34 @@ from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
 
-from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
-from gnomad_constraint.experimental.promis3d.data_import import (
-    process_all_rmc_ht,
-    process_clinvar_ht,
-    process_constraint_metrics_ht,
-    process_context_ht,
-    process_cosmis_tsv_for_model,
-    process_interpro_ht,
-    process_kaplanis_variants_ht,
+from gnomad_constraint.experimental.promis3d.constants import (
+    HI_GENE_CATEGORIES,
+    HI_GENES,
+    MIN_EXP_MIS,
 )
-from gnomad_constraint.experimental.promis3d.resources import get_constraint_metrics_ht
+from gnomad_constraint.experimental.promis3d.data_import import (
+    get_kaplanis_sig_gene_annotations,
+    import_revel_ht,
+    process_gnomad_de_novo_ht,
+)
+from gnomad_constraint.experimental.promis3d.resources import (
+    get_clinvar_missense_ht,
+    get_cosmis_score_ht,
+    get_fu_variants_ht,
+    get_insilico_annotations_ht,
+    get_interpro_annotations_ht,
+    get_kaplanis_variants_ht,
+    get_mtr3d_ht,
+    get_mtr_ht,
+    get_phaplo,
+    get_processed_genetics_gym_missense_scores_ht,
+    get_ptriplo,
+    get_rmc_browser_ht,
+    get_temp_context_preprocessed_ht,
+    get_temp_processed_constraint_ht,
+    get_temp_processed_rmc_ht,
+    get_varity_ht,
+)
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -434,6 +451,7 @@ def get_gencode_positions(
     transcripts_ht: hl.Table,
     translations_ht: hl.Table,
     gencode_gtf_ht: hl.Table,
+    no_filter: bool = False,
 ) -> hl.Table:
     """
     Get GENCODE positions for the given transcripts and translations.
@@ -441,6 +459,11 @@ def get_gencode_positions(
     :param transcripts_ht: Hail Table with GENCODE transcripts.
     :param translations_ht: Hail Table with GENCODE translations.
     :param gencode_gtf_ht: Hail Table with GENCODE GTF data.
+    :param no_filter: Whether to filter the data if the CDS length is not divisible
+        by 3 or if the sequence length in `transcripts_ht` is not equal to the sequence
+        length in `gencode_gtf_ht`. If `no_filter` is True, then two additional fields
+        are added to the table: `cds_len_mismatch` and `cds_len_not_div_by_3` to
+        facilitate filtering. Default is False.
     :return: Hail Table with GENCODE positions.
     """
     build = get_reference_genome(gencode_gtf_ht.interval.start).name
@@ -482,9 +505,17 @@ def get_gencode_positions(
         cds_sequence=cds_sequence_expr,
         cds_len=hl.len(cds_sequence_expr),
     )
-    cds_len_ht = cds_len_ht.filter(
-        (cds_len_ht.gtf_cds_len == cds_len_ht.cds_len) & (cds_len_ht.cds_len % 3 == 0)
-    )
+    cds_len_mismatch_expr = cds_len_ht.gtf_cds_len != cds_len_ht.cds_len
+    cds_len_not_div_by_3_expr = cds_len_ht.cds_len % 3 != 0
+    if no_filter:
+        cds_len_ht = cds_len_ht.annotate(
+            cds_len_mismatch=cds_len_mismatch_expr,
+            cds_len_not_div_by_3=cds_len_not_div_by_3_expr,
+        )
+    else:
+        cds_len_ht = cds_len_ht.filter(
+            ~cds_len_mismatch_expr & ~cds_len_not_div_by_3_expr
+        )
 
     # Get the reference sequence and amino acid positions for each position in the CDS.
     # If the strand is negative, reverse the reference sequence and amino acid
@@ -994,9 +1025,208 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
     return ht
 
 
+def create_missense_viewer_input_ht(
+    pos_ht: hl.Table,
+    promis3d_ht: hl.Table,
+) -> hl.Table:
+    """
+    Create missense viewer input Hail Table.
+
+    :param ht: Input Hail Table.
+    :return: Missense viewer input Hail Table.
+    """
+    pos_ht = pos_ht.key_by(
+        "uniprot_id", "enst", "gene", "aalength", "cds_len", "strand", "aapos"
+    )
+    pos_ht = pos_ht.select("locus")
+    pos_ht = pos_ht.collect_by_key("locus")
+    pos_ht = pos_ht.annotate(
+        locus=hl.sorted(pos_ht.locus.locus, key=lambda x: x.position)[0]
+    )
+    pos_ht = pos_ht.group_by(
+        "uniprot_id", "enst", "gene", "aalength", "cds_len", "strand"
+    ).aggregate(locus_by_aapos=hl.dict(hl.agg.collect((pos_ht.aapos, pos_ht.locus))))
+    pos_ht = pos_ht.key_by("uniprot_id", "enst").cache()
+
+    chisq_expr = calculate_oe_neq_1_chisq(promis3d_ht.obs, promis3d_ht.exp)
+    promis3d_ht = promis3d_ht.annotate(
+        chisq=chisq_expr, p_value=hl.pchisqtail(chisq_expr, 1)
+    )
+
+    # Key by all fields except 'pos' and collect by key into a field named 'pos'.
+    promis3d_ht = promis3d_ht.key_by(
+        "uniprot_id", "transcript_id", "region_index", "is_null"
+    ).collect_by_key("pos")
+
+    # Sort the 'pos' field in ascending order.
+    promis3d_ht = promis3d_ht.annotate(
+        pos=hl.sorted(promis3d_ht.pos, key=lambda x: x.residue_index)
+    )
+
+    # Annotate with 'start' and 'stop' positions for regions by merging adjacent
+    # positions.
+    promis3d_ht = promis3d_ht.annotate(
+        pos=hl.fold(
+            lambda i, j: hl.if_else(
+                j.residue_index > (i[-1][1] + 1),
+                i.append(
+                    (
+                        j.residue_index,
+                        j.residue_index,
+                        j.obs,
+                        j.exp,
+                        j.oe,
+                        j.oe_upper,
+                        j.chisq,
+                        j.p_value,
+                    )
+                ),
+                i[:-1].append(
+                    (
+                        i[-1][0],
+                        j.residue_index,
+                        j.obs,
+                        j.exp,
+                        j.oe,
+                        j.oe_upper,
+                        j.chisq,
+                        j.p_value,
+                    )
+                ),
+            ),
+            [
+                (
+                    promis3d_ht.pos[0].residue_index,
+                    promis3d_ht.pos[0].residue_index,
+                    promis3d_ht.pos[0].obs,
+                    promis3d_ht.pos[0].exp,
+                    promis3d_ht.pos[0].oe,
+                    promis3d_ht.pos[0].oe_upper,
+                    promis3d_ht.pos[0].chisq,
+                    promis3d_ht.pos[0].p_value,
+                )
+            ],
+            promis3d_ht.pos[1:],
+        )
+    )
+    promis3d_ht = promis3d_ht.explode("pos")
+
+    # Key by 'gene_id' and transform 'pos' into 'start' and 'stop' fields.
+    promis3d_ht = promis3d_ht.key_by(
+        "uniprot_id", "transcript_id", "region_index", "is_null"
+    )
+    promis3d_ht = promis3d_ht.transmute(
+        start=promis3d_ht.pos[0],
+        stop=promis3d_ht.pos[1],
+        obs_mis=promis3d_ht.pos[2],
+        exp_mis=promis3d_ht.pos[3],
+        obs_exp=promis3d_ht.pos[4],
+        oe_upper=promis3d_ht.pos[5],
+        chisq=promis3d_ht.pos[6],
+        p_value=promis3d_ht.pos[7],
+    )
+
+    # Select fields in preferred order and collect by key into a field named 'regions'.
+    promis3d_ht = promis3d_ht.collect_by_key("regions")
+    promis3d_ht = promis3d_ht.annotate(
+        **pos_ht[promis3d_ht.uniprot_id, promis3d_ht.transcript_id]
+    )
+    promis3d_ht = promis3d_ht.annotate(
+        regions=ht.regions.map(
+            lambda x: x.select(
+                chrom=promis3d_ht.locus_by_aapos[x.start].contig,
+                start=hl.if_else(
+                    promis3d_ht.locus_by_aapos[x.start].position
+                    <= promis3d_ht.locus_by_aapos[x.stop].position,
+                    promis3d_ht.locus_by_aapos[x.start].position,
+                    promis3d_ht.locus_by_aapos[x.stop].position,
+                ),
+                stop=hl.if_else(
+                    promis3d_ht.locus_by_aapos[x.start].position
+                    <= promis3d_ht.locus_by_aapos[x.stop].position,
+                    promis3d_ht.locus_by_aapos[x.stop].position + 2,
+                    promis3d_ht.locus_by_aapos[x.start].position + 2,
+                ),
+                aa_start=x.start,
+                aa_stop=x.stop,
+                obs_mis=x.obs_mis,
+                exp_mis=x.exp_mis,
+                obs_exp=x.obs_exp,
+                oe_upper=x.oe_upper,
+                region_index=promis3d_ht.region_index,
+                is_null=promis3d_ht.is_null,
+                chisq_diff_null=x.chisq,
+                p_value=x.p_value,
+            )
+        )
+    )
+    promis3d_ht = promis3d_ht.group_by("transcript_id", "uniprot_id").aggregate(
+        gnomad_promis3d_constraint=hl.struct(
+            has_no_rmc_evidence=False,
+            passed_qc=True,
+            regions=hl.flatten(hl.agg.collect(promis3d_ht.regions)),
+        )
+        # regions=hl.flatten(hl.agg.collect(ht.regions))
+    )
+    promis3d_ht = promis3d_ht.key_by("transcript_id")
+    rmc_ht = get_rmc_browser_ht().ht()
+    rmc_ht = rmc_ht.annotate(
+        regions=rmc_ht.regions.map(
+            lambda x: x.select(
+                chrom=x.start_coordinate.contig,
+                start=hl.if_else(
+                    x.start_coordinate.position <= x.stop_coordinate.position,
+                    x.start_coordinate.position,
+                    x.stop_coordinate.position,
+                ),
+                stop=hl.if_else(
+                    x.start_coordinate.position <= x.stop_coordinate.position,
+                    x.stop_coordinate.position + 2,
+                    x.start_coordinate.position,
+                ),
+                aa_start=x.start_aa,
+                aa_stop=x.stop_aa,
+                obs_mis=x.obs,
+                exp_mis=x.exp,
+                obs_exp=x.oe,
+                chisq_diff_null=x.chisq,
+                p_value=x.p,
+            )
+        )
+    )
+    promis3d_ht = promis3d_ht.annotate(
+        gnomad_regional_missense_constraint=hl.struct(
+            has_no_rmc_evidence=False,
+            passed_qc=True,
+            regions=rmc_ht[promis3d_ht.transcript_id].regions,
+        ),
+    )
+
+    ht = browser_gene().ht()
+    ht = ht.select(
+        "interval",
+        "gencode_symbol",
+        "chrom",
+        "strand",
+        "start",
+        "stop",
+        "xstart",
+        "xstop",
+        "exons",
+        "transcripts",
+        "reference_genome",
+        "canonical_transcript_id",
+        "preferred_transcript_id",
+        "preferred_transcript_source",
+        **ht[ht.canonical_transcript_id],
+    )
+    ht = ht.repartition(15, shuffle=True)
+
+    return ht
+
+
 def prioritize_transcripts_and_uniprots(
     residue_ht: hl.Table,
-    gene_ht: hl.Table,
 ) -> hl.Table:
     """
     Prioritize and label transcript/uniprot combinations for each gene.
@@ -1015,19 +1245,15 @@ def prioritize_transcripts_and_uniprots(
     8. Returns a de-nested table keyed by (uniprot_id, transcript_id).
 
     :param residue_ht: Hail Table keyed by (uniprot_id, transcript_id).
-    :param gene_ht: Hail Table keyed by (transcript), with columns 'gene', 'gene_id', 'canonical', 'mane_select', 'cds_length'.
     :return: Annotated and prioritized Hail Table keyed by (uniprot_id, transcript_id).
     """
     # Prepare keys and fields
-    ht = residue_ht.key_by("uniprot_id", "transcript_id").select().distinct()
-    ht2 = (
-        gene_ht.key_by("transcript")
-        .select("gene", "gene_id", "canonical", "mane_select", "cds_length")
-        .distinct()
-    )
+    ht = residue_ht.key_by("transcript_id", "uniprot_id")
+    ht = ht.select("gene_symbol", "gene_id", "canonical", "mane_select", "cds_length")
+    ht = ht.distinct()
 
-    # Annotate with gene info and add a random number for tie-breaking
-    ht = ht.annotate(**ht2[ht.transcript_id], rand_n=hl.rand_unif(0, 1))
+    # Annotate with a random number for tie-breaking
+    ht = ht.annotate(rand_n=hl.rand_unif(0, 1))
 
     # Order and add index
     ht = ht.order_by(
@@ -1038,17 +1264,17 @@ def prioritize_transcripts_and_uniprots(
         "rand_n",
     )
     ht = ht.add_index()
-    # idx is automatically named 'idx' by Hail's add_index
 
     # Aggregate per gene for prioritization
-    ht = ht.group_by("gene", "gene_id").aggregate(
+    ht = ht.group_by("gene_id").aggregate(
         _all_rows=hl.agg.collect_as_set(
             hl.struct(
                 **{
                     k: ht[k]
                     for k in [
-                        "uniprot_id",
                         "transcript_id",
+                        "uniprot_id",
+                        "gene_symbol",
                         "canonical",
                         "mane_select",
                         "idx",
@@ -1074,10 +1300,9 @@ def prioritize_transcripts_and_uniprots(
             ).drop("idx")
         )
     )
-
     ht = ht.explode("_all_rows")
 
-    return ht.select(**ht._all_rows).key_by("uniprot_id", "transcript_id")
+    return ht.select(**ht._all_rows).key_by("transcript_id", "uniprot_id").cache()
 
 
 def explode_af2_plddt_by_residue(af2_plddt_ht: hl.Table) -> hl.Table:
@@ -1128,51 +1353,28 @@ def annotate_promis3d_with_af2_metrics(
     :return: Annotated PROMIS3D Hail Table keyed by (uniprot_id, transcript_id,
         residue_index).
     """
-    # Preprocess inputs
+    # Preprocess inputs.
     af2_plddt_ht = explode_af2_plddt_by_residue(af2_plddt_ht)
     af2_pae_ht = af2_pae_ht.key_by("uniprot_id", "aa_index").checkpoint(
-        # hl.utils.new_temp_file("af2_pae.keyed", "ht")
-        "gs://gnomad-tmp-4day/af2_pae.keyed-tYsYM6AzQmNGYe7xXarBpN.ht",
-        _read_if_exists=True,
-        # overwrite=True,
+        hl.utils.new_temp_file("af2_pae.keyed", "ht")
     )
     af2_dist_ht = af2_dist_ht.key_by("uniprot_id", "aa_index").checkpoint(
-        # hl.utils.new_temp_file("af2_dist.keyed", "ht")
-        "gs://gnomad-tmp-4day/af2_dist.keyed-hmgd1hDWQ2obLmBdEI0APq.ht",
-        _read_if_exists=True,
-        # overwrite=True,
+        hl.utils.new_temp_file("af2_dist.keyed", "ht")
     )
 
-    # Filter transcripts
+    # Filter transcripts.
     promis3D_ht = promis3D_ht.filter(promis3D_ht.transcript_id.startswith("ENST"))
 
-    # Annotate with per-residue metrics
+    # Annotate with per-residue metrics.
     promis3D_ht = promis3D_ht.annotate(
         plddt=af2_plddt_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].plddt,
         pae=af2_pae_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].pae,
         dist=af2_dist_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].dist_mat,
-    ).checkpoint(
-        # hl.utils.new_temp_file("promis3D.annotated", "ht")
-        "gs://gnomad-tmp-4day/promis3D.annotated-GPdz8xypdAzfYuUOH0JkYK.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
-    promis3D_ht = hl.read_table(
-        "gs://gnomad-tmp-4day/promis3D.annotated-GPdz8xypdAzfYuUOH0JkYK.ht"
-    )
+    ).checkpoint(hl.utils.new_temp_file("promis3D.annotated", "ht"))
 
-    # Group by region
+    # Group by region.
     promis3D_ht = promis3D_ht.key_by("uniprot_id", "transcript_id", "region_index")
-    promis3D_ht = promis3D_ht.checkpoint(
-        hl.utils.new_temp_file("promis3D.annotated.keyed", "ht")
-    )
-    promis3D_ht = hl.read_table(
-        "gs://gnomad-tmp-4day/promis3D.annotated.keyed-S9iovtBuLQeDFr3i5HXuNr.ht"
-    )
     promis3D_ht = promis3D_ht.collect_by_key("by_residue")
-    promis3D_ht = promis3D_ht.checkpoint(
-        "gs://gnomad-tmp-4day/promis3D.annotated.keyed-S9iovtBuLQeDFr3i5HXuNr.by_residue.ht"
-    )
 
     # Compute per-residue references
     residues_expr = promis3D_ht.by_residue.map(lambda x: x.residue_index)
@@ -1261,159 +1463,321 @@ def annotate_promis3d_with_af2_metrics(
     return promis3D_ht
 
 
-def generate_all_possible_snvs_from_gencode_positions(pos_ht: hl.Table) -> hl.Table:
+def generate_all_possible_snvs_from_gencode_positions(
+    transcripts_ht: hl.Table,
+    translations_ht: hl.Table,
+    gencode_gtf_ht: hl.Table,
+    gencode_translations_matched_ht: hl.Table,
+) -> hl.Table:
     """
     Generate all possible single nucleotide variants (SNVs) from the GENCODE positions Hail Table.
 
-    This function:
-    1. Filters out mitochondrial contig ('chrM').
-    2. Computes all possible SNV alleles excluding the reference base.
-    3. Adds amino acid and transcript annotations.
-    4. Explodes each row into one per alternate allele.
-    5. Keys the table by (locus, alleles, transcript_id).
-
-    :param pos_ht: Input GENCODE positions Hail Table with reference base and amino acid sequence.
+    :param transcripts_ht: GENCODE transcripts Hail Table.
+    :param translations_ht: GENCODE translations Hail Table.
+    :param gencode_gtf_ht: GENCODE GTF Hail Table.
+    :param gencode_translations_matched_ht: GENCODE translations matched Hail Table.
     :return: Hail Table with all possible SNVs at each GENCODE position.
     """
-    nucleotides = hl.set({"A", "T", "C", "G"})
+    gencode_translations_matched_ht = gencode_translations_matched_ht.group_by(
+        "enst"
+    ).aggregate(
+        uniprot_id=hl.agg.collect_as_set(gencode_translations_matched_ht.uniprot_id)
+    )
+    translations_ht = translations_ht.annotate(
+        uniprot_id=hl.or_else(
+            gencode_translations_matched_ht[translations_ht.enst].uniprot_id, {"None"}
+        )
+    )
+    translations_ht = translations_ht.explode("uniprot_id")
 
-    ht = pos_ht.filter(pos_ht.locus.contig != "chrM")
-
+    ht = get_gencode_positions(
+        transcripts_ht,
+        translations_ht,
+        gencode_gtf_ht,
+        no_filter=True,
+    )
     ht = ht.annotate(
-        aminoacid_ref=ht.sequence[ht.aapos],
+        uniprot_id=hl.if_else(
+            ht.cds_len_mismatch | ht.cds_len_not_div_by_3, "None", ht.uniprot_id
+        )
+    )
+    ht = ht.filter(ht.locus.contig != "chrM")
+
+    nucleotides = hl.set({"A", "T", "C", "G"})
+    has_aa_info_expr = ~ht.cds_len_mismatch & ~ht.cds_len_not_div_by_3
+    ht = ht.annotate(
+        aminoacid_ref=hl.or_missing(has_aa_info_expr, ht.sequence[ht.aapos]),
         alleles=nucleotides.remove(ht.ref).map(lambda alt: [ht.ref, alt]),
-        residue_index=ht.aapos,
+        residue_index=hl.or_missing(has_aa_info_expr, ht.aapos),
         aminoacid_length=hl.int(ht.aalength),
         cds_length=hl.int(ht.cds_len),
         transcript_id=ht.enst,
+        gene_id=ht.ensg,
+        gene_symbol=ht.gene,
     )
-
     ht = ht.explode("alleles")
-    ht = ht.key_by("locus", "alleles", "transcript_id")
-
+    ht = ht.key_by("locus", "alleles", "transcript_id", "uniprot_id", "gene_id")
     ht = ht.select(
-        "uniprot_id",
+        "gene_symbol",
         "strand",
         "cds_length",
         "aminoacid_length",
         "residue_index",
         "aminoacid_ref",
+        "cds_len_mismatch",
+        "cds_len_not_div_by_3",
     )
 
     return ht
 
 
-def annotate_snvs_with_variant_level_data(
-    snv_ht: hl.Table,
-    context_ht: hl.Table,
-    raw_gnomad_site_ht: hl.Table,
-    dd_denovo_ht: hl.Table,
-    clinvar_ht: hl.Table,
-    rmc_ht: hl.Table,
+def make_temp_annotation_ht(
+    base_ht: hl.Table,
+    annotation_ht: hl.Table,
+    keys: List[str] = ["locus", "alleles"],
+    temp_path_prefix: str = "tmp_annotation_ht",
+    annotation_name: Optional[str] = None,
 ) -> hl.Table:
+    """
+    Make a temporary Hail Table with annotations from another Hail Table.
+
+    :param base_ht: Base Hail Table to annotate.
+    :param annotation_ht: Annotation Hail Table to index.
+    :param keys: List of keys to index the annotation Hail Table with.
+    :param temp_path_prefix: Prefix for the temporary file path.
+    :param annotation_name: Name of the annotation to annotate the base Hail Table with.
+    :return: Annotated Hail Table.
+    """
+    base_ht = base_ht.select(*[k for k in keys if k not in base_ht.key])
+    keys_expr = [base_ht[k] for k in keys]
+    fields = [f for f in annotation_ht.row_value if f not in base_ht.key]
+    annotation_expr = annotation_ht.select(*fields)
+    annotation_expr = annotation_expr.index(*keys_expr)
+    if annotation_name is not None:
+        annotation_expr = {annotation_name: annotation_expr}
+
+    base_ht = base_ht.annotate(**annotation_expr)
+    base_ht = base_ht.checkpoint(hl.utils.new_temp_file(temp_path_prefix, "ht"))
+
+    return base_ht
+
+
+def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
     """
     Annotate a per-SNV Hail Table with variant-level annotations from multiple sources.
 
-    This function:
-    1. Selects relevant fields from the raw gnomAD site HT (in silico predictors, VRS, exome flags).
-    2. Joins context annotations using (locus, alleles).
-    3. Adds gnomAD site annotations using (locus, alleles).
-    4. Marks whether a variant is a de novo missense from the Kaplanis dataset using (locus, alleles, transcript_id).
-    5. Adds ClinVar annotations using (locus, alleles, gene).
-    6. Adds regional missense constraint (RMC) annotations using (locus, transcript_id).
-    7. Wraps all annotations under a `variant_level_annotations` struct.
+    Adds the following annotations:
 
-    :param snv_ht: Input SNV Hail Table keyed by (locus, alleles, transcript_id).
-    :param context_ht: Context Hail Table keyed by (locus, alleles).
-    :param raw_gnomad_site_ht: Full gnomAD v4.1 browser sites Hail Table.
-    :param dd_denovo_ht: Kaplanis de novo missense variant Hail Table keyed by (locus, alleles, transcript_id).
-    :param clinvar_ht: ClinVar Hail Table keyed by (locus, alleles, gene).
-    :param rmc_ht: Regional missense constraint (RMC) Hail Table keyed by (locus, transcript_id).
-    :return: Annotated Hail Table with a `variant_level_annotations` struct field.
+        - context
+        - gnomad_site
+        - revel
+        - cadd
+        - phylop
+        - genetics_gym
+        - autism
+        - dd_denovo
+        - dd_denovo_no_transcript
+        - gnomad_de_novo
+        - clinvar
+        - pext_base
+        - pext_annotation
+        - rmc
+
+    :param ht: Input Hail Table.
+    :return: Annotated Hail Table.
     """
-    gnomad_site_ht = raw_gnomad_site_ht.select(
-        "in_silico_predictors",
-        "vrs",
-        exomes_flags=raw_gnomad_site_ht.exome.flags,
+    gnomad_ht = browser_variant().ht()
+    gnomad_ht = gnomad_ht.select(gnomad_exomes_flags=gnomad_ht.exome.flags)
+    annotation_hts = {
+        "context": (
+            get_temp_context_preprocessed_ht().ht(),
+            ["locus", "alleles", "transcript_id"],
+            None,
+        ),
+        "gnomad_site": (
+            gnomad_ht,
+            None,
+            None,
+        ),
+        "revel": (
+            import_revel_ht().cache(),
+            ["locus", "alleles", "transcript_id"],
+            None,
+        ),
+        "cadd": (
+            get_insilico_annotations_ht("cadd").ht(),
+            None,
+            None,
+        ),
+        "phylop": (
+            get_insilico_annotations_ht("phylop").ht(),
+            ["locus"],
+            None,
+        ),
+        "genetics_gym": (
+            get_processed_genetics_gym_missense_scores_ht().ht(),
+            ["locus", "alleles", "transcript_id", "uniprot_id"],
+            "genetics_gym_missense_scores",
+        ),
+        "autism": (
+            get_fu_variants_ht().ht(),
+            None,
+            "autism",
+        ),
+        "dd_denovo": (
+            get_kaplanis_variants_ht(
+                liftover_to_grch38=True, key_by_transcript=True
+            ).ht(),
+            ["locus", "alleles", "gene_id", "transcript_id"],
+            "dd_denovo",
+        ),
+        "dd_denovo_no_transcript": (
+            get_kaplanis_variants_ht(
+                liftover_to_grch38=True, key_by_transcript=False
+            ).ht(),
+            None,
+            "dd_denovo_no_transcript_match",
+        ),
+        "gnomad_de_novo": (
+            process_gnomad_de_novo_ht(),
+            None,
+            "gnomad_de_novo",
+        ),
+        "clinvar": (
+            get_clinvar_missense_ht().ht(),
+            ["locus", "alleles", "gene_symbol"],
+            "clinvar",
+        ),
+        "pext_base": (
+            pext("base_level")
+            .ht()
+            .key_by("locus", "gene_id")
+            .drop("gene_symbol")
+            .cache(),
+            ["locus", "gene_id"],
+            "base_level_pext",
+        ),
+        "mtr": (
+            get_mtr_ht().ht(),
+            ["locus", "alleles", "transcript_id"],
+            "mtr",
+        ),
+        "rmc": (
+            get_temp_processed_rmc_ht().ht(),
+            ["locus", "transcript_id"],
+            "rmc",
+        ),
+    }
+    annotation_hts = {
+        n: make_temp_annotation_ht(
+            ht,
+            t,
+            keys=k or ["locus", "alleles"],
+            temp_path_prefix=n,
+            annotation_name=a,
+        )[ht.key]
+        for n, (t, k, a) in annotation_hts.items()
+    }
+    annotation_expr = hl.struct()
+    for t in annotation_hts.values():
+        annotation_expr = annotation_expr.annotate(**t)
+
+    ht = ht.annotate(variant_level_annotations=annotation_expr).checkpoint(
+        hl.utils.new_temp_file("snvs_with_variant_level_data", "ht")
     )
 
-    transcript_to_gene = filter_gencode_ht(feature="transcript")
-    transcript_to_gene = hl.dict(
-        transcript_to_gene.aggregate(
-            hl.agg.collect_as_set(
-                (transcript_to_gene.transcript_id, transcript_to_gene.gene_name)
-            )
+    pext_annotation_ht = pext("annotation_level").ht()
+    pext_annotation_ht = (
+        pext_annotation_ht.key_by(
+            "locus", "alleles", "gene_id", "most_severe_consequence"
         )
+        .drop("gene_symbol")
+        .cache()
     )
 
-    ht = snv_ht.annotate(
-        variant_level_annotations=hl.struct(
-            **context_ht[snv_ht.locus, snv_ht.alleles],
-            **gnomad_site_ht[snv_ht.locus, snv_ht.alleles],
-            dd_denovo=dd_denovo_ht[snv_ht.locus, snv_ht.alleles, snv_ht.transcript_id],
-            clinvar=clinvar_ht[
-                snv_ht.locus,
-                snv_ht.alleles,
-                transcript_to_gene.get(snv_ht.transcript_id),
-            ],
-            rmc=rmc_ht[snv_ht.locus, snv_ht.transcript_id],
-        )
+    var_expr = ht.variant_level_annotations
+    var_update_expr = var_expr.annotate(
+        dd_denovo=var_expr.dd_denovo.annotate(
+            **get_kaplanis_sig_gene_annotations(ht.gene_symbol)
+        ),
+        dd_denovo_no_transcript_match=(
+            var_expr.dd_denovo_no_transcript_match.annotate(
+                **get_kaplanis_sig_gene_annotations(ht.gene_symbol)
+            ),
+        ),
+        annotation_level_pext=pext_annotation_ht[
+            ht.locus, ht.alleles, ht.gene_id, var_expr.most_severe_consequence
+        ],
+    )
+    var_update_expr = var_update_expr.drop(
+        "canonical", "mane_select", "biotype", "most_severe_consequence", "gene_symbol"
     )
     ht = ht.annotate(
-        variant_level_annotations=ht.variant_level_annotations.annotate(
-            transcript_consequences=ht.variant_level_annotations.vep.transcript_consequences.filter(
-                lambda x: x.transcript_id == ht.transcript_id
-            ).map(
-                lambda x: x.most_severe_consequence
-            )
-        ).drop("vep")
+        canonical=var_expr.canonical,
+        mane_select=var_expr.mane_select,
+        transcript_biotype=var_expr.biotype,
+        most_severe_consequence=var_expr.most_severe_consequence,
+        variant_level_annotations=var_update_expr,
     )
 
     return ht
 
 
 def combine_residue_level_annotations(
+    ht: hl.Table,
     promis3d_ht: hl.Table,
-    interpro_ht: hl.Table,
-    cosmis_hts: Dict[str, hl.Table],
 ) -> hl.Table:
     """
     Combine residue-level annotations by joining PROMIS3D regions with COSMIS (multiple sources) and InterPro data.
 
-    This function:
-    1. Extracts residue-level information from the input `promis3d_ht`.
-    2. Joins domain annotations from `interpro_ht`, keyed by (uniprot_id, transcript_id, residue_index).
-    3. Joins COSMIS scores from multiple sources (e.g., alphafold, pdb, swiss_model), passed as a dictionary.
-       Each COSMIS source is joined using the same composite key and stored as a subfield in a `cosmis` struct.
-    4. Returns a unified Hail Table containing `promis3d`, `interpro`, and structured `cosmis` annotations.
+    Adds the following annotations:
 
-    :param promis3d_ht: PROMIS3D Hail Table keyed by (uniprot_id, transcript_id, residue_index).
-    :param interpro_ht: InterPro domain annotation Hail Table keyed by the same composite key.
-    :param cosmis_hts: Dictionary mapping COSMIS source names (e.g., "alphafold", "pdb") to Hail Tables,
-                       all keyed by (uniprot_id, transcript_id, residue_index).
-    :return: Hail Table with combined residue-level annotations: `promis3d`, `interpro`, and nested `cosmis` struct.
+        - interpro
+        - mtr3d
+        - cosmis_alphafold
+        - cosmis_pdb
+        - cosmis_swiss_model
+        - promis3d
+
+    :param ht: Input Hail Table.
+    :param promis3d_ht: PROMIS3D Hail Table.
+    :return: Annotated Hail Table.
     """
-    ht = promis3d_ht.select(
-        interpro=interpro_ht[
-            promis3d_ht.uniprot_id, promis3d_ht.transcript_id, promis3d_ht.residue_index
-        ],
-        cosmis=hl.struct(
-            **{
-                k: v[
-                    promis3d_ht.uniprot_id,
-                    promis3d_ht.transcript_id,
-                    promis3d_ht.residue_index,
-                ]
-                for k, v in cosmis_hts.items()
-            }
-        ),
-        promis3d=promis3d_ht.row_value,
+    keys = ["transcript_id", "uniprot_id", "residue_index"]
+
+    annotation_hts = {
+        "interpro": get_interpro_annotations_ht().ht(),
+        "mtr3d": get_mtr3d_ht().ht(),
+        "cosmis_alphafold": get_cosmis_score_ht("alphafold").ht(),
+        "cosmis_pdb": get_cosmis_score_ht("pdb").ht(),
+        "cosmis_swiss_model": get_cosmis_score_ht("swiss_model").ht(),
+        "promis3d": promis3d_ht,
+    }
+    annotation_hts = {
+        n: make_temp_annotation_ht(ht, t, keys=keys, temp_path_prefix=n)[ht.key]
+        for n, t in annotation_hts.items()
+    }
+    annotation_hts["varity"] = make_temp_annotation_ht(
+        ht,
+        get_varity_ht().ht(),
+        keys=["uniprot_id", "residue_index", "residue_ref", "residue_alt"],
+        temp_path_prefix="varity",
     )
+
+    ht = ht.annotate(**annotation_hts)
+    ht = ht.transmute(
+        cosmis=hl.struct(
+            alphafold=ht.row_value.cosmis_alphafold,
+            pdb=ht.row_value.cosmis_pdb,
+            swiss_model=ht.row_value.cosmis_swiss_model,
+        )
+    )
+
     return ht
 
 
 def create_per_snv_combined_ht(
-    pos_ht: hl.Table,
+    ht: hl.Table,
     promis3d_ht: hl.Table,
     af2_plddt_ht: hl.Table,
     af2_pae_ht: hl.Table,
@@ -1422,97 +1786,88 @@ def create_per_snv_combined_ht(
     """
     Create a fully annotated per-SNV Hail Table with structured variant-, residue-, and gene-level annotations.
 
-    This function:
-    1. Joins SNVs to gene-level constraint metrics using (transcript_id).
-    2. Joins variant-level data: context, gnomAD v4.1 site fields, de novo variants, ClinVar, and RMC.
-    3. Joins residue-level data: COSMIS (multi-model), InterPro, PROMIS3D.
-    4. Extracts and restructures gene, transcript, and residue annotations.
-    5. Assembles all fields into structured annotations (`variant_level_annotations`, `residue_level_annotations`, `gene_level_annotations`).
-    6. Writes and returns a checkpointed Hail Table keyed by (locus, alleles, transcript_id, uniprot_id).
-
+    :param ht: All possible SNVs Hail Table.
+    :param promis3d_ht: PROMIS3D Hail Table.
+    :param af2_plddt_ht: AlphaFold2 pLDDT Hail Table.
+    :param af2_pae_ht: AlphaFold2 PAE Hail Table.
+    :param af2_dist_ht: AlphaFold2 distance matrix Hail Table.
+    :param partition_intervals: Partition intervals to read annotation Hail Tables with.
     :return: Annotated and checkpointed Hail Table.
     """
-    ht = generate_all_possible_snvs_from_gencode_positions(pos_ht).checkpoint(
-        # hl.utils.new_temp_file("snvs_from_gencode", "ht")
-        "gs://gnomad-tmp-4day/snvs_from_gencode-0e182QVWZSAVcTYCPXadsq.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
-    ht = annotate_snvs_with_variant_level_data(
-        ht,
-        process_context_ht(ht),
-        browser_variant().ht(),
-        process_kaplanis_variants_ht(),
-        process_clinvar_ht(),
-        process_all_rmc_ht(),
-    ).checkpoint(
-        # hl.utils.new_temp_file("annotated_snvs", "ht")
-        "gs://gnomad-tmp-4day/annotated_snvs-pMHF52hdEigABeTrycGHNH.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
+    hl._set_flags(use_new_shuffle="1")
+    ht = annotate_snvs_with_variant_level_data(ht).naive_coalesce(5000).cache()
+    hl._set_flags(use_new_shuffle=None)
 
-    select_uniprot_transcript_ht = prioritize_transcripts_and_uniprots(
-        promis3d_ht, get_constraint_metrics_ht().ht()
-    ).checkpoint(
-        # hl.utils.new_temp_file("select_uniprot_transcript", "ht"),
-        "gs://gnomad-tmp-4day/select_uniprot_transcript-okm4r3LVXExz6b3pc7cbZy.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
-
-    promis3d_ht = annotate_promis3d_with_af2_metrics(
-        promis3d_ht, af2_plddt_ht, af2_pae_ht, af2_dist_ht
-    ).checkpoint(
-        # hl.utils.new_temp_file("promis3d_with_af2", "ht")
-        "gs://gnomad-tmp-4day/promis3d_with_af2-PbWaZsIWmDuW6jERqEC284.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
+    base_residue_ht = (
+        ht.key_by("transcript_id", "uniprot_id", "residue_index")
+        .select("gene_id", "gene_symbol", "canonical", "mane_select", "cds_length")
+        .distinct()
+    ).cache()
     residue_ht = combine_residue_level_annotations(
-        promis3d_ht,
-        process_interpro_ht(),
-        {
-            "alphafold": process_cosmis_tsv_for_model("alphafold"),
-            "pdb": process_cosmis_tsv_for_model("pdb"),
-            "swiss_model": process_cosmis_tsv_for_model("swiss_model"),
-        },
-    ).checkpoint(
-        # hl.utils.new_temp_file("residue_annotations", "ht"),
-        "gs://gnomad-tmp-4day/residue_annotations-ksvTtPMdnFCdcezBNdDWiw.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
+        base_residue_ht,
+        annotate_promis3d_with_af2_metrics(
+            promis3d_ht, af2_plddt_ht, af2_pae_ht, af2_dist_ht
+        ).cache(),
+    ).cache()
+    select_uniprot_transcript_ht = prioritize_transcripts_and_uniprots(
+        base_residue_ht
+    ).select("one_uniprot_per_transcript", "one_transcript_per_gene")
 
-    # Join gene constraint info
-    gene_constraint_ht = process_constraint_metrics_ht()
-    gene_constraint_expr = gene_constraint_ht[ht.transcript_id]
+    hl._set_flags(use_new_shuffle="1")
+    residue_ht = make_temp_annotation_ht(
+        ht,
+        residue_ht,
+        keys=["transcript_id", "uniprot_id", "residue_index"],
+        temp_path_prefix="residue",
+    ).drop("residue_index")
+    select_uniprot_transcript_ht = make_temp_annotation_ht(
+        ht,
+        select_uniprot_transcript_ht,
+        keys=["transcript_id", "uniprot_id"],
+        temp_path_prefix="select_uniprot_transcript",
+    )
+    gene_constraint_ht = make_temp_annotation_ht(
+        ht,
+        get_temp_processed_constraint_ht().ht(),
+        keys=["transcript_id"],
+        temp_path_prefix="gene_constraint",
+    )
+    hl._set_flags(use_new_shuffle=None)
+
+    hi_expr = hl.case()
+    for n, g in HI_GENE_CATEGORIES.items():
+        hi_expr = hi_expr.when(hl.set(g).contains(ht.gene_symbol), n)
+    hi_expr = hi_expr.or_missing()
 
     # Structure final output.
     ht = ht.select(
-        "uniprot_id",
-        **select_uniprot_transcript_ht[ht.uniprot_id, ht.transcript_id],
+        "gene_symbol",
+        "canonical",
+        "mane_select",
+        "transcript_biotype",
+        "most_severe_consequence",
+        is_phaplo_gene=hl.set(get_phaplo().he()).contains(ht.gene_symbol),
+        is_ptriplo_gene=hl.set(get_ptriplo().he()).contains(ht.gene_symbol),
+        is_hi_gene=hl.set(HI_GENES).contains(ht.gene_symbol),
+        hi_gene_category=hi_expr,
+        **select_uniprot_transcript_ht[ht.key],
         variant_level_annotations=ht.variant_level_annotations,
         residue_level_annotations=hl.struct(
             residue_index=ht.residue_index,
             residue_ref=ht.aminoacid_ref,
-            **residue_ht[ht.uniprot_id, ht.transcript_id, ht.residue_index],
+            **residue_ht[ht.key],
         ),
         gene_level_annotations=hl.struct(
             strand=ht.strand,
             cds_length=ht.cds_length,
+            cds_len_mismatch=ht.cds_len_mismatch,
+            cds_len_not_div_by_3=ht.cds_len_not_div_by_3,
             aminoacid_length=ht.aminoacid_length,
-            **gene_constraint_expr,
+            **gene_constraint_ht[ht.key],
         ),
     )
-    ht = ht.checkpoint(
-        # hl.utils.new_temp_file("residue_annotations", "ht"),
-        "gs://gnomad-tmp-4day/residue_annotations-x3xH59KA4AG86HmVxRmSbW.ht",
-        _read_if_exists=True,
-        # overwrite=True,
-    )
 
-    return ht.key_by("locus", "alleles", "transcript_id", "uniprot_id")
+    return ht
 
 
 def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
@@ -1529,10 +1884,16 @@ def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
     :return: Final aggregated per-residue Hail Table.
     """
     keep_fields = [
-        "gene",
         "gene_id",
+        "gene_symbol",
         "canonical",
         "mane_select",
+        "transcript_biotype",
+        "most_severe_consequence",
+        "is_phaplo_gene",
+        "is_ptriplo_gene",
+        "is_hi_gene",
+        "hi_gene_category",
         "one_uniprot_per_transcript",
         "one_transcript_per_gene",
     ]
