@@ -428,18 +428,22 @@ def main(args):
         res = resources.write_per_variant
         res.check_resource_existence()
 
-        all_snv_temp_path = hl.utils.new_temp_file("all_snv", "ht")
-        ht = generate_all_possible_snvs_from_gencode_positions(
-            res.gencode_transcipt_ht.ht(),
-            res.gencode_translation_ht.ht().repartition(1000),
-            res.gencode_gtf_ht.ht(),
-            res.matched_ht.ht(),
-        ).checkpoint(all_snv_temp_path, overwrite=overwrite)
-        partition_intervals = ht._calculate_new_partitions(args.all_snv_n_partitions)
+        # all_snv_temp_path = hl.utils.new_temp_file("all_snv", "ht")
+        # ht = generate_all_possible_snvs_from_gencode_positions(
+        #    res.gencode_transcipt_ht.ht(),
+        #    res.gencode_translation_ht.ht().repartition(1000),
+        #    res.gencode_gtf_ht.ht(),
+        #    res.matched_ht.ht(),
+        # ).checkpoint(all_snv_temp_path, overwrite=overwrite)
+        # partition_intervals = ht._calculate_new_partitions(args.all_snv_n_partitions)
+        # ht = hl.read_table(
+        #    all_snv_temp_path, _intervals=partition_intervals
+        # ).checkpoint(
+        #    promis3d_res.get_temp_all_possible_snvs_ht().path, overwrite=overwrite
+        # )
+
         ht = hl.read_table(
-            all_snv_temp_path, _intervals=partition_intervals
-        ).checkpoint(
-            promis3d_res.get_temp_all_possible_snvs_ht().path, overwrite=overwrite
+            "gs://gnomad-tmp-4day/v4.1/constraint/promis3d/all_possible_snvs.ht"
         )
 
         ht = create_per_snv_combined_ht(

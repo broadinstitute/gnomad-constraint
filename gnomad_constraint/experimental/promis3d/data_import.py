@@ -17,6 +17,7 @@ from gnomad_constraint.experimental.promis3d.resources import (
     get_fu_variants_tsv,
     get_genetics_gym_missense_scores_ht,
     get_gnomad_de_novo_ht,
+    get_insilico_annotations_ht,
     get_interpro_annotations,
     get_interpro_annotations_ht,
     get_kaplanis_sig_variants_tsv,
@@ -319,6 +320,33 @@ def process_clinvar_ht(clinvar_version: str = "20250504") -> hl.Table:
     return ht
 
 
+def process_gnomad_site_ht(ht) -> hl.Table:
+    """
+    Process gnomAD site Hail Table.
+
+    :return: Hail Table with gnomAD site variants.
+    """
+    return ht.select(gnomad_exomes_flags=ht.exome.flags)
+
+
+def process_pext_base_ht(ht) -> hl.Table:
+    """
+    Process PEXT base level Hail Table.
+
+    :return: Hail Table with PEXT base level variants.
+    """
+    return ht.key_by("locus", "gene_id").drop("gene_symbol")
+
+
+def process_pext_annotation_ht(ht) -> hl.Table:
+    """
+    Process PEXT annotation level Hail Table.
+    """
+    return ht.key_by("locus", "alleles", "gene_id", "most_severe_consequence").drop(
+        "gene_symbol"
+    )
+
+
 def process_gnomad_de_novo_ht() -> hl.Table:
     """
     Process gnomAD de novo Hail Table.
@@ -436,6 +464,8 @@ def process_context_ht(version: str = CURRENT_VERSION) -> hl.Table:
                 "sift_score",
                 "polyphen_score",
                 vep_domains=x.domains,
+                residue_ref=x.amino_acids.split("/").first(),
+                residue_alt=x.amino_acids.split("/").last(),
             )
         ),
         gnomad_exomes_filters=ht.filters.exomes,
@@ -617,6 +647,12 @@ def main(args):
     if args.import_fu_variants or args.import_all:
         import_fu_variants().write(
             get_fu_variants_ht().path,
+            overwrite=overwrite,
+        )
+
+    if args.import_revel_ht or args.import_all:
+        import_revel_ht().write(
+            get_insilico_annotations_ht("revel").path,
             overwrite=overwrite,
         )
 

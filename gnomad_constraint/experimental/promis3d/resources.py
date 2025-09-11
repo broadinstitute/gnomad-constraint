@@ -557,15 +557,16 @@ def get_revel_csv() -> str:
     return "gs://gnomad-insilico/revel/revel-v1.3_all_chromosomes_with_transcript_ids.csv.bgz"
 
 
-def get_insilico_annotations_ht(method: Optional[str] = None) -> TableResource:
+def get_insilico_annotations_ht(method: str) -> TableResource:
     """
     Get insilico annotations Hail Table resource.
 
+    :param method: Insilico method to use. Must be one of 'cadd', 'phylop', or 'revel'.
     :return: Insilico annotations Hail Table resource.
     """
-    if method is None:
+    if method == "revel":
         return TableResource(
-            f"gs://gnomad/v4.1/constraint/resources/annotations/ht/insilico_annotations.ht"
+            "gs://gnomad/v4.1/constraint/resources/annotations/ht/revel.ht"
         )
     else:
         if method not in {"cadd", "phylop"}:
