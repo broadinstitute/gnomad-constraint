@@ -9,14 +9,13 @@ from typing import Dict, Iterator, List, Optional, Union
 import hail as hl
 import numpy as np
 import pandas as pd
+from Bio.PDB import PPBuilder
+from Bio.PDB.MMCIFParser import MMCIFParser
+from Bio.PDB.Polypeptide import is_aa
 from gnomad.resources.grch38.gnomad import browser_gene, browser_variant, pext
 from gnomad.utils.constraint import oe_confidence_interval
 from gnomad.utils.filtering import filter_gencode_ht
 from gnomad.utils.reference_genome import get_reference_genome
-
-# from Bio.PDB import PPBuilder
-# from Bio.PDB.MMCIFParser import MMCIFParser
-# from Bio.PDB.Polypeptide import is_aa
 from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
@@ -326,93 +325,93 @@ def get_pae_from_json(pae_content: str) -> List[List[int]]:
     return data[0]["predicted_aligned_error"]
 
 
-# def get_structure_peptide(structure) -> str:
-#    """
-#    Get the sequence from a structure.
-#
-#    :param structure:
-#    :return: Sequence as a string.
-#    """
-#    ppb = PPBuilder()
-#
-#    # Return the sequence as a string.
-#    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
+def get_structure_peptide(structure) -> str:
+    """
+    Get the sequence from a structure.
+
+    :param structure:
+    :return: Sequence as a string.
+    """
+    ppb = PPBuilder()
+
+    # Return the sequence as a string.
+    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
 
 
-# def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
-#    """
-#    Calculate the "calpha" distance matrix from a structure.
-#
-#    :param structure: Structure object.
-#    :return: Distance matrix as a NumPy array.
-#    """
-#    calpha_atoms = []
-#    for model in structure:
-#        for chain in model:
-#            for residue in chain:
-#                if is_aa(residue, standard=True) and "CA" in residue:
-#                    calpha_atoms.append(residue["CA"].get_coord())
-#
-#    def _calc_dist_matrix(calpha_atoms: List[np.ndarray]) -> np.ndarray:
-#        """
-#        Calculate the pairwise distance matrix between Calpha atoms.
-#
-#        :param calpha_atoms: List of Calpha atoms.
-#        :return: Distance matrix as a NumPy array.
-#        """
-#        num_atoms = len(calpha_atoms)
-#        dist_matrix = np.zeros((num_atoms, num_atoms))
-#        for i, atom1 in enumerate(calpha_atoms):
-#            for j, atom2 in enumerate(calpha_atoms):
-#                dist_matrix[i, j] = np.linalg.norm(atom1 - atom2)
-#
-#        return dist_matrix
-#
-#    # Calculate the distance matrix
-#    return _calc_dist_matrix(calpha_atoms)
+def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
+    """
+    Calculate the "calpha" distance matrix from a structure.
+
+    :param structure: Structure object.
+    :return: Distance matrix as a NumPy array.
+    """
+    calpha_atoms = []
+    for model in structure:
+        for chain in model:
+            for residue in chain:
+                if is_aa(residue, standard=True) and "CA" in residue:
+                    calpha_atoms.append(residue["CA"].get_coord())
+
+    def _calc_dist_matrix(calpha_atoms: List[np.ndarray]) -> np.ndarray:
+        """
+        Calculate the pairwise distance matrix between Calpha atoms.
+
+        :param calpha_atoms: List of Calpha atoms.
+        :return: Distance matrix as a NumPy array.
+        """
+        num_atoms = len(calpha_atoms)
+        dist_matrix = np.zeros((num_atoms, num_atoms))
+        for i, atom1 in enumerate(calpha_atoms):
+            for j, atom2 in enumerate(calpha_atoms):
+                dist_matrix[i, j] = np.linalg.norm(atom1 - atom2)
+
+        return dist_matrix
+
+    # Calculate the distance matrix
+    return _calc_dist_matrix(calpha_atoms)
 
 
-# def process_af2_mmcif(
-#    uniprot_id: str,
-#    mmcif_content: str,
-#    distance_matrix: bool = False,
-# ) -> Union[str, np.ndarray, List[float]]:
-#    """
-#    Process AlphaFold2 MMCIF content.
-#
-#    :param uniprot_id: UniProt ID.
-#    :param mmcif_content: MMCIF content as a string.
-#    :param distance_matrix: Whether to return the distance matrix. Default is False.
-#    :return: Sequence or distance matrix.
-#    """
-#    parser = MMCIFParser(QUIET=True)
-#    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
-#
-#    if distance_matrix:
-#        return get_structure_dist_matrix(structure)
-#    else:
-#        return get_structure_peptide(structure)
+def process_af2_mmcif(
+    uniprot_id: str,
+    mmcif_content: str,
+    distance_matrix: bool = False,
+) -> Union[str, np.ndarray, List[float]]:
+    """
+    Process AlphaFold2 MMCIF content.
+
+    :param uniprot_id: UniProt ID.
+    :param mmcif_content: MMCIF content as a string.
+    :param distance_matrix: Whether to return the distance matrix. Default is False.
+    :return: Sequence or distance matrix.
+    """
+    parser = MMCIFParser(QUIET=True)
+    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
+
+    if distance_matrix:
+        return get_structure_dist_matrix(structure)
+    else:
+        return get_structure_peptide(structure)
 
 
-# def process_af2_file_by_mode(
-#    uniprot_id: str,
-#    file_content: str,
-#    mode: str,
-# ) -> Union[str, np.ndarray, List[float]]:
-#    """
-#    Dispatcher to handle different AF2 modes based on filename suffix and mode.
-#    """
-#    if mode in {"sequence", "distance_matrix"}:
-#        return process_af2_mmcif(
-#            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
-#        )
-#    if mode == "plddt":
-#        return get_plddt_from_confidence_json(file_content)
-#
-#    if mode == "pae":
-#        return get_pae_from_json(file_content)
-#
-#    raise ValueError(f"Unsupported mode: {mode}")
+def process_af2_file_by_mode(
+    uniprot_id: str,
+    file_content: str,
+    mode: str,
+) -> Union[str, np.ndarray, List[float]]:
+    """
+    Dispatcher to handle different AF2 modes based on filename suffix and mode.
+    """
+    if mode in {"sequence", "distance_matrix"}:
+        return process_af2_mmcif(
+            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
+        )
+    if mode == "plddt":
+        return get_plddt_from_confidence_json(file_content)
+
+    if mode == "pae":
+        return get_pae_from_json(file_content)
+
+    raise ValueError(f"Unsupported mode: {mode}")
 
 
 def process_af2_structures(
