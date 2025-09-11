@@ -1,6 +1,7 @@
 """Resource definitions for the promis3d pipeline."""
 
 import logging
+from typing import Optional
 
 import hail as hl
 from gnomad.resources.grch37.reference_data import gencode as grch37_gencode
@@ -282,74 +283,201 @@ def get_forward_annotation_ht(
     )
 
 
+def get_temp_all_possible_snvs_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get temp all possible SNVs Hail Table resource.
+
+    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
+    :return: Temp all possible SNVs Hail Table resource.
+    """
+    return TableResource(
+        f"gs://gnomad-tmp-4day/v{version}/constraint/promis3d/all_possible_snvs.ht"
+    )
+
+
+def get_missense_viewer_input_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get missense viewer input Hail Table resource.
+
+    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
+    :return: Missense viewer input Hail Table resource.
+    """
+    return TableResource(
+        f"gs://gnomad/v{version}/constraint/promis3d/missense_viewer_input.ht"
+    )
+
+
 ########################################################################################
 # The following functions are for external resources.
 ########################################################################################
-def get_kaplanis_variants() -> str:
+def get_kaplanis_variants_tsv() -> str:
     """
     Get Kaplanis annotated variants file path.
 
     :return: File path to Kaplanis annotated variants.
     """
-    return "gs://gnomad-julia/kaplanis_variants_annotated_2024-05-15.txt"
+    return "gs://gnomad/v4.1/constraint/resources/variant_lists/tsv/kaplanis_variants_annotated_2024-05-15.txt"
 
 
-def get_kaplanis_sig_variants() -> str:
+def get_kaplanis_sig_variants_tsv() -> str:
     """
     Get Kaplanis significant variants file path.
 
     :return: File path to Kaplanis significant variants.
     """
-    return "gs://gnomad-julia/promis3d/kaplanis_variants_sig.txt"
+    return "gs://gnomad/v4.1/constraint/resources/variant_lists/tsv/kaplanis_variants_sig.txt"
 
 
-def get_kaplanis_variants_annotated_ht() -> TableResource:
+def get_kaplanis_variants_ht(
+    liftover_to_grch38: bool = False,
+    key_by_transcript: bool = False,
+) -> TableResource:
     """
     Get processed Hail Table path for Kaplanis annotated de novo missense variants.
 
     This is the output of the `process_kaplanis_variants_ht` function, containing
     lifted GRCh38 loci and relevant annotations.
 
+    :param liftover_to_grch38: Whether to liftover the variants to GRCh38. Default is
+        False.
+    :param key_by_transcript: Whether to key the table by transcript. Default is False.
     :return: Hail Table resource path for processed Kaplanis missense variants.
     """
-    return TableResource("gs://gnomad-julia/promis3d/kaplanis_variants_annotated.ht")
+    postfix = "liftover_to_grch38" if liftover_to_grch38 else ""
+    postfix = f".{postfix}.keyed_by_transcript" if key_by_transcript else postfix
+    return TableResource(
+        f"gs://gnomad/v4.1/constraint/resources/variant_lists/ht/kaplanis_variants{postfix}.ht"
+    )
 
 
-def get_interpro_annotations(version: str = CURRENT_VERSION) -> str:
+def get_fu_variants_tsv() -> str:
+    """
+    Get Fu variants TSV file path.
+
+    :return: Fu variants TSV file path.
+    """
+    return "gs://gnomad/v4.1/constraint/resources/variant_lists/tsv/fu_2022_supp20.txt"
+
+
+def get_fu_variants_ht() -> TableResource:
+    """
+    Get processed Hail Table path for Fu annotated de novo missense variants.
+
+    This is the output of the `process_fu_variants_ht` function, containing
+    lifted GRCh38 loci and relevant annotations.
+
+    :param key_by_transcript: Whether to key the table by transcript. Default is False.
+    :return: Hail Table resource path for processed Fu missense variants.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/variant_lists/ht/fu_variants.ht"
+    )
+
+
+def get_interpro_annotations() -> str:
     """
     Get Ensembl BioMart export InterPro annotations file path.
 
     :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
     :return: File path to InterPro annotations.
     """
-    return f"gs://gnomad/v{version}/constraint/resources/ensembl_biomart_export_interpro.txt"
+    return "gs://gnomad/v4.1/constraint/resources/annotations/tsv/ensembl_biomart_export_interpro.txt"
 
 
-def get_cosmis_score_tsv(model: str, version: str = CURRENT_VERSION) -> str:
+def get_interpro_annotations_ht() -> TableResource:
+    """
+    Get InterPro annotations Hail Table resource.
+
+    :return: InterPro annotations Hail Table resource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/ensembl_biomart_export_interpro.ht"
+    )
+
+
+def get_cosmis_score_tsv(model: str) -> str:
     """
     Get COSMIS scores TSV path for a specified structure model.
 
     :param model: Structure model source ('alphafold', 'swiss_model', or 'pdb').
-    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
     :return: COSMIS scores TSV file path.
     """
-    return f"gs://gnomad/v{version}/constraint/resources/cosmis_scores_{model}.tsv.gz"
+    return f"gs://gnomad/v4.1/constraint/resources/3d_missense_methods/tsv/cosmis_scores_{model}.tsv.gz"
 
 
-def get_cosmis_score_ht(model: str, version: str = CURRENT_VERSION) -> TableResource:
+def get_cosmis_score_ht(model: str) -> TableResource:
     """
     Get COSMIS Hail Table resource for a specified structure model.
 
     :param model: Structure model source ('alphafold', 'swiss_model', or 'pdb').
-    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
     :return: COSMIS scores Hail Table resource.
     """
     return TableResource(
-        f"gs://gnomad/v{version}/constraint/resources/cosmis_scores_{model}.ht"
+        f"gs://gnomad/v4.1/constraint/resources/3d_missense_methods/ht/cosmis_scores_{model}.ht"
     )
 
 
-def get_all_rmc_ht(version: str = CURRENT_VERSION) -> TableResource:
+def get_varity_tsv() -> str:
+    """
+    Get Varity TSV file path.
+
+    :return: Varity TSV file path.
+    """
+    return "gs://gnomad/v4.1/constraint/resources/3d_missense_methods/tsv/varity_all_predictions.txt"
+
+
+def get_varity_ht() -> TableResource:
+    """
+    Get Varity Hail Table resource.
+
+    :return: Varity Hail Table resource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/3d_missense_methods/ht/varity_all_predictions.ht"
+    )
+
+
+def get_mtr3d_tsv() -> str:
+    """
+    Get MTR3D TSV file path.
+
+    :return: MTR3D TSV file path.
+    """
+    return "gs://gnomad/v4.1/constraint/resources/3d_missense_methods/tsv/mtr_data.csv"
+
+
+def get_mtr3d_ht() -> TableResource:
+    """
+    Get MTR3D Hail Table resource.
+
+    :return: MTR3D Hail Table resource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/3d_missense_methods/ht/mtr3d_data.ht"
+    )
+
+
+def get_mtr_tsv() -> str:
+    """
+    Get MTR TSV file path.
+
+    :return: MTR TSV file path.
+    """
+    return "gs://gnomad/v4.1/constraint/resources/annotations/tsv/full_MTR_scores.tsv"
+
+
+def get_mtr_ht() -> TableResource:
+    """
+    Get MTR Hail Table resource.
+
+    :return: MTR Hail Table resource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/mtr_data.ht"
+    )
+
+
+def get_rmc_ht(version: str = CURRENT_VERSION) -> TableResource:
     """
     Get Hail Table resource with all regional missense constraint (RMC) scores.
 
@@ -357,6 +485,30 @@ def get_all_rmc_ht(version: str = CURRENT_VERSION) -> TableResource:
     :return: RMC Hail Table resource.
     """
     return TableResource(f"gs://gnomad/v{version}/constraint/resources/all_rmc.ht")
+
+
+def get_rmc_browser_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get Hail Table resource with all regional missense constraint (RMC) scores.
+
+    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
+    :return: RMC Hail Table resource.
+    """
+    return TableResource(
+        f"gs://regional_missense_constraint/constraint/{version}/2/rmc_browser.ht"
+    )
+
+
+def get_temp_processed_rmc_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get temp processed RMC Hail Table resource.
+
+    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
+    :return: Temp processed RMC Hail Table resource.
+    """
+    return TableResource(
+        f"gs://gnomad-tmp-4day/v{version}/constraint/resources/all_rmc.ht"
+    )
 
 
 def get_context_preprocessed_ht(version: str = CURRENT_VERSION) -> TableResource:
@@ -371,6 +523,18 @@ def get_context_preprocessed_ht(version: str = CURRENT_VERSION) -> TableResource
     )
 
 
+def get_temp_context_preprocessed_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get temp preprocessed context Hail Table resource.
+
+    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
+    :return: Temp preprocessed context Hail Table resource.
+    """
+    return TableResource(
+        f"gs://gnomad-tmp-4day/v{version}/constraint_coverage_corrected/preprocessed_data/gnomad.v{version}.context.preprocessed.ht"
+    )
+
+
 def get_constraint_metrics_ht(version: str = CURRENT_VERSION) -> TableResource:
     """
     Get coverage-corrected constraint metrics Hail Table resource.
@@ -380,4 +544,111 @@ def get_constraint_metrics_ht(version: str = CURRENT_VERSION) -> TableResource:
     """
     return TableResource(
         f"gs://gnomad/v{version}/constraint_coverage_corrected/metrics/transcript_consequences/gnomad.v{version}.constraint_metrics.coverage_corrected.ht"
+    )
+
+
+def get_temp_processed_constraint_ht(version: str = CURRENT_VERSION) -> TableResource:
+    """
+    Get temp processed constraint Hail Table resource.
+
+    :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
+    :return: Temp processed constraint Hail Table resource.
+    """
+    return TableResource(
+        f"gs://gnomad-tmp-4day/v{version}/constraint_coverage_corrected/gnomad.v{version}.constraint.ht"
+    )
+
+
+def get_clinvar_missense_ht() -> TableResource:
+    """
+    Get ClinVar missense Hail Table resource.
+
+    :return: ClinVar missense Hail Table resource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/clinvar_missense.ht"
+    )
+
+
+def get_revel_csv() -> str:
+    """
+    Get REVEL CSV file path.
+
+    :return: REVEL CSV file path.
+    """
+    return "gs://gnomad-insilico/revel/revel-v1.3_all_chromosomes_with_transcript_ids.csv.bgz"
+
+
+def get_insilico_annotations_ht(method: str) -> TableResource:
+    """
+    Get insilico annotations Hail Table resource.
+
+    :param method: Insilico method to use. Must be one of 'cadd', 'phylop', or 'revel'.
+    :return: Insilico annotations Hail Table resource.
+    """
+    if method == "revel":
+        return TableResource(
+            "gs://gnomad/v4.1/constraint/resources/annotations/ht/revel.ht"
+        )
+    else:
+        if method not in {"cadd", "phylop"}:
+            raise ValueError(
+                f"Invalid method: {method}. Must be one of 'cadd' or 'phylop'."
+            )
+
+        return TableResource(
+            f"gs://gnomad/v4.0/annotations/in_silico_predictors/gnomad.v4.0.{method}.grch38.ht"
+        )
+
+
+def get_genetics_gym_missense_scores_ht() -> TableResource:
+    """
+    Get Genetics Gym missense scores Hail Table resource.
+
+    :return: Genetics Gym missense scores Hail Table resource.
+    """
+    return TableResource("gs://genetics-gym/vsm-tables/all-models-no-PAI3D.ht")
+
+
+def get_processed_genetics_gym_missense_scores_ht() -> TableResource:
+    """
+    Get temp Genetics Gym missense scores Hail Table resource.
+
+    :return: Temp Genetics Gym missense scores Hail Table resource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/all_missense_scores_percentile.with_uniprot.ht"
+    )
+
+
+def get_phaplo() -> ExpressionResource:
+    """
+    Get phaplo Hail expression resource.
+
+    :return: Phaplo Hail expression resource.
+    """
+    return ExpressionResource(
+        "gs://gnomad/v4.1/constraint/resources/gene_lists/he/phaplo_genes.he"
+    )
+
+
+def get_ptriplo() -> ExpressionResource:
+    """
+    Get ptriplo Hail expression resource.
+
+    :return: Ptriplo Hail expression resource.
+    """
+    return ExpressionResource(
+        "gs://gnomad/v4.1/constraint/resources/gene_lists/he/ptriplo_genes.he"
+    )
+
+
+def get_gnomad_de_novo_ht() -> TableResource:
+    """
+    Get gnomAD de novo Hail Table resource.
+
+    :return: GnomAD de novo Hail Table resource.
+    """
+    return TableResource(
+        "gs://gcp-public-data--gnomad/release/4.1/ht/exomes/gnomad.exomes.v4.1.de_novo.high_quality_coding.ht"
     )

@@ -17,6 +17,7 @@ from gnomad_constraint.experimental.promis3d.utils import (
     annotate_snvs_with_variant_level_data,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
+    create_missense_viewer_input_ht,
     create_per_promis3d_region_ht_from_residue_ht,
     create_per_residue_ht_from_snv_ht,
     create_per_snv_combined_ht,
@@ -183,12 +184,17 @@ def get_promis3d_resources(
     write_per_variant = PipelineStepResourceCollection(
         "--write-per-variant",
         pipeline_input_steps=[
+            gencode_transcipt,
+            gencode_translation,
+            gencode_alignment,
             compute_af2_distance_matrices,
             extract_af2_plddt,
             extract_af2_pae,
-            get_gencode_positions,
             run_forward,
         ],
+        add_input_resources={
+            "GENCODE GTF": {"gencode_gtf_ht": promis3d_res.get_gencode_ht(version)}
+        },
         output_resources={
             "per_variant_ht": promis3d_res.get_forward_annotation_ht(
                 "per_variant", version, test
@@ -219,6 +225,15 @@ def get_promis3d_resources(
         output_resources={
             "per_region_ht": promis3d_res.get_forward_annotation_ht(
                 "per_region", version, test
+            ),
+        },
+    )
+    create_missense_viewer_input_ht = PipelineStepResourceCollection(
+        "--create-missense-viewer-input-ht",
+        pipeline_input_steps=[get_gencode_positions, run_forward],
+        output_resources={
+            "missense_viewer_input_ht": promis3d_res.get_missense_viewer_input_ht(
+                version
             ),
         },
     )
@@ -559,18 +574,34 @@ def main(args):
         logger.info("Creating per-variant annotated Hail Table.")
         res = resources.write_per_variant
         res.check_resource_existence()
-        # Use new shuffle method for apply models to prevent shuffle errors.
-        hl._set_flags(use_new_shuffle="1")
+
+        # all_snv_temp_path = hl.utils.new_temp_file("all_snv", "ht")
+        # ht = generate_all_possible_snvs_from_gencode_positions(
+        #    res.gencode_transcipt_ht.ht(),
+        #    res.gencode_translation_ht.ht().repartition(1000),
+        #    res.gencode_gtf_ht.ht(),
+        #    res.matched_ht.ht(),
+        # ).checkpoint(all_snv_temp_path, overwrite=overwrite)
+        # partition_intervals = ht._calculate_new_partitions(args.all_snv_n_partitions)
+        # ht = hl.read_table(
+        #    all_snv_temp_path, _intervals=partition_intervals
+        # ).checkpoint(
+        #    promis3d_res.get_temp_all_possible_snvs_ht().path, overwrite=overwrite
+        # )
+
+        ht = hl.read_table(
+            "gs://gnomad-tmp-4day/v4.1/constraint/promis3d/all_possible_snvs.ht"
+        )
+
         ht = create_per_snv_combined_ht(
-            res.gencode_pos_ht.ht(read_args={"_n_partitions": 2000}),
+            ht,
             res.forward_ht.ht(),
             res.af2_plddt_ht.ht(),
             res.af2_pae_ht.ht(),
             res.af2_dist_ht.ht(),
         )
         ht = ht.checkpoint(res.per_variant_ht.path, overwrite=overwrite)
-        ht.show()
-        hl._set_flags(use_new_shuffle=None)
+        ht.describe()
 
     if args.write_per_missense_variant:
         logger.info("Filtering per-variant annotated Hail Table to missense variants.")
@@ -601,6 +632,16 @@ def main(args):
         res.check_resource_existence()
         ht = create_per_promis3d_region_ht_from_residue_ht(res.per_residue_ht.ht())
         ht = ht.checkpoint(res.per_region_ht.path, overwrite=overwrite)
+        ht.show()
+
+    if args.create_missense_viewer_input_ht:
+        logger.info("Creating missense viewer input Hail Table.")
+        res = resources.create_missense_viewer_input_ht
+        res.check_resource_existence()
+        ht = create_missense_viewer_input_ht(
+            res.gencode_pos_ht.ht(), res.forward_ht.ht()
+        )
+        ht = ht.checkpoint(res.missense_viewer_input_ht.path, overwrite=overwrite)
         ht.show()
 
 
@@ -710,6 +751,12 @@ if __name__ == "__main__":
         help="Generate per-variant annotated HT",
     )
     parser.add_argument(
+        "--all-snv-n-partitions",
+        help="Number of partitions to use for the all possible SNVs Hail Table.",
+        type=int,
+        default=5000,
+    )
+    parser.add_argument(
         "--write-per-missense-variant",
         action="store_true",
         help="Generate per-variant annotated HT",
@@ -723,6 +770,11 @@ if __name__ == "__main__":
         "--write-per-region",
         action="store_true",
         help="Generate per-region HT from per-residue",
+    )
+    parser.add_argument(
+        "--create-missense-viewer-input-ht",
+        action="store_true",
+        help="Create missense viewer input HT",
     )
 
     args = parser.parse_args()
