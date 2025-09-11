@@ -1,3 +1,10 @@
+"""Script to import data for Promis3D.
+
+This script imports data for Promis3D, including COSMIS scores, Varity data, MTR3D data,
+InterPro annotations, Kaplanis variants, Fu variants, ClinVar missense variants,
+constraint metrics, MTR data, RMC data, context data, and Genetics Gym missense scores.
+"""
+
 import argparse
 
 import hail as hl
@@ -61,6 +68,11 @@ def import_cosmis_score_data(
 
 
 def import_varity_data() -> hl.Table:
+    """
+    Import Varity data.
+
+    :return: Hail Table with Varity data.
+    """
     ht = hl.import_table(
         get_varity_tsv(),
         impute=True,
@@ -85,6 +97,11 @@ def import_varity_data() -> hl.Table:
 
 
 def import_mtr3d_data() -> hl.Table:
+    """
+    Import MTR3D data.
+
+    :return: Hail Table with MTR3D data.
+    """
     ht = hl.import_table(
         get_mtr3d_tsv(),
         impute=True,
@@ -105,6 +122,11 @@ def import_mtr3d_data() -> hl.Table:
 
 
 def import_mtr_data() -> hl.Table:
+    """
+    Import MTR data.
+
+    :return: Hail Table with MTR data.
+    """
     ht = hl.import_table(
         get_mtr_tsv(),
         impute=True,
@@ -324,6 +346,7 @@ def process_gnomad_site_ht(ht) -> hl.Table:
     """
     Process gnomAD site Hail Table.
 
+    :param ht: Hail Table to process.
     :return: Hail Table with gnomAD site variants.
     """
     return ht.select(gnomad_exomes_flags=ht.exome.flags)
@@ -333,6 +356,7 @@ def process_pext_base_ht(ht) -> hl.Table:
     """
     Process PEXT base level Hail Table.
 
+    :param ht: Hail Table to process.
     :return: Hail Table with PEXT base level variants.
     """
     return ht.key_by("locus", "gene_id").drop("gene_symbol")
@@ -341,6 +365,9 @@ def process_pext_base_ht(ht) -> hl.Table:
 def process_pext_annotation_ht(ht) -> hl.Table:
     """
     Process PEXT annotation level Hail Table.
+
+    :param ht: Hail Table to process.
+    :return: Hail Table with PEXT annotation level variants.
     """
     return ht.key_by("locus", "alleles", "gene_id", "most_severe_consequence").drop(
         "gene_symbol"
