@@ -316,11 +316,23 @@ def convert_gencode_transcripts_fasta_to_table(fasta_file: str) -> hl.Table:
 # Functions to perform tasks from read_af2_sequences.R
 ########################################################################################
 def get_plddt_from_confidence_json(plddt_content: str) -> List[float]:
+    """
+    Get the pLDDT from a confidence JSON file.
+
+    :param plddt_content: Content of the pLDDT JSON file.
+    :return: List of pLDDT scores.
+    """
     data = json.loads(plddt_content)
     return data["confidenceScore"]
 
 
 def get_pae_from_json(pae_content: str) -> List[List[int]]:
+    """
+    Get the PAE from a PAE JSON file.
+
+    :param pae_content: Content of the PAE JSON file.
+    :return: List of PAE scores.
+    """
     data = json.loads(pae_content)
     return data[0]["predicted_aligned_error"]
 
@@ -329,7 +341,7 @@ def get_structure_peptide(structure) -> str:
     """
     Get the sequence from a structure.
 
-    :param structure:
+    :param structure: Structure object.
     :return: Sequence as a string.
     """
     ppb = PPBuilder()
@@ -400,6 +412,12 @@ def process_af2_file_by_mode(
 ) -> Union[str, np.ndarray, List[float]]:
     """
     Dispatcher to handle different AF2 modes based on filename suffix and mode.
+
+    :param uniprot_id: UniProt ID.
+    :param file_content: File content.
+    :param mode: Mode for processing files. Options are 'sequence', 'distance_matrix',
+        'plddt', or 'pae'. Default is 'sequence'.
+    :return: Sequence or distance matrix.
     """
     if mode in {"sequence", "distance_matrix"}:
         return process_af2_mmcif(
@@ -737,6 +755,12 @@ def add_idx_to_array(
 
 
 def get_cumulative_oe(oe_expr):
+    """
+    Get the cumulative OE.
+
+    :param oe_expr: Array expression with observed and expected values.
+    :return: Array expression with cumulative OE.
+    """
     oe_expr = hl.array_scan(
         lambda i, j: j.annotate(obs=i.obs + j.obs, exp=i.exp + j.exp),
         oe_expr[0],
@@ -747,6 +771,13 @@ def get_cumulative_oe(oe_expr):
 
 
 def calculate_oe_upper(oe_expr, alpha=0.05):
+    """
+    Calculate the upper bound of the OE confidence interval.
+
+    :param oe_expr: Array expression with observed and expected values.
+    :param alpha: Significance level for the OE confidence interval. Default is 0.05.
+    :return: Array expression with upper bound of the OE confidence interval.
+    """
     # Calculate upper bound of oe confidence interval.
     oe_upper_expr = oe_expr.map(
         lambda x: x.annotate(
@@ -762,6 +793,15 @@ def calculate_oe_upper(oe_expr, alpha=0.05):
 
 
 def get_min_oe_upper(oe_expr, min_exp_mis=None):
+    """
+    Get the 3D residue with the lowest upper bound of the OE confidence interval.
+
+    :param oe_expr: Array expression with observed and expected values.
+    :param min_exp_mis: Minimum number of expected missense variants in a region to be
+        considered for constraint calculation. Default is None.
+    :return: Struct expression with the 3D residue with the lowest upper bound of the OE
+        confidence interval.
+    """
     oe_expr = add_idx_to_array(oe_expr, "dist_index")
     if min_exp_mis is None:
         filtered_oe_expr = oe_expr
@@ -897,10 +937,23 @@ def run_greedy(ht: hl.Table) -> hl.Table:
 # Functions specific to the forward algorithm.
 ########################################################################################
 def annotate_region_with_oe(region_expr, oe_expr):
+    """
+    Annotate a region with the OE.
+
+    :param region_expr: Region expression.
+    :param oe_expr: OE expression.
+    :return: Region expression annotated with the OE.
+    """
     return region_expr.map(lambda x: oe_expr[x])
 
 
 def get_agg_oe_for_region(region_expr):
+    """
+    Get the aggregate OE for a region.
+
+    :param region_expr: Region expression.
+    :return: Aggregate OE expression.
+    """
     oe_agg_expr = hl.or_missing(
         hl.is_defined(region_expr),
         region_expr.aggregate(
@@ -916,13 +969,26 @@ def get_agg_oe_for_region(region_expr):
 
 
 def calculate_neg_log_likelihood(region_expr, gamma_expr):
-    # Calculate negative log-likelihood a region.
+    """
+    Calculate the negative log-likelihood of a region.
+
+    :param region_expr: Region expression.
+    :param gamma_expr: Gamma expression.
+    :return: Negative log-likelihood expression.
+    """
     return hl.sum(
         region_expr.map(lambda x: -hl.dpois(x.obs, gamma_expr * x.exp, log_p=True))
     )
 
 
 def getAIC(region_expr, nll):
+    """
+    Get the AIC.
+
+    :param region_expr: Region expression.
+    :param nll: Negative log-likelihood.
+    :return: AIC.
+    """
     if isinstance(region_expr, hl.expr.ArrayExpression):
         region_count = region_expr.length()
     else:
@@ -932,6 +998,13 @@ def getAIC(region_expr, nll):
 
 
 def remove_residues_from_region(region_expr, remove_region_expr):
+    """
+    Remove residues from a region.
+
+    :param region_expr: Region expression.
+    :param remove_region_expr: Region expression to remove.
+    :return: Region expression with residues removed.
+    """
     remove_region_residues = hl.set(remove_region_expr.region)
     updated_region_expr = hl.set(region_expr.region).difference(remove_region_residues)
     return hl.or_missing(
@@ -941,6 +1014,15 @@ def remove_residues_from_region(region_expr, remove_region_expr):
 
 
 def get_min_region(regions_expr, min_field="oe_upper", min_exp_mis=None):
+    """
+    Get the minimum region.
+
+    :param regions_expr: Regions expression.
+    :param min_field: Field to use for sorting. Default is "oe_upper".
+    :param min_exp_mis: Minimum number of expected missense variants in a region to be
+        considered for constraint calculation. Default is None.
+    :return: Minimum region expression.
+    """
     regions_expr = hl.agg.collect(regions_expr)
     if min_exp_mis is None:
         filtered_regions_expr = regions_expr
@@ -956,6 +1038,13 @@ def get_min_region(regions_expr, min_field="oe_upper", min_exp_mis=None):
 
 
 def prep_region_struct(region_expr, oe_expr):
+    """
+    Prepare a region struct.
+
+    :param region_expr: Region expression.
+    :param oe_expr: OE expression.
+    :return: Region struct expression.
+    """
     oe_expr = annotate_region_with_oe(region_expr, oe_expr)
     oe_agg_expr = get_agg_oe_for_region(oe_expr)
     nll_expr = calculate_neg_log_likelihood(oe_expr, oe_agg_expr.oe)
@@ -1773,7 +1862,6 @@ def combine_residue_level_annotations(
     :param promis3d_ht: PROMIS3D Hail Table.
     :return: Annotated Hail Table.
     """
-
     annotation_hts = {
         **RESIDUE_LEVEL_ANNOTATION_CONFIG,
         "promis3d": {
