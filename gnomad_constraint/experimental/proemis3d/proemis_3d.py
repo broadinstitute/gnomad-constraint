@@ -9,9 +9,9 @@ from gnomad_qc.resource_utils import (
     PipelineStepResourceCollection,
 )
 
-import gnomad_constraint.experimental.promis3d.resources as proemis3d_res
-from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
-from gnomad_constraint.experimental.promis3d.utils import (
+import gnomad_constraint.experimental.proemis3d.resources as proemis3d_res
+from gnomad_constraint.experimental.proemis3d.constants import MIN_EXP_MIS
+from gnomad_constraint.experimental.proemis3d.utils import (
     COLNAMES_TRANSLATIONS,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
