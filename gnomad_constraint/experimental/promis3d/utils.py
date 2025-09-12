@@ -20,19 +20,19 @@ from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
 
-from gnomad_constraint.experimental.proemis3d.constants import (
+from gnomad_constraint.experimental.promis3d.constants import (
     HI_GENE_CATEGORIES,
     HI_GENES,
     MIN_EXP_MIS,
 )
-from gnomad_constraint.experimental.proemis3d.data_import import (
+from gnomad_constraint.experimental.promis3d.data_import import (
     get_kaplanis_sig_gene_annotations,
     process_gnomad_de_novo_ht,
     process_gnomad_site_ht,
     process_pext_annotation_ht,
     process_pext_base_ht,
 )
-from gnomad_constraint.experimental.proemis3d.resources import (
+from gnomad_constraint.experimental.promis3d.resources import (
     get_clinvar_missense_ht,
     get_cosmis_score_ht,
     get_fu_variants_ht,

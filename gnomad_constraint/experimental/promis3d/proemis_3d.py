@@ -9,12 +9,10 @@ from gnomad_qc.resource_utils import (
     PipelineStepResourceCollection,
 )
 
-import gnomad_constraint.experimental.proemis3d.resources as proemis3d_res
-from gnomad_constraint.experimental.proemis3d.constants import MIN_EXP_MIS
-from gnomad_constraint.experimental.proemis3d.utils import (
+import gnomad_constraint.experimental.promis3d.resources as proemis3d_res
+from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
+from gnomad_constraint.experimental.promis3d.utils import (
     COLNAMES_TRANSLATIONS,
-    annotate_proemis3d_with_af2_metrics,
-    annotate_snvs_with_variant_level_data,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
     create_missense_viewer_input_ht,
@@ -22,7 +20,6 @@ from gnomad_constraint.experimental.proemis3d.utils import (
     create_per_residue_ht_from_snv_ht,
     create_per_snv_combined_ht,
     determine_regions_with_min_oe_upper,
-    generate_all_possible_snvs_from_gencode_positions,
     generate_codon_oe_table,
     get_gencode_positions,
     join_by_sequence,
