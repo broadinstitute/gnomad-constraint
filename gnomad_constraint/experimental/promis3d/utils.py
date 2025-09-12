@@ -1,4 +1,4 @@
-"""Script with utility functions for the Promis3D pipeline."""
+"""Script with utility functions for the Proemis3D pipeline."""
 
 import json
 import logging
@@ -20,19 +20,19 @@ from hail.utils.misc import divide_null
 from pyspark.sql.functions import col, explode, pandas_udf, rtrim, split
 from pyspark.sql.types import StringType, StructField, StructType
 
-from gnomad_constraint.experimental.promis3d.constants import (
+from gnomad_constraint.experimental.proemis3d.constants import (
     HI_GENE_CATEGORIES,
     HI_GENES,
     MIN_EXP_MIS,
 )
-from gnomad_constraint.experimental.promis3d.data_import import (
+from gnomad_constraint.experimental.proemis3d.data_import import (
     get_kaplanis_sig_gene_annotations,
     process_gnomad_de_novo_ht,
     process_gnomad_site_ht,
     process_pext_annotation_ht,
     process_pext_base_ht,
 )
-from gnomad_constraint.experimental.promis3d.resources import (
+from gnomad_constraint.experimental.proemis3d.resources import (
     get_clinvar_missense_ht,
     get_cosmis_score_ht,
     get_fu_variants_ht,
@@ -56,7 +56,7 @@ logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
 )
-logger = logging.getLogger("promis3d_utils")
+logger = logging.getLogger("proemis3d_utils")
 logger.setLevel(logging.INFO)
 
 ########################################################################################
@@ -1236,7 +1236,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS):
 
 def create_missense_viewer_input_ht(
     pos_ht: hl.Table,
-    promis3d_ht: hl.Table,
+    proemis3d_ht: hl.Table,
 ) -> hl.Table:
     """
     Create missense viewer input Hail Table.
@@ -1257,24 +1257,24 @@ def create_missense_viewer_input_ht(
     ).aggregate(locus_by_aapos=hl.dict(hl.agg.collect((pos_ht.aapos, pos_ht.locus))))
     pos_ht = pos_ht.key_by("uniprot_id", "enst").cache()
 
-    chisq_expr = calculate_oe_neq_1_chisq(promis3d_ht.obs, promis3d_ht.exp)
-    promis3d_ht = promis3d_ht.annotate(
+    chisq_expr = calculate_oe_neq_1_chisq(proemis3d_ht.obs, proemis3d_ht.exp)
+    proemis3d_ht = proemis3d_ht.annotate(
         chisq=chisq_expr, p_value=hl.pchisqtail(chisq_expr, 1)
     )
 
     # Key by all fields except 'pos' and collect by key into a field named 'pos'.
-    promis3d_ht = promis3d_ht.key_by(
+    proemis3d_ht = proemis3d_ht.key_by(
         "uniprot_id", "transcript_id", "region_index", "is_null"
     ).collect_by_key("pos")
 
     # Sort the 'pos' field in ascending order.
-    promis3d_ht = promis3d_ht.annotate(
-        pos=hl.sorted(promis3d_ht.pos, key=lambda x: x.residue_index)
+    proemis3d_ht = proemis3d_ht.annotate(
+        pos=hl.sorted(proemis3d_ht.pos, key=lambda x: x.residue_index)
     )
 
     # Annotate with 'start' and 'stop' positions for regions by merging adjacent
     # positions.
-    promis3d_ht = promis3d_ht.annotate(
+    proemis3d_ht = proemis3d_ht.annotate(
         pos=hl.fold(
             lambda i, j: hl.if_else(
                 j.residue_index > (i[-1][1] + 1),
@@ -1305,56 +1305,56 @@ def create_missense_viewer_input_ht(
             ),
             [
                 (
-                    promis3d_ht.pos[0].residue_index,
-                    promis3d_ht.pos[0].residue_index,
-                    promis3d_ht.pos[0].obs,
-                    promis3d_ht.pos[0].exp,
-                    promis3d_ht.pos[0].oe,
-                    promis3d_ht.pos[0].oe_upper,
-                    promis3d_ht.pos[0].chisq,
-                    promis3d_ht.pos[0].p_value,
+                    proemis3d_ht.pos[0].residue_index,
+                    proemis3d_ht.pos[0].residue_index,
+                    proemis3d_ht.pos[0].obs,
+                    proemis3d_ht.pos[0].exp,
+                    proemis3d_ht.pos[0].oe,
+                    proemis3d_ht.pos[0].oe_upper,
+                    proemis3d_ht.pos[0].chisq,
+                    proemis3d_ht.pos[0].p_value,
                 )
             ],
-            promis3d_ht.pos[1:],
+            proemis3d_ht.pos[1:],
         )
     )
-    promis3d_ht = promis3d_ht.explode("pos")
+    proemis3d_ht = proemis3d_ht.explode("pos")
 
     # Key by 'gene_id' and transform 'pos' into 'start' and 'stop' fields.
-    promis3d_ht = promis3d_ht.key_by(
+    proemis3d_ht = proemis3d_ht.key_by(
         "uniprot_id", "transcript_id", "region_index", "is_null"
     )
-    promis3d_ht = promis3d_ht.transmute(
-        start=promis3d_ht.pos[0],
-        stop=promis3d_ht.pos[1],
-        obs_mis=promis3d_ht.pos[2],
-        exp_mis=promis3d_ht.pos[3],
-        obs_exp=promis3d_ht.pos[4],
-        oe_upper=promis3d_ht.pos[5],
-        chisq=promis3d_ht.pos[6],
-        p_value=promis3d_ht.pos[7],
+    proemis3d_ht = proemis3d_ht.transmute(
+        start=proemis3d_ht.pos[0],
+        stop=proemis3d_ht.pos[1],
+        obs_mis=proemis3d_ht.pos[2],
+        exp_mis=proemis3d_ht.pos[3],
+        obs_exp=proemis3d_ht.pos[4],
+        oe_upper=proemis3d_ht.pos[5],
+        chisq=proemis3d_ht.pos[6],
+        p_value=proemis3d_ht.pos[7],
     )
 
     # Select fields in preferred order and collect by key into a field named 'regions'.
-    promis3d_ht = promis3d_ht.collect_by_key("regions")
-    promis3d_ht = promis3d_ht.annotate(
-        **pos_ht[promis3d_ht.uniprot_id, promis3d_ht.transcript_id]
+    proemis3d_ht = proemis3d_ht.collect_by_key("regions")
+    proemis3d_ht = proemis3d_ht.annotate(
+        **pos_ht[proemis3d_ht.uniprot_id, proemis3d_ht.transcript_id]
     )
-    promis3d_ht = promis3d_ht.annotate(
+    proemis3d_ht = proemis3d_ht.annotate(
         regions=ht.regions.map(
             lambda x: x.select(
-                chrom=promis3d_ht.locus_by_aapos[x.start].contig,
+                chrom=proemis3d_ht.locus_by_aapos[x.start].contig,
                 start=hl.if_else(
-                    promis3d_ht.locus_by_aapos[x.start].position
-                    <= promis3d_ht.locus_by_aapos[x.stop].position,
-                    promis3d_ht.locus_by_aapos[x.start].position,
-                    promis3d_ht.locus_by_aapos[x.stop].position,
+                    proemis3d_ht.locus_by_aapos[x.start].position
+                    <= proemis3d_ht.locus_by_aapos[x.stop].position,
+                    proemis3d_ht.locus_by_aapos[x.start].position,
+                    proemis3d_ht.locus_by_aapos[x.stop].position,
                 ),
                 stop=hl.if_else(
-                    promis3d_ht.locus_by_aapos[x.start].position
-                    <= promis3d_ht.locus_by_aapos[x.stop].position,
-                    promis3d_ht.locus_by_aapos[x.stop].position + 2,
-                    promis3d_ht.locus_by_aapos[x.start].position + 2,
+                    proemis3d_ht.locus_by_aapos[x.start].position
+                    <= proemis3d_ht.locus_by_aapos[x.stop].position,
+                    proemis3d_ht.locus_by_aapos[x.stop].position + 2,
+                    proemis3d_ht.locus_by_aapos[x.start].position + 2,
                 ),
                 aa_start=x.start,
                 aa_stop=x.stop,
@@ -1362,22 +1362,22 @@ def create_missense_viewer_input_ht(
                 exp_mis=x.exp_mis,
                 obs_exp=x.obs_exp,
                 oe_upper=x.oe_upper,
-                region_index=promis3d_ht.region_index,
-                is_null=promis3d_ht.is_null,
+                region_index=proemis3d_ht.region_index,
+                is_null=proemis3d_ht.is_null,
                 chisq_diff_null=x.chisq,
                 p_value=x.p_value,
             )
         )
     )
-    promis3d_ht = promis3d_ht.group_by("transcript_id", "uniprot_id").aggregate(
-        gnomad_promis3d_constraint=hl.struct(
+    proemis3d_ht = proemis3d_ht.group_by("transcript_id", "uniprot_id").aggregate(
+        gnomad_proemis3d_constraint=hl.struct(
             has_no_rmc_evidence=False,
             passed_qc=True,
-            regions=hl.flatten(hl.agg.collect(promis3d_ht.regions)),
+            regions=hl.flatten(hl.agg.collect(proemis3d_ht.regions)),
         )
         # regions=hl.flatten(hl.agg.collect(ht.regions))
     )
-    promis3d_ht = promis3d_ht.key_by("transcript_id")
+    proemis3d_ht = proemis3d_ht.key_by("transcript_id")
     rmc_ht = get_rmc_browser_ht().ht()
     rmc_ht = rmc_ht.annotate(
         regions=rmc_ht.regions.map(
@@ -1403,11 +1403,11 @@ def create_missense_viewer_input_ht(
             )
         )
     )
-    promis3d_ht = promis3d_ht.annotate(
+    proemis3d_ht = proemis3d_ht.annotate(
         gnomad_regional_missense_constraint=hl.struct(
             has_no_rmc_evidence=False,
             passed_qc=True,
-            regions=rmc_ht[promis3d_ht.transcript_id].regions,
+            regions=rmc_ht[proemis3d_ht.transcript_id].regions,
         ),
     )
 
@@ -1537,29 +1537,29 @@ def explode_af2_plddt_by_residue(af2_plddt_ht: hl.Table) -> hl.Table:
     return ht
 
 
-def annotate_promis3d_with_af2_metrics(
-    promis3D_ht: hl.Table,
+def annotate_proemis3d_with_af2_metrics(
+    proemis3D_ht: hl.Table,
     af2_plddt_ht: hl.Table,
     af2_pae_ht: hl.Table,
     af2_dist_ht: hl.Table,
 ) -> hl.Table:
     """
-    Annotate a PROMIS3D Hail Table with per-residue AlphaFold2 metrics (pLDDT, pAE, dist).
+    Annotate a PROEMIS3D Hail Table with per-residue AlphaFold2 metrics (pLDDT, pAE, dist).
 
     This function:
     1. Explodes the pLDDT array into (residue_index, score) format.
     2. Keys the pAE and distance matrices by (uniprot_id, aa_index).
-    3. Filters PROMIS3D rows to coding transcripts (ENST).
+    3. Filters PROEMIS3D rows to coding transcripts (ENST).
     4. Annotates each region residue with pLDDT, pAE, and dist.
     5. Aggregates residue-level and region-level metrics.
     6. Outputs both residue-level and region-level structured annotations.
 
-    :param promis3D_ht: PROMIS3D region Hail Table keyed by (uniprot_id, transcript_id,
+    :param proemis3D_ht: PROEMIS3D region Hail Table keyed by (uniprot_id, transcript_id,
         residue_index).
     :param af2_plddt_ht: AlphaFold2 pLDDT Hail Table with array of scores.
     :param af2_pae_ht: AlphaFold2 predicted aligned error matrix Hail Table.
     :param af2_dist_ht: AlphaFold2 distance matrix Hail Table.
-    :return: Annotated PROMIS3D Hail Table keyed by (uniprot_id, transcript_id,
+    :return: Annotated PROEMIS3D Hail Table keyed by (uniprot_id, transcript_id,
         residue_index).
     """
     # Preprocess inputs.
@@ -1572,22 +1572,22 @@ def annotate_promis3d_with_af2_metrics(
     )
 
     # Filter transcripts.
-    promis3D_ht = promis3D_ht.filter(promis3D_ht.transcript_id.startswith("ENST"))
+    proemis3D_ht = proemis3D_ht.filter(proemis3D_ht.transcript_id.startswith("ENST"))
 
     # Annotate with per-residue metrics.
-    promis3D_ht = promis3D_ht.annotate(
-        plddt=af2_plddt_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].plddt,
-        pae=af2_pae_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].pae,
-        dist=af2_dist_ht[promis3D_ht.uniprot_id, promis3D_ht.residue_index].dist_mat,
-    ).checkpoint(hl.utils.new_temp_file("promis3D.annotated", "ht"))
+    proemis3D_ht = proemis3D_ht.annotate(
+        plddt=af2_plddt_ht[proemis3D_ht.uniprot_id, proemis3D_ht.residue_index].plddt,
+        pae=af2_pae_ht[proemis3D_ht.uniprot_id, proemis3D_ht.residue_index].pae,
+        dist=af2_dist_ht[proemis3D_ht.uniprot_id, proemis3D_ht.residue_index].dist_mat,
+    ).checkpoint(hl.utils.new_temp_file("proemis3D.annotated", "ht"))
 
     # Group by region.
-    promis3D_ht = promis3D_ht.key_by("uniprot_id", "transcript_id", "region_index")
-    promis3D_ht = promis3D_ht.collect_by_key("by_residue")
+    proemis3D_ht = proemis3D_ht.key_by("uniprot_id", "transcript_id", "region_index")
+    proemis3D_ht = proemis3D_ht.collect_by_key("by_residue")
 
     # Compute per-residue references
-    residues_expr = promis3D_ht.by_residue.map(lambda x: x.residue_index)
-    by_residue_expr = promis3D_ht.by_residue.map(
+    residues_expr = proemis3D_ht.by_residue.map(lambda x: x.residue_index)
+    by_residue_expr = proemis3D_ht.by_residue.map(
         lambda x: x.annotate(
             res=hl.array(hl.set(residues_expr).remove(x.residue_index))
         )
@@ -1606,7 +1606,7 @@ def annotate_promis3d_with_af2_metrics(
     region_pae = hl.flatten(by_residue_expr.map(lambda x: x.pae))
     region_dist = hl.flatten(by_residue_expr.map(lambda x: x.dist))
 
-    promis3D_ht = promis3D_ht.annotate(
+    proemis3D_ht = proemis3D_ht.annotate(
         by_residue=by_residue_expr,
         region_residues=residues_expr,
         region_aa_dist_stats=region_res.aggregate(lambda x: hl.agg.stats(x)).annotate(
@@ -1624,52 +1624,52 @@ def annotate_promis3d_with_af2_metrics(
             ),
         ),
     )
-    promis3D_ht = promis3D_ht.checkpoint(
-        hl.utils.new_temp_file("promis3D.region_annotated", "ht")
+    proemis3D_ht = proemis3D_ht.checkpoint(
+        hl.utils.new_temp_file("proemis3D.region_annotated", "ht")
     )
 
     # Flatten by residue
-    promis3D_ht = promis3D_ht.explode("by_residue")
-    promis3D_ht = (
-        promis3D_ht.transmute(**promis3D_ht.by_residue)
+    proemis3D_ht = proemis3D_ht.explode("by_residue")
+    proemis3D_ht = (
+        proemis3D_ht.transmute(**proemis3D_ht.by_residue)
         .key_by("uniprot_id", "transcript_id", "residue_index")
-        .checkpoint(hl.utils.new_temp_file("promis3D.by_residue.exploded", "ht"))
+        .checkpoint(hl.utils.new_temp_file("proemis3D.by_residue.exploded", "ht"))
     )
 
     # Final structured output
-    promis3D_ht = promis3D_ht.select(
+    proemis3D_ht = proemis3D_ht.select(
         residue_level_annotations=hl.struct(
-            residue_to_region_aa_dist_stats=promis3D_ht.res.aggregate(
+            residue_to_region_aa_dist_stats=proemis3D_ht.res.aggregate(
                 lambda x: hl.agg.stats(x)
-            ).annotate(median=hl.median(promis3D_ht.res)),
+            ).annotate(median=hl.median(proemis3D_ht.res)),
             alphafold2_info=hl.struct(
-                residue_plddt=promis3D_ht.plddt,
-                residue_to_region_pae_stats=promis3D_ht.pae.aggregate(
+                residue_plddt=proemis3D_ht.plddt,
+                residue_to_region_pae_stats=proemis3D_ht.pae.aggregate(
                     lambda x: hl.agg.stats(x)
-                ).annotate(median=hl.median(promis3D_ht.pae)),
-                residue_to_region_dist_stats=promis3D_ht.dist.aggregate(
+                ).annotate(median=hl.median(proemis3D_ht.pae)),
+                residue_to_region_dist_stats=proemis3D_ht.dist.aggregate(
                     lambda x: hl.agg.stats(x)
-                ).annotate(median=hl.median(promis3D_ht.dist)),
+                ).annotate(median=hl.median(proemis3D_ht.dist)),
             ),
         ),
         region_level_annotations=hl.struct(
-            region_index=promis3D_ht.region_index,
-            region_residues=promis3D_ht.region_residues,
-            region_length=promis3D_ht.region_length,
-            obs=promis3D_ht.obs,
-            exp=promis3D_ht.exp,
-            oe=promis3D_ht.oe,
-            oe_upper=promis3D_ht.oe_upper,
-            oe_ci=oe_confidence_interval(promis3D_ht.obs, promis3D_ht.exp),
-            chisq=promis3D_ht.chisq,
-            p_value=promis3D_ht.p_value,
-            is_null=promis3D_ht.is_null,
-            region_aa_dist_stats=promis3D_ht.region_aa_dist_stats,
-            alphafold2_info=promis3D_ht.alphafold2_info,
+            region_index=proemis3D_ht.region_index,
+            region_residues=proemis3D_ht.region_residues,
+            region_length=proemis3D_ht.region_length,
+            obs=proemis3D_ht.obs,
+            exp=proemis3D_ht.exp,
+            oe=proemis3D_ht.oe,
+            oe_upper=proemis3D_ht.oe_upper,
+            oe_ci=oe_confidence_interval(proemis3D_ht.obs, proemis3D_ht.exp),
+            chisq=proemis3D_ht.chisq,
+            p_value=proemis3D_ht.p_value,
+            is_null=proemis3D_ht.is_null,
+            region_aa_dist_stats=proemis3D_ht.region_aa_dist_stats,
+            alphafold2_info=proemis3D_ht.alphafold2_info,
         ),
     )
 
-    return promis3D_ht
+    return proemis3D_ht
 
 
 def generate_all_possible_snvs_from_gencode_positions(
@@ -1842,10 +1842,10 @@ def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
 
 def combine_residue_level_annotations(
     ht: hl.Table,
-    promis3d_ht: hl.Table,
+    proemis3d_ht: hl.Table,
 ) -> hl.Table:
     """
-    Combine residue-level annotations by joining PROMIS3D regions with COSMIS (multiple sources) and InterPro data.
+    Combine residue-level annotations by joining PROEMIS3D regions with COSMIS (multiple sources) and InterPro data.
 
     Adds the following annotations:
 
@@ -1854,18 +1854,18 @@ def combine_residue_level_annotations(
         - cosmis_alphafold
         - cosmis_pdb
         - cosmis_swiss_model
-        - promis3d
+        - proemis3d
 
     :param ht: Input Hail Table.
-    :param promis3d_ht: PROMIS3D Hail Table.
+    :param proemis3d_ht: PROEMIS3D Hail Table.
     :return: Annotated Hail Table.
     """
     annotation_hts = {
         **RESIDUE_LEVEL_ANNOTATION_CONFIG,
-        "promis3d": {
-            "ht": promis3d_ht,
+        "proemis3d": {
+            "ht": proemis3d_ht,
             "keys": ["transcript_id", "uniprot_id", "residue_index"],
-            "annotation_name": "promis3d",
+            "annotation_name": "proemis3d",
         },
     }
     annotation_hts = {
@@ -1904,7 +1904,7 @@ def combine_residue_level_annotations(
 
 def create_per_snv_combined_ht(
     ht: hl.Table,
-    promis3d_ht: hl.Table,
+    proemis3d_ht: hl.Table,
     af2_plddt_ht: hl.Table,
     af2_pae_ht: hl.Table,
     af2_dist_ht: hl.Table,
@@ -1913,7 +1913,7 @@ def create_per_snv_combined_ht(
     Create a fully annotated per-SNV Hail Table with structured variant-, residue-, and gene-level annotations.
 
     :param ht: All possible SNVs Hail Table.
-    :param promis3d_ht: PROMIS3D Hail Table.
+    :param proemis3d_ht: PROEMIS3D Hail Table.
     :param af2_plddt_ht: AlphaFold2 pLDDT Hail Table.
     :param af2_pae_ht: AlphaFold2 PAE Hail Table.
     :param af2_dist_ht: AlphaFold2 distance matrix Hail Table.
@@ -1944,8 +1944,8 @@ def create_per_snv_combined_ht(
     ).cache()
     residue_ht = combine_residue_level_annotations(
         base_residue_ht,
-        annotate_promis3d_with_af2_metrics(
-            promis3d_ht, af2_plddt_ht, af2_pae_ht, af2_dist_ht
+        annotate_proemis3d_with_af2_metrics(
+            proemis3d_ht, af2_plddt_ht, af2_pae_ht, af2_dist_ht
         ).cache(),
     ).cache()
     select_uniprot_transcript_ht = prioritize_transcripts_and_uniprots(
@@ -2072,24 +2072,24 @@ def create_per_residue_ht_from_snv_ht(per_snv_ht: hl.Table) -> hl.Table:
         interpro=ht.residue_level_annotations.interpro,
         rmc_regions=ht.rmc,
         cosmis=ht.residue_level_annotations.cosmis,
-        promis3d=ht.residue_level_annotations.promis3d,
+        proemis3d=ht.residue_level_annotations.proemis3d,
         gene_level_annotations=ht.gene_level_annotations,
     )
 
     return ht.naive_coalesce(2000)
 
 
-def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
+def create_per_proemis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
     """
-    Create a PROMIS3D region-level Hail Table from a per-residue annotated Hail Table.
+    Create a PROEMIS3D region-level Hail Table from a per-residue annotated Hail Table.
 
     This function:
-    1. Extracts region_index from PROMIS3D residue annotations.
+    1. Extracts region_index from PROEMIS3D residue annotations.
     2. Groups rows by (transcript_id, uniprot_id, region_index).
     3. Aggregates exomes coverage, collects RMC regions, computes per-region pLDDT stats.
-    4. Annotates PROMIS3D region-level alphaFold2 info with region-level pLDDT stats.
+    4. Annotates PROEMIS3D region-level alphaFold2 info with region-level pLDDT stats.
 
-    :param ht: Hail Table with residue-level annotations including PROMIS3D and coverage.
+    :param ht: Hail Table with residue-level annotations including PROEMIS3D and coverage.
     :return: Aggregated region-level Hail Table.
     """
     keep_fields = [
@@ -2105,7 +2105,7 @@ def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
         "one_transcript_per_gene",
     ]
 
-    ht = ht.annotate(region_index=ht.promis3d.region_level_annotations.region_index)
+    ht = ht.annotate(region_index=ht.proemis3d.region_level_annotations.region_index)
 
     ht = ht.group_by("transcript_id", "uniprot_id", "region_index").aggregate(
         **{k: hl.agg.take(ht[k], 1)[0] for k in keep_fields},
@@ -2118,13 +2118,13 @@ def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
         rmc_regions=hl.agg.explode(
             lambda x: hl.agg.collect_as_set(x), ht.rmc_regions
         ).filter(lambda x: hl.is_defined(x)),
-        promis3d=hl.agg.take(ht.promis3d.region_level_annotations, 1)[0].annotate(
+        proemis3d=hl.agg.take(ht.proemis3d.region_level_annotations, 1)[0].annotate(
             region_plddt_stats=hl.agg.stats(
-                ht.promis3d.residue_level_annotations.alphafold2_info.residue_plddt
+                ht.proemis3d.residue_level_annotations.alphafold2_info.residue_plddt
             ).annotate(
                 median=hl.median(
                     hl.agg.collect(
-                        ht.promis3d.residue_level_annotations.alphafold2_info.residue_plddt
+                        ht.proemis3d.residue_level_annotations.alphafold2_info.residue_plddt
                     )
                 )
             )
@@ -2134,9 +2134,9 @@ def create_per_promis3d_region_ht_from_residue_ht(ht: hl.Table) -> hl.Table:
 
     # Move pLDDT stats into alphaFold2 info.
     ht = ht.annotate(
-        promis3d=ht.promis3d.annotate(
-            alphafold2_info=ht.promis3d.alphafold2_info.annotate(
-                region_plddt_stats=ht.promis3d.region_plddt_stats
+        proemis3d=ht.proemis3d.annotate(
+            alphafold2_info=ht.proemis3d.alphafold2_info.annotate(
+                region_plddt_stats=ht.proemis3d.region_plddt_stats
             )
         ).drop("region_plddt_stats")
     )
