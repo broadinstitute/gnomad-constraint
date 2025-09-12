@@ -1470,7 +1470,7 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     ht = ht.explode("residual")
 
     af2_dist = hl.read_table(
-        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht"
+        "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/af2_dist.ht"
     )
     af2_dist = af2_dist.key_by("uniprot_id", "aa_index")
     ht = ht.annotate(
@@ -1721,12 +1721,12 @@ def run_forward_no_catch_all_standardized(
     result_ht = ht.annotate(
         selected=add_idx_to_array(ht.selected, "region_index")
     ).checkpoint(
-        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht",
+        "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht",
         overwrite=True,
     )
     """
     result_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht"
+        "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/forward_no_catch_all_standardized.before_posthoc_assignment.ht"
     )
 
     result_ht = result_ht.annotate(
@@ -1775,7 +1775,7 @@ def run_forward_no_catch_all_standardized(
 
     # distance vectors: one row per (protein, residual_residue) → dist to all residues
     af2_dist_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run/af2_dist.ht"
+        "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/af2_dist.ht"
     )
     dist_mat = (
         hl.enumerate(af2_dist_ht.dist_mat)
