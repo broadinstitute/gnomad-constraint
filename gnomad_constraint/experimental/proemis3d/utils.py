@@ -500,8 +500,7 @@ def process_af2_structures(
             uniprot_id = os.path.basename(file_path).split("-")[1]
 
             # Process the file content.
-            # af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
-            af2_data = None
+            af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
             result.append((uniprot_id, af2_data))
 
         return pd.DataFrame(result, columns=["uniprot_id", col_name])
@@ -1341,7 +1340,7 @@ def create_missense_viewer_input_ht(
         **pos_ht[proemis3d_ht.uniprot_id, proemis3d_ht.transcript_id]
     )
     proemis3d_ht = proemis3d_ht.annotate(
-        regions=ht.regions.map(
+        regions=proemis3d_ht.regions.map(
             lambda x: x.select(
                 chrom=proemis3d_ht.locus_by_aapos[x.start].contig,
                 start=hl.if_else(
