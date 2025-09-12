@@ -276,7 +276,7 @@ def get_forward_annotation_ht(
     :return: PROEMIS3D annotated forward algorithm Hail Table resource.
     """
     return TableResource(
-        f"{get_proemis3d_root(version, test)}/proemis3D_forward.{name}.annotated.5_29_25.ht"
+        f"{get_proemis3d_root(version, test)}/proemis3D_forward.{name}.annotated.ht"
     )
 
 
