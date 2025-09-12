@@ -1,4 +1,4 @@
-"""Resource definitions for the promis3d pipeline."""
+"""Resource definitions for the proemis3d pipeline."""
 
 import logging
 from typing import Optional
@@ -17,14 +17,14 @@ logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
 )
-logger = logging.getLogger("promis3d_pipeline")
+logger = logging.getLogger("proemis3d_pipeline")
 logger.setLevel(logging.INFO)
 
 VERSIONS = ["2.1.1", "4.1"]
-"""Possible gnomAD versions for the promis3d pipeline."""
+"""Possible gnomAD versions for the proemis3d pipeline."""
 
 CURRENT_VERSION = "4.1"
-"""Current gnomAD version for the promis3d pipeline."""
+"""Current gnomAD version for the proemis3d pipeline."""
 
 GENCODE_VERSION_MAP = {
     "2.1.1": "19",
@@ -33,19 +33,19 @@ GENCODE_VERSION_MAP = {
 """GENCODE version map for each gnomAD version."""
 
 
-def get_promis3d_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
+def get_proemis3d_root(version: str = CURRENT_VERSION, test: bool = False) -> str:
     """
-    Get root path to promis3d resources.
+    Get root path to proemis3d resources.
 
-    :param version: Version of promis3d resources to use.
+    :param version: Version of proemis3d resources to use.
     :param test: Whether to use a tmp path for testing.
-    :return: Root path to promis3d resources.
+    :return: Root path to proemis3d resources.
     """
-    return "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_2_run"  # "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run"
+    return "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run"  # "gs://gnomad/v4.1/constraint/promis3d/test_gene_set_run"
     # return (
-    #    f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint/promis3d"
+    #    f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint/proemis3d"
     #    if test
-    #    else f"gs://gnomad/v{version}/constraint/promis3d"
+    #    else f"gs://gnomad/v{version}/constraint/proemis3d"
     # )
 
 
@@ -63,7 +63,7 @@ def get_gencode_fasta(
     """
     # TODO: Change this path when moved to a more permanent location.
     return (
-        f"gs://gnomad-julia/promis3d/resources/"
+        f"gs://gnomad-julia/proemis3d/resources/"
         f"gencode.v{GENCODE_VERSION_MAP[version]}.{name}.fa.gz"
     )
 
@@ -95,7 +95,7 @@ def get_gencode_seq_ht(
     :return: GENCODE sequences Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root(version, test)}/preprocessed_data/"
+        f"{get_proemis3d_root(version, test)}/preprocessed_data/"
         f"gencode_sequences.{name}.ht"
     )
 
@@ -111,7 +111,9 @@ def get_af2_ht(
     :param test: Whether to use a tmp path for testing. Default is False.
     :return: GENCODE sequences Hail Table resource.
     """
-    return TableResource(f"{get_promis3d_root('2.1.1', test)}/preprocessed_data/af2.ht")
+    return TableResource(
+        f"{get_proemis3d_root('2.1.1', test)}/preprocessed_data/af2.ht"
+    )
 
 
 def get_af2_dist_ht(
@@ -126,7 +128,7 @@ def get_af2_dist_ht(
     :return: AlphaFold2 distance matrix Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root('2.1.1', test)}/preprocessed_data/af2_dist.ht"
+        f"{get_proemis3d_root('2.1.1', test)}/preprocessed_data/af2_dist.ht"
     )
 
 
@@ -142,7 +144,7 @@ def get_af2_plddt_ht(
     :return: AlphaFold2 pLDDT Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root('2.1.1', test)}/preprocessed_data/af2_plddt.ht"
+        f"{get_proemis3d_root('2.1.1', test)}/preprocessed_data/af2_plddt.ht"
     )
 
 
@@ -158,7 +160,7 @@ def get_af2_pae_ht(
     :return: AlphaFold2 pAE Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root('2.1.1', test)}/preprocessed_data/af2_pae.ht"
+        f"{get_proemis3d_root('2.1.1', test)}/preprocessed_data/af2_pae.ht"
     )
 
 
@@ -174,7 +176,7 @@ def get_gencode_translations_matched_ht(
     :return: GENCODE translations matched Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root(version, test)}/preprocessed_data/"
+        f"{get_proemis3d_root(version, test)}/preprocessed_data/"
         f"gencode_translations_matched.ht"
     )
 
@@ -208,7 +210,7 @@ def get_gencode_pos_ht(
     :return: GENCODE positions Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root(version, test)}/preprocessed_data/gencode_positions.ht"
+        f"{get_proemis3d_root(version, test)}/preprocessed_data/gencode_positions.ht"
     )
 
 
@@ -237,13 +239,13 @@ def get_greedy_ht(
     test: bool = False,
 ) -> TableResource:
     """
-    Get Promis3D greedy algorithm Hail Table resource.
+    Get Proemis3D greedy algorithm Hail Table resource.
 
     :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
     :param test: Whether to use a tmp path for testing. Default is False.
-    :return: Promis3D greedy algorithm Hail Table resource.
+    :return: Proemis3D greedy algorithm Hail Table resource.
     """
-    return TableResource(f"{get_promis3d_root(version, test)}/promis3D_greedy.ht")
+    return TableResource(f"{get_proemis3d_root(version, test)}/proemis3D_greedy.ht")
 
 
 def get_forward_ht(
@@ -252,15 +254,15 @@ def get_forward_ht(
     name: str = "",
 ) -> TableResource:
     """
-    Get Promis3D forward algorithm Hail Table resource.
+    Get Proemis3D forward algorithm Hail Table resource.
 
     :param version: Version of gnomAD to use. Default is `CURRENT_VERSION`.
     :param test: Whether to use a tmp path for testing. Default is False.
-    :return: Promis3D forward algorithm Hail Table resource.
+    :return: Proemis3D forward algorithm Hail Table resource.
     """
     name = f".{name}" if name else ""
     return TableResource(
-        f"{get_promis3d_root(version, test)}/output/promis3D_forward{name}.ht"
+        f"{get_proemis3d_root(version, test)}/output/proemis3D_forward{name}.ht"
     )
 
 
@@ -270,16 +272,16 @@ def get_forward_annotation_ht(
     test: bool = False,
 ) -> TableResource:
     """
-    Get PROMIS3D forward algorithm annotation Hail Table resource.
+    Get PROEMIS3D forward algorithm annotation Hail Table resource.
 
     :param name: Annotation type ('per_variant', 'per_missense_variant', 'per_residue',
-        or 'per_promis3d_region').
+        or 'per_proemis3d_region').
     :param version: gnomAD version to use. Default is `CURRENT_VERSION`.
     :param test: Whether to use a tmp path for testing. Default is False.
-    :return: PROMIS3D annotated forward algorithm Hail Table resource.
+    :return: PROEMIS3D annotated forward algorithm Hail Table resource.
     """
     return TableResource(
-        f"{get_promis3d_root(version, test)}/promis3D_forward.{name}.annotated.5_29_25.ht"
+        f"{get_proemis3d_root(version, test)}/proemis3D_forward.{name}.annotated.5_29_25.ht"
     )
 
 
@@ -291,7 +293,7 @@ def get_temp_all_possible_snvs_ht(version: str = CURRENT_VERSION) -> TableResour
     :return: Temp all possible SNVs Hail Table resource.
     """
     return TableResource(
-        f"gs://gnomad-tmp-4day/v{version}/constraint/promis3d/all_possible_snvs.ht"
+        f"gs://gnomad-tmp-4day/v{version}/constraint/proemis3d/all_possible_snvs.ht"
     )
 
 
@@ -303,7 +305,7 @@ def get_missense_viewer_input_ht(version: str = CURRENT_VERSION) -> TableResourc
     :return: Missense viewer input Hail Table resource.
     """
     return TableResource(
-        f"gs://gnomad/v{version}/constraint/promis3d/missense_viewer_input.ht"
+        f"gs://gnomad/v{version}/constraint/proemis3d/missense_viewer_input.ht"
     )
 
 

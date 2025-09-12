@@ -1,4 +1,4 @@
-"""Script to perform the promis3d pipeline."""
+"""Script to perform the proemis3d pipeline."""
 
 import argparse
 import logging
@@ -9,20 +9,17 @@ from gnomad_qc.resource_utils import (
     PipelineStepResourceCollection,
 )
 
-import gnomad_constraint.experimental.promis3d.resources as promis3d_res
+import gnomad_constraint.experimental.promis3d.resources as proemis3d_res
 from gnomad_constraint.experimental.promis3d.constants import MIN_EXP_MIS
 from gnomad_constraint.experimental.promis3d.utils import (
     COLNAMES_TRANSLATIONS,
-    annotate_promis3d_with_af2_metrics,
-    annotate_snvs_with_variant_level_data,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
     create_missense_viewer_input_ht,
-    create_per_promis3d_region_ht_from_residue_ht,
+    create_per_proemis3d_region_ht_from_residue_ht,
     create_per_residue_ht_from_snv_ht,
     create_per_snv_combined_ht,
     determine_regions_with_min_oe_upper,
-    generate_all_possible_snvs_from_gencode_positions,
     generate_codon_oe_table,
     get_gencode_positions,
     join_by_sequence,
@@ -38,7 +35,7 @@ logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
     datefmt="%m/%d/%Y %I:%M:%S %p",
 )
-logger = logging.getLogger("promis3d_pipeline")
+logger = logging.getLogger("proemis3d_pipeline")
 logger.setLevel(logging.INFO)
 
 TEST_TRANSCRIPT_ID = "ENST00000372435"  # "ENST00000215754"
@@ -46,22 +43,22 @@ TEST_UNIPROT_ID = "P60891"  # "P14174"
 """Transcript and UniProt IDs for testing."""
 
 
-def get_promis3d_resources(
+def get_proemis3d_resources(
     version: str,
     overwrite: bool,
     test: bool,
 ) -> PipelineResourceCollection:
     """
-    Get PipelineResourceCollection for all resources needed in the promis3d pipeline.
+    Get PipelineResourceCollection for all resources needed in the proemis3d pipeline.
 
-    :param version: Version of promis3d resources to use.
+    :param version: Version of proemis3d resources to use.
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
     :return: PipelineResourceCollection containing resources for all steps of the
-        promis3D pipeline.
+        proemis3D pipeline.
     """
     # Get glob for AlphaFold2 structures.
-    af2_dir_path = promis3d_res.get_alpha_fold2_dir(version=version)
+    af2_dir_path = proemis3d_res.get_alpha_fold2_dir(version=version)
     if test:
         af2_struct_dir_path = f"{af2_dir_path}/AF-{TEST_UNIPROT_ID}-*.cif.gz"
     else:
@@ -83,9 +80,9 @@ def get_promis3d_resources(
     else:
         af2_pae_dir_path = f"{af2_dir_path}/*predicted_aligned_error_v4.json.gz"
 
-    # Initialize promis3D pipeline resource collection.
-    promis3d_pipeline = PipelineResourceCollection(
-        pipeline_name="promis3d",
+    # Initialize proemis3D pipeline resource collection.
+    proemis3d_pipeline = PipelineResourceCollection(
+        pipeline_name="proemis3d",
         overwrite=overwrite,
         pipeline_resources={
             "AlphaFold2 directory": {
@@ -96,18 +93,18 @@ def get_promis3d_resources(
         },
     )
 
-    # Create resource collection for each step of the promis3D pipeline.
+    # Create resource collection for each step of the proemis3D pipeline.
     gencode_transcipt = PipelineStepResourceCollection(
         "--convert-gencode-fastn-to-ht",
         input_resources={
             "GENCODE transcripts FASTA": {
-                "gencode_transcipt_fasta_path": promis3d_res.get_gencode_fasta(
+                "gencode_transcipt_fasta_path": proemis3d_res.get_gencode_fasta(
                     version=version, name="pc_transcripts"
                 )
             },
         },
         output_resources={
-            "gencode_transcipt_ht": promis3d_res.get_gencode_seq_ht(
+            "gencode_transcipt_ht": proemis3d_res.get_gencode_seq_ht(
                 version=version, name="pc_transcripts", test=test
             ),
         },
@@ -116,39 +113,41 @@ def get_promis3d_resources(
         "--convert-gencode-fasta-to-ht",
         input_resources={
             "GENCODE translations FASTA": {
-                "gencode_translation_fasta_path": promis3d_res.get_gencode_fasta(
+                "gencode_translation_fasta_path": proemis3d_res.get_gencode_fasta(
                     version=version, name="pc_translations"
                 )
             },
         },
         output_resources={
-            "gencode_translation_ht": promis3d_res.get_gencode_seq_ht(
+            "gencode_translation_ht": proemis3d_res.get_gencode_seq_ht(
                 version=version, name="pc_translations", test=test
             ),
         },
     )
     read_af2_sequences = PipelineStepResourceCollection(
         "--read-af2-sequences",
-        output_resources={"af2_ht": promis3d_res.get_af2_ht(version, test)},
+        output_resources={"af2_ht": proemis3d_res.get_af2_ht(version, test)},
     )
     compute_af2_distance_matrices = PipelineStepResourceCollection(
         "--compute-af2-distance-matrices",
-        # output_resources={"af2_dist_ht": promis3d_res.get_af2_dist_ht(version, test)},
-        output_resources={"af2_dist_ht": promis3d_res.get_af2_dist_ht(version)},
+        # output_resources={"af2_dist_ht": proemis3d_res.get_af2_dist_ht(version, test)},
+        output_resources={"af2_dist_ht": proemis3d_res.get_af2_dist_ht(version)},
     )
     extract_af2_plddt = PipelineStepResourceCollection(
         "--extract-af2-plddt",
-        output_resources={"af2_plddt_ht": promis3d_res.get_af2_plddt_ht(version, test)},
+        output_resources={
+            "af2_plddt_ht": proemis3d_res.get_af2_plddt_ht(version, test)
+        },
     )
     extract_af2_pae = PipelineStepResourceCollection(
         "--extract-af2-pae",
-        output_resources={"af2_pae_ht": promis3d_res.get_af2_pae_ht(version, test)},
+        output_resources={"af2_pae_ht": proemis3d_res.get_af2_pae_ht(version, test)},
     )
     gencode_alignment = PipelineStepResourceCollection(
         "--gencode-alignment",
         pipeline_input_steps=[gencode_translation, read_af2_sequences],
         output_resources={
-            "matched_ht": promis3d_res.get_gencode_translations_matched_ht(
+            "matched_ht": proemis3d_res.get_gencode_translations_matched_ht(
                 version, test
             ),
         },
@@ -157,28 +156,28 @@ def get_promis3d_resources(
         "--get-gencode-positions",
         pipeline_input_steps=[gencode_transcipt, gencode_alignment],
         add_input_resources={
-            "GENCODE GTF": {"gencode_gtf_ht": promis3d_res.get_gencode_ht(version)}
+            "GENCODE GTF": {"gencode_gtf_ht": proemis3d_res.get_gencode_ht(version)}
         },
         output_resources={
             # "gencode_pos_ht": promis3d_res.get_gencode_pos_ht(version, test),
-            "gencode_pos_ht": promis3d_res.get_gencode_pos_ht(version),
+            "gencode_pos_ht": proemis3d_res.get_gencode_pos_ht(version),
         },
     )
     run_greedy = PipelineStepResourceCollection(
         "--run-greedy",
         pipeline_input_steps=[compute_af2_distance_matrices, get_gencode_positions],
         add_input_resources={
-            "RMC OE Table": {"obs_exp_ht": promis3d_res.get_obs_exp_ht(version)}
+            "RMC OE Table": {"obs_exp_ht": proemis3d_res.get_obs_exp_ht(version)}
         },
-        output_resources={"greedy_ht": promis3d_res.get_greedy_ht(version, test)},
+        output_resources={"greedy_ht": proemis3d_res.get_greedy_ht(version, test)},
     )
     run_forward = PipelineStepResourceCollection(
         "--run-forward",
         pipeline_input_steps=[compute_af2_distance_matrices, get_gencode_positions],
         add_input_resources={
-            "RMC OE Table": {"obs_exp_ht": promis3d_res.get_obs_exp_ht(version)}
+            "RMC OE Table": {"obs_exp_ht": proemis3d_res.get_obs_exp_ht(version)}
         },
-        output_resources={"forward_ht": promis3d_res.get_forward_ht(version, test)},
+        output_resources={"forward_ht": proemis3d_res.get_forward_ht(version, test)},
     )
     # Add resources for per-variant, per-residue, and per-region HTs.
     write_per_variant = PipelineStepResourceCollection(
@@ -193,10 +192,10 @@ def get_promis3d_resources(
             run_forward,
         ],
         add_input_resources={
-            "GENCODE GTF": {"gencode_gtf_ht": promis3d_res.get_gencode_ht(version)}
+            "GENCODE GTF": {"gencode_gtf_ht": proemis3d_res.get_gencode_ht(version)}
         },
         output_resources={
-            "per_variant_ht": promis3d_res.get_forward_annotation_ht(
+            "per_variant_ht": proemis3d_res.get_forward_annotation_ht(
                 "per_variant", version, test
             ),
         },
@@ -205,7 +204,7 @@ def get_promis3d_resources(
         "--write-per-missense-variant",
         pipeline_input_steps=[write_per_variant],
         output_resources={
-            "per_missense_variant_ht": promis3d_res.get_forward_annotation_ht(
+            "per_missense_variant_ht": proemis3d_res.get_forward_annotation_ht(
                 "per_missense_variant", version, test
             ),
         },
@@ -214,7 +213,7 @@ def get_promis3d_resources(
         "--write-per-residue",
         pipeline_input_steps=[write_per_variant],
         output_resources={
-            "per_residue_ht": promis3d_res.get_forward_annotation_ht(
+            "per_residue_ht": proemis3d_res.get_forward_annotation_ht(
                 "per_residue", version, test
             ),
         },
@@ -223,7 +222,7 @@ def get_promis3d_resources(
         "--write-per-region",
         pipeline_input_steps=[write_per_residue],
         output_resources={
-            "per_region_ht": promis3d_res.get_forward_annotation_ht(
+            "per_region_ht": proemis3d_res.get_forward_annotation_ht(
                 "per_region", version, test
             ),
         },
@@ -232,14 +231,14 @@ def get_promis3d_resources(
         "--create-missense-viewer-input-ht",
         pipeline_input_steps=[get_gencode_positions, run_forward],
         output_resources={
-            "missense_viewer_input_ht": promis3d_res.get_missense_viewer_input_ht(
+            "missense_viewer_input_ht": proemis3d_res.get_missense_viewer_input_ht(
                 version
             ),
         },
     )
 
-    # Add all steps to the promis3D pipeline resource collection.
-    promis3d_pipeline.add_steps(
+    # Add all steps to the proemis3D pipeline resource collection.
+    proemis3d_pipeline.add_steps(
         {
             "gencode_transcipt": gencode_transcipt,
             "gencode_translation": gencode_translation,
@@ -258,7 +257,7 @@ def get_promis3d_resources(
         }
     )
 
-    return promis3d_pipeline
+    return proemis3d_pipeline
 
 
 def main(args):
@@ -271,11 +270,11 @@ def main(args):
     test = args.test
     overwrite = args.overwrite
 
-    if version not in promis3d_res.VERSIONS:
+    if version not in proemis3d_res.VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
-    resources = get_promis3d_resources(version, overwrite, test)
+    resources = get_proemis3d_resources(version, overwrite, test)
 
     if args.convert_gencode_fastn_to_ht:
         logger.info(
@@ -586,11 +585,11 @@ def main(args):
         # ht = hl.read_table(
         #    all_snv_temp_path, _intervals=partition_intervals
         # ).checkpoint(
-        #    promis3d_res.get_temp_all_possible_snvs_ht().path, overwrite=overwrite
+        #    proemis3d_res.get_temp_all_possible_snvs_ht().path, overwrite=overwrite
         # )
 
         ht = hl.read_table(
-            "gs://gnomad-tmp-4day/v4.1/constraint/promis3d/all_possible_snvs.ht"
+            "gs://gnomad-tmp-4day/v4.1/constraint/proemis3d/all_possible_snvs.ht"
         )
 
         ht = create_per_snv_combined_ht(
@@ -630,7 +629,7 @@ def main(args):
         logger.info("Creating per-region annotated Hail Table.")
         res = resources.write_per_region
         res.check_resource_existence()
-        ht = create_per_promis3d_region_ht_from_residue_ht(res.per_residue_ht.ht())
+        ht = create_per_proemis3d_region_ht_from_residue_ht(res.per_residue_ht.ht())
         ht = ht.checkpoint(res.per_region_ht.path, overwrite=overwrite)
         ht.show()
 
@@ -655,10 +654,10 @@ if __name__ == "__main__":
         "--version",
         help=(
             "Which version of the resource Tables will be used. Default is"
-            f" {promis3d_res.CURRENT_VERSION}."
+            f" {proemis3d_res.CURRENT_VERSION}."
         ),
         type=str,
-        default=promis3d_res.CURRENT_VERSION,
+        default=proemis3d_res.CURRENT_VERSION,
     )
     parser.add_argument(
         "--test",
