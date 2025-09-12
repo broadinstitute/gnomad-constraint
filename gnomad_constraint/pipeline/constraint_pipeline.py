@@ -257,24 +257,37 @@ def main(args):
             logger.info("Building plateau and coverage models...")
             res = resources.build_models
             res.check_resource_existence()
-            ht = res.train_ht.ht()
-            print_global_struct(ht.build_models_globals)
-            coverage_model, plateau_models = build_models(
-                ht,
-                ht.exomes_coverage,
-                model_group_expr=ht.build_model,
-                skip_coverage_model=skip_coverage_model,
-                log10_coverage=log10_coverage,
-            )
-            hl.experimental.write_expression(
-                plateau_models, res.model_plateau.path, overwrite=overwrite
-            )
-            if not args.skip_coverage_model:
-                hl.experimental.write_expression(
-                    coverage_model, res.model_coverage.path, overwrite=overwrite
-                )
 
-            logger.info("Done building models.")
+            # Build plateau and coverage models for autosomes/pseudoautosomal regions,
+            # chromosome X, and chromosome Y.
+            for r in regions:
+                # TODO: Remove repartition once partition_hint bugs are resolved.
+                training_ht = getattr(res, f"train_{r}_ht").ht()
+                training_ht = training_ht.repartition(args.training_set_partition_hint)
+
+                logger.info("Building %s plateau and coverage models...", r)
+                coverage_model, plateau_models = build_models(
+                    coverage_ht=training_ht,
+                    coverage_expr=training_ht[coverage_metric],
+                    weighted=args.use_weights,
+                    gen_ancs=pops,
+                    high_cov_definition=args.high_cov_definition,
+                    upper_cov_cutoff=args.upper_cov_cutoff,
+                    skip_coverage_model=True if args.skip_coverage_model else False,
+                    log10_coverage=log10_coverage,
+                )
+                hl.experimental.write_expression(
+                    plateau_models,
+                    getattr(res, f"model_{r}_plateau").path,
+                    overwrite=overwrite,
+                )
+                if not args.skip_coverage_model:
+                    hl.experimental.write_expression(
+                        coverage_model,
+                        getattr(res, f"model_{r}_coverage").path,
+                        overwrite=overwrite,
+                    )
+                logger.info("Done building %s models.", r)
 
         if args.apply_models_per_variant:
             logger.info(
