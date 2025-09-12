@@ -1735,6 +1735,7 @@ def generate_all_possible_snvs_from_gencode_positions(
         "cds_len_mismatch",
         "cds_len_not_div_by_3",
     )
+    ht = ht.distinct()
 
     return ht
 
