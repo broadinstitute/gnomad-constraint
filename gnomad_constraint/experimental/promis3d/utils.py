@@ -1823,10 +1823,8 @@ def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
         dd_denovo=var_expr.dd_denovo.annotate(
             **get_kaplanis_sig_gene_annotations(ht.gene_symbol)
         ),
-        dd_denovo_no_transcript_match=(
-            var_expr.dd_denovo_no_transcript_match.annotate(
-                **get_kaplanis_sig_gene_annotations(ht.gene_symbol)
-            ),
+        dd_denovo_no_transcript_match=var_expr.dd_denovo_no_transcript_match.annotate(
+            **get_kaplanis_sig_gene_annotations(ht.gene_symbol)
         ),
         annotation_level_pext=pext_annotation_ht[
             ht.locus, ht.alleles, ht.gene_id, var_expr.most_severe_consequence
