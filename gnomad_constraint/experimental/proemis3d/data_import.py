@@ -691,7 +691,7 @@ def main(args):
 
     if args.process_clinvar_ht or args.import_all:
         process_clinvar_ht(args.clinvar_version).write(
-            get_clinvar_missense_ht(args.clinvar_version).path,
+            get_clinvar_missense_ht().path,
             overwrite=overwrite,
         )
 
