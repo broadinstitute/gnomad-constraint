@@ -144,7 +144,7 @@ def get_methylation_ht(build: str) -> TableResource:
     if build == "GRCh37":
         return ref_grch37.methylation_sites
     elif build == "GRCh38":
-        return ref_grch38.methylation_sites
+        return ref_grch38.methylation_sites.ht()
     else:
         raise ValueError("Build must be one of 'GRCh37' or 'GRCh38'.")
 
