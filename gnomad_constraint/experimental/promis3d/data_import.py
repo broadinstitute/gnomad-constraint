@@ -480,7 +480,13 @@ def process_context_ht(version: str = CURRENT_VERSION) -> hl.Table:
         "mutation_type",
         "methylation_level",
         transcript_consequences=ht.vep.transcript_consequences.map(
-            lambda x: x.select(
+            lambda x: x.annotate(
+                canonical=hl.or_else(x.canonical == 1, False),
+                mane_select=hl.is_defined(x.mane_select),
+                vep_domains=x.domains,
+                residue_ref=x.amino_acids.split("/").first(),
+                residue_alt=x.amino_acids.split("/").last(),
+            ).select(
                 "transcript_id",
                 "gene_id",
                 "gene_symbol",
@@ -490,9 +496,9 @@ def process_context_ht(version: str = CURRENT_VERSION) -> hl.Table:
                 "most_severe_consequence",
                 "sift_score",
                 "polyphen_score",
-                vep_domains=x.domains,
-                residue_ref=x.amino_acids.split("/").first(),
-                residue_alt=x.amino_acids.split("/").last(),
+                "vep_domains",
+                "residue_ref",
+                "residue_alt",
             )
         ),
         gnomad_exomes_filters=ht.filters.exomes,
