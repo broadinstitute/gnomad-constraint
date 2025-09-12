@@ -1,6 +1,6 @@
-"""Script to import data for Promis3D.
+"""Script to import data for Proemis3D.
 
-This script imports data for Promis3D, including COSMIS scores, Varity data, MTR3D data,
+This script imports data for Proemis3D, including COSMIS scores, Varity data, MTR3D data,
 InterPro annotations, Kaplanis variants, Fu variants, ClinVar missense variants,
 constraint metrics, MTR data, RMC data, context data, and Genetics Gym missense scores.
 """
@@ -13,7 +13,7 @@ from gnomad.utils.constraint import oe_confidence_interval
 from gnomad.utils.liftover import default_lift_data
 from hail.utils.misc import divide_null
 
-from gnomad_constraint.experimental.promis3d.resources import (
+from gnomad_constraint.experimental.proemis3d.resources import (
     CURRENT_VERSION,
     get_clinvar_missense_ht,
     get_constraint_metrics_ht,
