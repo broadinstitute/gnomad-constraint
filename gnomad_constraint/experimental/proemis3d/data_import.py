@@ -13,7 +13,7 @@ from gnomad.utils.constraint import oe_confidence_interval
 from gnomad.utils.liftover import default_lift_data
 from hail.utils.misc import divide_null
 
-from gnomad_constraint.experimental.promis3d.resources import (
+from gnomad_constraint.experimental.proemis3d.resources import (
     CURRENT_VERSION,
     get_clinvar_missense_ht,
     get_constraint_metrics_ht,
