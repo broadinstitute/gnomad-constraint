@@ -1,9 +1,9 @@
 """Script with utility functions for the Proemis3D pipeline."""
 
+import io
 import json
 import logging
 import os
-from io import StringIO
 from typing import Dict, Iterator, List, Optional, Union
 
 import hail as hl
@@ -397,7 +397,7 @@ def process_af2_mmcif(
     :return: Sequence or distance matrix.
     """
     parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
+    structure = parser.get_structure(uniprot_id, io.StringIO(mmcif_content))
 
     if distance_matrix:
         return get_structure_dist_matrix(structure)
