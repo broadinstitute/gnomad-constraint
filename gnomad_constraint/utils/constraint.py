@@ -755,86 +755,119 @@ def create_training_set(
     partition_hint: int = 100,
 ) -> hl.Table:
     """
-    Create the training set for the constraint model.
+    Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
 
-    The input ``ht`` should be prepared using
-    ``prepare_ht_for_constraint_calculations``. The ``ht`` is filtered to include only
-    the rows that have a build model annotation. The observed and possible variants are
-    counted by group and annotated with the mutation rate. The Table is then
-    checkpointed to avoid memory and shuffle issues.
+    This function sums the number of possible variants times the mutation rate for all
+    variants, and applies the calibration model separately for CpG transitions and
+    other sites. For sites with coverage lower than the coverage cutoff, the value
+    obtained from the previous step is multiplied by the coverage correction factor.
+    These values are summed across the set of variants of interest to obtain the
+    expected number of variants.
 
-    :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
-    :param mutation_ht: Mutation rate Table.
-    :param partition_hint: Partition hint for the Table. Default is 100.
-    :return: Training set Table.
+    A brief view of how to get the expected number of variants:
+        mu_agg = the number of possible variants * the mutation rate (all variants)
+        predicted_proportion_observed = sum(plateau model slope * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
+        if 0 < coverage < coverage cutoff:
+            coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
+            expected_variants = sum(predicted_proportion_observed * coverage_correction)
+        else:
+            expected_variants = sum(predicted_proportion_observed)
+        The expected_variants are summed across the set of variants of interest to
+        obtain the final expected number of variants.
+
+    Function adds the following annotations all grouped by groupings (output of
+        `annotate_exploded_vep_for_constraint_groupings()`):
+        - observed_variants - observed variant counts annotated by `count_variants`
+          function
+        - predicted_proportion_observed (including those for each population) - the sum
+          of mutation rate adjusted by plateau models and possible variant counts
+        - possible_variants (including those for each population if `pops` is
+          specified) - the sum of possible variant counts derived from the context
+          Table
+        - expected_variants (including those for each population if `pops` is
+          specified) - the sum of expected variant counts
+        - mu - sum(mu_snp * possible_variant * coverage_correction)
+        - obs_exp - observed:expected ratio
+        - annotations annotated by `annotate_exploded_vep_for_constraint_groupings()`
+
+    :param exome_ht: Exome sites Table (output of `prepare_ht_for_constraint_calculations
+        ()`) filtered to autosomes and pseudoautosomal regions.
+    :param context_ht: Context Table (output of `prepare_ht_for_constraint_calculations
+        ()`) filtered to autosomes and pseudoautosomal regions.
+    :param mutation_ht: Mutation rate Table with 'mu_snp' field.
+    :param plateau_models: Linear models (output of `build_models()` in
+        gnomad_methods`), with the values of the dictionary formatted as a
+        StrucExpression of intercept and slope, that calibrates mutation rate to
+        proportion observed for high coverage exome. It includes models for CpG sites,
+        non-CpG sites, and each population in `POPS`.
+    :param coverage_model: A linear model (output of `build_models()` in
+        gnomad_methods), formatted as a Tuple of intercept and slope, that calibrates a
+        given coverage level to observed:expected ratio. It's a correction factor for
+        low coverage sites.
+    :param log10_coverage: Whether to convert coverage sites with log10 when building the coverage model. Default is True.
+    :param max_af: Maximum allele frequency for a variant to be included in returned
+        counts. Default is 0.001.
+    :param keep_annotations: Annotations to keep in the context Table and exome Table.
+    :param pops: List of populations to use for downsampling counts. Default is ().
+    :param downsamplings: Optional List of integers specifying what downsampling
+        indices to obtain. Default is None, which will return all downsampling counts.
+    :param obs_pos_count_partition_hint: Target number of partitions for
+        aggregation when counting variants. Default is 2000.
+    :param expected_variant_partition_hint: Target number of partitions for sum
+        aggregators when computation is done. Default is 1000.
+    :param custom_vep_annotation: The customized model (one of
+        "transcript_consequences" or "worst_csq_by_gene"). Default is None.
+    :param coverage_metric: Name for metric to use for coverage. Default is "exome_coverage".
+    :param high_cov_definition: Median coverage cutoff. Sites with coverage above this cutoff
+        are considered well covered and was used to build plateau models. Sites
+        below this cutoff have low coverage and was used to build coverage models.
+        Default is `COVERAGE_CUTOFF`.
+    :param low_coverage_filter: Lower median coverage cutoff for coverage filter.
+        Sites with coverage below this cutoff will be removed from`exome_ht` and
+        'context_ht'.
+    :param use_mane_select: Use MANE Select transcripts in grouping.
+        Only used when `custom_vep_annotation` is set to 'transcript_consequences'.
+        Default is True.
+
+    :return: Table with `expected_variants` (expected variant counts) and `obs_exp`
+        (observed:expected ratio) annotations.
     """
-    # Selecting the only fields that are needed for the training set and filtering out
-    # the rows that are not needed, then checkpointing the Table. This is added to
-    # help avoid memory and shuffle issues.
-    ht = ht.transmute(**ht.calibrate_mu)
-    # TODO: From Konrad's script parser.add_argument('--skip_af_filter_upfront',
-    #  help='Skip AF filter up front (to be applied later to ensure that it is not
-    #  affecting population-specific constraint): not generally recommended',
-    #  action='store_true')
-    ht = ht.filter(hl.is_defined(ht.build_model) & (ht.possible_variants > 0))
-    select_fields = {*MU_GROUPING, *MUTATION_TYPE_FIELDS, *CALIBRATION_GROUPING}
-    ht = ht.select(
-        *select_fields,
-        "observed_variants",
-        "possible_variants",
-    )
-    ht = ht.checkpoint(new_temp_file("create_training_set", "ht"))
+    # Filter context ht to sites with defined exome coverage_metric.
+    context_ht = context_ht.filter(hl.is_defined(context_ht[coverage_metric]))
 
-    # Aggregate and count the observed and possible variants by group.
-    ht = count_observed_and_possible_by_group(
-        ht,
-        ht.possible_variants,
-        ht.observed_variants,
-        additional_grouping=("methylation_level",)
-        + MUTATION_TYPE_FIELDS
-        + CALIBRATION_GROUPING,
-        partition_hint=partition_hint,
-    )
-
-    # Annotate with mutation rate.
-    ht = annotate_with_mu(ht, mutation_ht)
-
-    return ht
-
-
-def _prepare_ht_for_apply_models(
-    ht: hl.Table,
-    custom_vep_annotation: str = "transcript_consequences",
-    use_mane_select: bool = False,
-) -> Tuple[hl.Table, List[str]]:
-    """
-    Prepare a preprocessed Table for model application.
-
-    Promotes ``calibrate_mu`` fields, filters to rows with a defined apply model
-    annotation and positive possible variant count, and explodes VEP annotations
-    to per-transcript rows.
-
-    :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
-    :param custom_vep_annotation: Custom VEP annotation to use. Default is
-        ``"transcript_consequences"``.
-    :param use_mane_select: Whether to include MANE Select as a group. Default is
-        False.
-    :return: Tuple of (prepared Table, list of VEP grouping field names).
-    """
-    if custom_vep_annotation == "worst_csq_by_gene" and use_mane_select:
-        raise ValueError(
-            "'mane_select' cannot be set to True when custom_vep_annotation is set"
-            " to 'worst_csq_by_gene'."
+    if low_coverage_filter is not None:
+        context_ht = context_ht.filter(
+            context_ht[coverage_metric] >= low_coverage_filter
         )
-    include_canonical_group = custom_vep_annotation != "worst_csq_by_gene"
-    include_mane_select_group = include_canonical_group and use_mane_select
+        exome_ht = exome_ht.filter(exome_ht[coverage_metric] >= low_coverage_filter)
 
-    ht = ht.annotate(**ht.calibrate_mu)
-    ht = ht.filter(hl.is_defined(ht.apply_model) & (ht.possible_variants > 0))
+    include_canonical_group = False
+    include_mane_select_group = False
 
-    ht, groupings = annotate_exploded_vep_for_constraint_groupings(
-        ht=ht,
-        vep_annotation=custom_vep_annotation,
+    # Add necessary constraint annotations for grouping.
+    if custom_vep_annotation == "worst_csq_by_gene":
+        vep_annotation = "worst_csq_by_gene"
+        if use_mane_select:
+            raise ValueError(
+                "'mane_select' cannot be set to True when custom_vep_annotation is set"
+                " to 'worst_csq_by_gene'."
+            )
+    else:
+        vep_annotation = "transcript_consequences"
+        include_canonical_group = True
+        include_mane_select_group = use_mane_select
+
+    context_ht, _ = annotate_exploded_vep_for_constraint_groupings(
+        ht=context_ht,
+        coverage_expr=context_ht[coverage_metric],
+        vep_annotation=vep_annotation,
+        include_canonical_group=include_canonical_group,
+        include_mane_select_group=include_mane_select_group,
+    )
+    exome_ht, grouping = annotate_exploded_vep_for_constraint_groupings(
+        ht=exome_ht,
+        coverage_expr=exome_ht[coverage_metric],
+        vep_annotation=vep_annotation,
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )

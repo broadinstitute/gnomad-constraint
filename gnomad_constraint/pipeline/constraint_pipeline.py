@@ -97,9 +97,7 @@ def main(args):
             "supports v2.1.1."
         )
 
-    # Generate both "plateau" and "coverage" models unless specified to skip the
-    # coverage model.
-    models = ["plateau", "coverage"] if not skip_coverage_model else ["plateau"]
+    log10_coverage = True if coverage_model_type == "logarithmic" else False
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = constraint_res.get_constraint_resources(
