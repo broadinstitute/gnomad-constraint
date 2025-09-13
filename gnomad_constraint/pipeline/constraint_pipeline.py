@@ -330,10 +330,7 @@ def main(args):
             "Allele number tables are not available for versions prior to v4.0."
         )
 
-    if coverage_model_type == "logarithmic":
-        log10_coverage = True
-    elif coverage_model_type == "linear":
-        log10_coverage = False
+    log10_coverage = True if coverage_model_type == "logarithmic" else False
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = get_constraint_resources(
