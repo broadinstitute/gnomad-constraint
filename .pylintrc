@@ -5,9 +5,10 @@ notes=FIXME,
       XXX,
 
 [MESSAGES CONTROL]
-init-hook="from pylint.config import find_pylintrc; import os, sys; sys.path.append(os.path.dirname(find_pylintrc()))"
 
 disable=
+  # Disable because ~ is used in a lot of hail code where it is not an error
+  invalid-unary-operand-type,
   unused-wildcard-import,
   R,
   C,

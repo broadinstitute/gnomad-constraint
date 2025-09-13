@@ -1,9 +1,9 @@
 """Script with utility functions for the Proemis3D pipeline."""
 
+import io
 import json
 import logging
 import os
-from io import StringIO
 from typing import Dict, Iterator, List, Optional, Union
 
 import hail as hl
@@ -399,7 +399,7 @@ def process_af2_mmcif(
     :return: Sequence or distance matrix.
     """
     parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(uniprot_id, StringIO(mmcif_content))
+    structure = parser.get_structure(uniprot_id, io.StringIO(mmcif_content))
 
     if distance_matrix:
         return get_structure_dist_matrix(structure)
@@ -502,8 +502,7 @@ def process_af2_structures(
             uniprot_id = os.path.basename(file_path).split("-")[1]
 
             # Process the file content.
-            # af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
-            af2_data = None
+            af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
             result.append((uniprot_id, af2_data))
 
         return pd.DataFrame(result, columns=["uniprot_id", col_name])
@@ -612,16 +611,16 @@ def get_gencode_positions(
     gencode_gtf_ht = gencode_gtf_ht.filter(gencode_gtf_ht.feature == "CDS")
 
     # Get list of intervals for each transcript, and keep strand information.
-    gencode_gtf_ht = gencode_gtf_ht.group_by("transcript_id", "strand").aggregate(
-        intervals=hl.agg.collect(gencode_gtf_ht.interval)
-    )
+    gencode_gtf_ht = gencode_gtf_ht.annotate(chrom=gencode_gtf_ht.interval.start.contig)
+    gencode_gtf_ht = gencode_gtf_ht.group_by(
+        "transcript_id", "strand", "chrom"
+    ).aggregate(intervals=hl.agg.collect(gencode_gtf_ht.interval))
 
     # Get CDS positions and lengths for each transcript in the GTF data.
     positions = gencode_gtf_ht.intervals.flatmap(
         lambda x: hl.range(x.start.position, x.end.position + 1)
     )
     gencode_gtf_ht = gencode_gtf_ht.transmute(
-        chrom=gencode_gtf_ht.intervals[0].start.contig,
         gtf_cds_pos=hl.sorted(positions),
         gtf_cds_len=hl.len(positions),
     ).key_by("transcript_id")
@@ -2096,7 +2095,7 @@ def create_missense_viewer_input_ht(
         **pos_ht[proemis3d_ht.uniprot_id, proemis3d_ht.transcript_id]
     )
     proemis3d_ht = proemis3d_ht.annotate(
-        regions=ht.regions.map(
+        regions=proemis3d_ht.regions.map(
             lambda x: x.select(
                 chrom=proemis3d_ht.locus_by_aapos[x.start].contig,
                 start=hl.if_else(
@@ -2491,6 +2490,7 @@ def generate_all_possible_snvs_from_gencode_positions(
         "cds_len_mismatch",
         "cds_len_not_div_by_3",
     )
+    ht = ht.distinct()
 
     return ht
 
@@ -2560,7 +2560,7 @@ def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
             ),
             keys=c["keys"],
             temp_path_prefix=n,
-            annotation_name=c["annotation_name"],
+            annotation_name=c.get("annotation_name"),
         )[ht.key]
         for n, c in VARIANT_LEVEL_ANNOTATION_CONFIG.items()
     }
@@ -2679,10 +2679,7 @@ def create_per_snv_combined_ht(
     ht = annotate_snvs_with_variant_level_data(ht).naive_coalesce(5000).cache()
     hl._set_flags(use_new_shuffle=None)
 
-    ht = ht.annotate(
-        residue_ref=ht.aminoacid_ref,
-        residue_alt=ht.variant_level_annotations.residue_alt,
-    )
+    ht = ht.annotate(residue_ref=ht.aminoacid_ref)
 
     base_residue_ht = (
         ht.key_by("transcript_id", "uniprot_id", "residue_index")

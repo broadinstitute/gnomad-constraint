@@ -13,7 +13,7 @@ from gnomad.utils.constraint import oe_confidence_interval
 from gnomad.utils.liftover import default_lift_data
 from hail.utils.misc import divide_null
 
-from gnomad_constraint.experimental.promis3d.resources import (
+from gnomad_constraint.experimental.proemis3d.resources import (
     CURRENT_VERSION,
     get_clinvar_missense_ht,
     get_constraint_metrics_ht,
@@ -374,13 +374,12 @@ def process_pext_annotation_ht(ht) -> hl.Table:
     )
 
 
-def process_gnomad_de_novo_ht() -> hl.Table:
+def process_gnomad_de_novo_ht(ht) -> hl.Table:
     """
     Process gnomAD de novo Hail Table.
 
     :return: Hail Table with gnomAD de novo variants.
     """
-    ht = get_gnomad_de_novo_ht().ht()
     ht = ht.key_by("locus", "alleles")
     ht = ht.select("de_novo_AC", "p_de_novo_stats")
 
@@ -691,7 +690,7 @@ def main(args):
 
     if args.process_clinvar_ht or args.import_all:
         process_clinvar_ht(args.clinvar_version).write(
-            get_clinvar_missense_ht(args.clinvar_version).path,
+            get_clinvar_missense_ht().path,
             overwrite=overwrite,
         )
 
