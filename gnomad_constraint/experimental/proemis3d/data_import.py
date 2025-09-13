@@ -374,13 +374,12 @@ def process_pext_annotation_ht(ht) -> hl.Table:
     )
 
 
-def process_gnomad_de_novo_ht() -> hl.Table:
+def process_gnomad_de_novo_ht(ht) -> hl.Table:
     """
     Process gnomAD de novo Hail Table.
 
     :return: Hail Table with gnomAD de novo variants.
     """
-    ht = get_gnomad_de_novo_ht().ht()
     ht = ht.key_by("locus", "alleles")
     ht = ht.select("de_novo_AC", "p_de_novo_stats")
 

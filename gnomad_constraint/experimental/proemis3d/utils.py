@@ -609,16 +609,16 @@ def get_gencode_positions(
     gencode_gtf_ht = gencode_gtf_ht.filter(gencode_gtf_ht.feature == "CDS")
 
     # Get list of intervals for each transcript, and keep strand information.
-    gencode_gtf_ht = gencode_gtf_ht.group_by("transcript_id", "strand").aggregate(
-        intervals=hl.agg.collect(gencode_gtf_ht.interval)
-    )
+    gencode_gtf_ht = gencode_gtf_ht.annotate(chrom=gencode_gtf_ht.interval.start.contig)
+    gencode_gtf_ht = gencode_gtf_ht.group_by(
+        "transcript_id", "strand", "chrom"
+    ).aggregate(intervals=hl.agg.collect(gencode_gtf_ht.interval))
 
     # Get CDS positions and lengths for each transcript in the GTF data.
     positions = gencode_gtf_ht.intervals.flatmap(
         lambda x: hl.range(x.start.position, x.end.position + 1)
     )
     gencode_gtf_ht = gencode_gtf_ht.transmute(
-        chrom=gencode_gtf_ht.intervals[0].start.contig,
         gtf_cds_pos=hl.sorted(positions),
         gtf_cds_len=hl.len(positions),
     ).key_by("transcript_id")
@@ -1805,7 +1805,7 @@ def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
             ),
             keys=c["keys"],
             temp_path_prefix=n,
-            annotation_name=c["annotation_name"],
+            annotation_name=c.get("annotation_name"),
         )[ht.key]
         for n, c in VARIANT_LEVEL_ANNOTATION_CONFIG.items()
     }
@@ -1924,10 +1924,7 @@ def create_per_snv_combined_ht(
     ht = annotate_snvs_with_variant_level_data(ht).naive_coalesce(5000).cache()
     hl._set_flags(use_new_shuffle=None)
 
-    ht = ht.annotate(
-        residue_ref=ht.aminoacid_ref,
-        residue_alt=ht.variant_level_annotations.residue_alt,
-    )
+    ht = ht.annotate(residue_ref=ht.aminoacid_ref)
 
     base_residue_ht = (
         ht.key_by("transcript_id", "uniprot_id", "residue_index")
