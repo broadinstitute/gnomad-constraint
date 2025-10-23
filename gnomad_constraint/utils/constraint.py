@@ -482,6 +482,9 @@ def apply_models(
         )
         exome_ht = exome_ht.filter(exome_ht[coverage_metric] >= low_coverage_filter)
 
+    include_canonical_group = False
+    include_mane_select_group = False
+
     # Add necessary constraint annotations for grouping.
     if custom_vep_annotation == "worst_csq_by_gene":
         vep_annotation = "worst_csq_by_gene"
@@ -490,7 +493,6 @@ def apply_models(
                 "'mane_select' cannot be set to True when custom_vep_annotation is set"
                 " to 'worst_csq_by_gene'."
             )
-
     else:
         vep_annotation = "transcript_consequences"
         include_canonical_group = True
