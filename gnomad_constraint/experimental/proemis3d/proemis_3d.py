@@ -474,6 +474,15 @@ def main(args):
             # print(ht.filter(ht.uniprot_id == "A0A024R2K8").collect())
             plddt_out = f".plddt_cutoff_{args.plddt_cutoff}"
 
+        pae_out = ""
+        pae_ht = None
+        if args.pae_cutoff is not None:
+            pae_ht = hl.read_table(
+                "gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_pae.ht"
+            )
+            pae_ht = pae_ht.key_by("uniprot_id", "aa_index")
+            pae_out = f".pae_cutoff_{args.pae_cutoff}"
+
         # if args.run_greedy:
         #    logger.info("Running greedy algorithm.")
         #    res = resources.run_greedy
@@ -487,32 +496,13 @@ def main(args):
             else f".min_exp_mis_{args.min_exp_mis}"
         )
 
-        if args.run_forward_original:
-            # logger.info("Running forward algorithm.")
-            # res = resources.run_forward
-            ht = determine_regions_with_min_oe_upper(
-                af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
-            )
-            # ht = ht.repartition(200).checkpoint(
-            #    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.chisq.ht",
-            #    _read_if_exists=True,
-            # )
-            ht = ht.repartition(1).checkpoint(
-                f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}.chisq.ht",
-                _read_if_exists=True,
-            )
-            output_path = proemis3d_res.get_forward_ht(
-                name=f"oe_upper_chisq{min_exp_mis_out}{plddt_out}"
-            ).path
-            forward_ht = run_forward(
-                ht, min_exp_mis=args.min_exp_mis, oe_upper_method="chisq"
-            )
-            # forward_ht = forward_ht.checkpoint(res.forward_ht.path, overwrite=overwrite)
-            forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
-            forward_ht.show()
-
         ht = determine_regions_with_min_oe_upper(
-            af2_ht, ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
+            af2_ht,
+            ht,
+            pae_ht=pae_ht,
+            min_exp_mis=args.min_exp_mis,
+            oe_upper_method="gamma",
+            max_pae=args.pae_cutoff,
         )
         # ht = ht.repartition(200).checkpoint(
         #    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
@@ -520,7 +510,7 @@ def main(args):
         #    overwrite=True,
         # )
         ht = ht.repartition(1).checkpoint(
-            f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
+            f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
             _read_if_exists=True,
             # overwrite=True,
         )
@@ -530,7 +520,7 @@ def main(args):
             # logger.info("Running forward algorithm.")
             # res = resources.run_forward
             output_path = proemis3d_res.get_forward_ht(
-                name=f"oe_upper_gamma{min_exp_mis_out}{plddt_out}"
+                name=f"oe_upper_gamma{min_exp_mis_out}{plddt_out}{pae_out}"
             ).path
             forward_ht = run_forward(
                 ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
@@ -554,7 +544,7 @@ def main(args):
 
         if args.run_forward_no_catch_all:
             output_path = proemis3d_res.get_forward_ht(
-                name=f"oe_upper_gamma.no_catch_all{min_exp_mis_out}{plddt_out}"
+                name=f"oe_upper_gamma.no_catch_all{min_exp_mis_out}{plddt_out}{pae_out}"
             ).path
             forward_ht = run_forward_no_catch_all(ht, min_exp_mis=args.min_exp_mis)
             forward_ht = forward_ht.checkpoint(output_path, overwrite=overwrite)
@@ -712,11 +702,6 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--run-forward-original",
-        help="",
-        action="store_true",
-    )
-    parser.add_argument(
         "--run-forward-no-catch-all",
         help="",
         action="store_true",
@@ -738,6 +723,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--plddt-cutoff",
         help="Minimum pLDDT cutoff to filter on.",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--pae-cutoff",
+        help="Maximum PAE cutoff to filter on.",
         type=float,
         default=None,
     )

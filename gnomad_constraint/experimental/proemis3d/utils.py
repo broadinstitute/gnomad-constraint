@@ -877,10 +877,11 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
 def get_3d_residue(
     dist_mat_expr: hl.expr.ArrayExpression,
     oe_expr: hl.expr.ArrayExpression,
+    pae_expr: Optional[hl.expr.ArrayExpression] = None,
     alpha: float = 0.05,
-    min_exp_mis: int = MIN_EXP_MIS,
-    max_dist: Optional[float] = None,
     oe_upper_method: str = "gamma",
+    min_exp_mis: int = MIN_EXP_MIS,
+    max_pae: Optional[float] = 15,
 ) -> hl.expr.StructExpression:
     """
     Get the 3D residue with the lowest upper bound of the OE confidence interval.
@@ -897,11 +898,25 @@ def get_3d_residue(
     dist_mat_expr = add_idx_to_array(
         dist_mat_expr, "residue_index", element_name="dist"
     )
+
+    if pae_expr is not None and max_pae is not None:
+        dist_mat_expr = hl.zip(dist_mat_expr, pae_expr).map(
+            lambda x: x[0].annotate(pae=x[1])
+        )
+
     dist_mat_expr = hl.sorted(dist_mat_expr, key=lambda x: x.dist)
-    if max_dist is not None:
-        dist_mat_expr = dist_mat_expr.filter(lambda x: x.dist <= max_dist)
-    # dist_mat_expr = dist_mat_expr.map(lambda x: x.drop("dist"))
-    dist_mat_expr = dist_mat_expr.map(lambda x: x)
+
+    drop_fields = []
+    if pae_expr is not None and max_pae is not None:
+        pae_cutoff_idx = hl.enumerate(dist_mat_expr).find(lambda x: x[1].pae > max_pae)
+        dist_mat_expr = hl.if_else(
+            hl.is_defined(pae_cutoff_idx),
+            dist_mat_expr[: pae_cutoff_idx[0]],
+            dist_mat_expr,
+        )
+        drop_fields.append("pae")
+
+    dist_mat_expr = dist_mat_expr.map(lambda x: x.drop(*drop_fields))
 
     # Annotate neighbor observed and expected, cumulative observed and expected, and
     # upper bound of OE confidence interval.
@@ -920,9 +935,11 @@ def get_3d_residue(
 def determine_regions_with_min_oe_upper(
     af2_ht: hl.Table,
     oe_codon_ht: hl.Table,
-    min_exp_mis: int = MIN_EXP_MIS,
-    max_dist: Optional[float] = None,
+    pae_ht: Optional[hl.Table] = None,
+    alpha: float = 0.05,
     oe_upper_method: str = "gamma",
+    min_exp_mis: int = MIN_EXP_MIS,
+    max_pae: Optional[float] = 15,
 ) -> hl.Table:
     """
     Determine the most intolerant region for each UniProt ID and residue index.
@@ -934,36 +951,44 @@ def determine_regions_with_min_oe_upper(
     :return: Hail Table with the most intolerant region for each UniProt ID and residue
         index
     """
-    af2_ht = af2_ht.annotate(oe=oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript)
-    af2_ht = af2_ht.explode(af2_ht.oe)
-    af2_ht = af2_ht.annotate(**af2_ht.oe)
-    af2_ht.show(5)
-    af2_ht = af2_ht.transmute(
-        transcript_id=af2_ht.enst,
-        oe=af2_ht.oe,
+    ht = af2_ht.annotate(oe=oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript)
+    ht = ht.explode(ht.oe)
+    ht = ht.annotate(
+        **ht.oe,
+        **(
+            {"pae": pae_ht[ht.uniprot_id, ht.aa_index].pae}
+            if pae_ht is not None
+            else {}
+        ),
+    )
+
+    ht = ht.transmute(
+        transcript_id=ht.enst,
+        oe=ht.oe,
         min_oe_upper=get_3d_residue(
-            af2_ht.dist_mat,
-            af2_ht.oe,
-            min_exp_mis=min_exp_mis,
-            max_dist=max_dist,
+            ht.dist_mat,
+            ht.oe,
+            pae_expr=ht.pae if pae_ht is not None else None,
+            alpha=alpha,
             oe_upper_method=oe_upper_method,
+            min_exp_mis=min_exp_mis,
+            max_pae=max_pae,
         ),
     )
-    # print(af2_ht.filter(af2_ht.uniprot_id == "A0A024R2K8").collect())
 
-    af2_ht = af2_ht.group_by("uniprot_id", "transcript_id").aggregate(
-        oe=hl.agg.take(af2_ht.oe, 1)[0],
+    ht = ht.group_by("uniprot_id", "transcript_id").aggregate(
+        oe=hl.agg.take(ht.oe, 1)[0],
         min_oe_upper=hl.agg.collect(
-            af2_ht.min_oe_upper.annotate(residue_index=af2_ht.aa_index)
+            ht.min_oe_upper.annotate(residue_index=ht.aa_index).drop("dist")
         ),
     )
 
-    af2_ht = af2_ht.annotate(
-        oe=hl.enumerate(af2_ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
-        min_oe_upper=hl.sorted(af2_ht.min_oe_upper, key=lambda x: x.oe),
+    ht = ht.annotate(
+        oe=hl.enumerate(ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
+        min_oe_upper=hl.sorted(ht.min_oe_upper, key=lambda x: x.oe),
     )
 
-    return af2_ht
+    return ht
 
 
 ########################################################################################
