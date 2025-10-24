@@ -1163,16 +1163,45 @@ def calculate_oe_neq_1_chisq(
     return ((obs_expr - exp_expr) ** 2) / exp_expr
 
 
-def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
+def run_forward(
+    ht,
+    min_exp_mis=MIN_EXP_MIS,
+    oe_upper_method: str = "gamma",
+    model_comparison_method: str = "aic",
+    lrt_alpha: float = 0.001,
+    lrt_df_added: int = 1,
+    bonferroni_per_round: bool = True,
+    aic_weight_thresh: float = 0.80,
+):
     """
     Run the forward algorithm to find the most intolerant region.
 
+
+    model_comparison_method:
+      - "aic"         : choose region if AIC(candidate) < AIC(current)
+      - "aic_weight"  : choose region if Akaike weight(candidate) >= aic_weight_thresh
+      - "lrt"         : choose region if LRT p-value <= (alpha [Bonferroni-adjusted per round if enabled])
+
     :param ht: Hail Table with the most intolerant region for each UniProt ID and residue
-        index
+        index.
+    :param min_exp_mis: Minimum number of expected missense variants in a region to be
+        considered for constraint calculation. Default is MIN_EXP_MIS.
+    :param oe_upper_method: Method to use for calculating the upper bound of the OE
+        confidence interval. Default is "gamma".
+    :param model_comparison_method: Method to use for comparing the candidate region to
+        the current region. Options are "aic", "aic_weight", and "lrt". Default is
+        "aic".
+    :param lrt_alpha: Significance level for the LRT. Default is 0.001.
+    :param lrt_df_added: Degrees of freedom added per region for the LRT. Default is 1.
+    :param bonferroni_per_round: Whether to adjust the alpha level by the number of
+        candidates scanned this round. Default is True.
+    :param aic_weight_thresh: Threshold for the Akaike weight. Default is 0.80.
     :return: Hail Table annotated with the observed and expected values for each residue.
     """
     if oe_upper_method not in ["gamma", "chisq"]:
         raise ValueError(f"Invalid OE upper method: {oe_upper_method}")
+    if model_comparison_method not in {"aic", "aic_weight", "lrt"}:
+        raise ValueError(f"Invalid model comparison method: {model_comparison_method}")
 
     num_residues = ht.oe.length()
     null_region = hl.range(num_residues)
@@ -1187,7 +1216,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
             )
         ),
         selected=hl.empty_array(null_model.dtype),
-        selected_nll=0,
+        selected_nll=0.0,
         best_aic=getAIC(null_model, null_model.nll),
         found_best=False,
     )
@@ -1197,19 +1226,12 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
     # ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
     ht = ht.repartition(1, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
-    ht.describe()
-    ht.show(5)
-    # print(ht.oe.collect())
     round_num = 1
     while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
         # For each region in regions, update the list of selected by
         # removing the residues in the region from the "catch all remaining"
         # region, and adding the new region to the selected list.
         region_expr = prep_region_struct(ht.region, ht.oe)
-        # TODO: Consider adding a checkpoint here or after the next step.
-        # ht = ht.annotate(_region=region_expr).checkpoint(
-        #    hl.utils.new_temp_file(f"forward_round_{round_num}.prep", "ht")
-        # )
         ht = ht.annotate(_region=region_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep1", "ht")
         )
@@ -1218,8 +1240,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
         ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep2", "ht")
         )
-        updated_null_expr = ht._updated_null
-        updated_null_expr = prep_region_struct(updated_null_expr.region, ht.oe)
+        updated_null_expr = prep_region_struct(ht._updated_null.region, ht.oe)
         ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep3", "ht")
         )
@@ -1230,15 +1251,16 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
             region_nll=region_expr.nll,
             nll=updated_null_expr.nll + ht.selected_nll + region_expr.nll,
         )
+
+        # Scan candidates this round; keep those with enough expected missense.
         ht2 = ht.select(exp=region_expr.exp, nll=region_expr.nll)
-        ht2 = ht2.filter(
-            hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)
-        )  # .checkpoint(
-        #    hl.utils.new_temp_file(f"forward_round_{round_num}.scan1", "ht")
-        # )
+        ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis))
+
+        # For each (uniprot, transcript), find argmin by NLL + count candidates.
         ht2 = (
             ht2.group_by("uniprot_id", "transcript_id")
             .aggregate(
+                m_candidates=hl.agg.count(),
                 **hl.agg.fold(
                     hl.missing(hl.tstruct(min_idx=hl.tint, min_nll=hl.tfloat)),
                     lambda accum: (
@@ -1257,7 +1279,7 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
                         .when(accum1.min_nll <= accum2.min_nll, accum1)
                         .default(accum2)
                     ),
-                )
+                ),
             )
             .checkpoint(
                 hl.utils.new_temp_file(f"forward_round_{round_num}.scan2", "ht")
@@ -1271,43 +1293,80 @@ def run_forward(ht, min_exp_mis=MIN_EXP_MIS, oe_upper_method: str = "gamma"):
             hl.utils.new_temp_file(f"forward_round_{round_num}.scan3", "ht")
         )
 
-        # Get AIC of best candidate model.
         best_region = ht2[ht.uniprot_id, ht.transcript_id].best_region
-        region_expr = hl.struct(region=ht.region)
+        m_candidates = hl.or_else(ht2[ht.uniprot_id, ht.transcript_id].m_candidates, 1)
 
-        # Update region list.
-        region_expr = remove_residues_from_region(region_expr, best_region).region
-        region_expr = hl.or_missing(region_expr.length() > 0, region_expr)
+        # Totals for LRT (candidate only if best_region defined).
+        current_nll = ht.selected_nll + ht.null_model.nll
+        candidate_nll = hl.or_missing(hl.is_defined(best_region), best_region.nll)
 
-        updated_null_model = best_region.null_model
-        candidate_model = ht.selected.append(best_region.drop("null_model"))
-        updated_vals = {
-            "null_model": updated_null_model,
-            "selected": candidate_model,
-            "selected_nll": best_region.region_nll + ht.selected_nll,
-            "best_aic": getAIC(updated_null_model, 0)
-            + getAIC(candidate_model, best_region.nll),
-            "region": region_expr,
-        }
-        curr_vals = {k: ht[k] for k in updated_vals}
-        curr_vals["region"] = hl.missing(region_expr.dtype)
-
-        found_best = (
-            ht.found_best
-            | hl.is_missing(best_region)
-            | (updated_vals["best_aic"] >= ht.best_aic)
+        # Candidate AIC (only if defined).
+        aic_cand = hl.or_missing(
+            hl.is_defined(best_region),
+            getAIC(best_region.null_model, 0)
+            + getAIC(
+                ht.selected.append(best_region.drop("null_model")), best_region.nll
+            ),
         )
-        curr_vals = hl.struct(**curr_vals)
-        updated_vals = hl.struct(**updated_vals)
+
+        # Build found_best as a fresh per-row expression.
+        found_best_expr = ht.found_best | hl.is_missing(best_region)
+
+        if model_comparison_method == "lrt":
+            lrt_stat = hl.or_missing(
+                hl.is_defined(best_region), 2 * (current_nll - candidate_nll)
+            )
+            p_lrt = hl.or_missing(
+                hl.is_defined(best_region), hl.pchisqtail(lrt_stat, lrt_df_added)
+            )
+            adj_alpha = hl.if_else(
+                bonferroni_per_round, lrt_alpha / hl.max(1, m_candidates), lrt_alpha
+            )
+            found_best_expr |= p_lrt > adj_alpha
+
+        elif model_comparison_method == "aic":
+            found_best_expr |= aic_cand >= ht.best_aic
+
+        elif model_comparison_method == "aic_weight":
+            w_cand = 1 / (1 + hl.exp(0.5 * (aic_cand - ht.best_aic)))
+            found_best_expr |= w_cand < aic_weight_thresh
+
+        # Current (no-change) state.
+        curr_vals = hl.struct(
+            null_model=ht.null_model,
+            selected=ht.selected,
+            selected_nll=ht.selected_nll,
+            best_aic=ht.best_aic,
+            region=hl.missing(ht.region.dtype),
+        )
+
+        # Build updated state LAZILY so we don't touch best_region when stopping.
+        def _updated_vals():
+            next_region = remove_residues_from_region(
+                hl.struct(region=ht.region), best_region
+            ).region
+            next_region = hl.or_missing(
+                hl.is_defined(next_region) & (next_region.length() > 0), next_region
+            )
+            return hl.struct(
+                null_model=best_region.null_model,
+                selected=ht.selected.append(best_region.drop("null_model")),
+                selected_nll=ht.selected_nll + best_region.region_nll,
+                best_aic=aic_cand,
+                region=next_region,
+            )
+
         ht = ht.annotate(
-            **hl.if_else(found_best, curr_vals, updated_vals),
-            found_best=found_best,
+            **hl.if_else(found_best_expr, curr_vals, _updated_vals()),
+            found_best=found_best_expr,
         )
 
+        # Keep only rows that still have remaining candidate regions or the idx==0.
         ht = ht.filter(hl.is_defined(ht.region) | (ht.idx == 0))
         ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}", "ht"))
         round_num += 1
 
+    # Flatten final selected + null, explode to residues, compute per-residue stats.
     selected_expr = ht.selected.map(lambda x: x.annotate(is_null=False))
     ht = ht.select(
         selected=add_idx_to_array(

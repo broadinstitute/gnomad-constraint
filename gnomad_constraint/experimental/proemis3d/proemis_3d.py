@@ -520,10 +520,17 @@ def main(args):
             # logger.info("Running forward algorithm.")
             # res = resources.run_forward
             output_path = proemis3d_res.get_forward_ht(
-                name=f"oe_upper_gamma{min_exp_mis_out}{plddt_out}{pae_out}"
+                name=f"oe_upper_gamma.{args.model_comparison_method}{min_exp_mis_out}{plddt_out}{pae_out}"
             ).path
             forward_ht = run_forward(
-                ht, min_exp_mis=args.min_exp_mis, oe_upper_method="gamma"
+                ht,
+                min_exp_mis=args.min_exp_mis,
+                oe_upper_method="gamma",
+                model_comparison_method=args.model_comparison_method,
+                lrt_alpha=args.lrt_alpha,
+                lrt_df_added=args.lrt_df_added,
+                bonferroni_per_round=args.bonferroni_per_round,
+                aic_weight_thresh=args.aic_weight_thresh,
             )
             plddt_ht = hl.read_table(
                 "gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_plddt.ht"
@@ -700,6 +707,36 @@ if __name__ == "__main__":
         "--run-forward",
         help="",
         action="store_true",
+    )
+    parser.add_argument(
+        "--model-comparison-method",
+        help="",
+        type=str,
+        default="aic",
+        choices=["aic", "aic_weight", "lrt"],
+    )
+    parser.add_argument(
+        "--lrt-alpha",
+        help="",
+        type=float,
+        default=0.001,
+    )
+    parser.add_argument(
+        "--bonferroni-per-round",
+        help="",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--aic-weight-thresh",
+        help="",
+        type=float,
+        default=0.80,
+    )
+    parser.add_argument(
+        "--lrt-df-added",
+        help="",
+        type=int,
+        default=1,
     )
     parser.add_argument(
         "--run-forward-no-catch-all",
