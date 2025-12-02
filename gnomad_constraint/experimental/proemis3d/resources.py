@@ -41,7 +41,9 @@ def get_proemis3d_root(version: str = CURRENT_VERSION, test: bool = False) -> st
     :param test: Whether to use a tmp path for testing.
     :return: Root path to proemis3d resources.
     """
-    return "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run"  # "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run"
+    return "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run"
+    #return "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run"
+    
     # return (
     #    f"gs://gnomad-tmp/gnomad_v{version}_testing/constraint/proemis3d"
     #    if test
@@ -305,7 +307,7 @@ def get_missense_viewer_input_ht(version: str = CURRENT_VERSION) -> TableResourc
     :return: Missense viewer input Hail Table resource.
     """
     return TableResource(
-        f"gs://gnomad/v{version}/constraint/proemis3d/missense_viewer_input.ht"
+        f"{get_proemis3d_root(version)}/missense_viewer_input.ht"
     )
 
 

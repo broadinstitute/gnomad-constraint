@@ -24,7 +24,7 @@ from gnomad_constraint.experimental.proemis3d.utils import (
     generate_codon_oe_table,
     get_gencode_positions,
     join_by_sequence,
-    process_af2_structures,
+    #process_af2_structures,
     remove_multi_frag_uniprots,
     run_forward,
     run_forward_no_catch_all,
@@ -267,6 +267,11 @@ def main(args):
         log="/proemis_3d.log",
         tmp_dir="gs://gnomad-tmp-4day",
     )
+    #from gnomad.resources.grch38.reference_data import vep_context
+    #ht = vep_context.ht()._filter_partitions(range(1))
+    #ht.count()
+    #hl.export_vcf(ht, "gs://gnomad-tmp-4day/vep_context_partition_1.vcf.bgz", tabix=True)
+    #return
     version = args.version
     test = args.test
     overwrite = args.overwrite
@@ -305,43 +310,43 @@ def main(args):
         ht = ht.checkpoint(res.gencode_translation_ht.path, overwrite=overwrite)
         ht.show()
 
-    if args.read_af2_sequences:
-        logger.info(
-            "Processing AlphaFold2 structures from a GCS bucket into a Hail Table."
-        )
-        res = resources.read_af2_sequences
-        res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_struct_dir_path, mode="sequence")
-        ht = remove_multi_frag_uniprots(ht)
-        ht = ht.checkpoint(res.af2_ht.path, overwrite=overwrite)
-        ht.show()
+    #if args.read_af2_sequences:
+    #    logger.info(
+    #        "Processing AlphaFold2 structures from a GCS bucket into a Hail Table."
+    #    )
+    #    res = resources.read_af2_sequences
+    #    res.check_resource_existence()
+    #    ht = process_af2_structures(resources.af2_struct_dir_path, mode="sequence")
+    #    ht = remove_multi_frag_uniprots(ht)
+    #    ht = ht.checkpoint(res.af2_ht.path, overwrite=overwrite)
+    #    ht.show()
 
-    if args.compute_af2_distance_matrices:
-        logger.info("Computing distance matrices for AlphaFold2 structures.")
-        res = resources.compute_af2_distance_matrices
-        res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_struct_dir_path, mode="distance")
-        ht = remove_multi_frag_uniprots(ht)
-        ht = ht.checkpoint(res.af2_dist_ht.path, overwrite=overwrite)
-        ht.show()
+    #if args.compute_af2_distance_matrices:
+    #    logger.info("Computing distance matrices for AlphaFold2 structures.")
+    #    res = resources.compute_af2_distance_matrices
+    #    res.check_resource_existence()
+    #    ht = process_af2_structures(resources.af2_struct_dir_path, mode="distance")
+    #    ht = remove_multi_frag_uniprots(ht)
+    #    ht = ht.checkpoint(res.af2_dist_ht.path, overwrite=overwrite)
+    #    ht.show()
 
-    if args.extract_af2_plddt:
-        logger.info("Extracting pLDDT scores from AlphaFold2 structures.")
-        res = resources.extract_af2_plddt
-        res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_conf_dir_path, mode="plddt")
-        ht = remove_multi_frag_uniprots(ht)
-        ht = ht.checkpoint(res.af2_plddt_ht.path, overwrite=overwrite)
-        ht.show()
+    #if args.extract_af2_plddt:
+    #    logger.info("Extracting pLDDT scores from AlphaFold2 structures.")
+    #    res = resources.extract_af2_plddt
+    #    res.check_resource_existence()
+    #    ht = process_af2_structures(resources.af2_conf_dir_path, mode="plddt")
+    #    ht = remove_multi_frag_uniprots(ht)
+    #    ht = ht.checkpoint(res.af2_plddt_ht.path, overwrite=overwrite)
+    #    ht.show()
 
-    if args.extract_af2_pae:
-        logger.info("Extracting pAE scores from AlphaFold2 structures.")
-        res = resources.extract_af2_pae
-        res.check_resource_existence()
-        ht = process_af2_structures(resources.af2_pae_dir_path, mode="pae")
-        ht = remove_multi_frag_uniprots(ht)
-        ht = ht.checkpoint(res.af2_pae_ht.path, overwrite=overwrite)
-        ht.show()
+    #if args.extract_af2_pae:
+    #    logger.info("Extracting pAE scores from AlphaFold2 structures.")
+    #    res = resources.extract_af2_pae
+    #    res.check_resource_existence()
+    #    ht = process_af2_structures(resources.af2_pae_dir_path, mode="pae")
+    #    ht = remove_multi_frag_uniprots(ht)
+    #    ht = ht.checkpoint(res.af2_pae_ht.path, overwrite=overwrite)
+    #    ht.show()
 
     if args.gencode_alignment:
         logger.info(
@@ -368,7 +373,7 @@ def main(args):
         ht = ht.checkpoint(res.gencode_pos_ht.path, overwrite=overwrite)
         ht.show()
 
-    if True:
+    if args.run_forward or args.run_forward_no_catch_all or args.run_forward_no_catch_all_standardized:
         # if args.run_greedy or args.run_forward:
         # logger.info("Preparing to run greedy and/or forward algorithms.")
         # if args.run_greedy:
@@ -433,10 +438,16 @@ def main(args):
         #        overwrite=True
         #    )
         # )
-        # af2_ht = hl.read_table("gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/af2_dist.ht")
+        
+        
+        ###af2_ht = hl.read_table(
+        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/af2_dist.ht"
+        ###)
         af2_ht = hl.read_table(
             "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/af2_dist.ht"
         )
+        
+        
         # ht = determine_regions_with_min_oe_upper(
         #    af2_ht, ht, min_exp_mis=args.min_exp_mis
         # )
@@ -448,31 +459,44 @@ def main(args):
         # af2_ht = hl.read_table(
         #    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/af2_dist.ht"
         # )
-        # ht = hl.read_table(
-        #    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/codon_oe.ht"
-        # )
+        
+        
+        ###ht = hl.read_table(
+        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/codon_oe.ht"
+        ###)
         ht = hl.read_table(
             "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/codon_oe.ht"
         )
 
         plddt_out = ""
+        plddt_ht_for_filtering = None
         if args.plddt_cutoff is not None:
             # plddt_ht = proemis3d_res.get_af2_plddt_ht("2.1.1", args.test).ht()
             plddt_ht = hl.read_table(
                 "gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_plddt.ht"
             )
             # print(plddt_ht.filter(plddt_ht.uniprot_id == "A0A024R2K8").collect())
-            ht = ht.annotate(
-                oe_by_transcript=ht.oe_by_transcript.map(
-                    lambda x: x.annotate(
-                        oe=hl.zip(x.oe, plddt_ht[ht.uniprot_id].plddt).map(
-                            lambda y: hl.or_missing(y[1] >= args.plddt_cutoff, y[0])
+            
+            # If plddt_cutoff_method is not specified, use old filtering approach
+            if args.plddt_cutoff_method is None:
+                ht = ht.annotate(
+                    oe_by_transcript=ht.oe_by_transcript.map(
+                        lambda x: x.annotate(
+                            oe=hl.zip(x.oe, plddt_ht[ht.uniprot_id].plddt).map(
+                                lambda y: hl.or_missing(y[1] >= args.plddt_cutoff, y[0])
+                            )
                         )
                     )
                 )
-            )
+            else:
+                # Use new pLDDT filtering method in get_3d_residue
+                plddt_ht_for_filtering = plddt_ht
+            
             # print(ht.filter(ht.uniprot_id == "A0A024R2K8").collect())
             plddt_out = f".plddt_cutoff_{args.plddt_cutoff}"
+            # Add pLDDT cutoff method to output path if specified
+            if args.plddt_cutoff_method is not None:
+                plddt_out += f".plddt_method_{args.plddt_cutoff_method}"
 
         pae_out = ""
         pae_ht = None
@@ -480,8 +504,7 @@ def main(args):
             pae_ht = hl.read_table(
                 "gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_pae.ht"
             )
-            pae_ht = pae_ht.key_by("uniprot_id", "aa_index")
-            pae_out = f".pae_cutoff_{args.pae_cutoff}"
+            pae_out = f".pae_cutoff_{args.pae_cutoff}.pae_method_{args.pae_cutoff_method}"
 
         # if args.run_greedy:
         #    logger.info("Running greedy algorithm.")
@@ -500,15 +523,26 @@ def main(args):
             af2_ht,
             ht,
             pae_ht=pae_ht,
+            plddt_ht=plddt_ht_for_filtering,
             min_exp_mis=args.min_exp_mis,
             oe_upper_method="gamma",
             max_pae=args.pae_cutoff,
+            pae_cutoff_method=args.pae_cutoff_method,
+            min_plddt=args.plddt_cutoff if args.plddt_cutoff_method is not None else None,
+            plddt_cutoff_method=args.plddt_cutoff_method,
         )
-        # ht = ht.repartition(200).checkpoint(
-        #    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}.gamma.ht",
-        #    #_read_if_exists=True,
-        #    overwrite=True,
-        # )
+
+        
+        
+        
+        #ht = ht.repartition(200).checkpoint(
+        #    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
+        #    _read_if_exists=True,
+        #    #overwrite=True,
+        #)
+        ###ht = hl.read_table(
+        ###    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht"
+        ###)
         ht = ht.repartition(1).checkpoint(
             f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
             _read_if_exists=True,
@@ -631,8 +665,15 @@ def main(args):
         logger.info("Creating missense viewer input Hail Table.")
         res = resources.create_missense_viewer_input_ht
         res.check_resource_existence()
+
         ht = create_missense_viewer_input_ht(
-            res.gencode_pos_ht.ht(), res.forward_ht.ht()
+            res.gencode_pos_ht.ht(), 
+            {
+                "gamma.aic": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.aic").ht(),
+                "gamma.aic_weight": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.aic_weight").ht(),
+                "gamma.lrt": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.lrt").ht(),
+                "gamma.aic.pae_15": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.pae_cutoff_15.0").ht(),
+            }
         )
         ht = ht.checkpoint(res.missense_viewer_input_ht.path, overwrite=overwrite)
         ht.show()
@@ -764,10 +805,53 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
+        "--plddt-cutoff-method",
+        help=(
+            "Strategy for handling residues with low pLDDT values. Options: "
+            "'truncate_at_first_low_plddt' (remove all residues after first with "
+            "low pLDDT), 'remove_low_plddt_residues' (remove only residues with "
+            "low pLDDT), 'mask_low_confidence_plddt' (mask low pLDDT residues "
+            "instead of removing them), 'exclude_low_plddt_from_stats' (keep low "
+            "pLDDT residues in regions but exclude from statistical calculations). "
+            "Default is None (no pLDDT filtering in get_3d_residue, uses old "
+            "filtering approach if --plddt-cutoff is specified)."
+        ),
+        type=str,
+        default=None,
+        choices=[
+            "truncate_at_first_low_plddt",
+            "remove_low_plddt_residues",
+            "mask_low_confidence_plddt",
+            "exclude_low_plddt_from_stats",
+        ],
+    )
+    parser.add_argument(
         "--pae-cutoff",
         help="Maximum PAE cutoff to filter on.",
         type=float,
         default=None,
+    )
+    parser.add_argument(
+        "--pae-cutoff-method",
+        help=(
+            "Strategy for handling residues with high PAE values. Options: "
+            "'truncate_on_pairwise_pae_with_center' (remove all residues after first with "
+            "high PAE), 'filter_on_pairwise_pae_with_center' (remove only residues with "
+            "high PAE), 'filter_on_pairwise_pae_in_region' (filter residues with high "
+            "pairwise PAE to any residue in region). Default is "
+            "'truncate_on_pairwise_pae_with_center'."
+        ),
+        type=str,
+        default="truncate_on_pairwise_pae_with_center",
+        choices=[
+            "truncate_on_pairwise_pae_with_center",
+            "filter_on_pairwise_pae_with_center",
+            "filter_on_pairwise_pae_in_region",
+            "remove_all_residues_after_first_over_cutoff",
+            "remove_residues_after_first_high_pairwise_pae_with_current_residue",
+            "remove_residues_with_high_pairwise_pae_with_current_residue",
+            "remove_residues_with_high_pairwise_pae_in_region",
+        ],
     )
     parser.add_argument(
         "--write-per-variant",

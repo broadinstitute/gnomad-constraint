@@ -9,9 +9,9 @@ from typing import Dict, Iterator, List, Optional, Union
 import hail as hl
 import numpy as np
 import pandas as pd
-from Bio.PDB import PPBuilder
-from Bio.PDB.MMCIFParser import MMCIFParser
-from Bio.PDB.Polypeptide import is_aa
+#from Bio.PDB import PPBuilder
+#from Bio.PDB.MMCIFParser import MMCIFParser
+#from Bio.PDB.Polypeptide import is_aa
 from gnomad.resources.grch38.gnomad import browser_gene, browser_variant, pext
 from gnomad.utils.constraint import oe_confidence_interval
 from gnomad.utils.filtering import filter_gencode_ht
@@ -339,207 +339,191 @@ def get_pae_from_json(pae_content: str) -> List[List[int]]:
     return data[0]["predicted_aligned_error"]
 
 
-def get_structure_peptide(structure) -> str:
-    """
-    Get the sequence from a structure.
+#def get_structure_peptide(structure) -> str:
+#    """
+#    Get the sequence from a structure.
+#
+#    :param structure: Structure object.
+#    :return: Sequence as a string.
+#    """
+#    ppb = PPBuilder()
 
-    :param structure: Structure object.
-    :return: Sequence as a string.
-    """
-    ppb = PPBuilder()
-
-    # Return the sequence as a string.
-    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
-
-
-def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
-    """
-    Calculate the "calpha" distance matrix from a structure.
-
-    :param structure: Structure object.
-    :return: Distance matrix as a NumPy array.
-    """
-    calpha_atoms = []
-    for model in structure:
-        for chain in model:
-            for residue in chain:
-                if is_aa(residue, standard=True) and "CA" in residue:
-                    calpha_atoms.append(residue["CA"].get_coord())
-
-    def _calc_dist_matrix(calpha_atoms: List[np.ndarray]) -> np.ndarray:
-        """
-        Calculate the pairwise distance matrix between Calpha atoms.
-
-        :param calpha_atoms: List of Calpha atoms.
-        :return: Distance matrix as a NumPy array.
-        """
-        num_atoms = len(calpha_atoms)
-        dist_matrix = np.zeros((num_atoms, num_atoms))
-        for i, atom1 in enumerate(calpha_atoms):
-            for j, atom2 in enumerate(calpha_atoms):
-                dist_matrix[i, j] = np.linalg.norm(atom1 - atom2)
-
-        return dist_matrix
-
-    # Calculate the distance matrix
-    return _calc_dist_matrix(calpha_atoms)
+#    # Return the sequence as a string.
+#    return "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
 
 
-def process_af2_mmcif(
-    uniprot_id: str,
-    mmcif_content: str,
-    distance_matrix: bool = False,
-) -> Union[str, np.ndarray, List[float]]:
-    """
-    Process AlphaFold2 MMCIF content.
+#def get_structure_dist_matrix(structure: MMCIFParser) -> np.ndarray:
+#    """
+#    Calculate the "calpha" distance matrix from a structure.
 
-    :param uniprot_id: UniProt ID.
-    :param mmcif_content: MMCIF content as a string.
-    :param distance_matrix: Whether to return the distance matrix. Default is False.
-    :return: Sequence or distance matrix.
-    """
-    parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(uniprot_id, io.StringIO(mmcif_content))
+#    :param structure: Structure object.
+#    :return: Distance matrix as a NumPy array.
+#    """
+#    calpha_atoms = []
+#    for model in structure:
+#        for chain in model:
+#            for residue in chain:
+#                if is_aa(residue, standard=True) and "CA" in residue:
+#                    calpha_atoms.append(residue["CA"].get_coord())
 
-    if distance_matrix:
-        return get_structure_dist_matrix(structure)
-    else:
-        return get_structure_peptide(structure)
-
-
-def process_af2_file_by_mode(
-    uniprot_id: str,
-    file_content: str,
-    mode: str,
-) -> Union[str, np.ndarray, List[float]]:
-    """
-    Dispatcher to handle different AF2 modes based on filename suffix and mode.
-
-    :param uniprot_id: UniProt ID.
-    :param file_content: File content.
-    :param mode: Mode for processing files. Options are 'sequence', 'distance_matrix',
-        'plddt', or 'pae'. Default is 'sequence'.
-    :return: Sequence or distance matrix.
-    """
-    if mode in {"sequence", "distance_matrix"}:
-        return process_af2_mmcif(
-            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
-        )
-    if mode == "plddt":
-        return get_plddt_from_confidence_json(file_content)
-
-    if mode == "pae":
-        return get_pae_from_json(file_content)
-
-    raise ValueError(f"Unsupported mode: {mode}")
+#    def _calc_dist_matrix(calpha_atoms: List[np.ndarray]) -> np.ndarray:
+#        """
+#        Calculate the pairwise distance matrix between Calpha atoms.
+#
+#        :param calpha_atoms: List of Calpha atoms.
+#        :return: Distance matrix as a NumPy array.
+#        """
+#        num_atoms = len(calpha_atoms)
+#        dist_matrix = np.zeros((num_atoms, num_atoms))
+#        for i, atom1 in enumerate(calpha_atoms):
+#            for j, atom2 in enumerate(calpha_atoms):
+#                dist_matrix[i, j] = np.linalg.norm(atom1 - atom2)
+#
+#        return dist_matrix
+#
+#    # Calculate the distance matrix
+#    return _calc_dist_matrix(calpha_atoms)
 
 
-def process_af2_structures(
-    gcs_bucket_glob: str,
-    mode: str = "sequence",
-) -> hl.Table:
-    """
-    Process AlphaFold2 structures from a GCS bucket.
+#def process_af2_mmcif(
+#    uniprot_id: str,
+#    mmcif_content: str,
+#    distance_matrix: bool = False,
+#) -> Union[str, np.ndarray, List[float]]:
+#    """
+#    Process AlphaFold2 MMCIF content.
+#
+#    :param uniprot_id: UniProt ID.
+#    :param mmcif_content: MMCIF content as a string.
+#    :param distance_matrix: Whether to return the distance matrix. Default is False.
+#    :return: Sequence or distance matrix.
+#    """
+#    parser = MMCIFParser(QUIET=True)
+#    structure = parser.get_structure(uniprot_id, io.StringIO(mmcif_content))
 
-    .. note::
+#    if distance_matrix:
+#        return get_structure_dist_matrix(structure)
+#    else:
+#        return get_structure_peptide(structure)
 
-        All files in the bucket must be in CIF format with a '.cif.gz' extension.
 
-    :param gcs_bucket_glob: GCS bucket glob pattern.
-    :param mode: Mode for processing files. Options are 'sequence', 'distance_matrix',
-        'plddt', or 'pae'. Default is 'sequence'.
-    :return: Hail Table with UniProt IDs and sequences or distance matrices.
-    """
-    # Get Spark session for file distribution and processing.
-    spark = hl.utils.java.Env.spark_session()
-    spark.conf.set(
-        "spark.sql.execution.arrow.maxRecordsPerBatch",
-        1000,
-    )
+#def process_af2_file_by_mode(
+#    uniprot_id: str,
+#    file_content: str,
+#    mode: str,
+#) -> Union[str, np.ndarray, List[float]]:
+#    """
+#    Dispatcher to handle different AF2 modes based on filename suffix and mode.
 
-    # Define schema for loading the files.
-    schema = StructType(
-        [
-            StructField("file_content", StringType(), True),
-            StructField("af2_file", StringType(), True),
-        ]
-    )
+#    :param uniprot_id: UniProt ID.
+#    :param file_content: File content.
+#    :param mode: Mode for processing files. Options are 'sequence', 'distance_matrix',
+#        'plddt', or 'pae'. Default is 'sequence'.
+#    :return: Sequence or distance matrix.
+#    """
+#    if mode in {"sequence", "distance_matrix"}:
+#        return process_af2_mmcif(
+#            uniprot_id, file_content, distance_matrix=(mode == "distance_matrix")
+#        )
+#    if mode == "plddt":
+#        return get_plddt_from_confidence_json(file_content)
 
-    # Use Spark to read files in parallel.
-    # This reads the entire content of each file as a (filename, content) pair.
-    af2_files_df = (
-        spark.read.format("text")
-        .load(gcs_bucket_glob, schema=schema, wholetext=True)
-        .withColumn("af2_file", col("_metadata.file_path"))
-    )
-    if mode == "distance_matrix":
-        col_name = "dist_mat"
-        rtype = "array<array<float>>"
-    elif mode == "pae":
-        col_name = "pae"
-        rtype = "array<array<int>>"
-    elif mode == "plddt":
-        col_name = "plddt"
-        rtype = "array<float>"
-    else:
-        col_name = "sequence"
-        rtype = "string"
+#    if mode == "pae":
+#        return get_pae_from_json(file_content)
 
-    @pandas_udf(f"uniprot_id string, {col_name} {rtype}")
-    def process_file(
-        file_path_series: pd.Series, file_content_series: pd.Series
-    ) -> pd.DataFrame:
-        """
-        Process a list of files in parallel using a Pandas UDF.
+#    raise ValueError(f"Unsupported mode: {mode}")
 
-        :param file_path_series: File paths.
-        :param file_content_series: File contents.
-        :return: Pandas DataFrame with UniProt IDs and sequences.
-        """
-        result = []
-        for file_path, file_content in zip(file_path_series, file_content_series):
-            # Extract UniProt ID from the file path.
-            uniprot_id = os.path.basename(file_path).split("-")[1]
 
-            # Process the file content.
-            af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
-            result.append((uniprot_id, af2_data))
+#def process_af2_structures(
+#    gcs_bucket_glob: str,
+#    mode: str = "sequence",
+#) -> hl.Table:
+#    """
+#    Process AlphaFold2 structures from a GCS bucket.
+#
+#    .. note::
+#
+#        All files in the bucket must be in CIF format with a '.cif.gz' extension.
 
-        return pd.DataFrame(result, columns=["uniprot_id", col_name])
+#    :param gcs_bucket_glob: GCS bucket glob pattern.
+#    :param mode: Mode for processing files. Options are 'sequence', 'distance_matrix',
+#        'plddt', or 'pae'. Default is 'sequence'.
+#    :return: Hail Table with UniProt IDs and sequences or distance matrices.
+#    """
+#    # Get Spark session for file distribution and processing.
+#    spark = hl.utils.java.Env.spark_session()
+#    spark.conf.set(
+#        "spark.sql.execution.arrow.maxRecordsPerBatch",
+#        1000,
+#    )
 
-    # Apply the Pandas UDF to process the files.
-    result_df = af2_files_df.withColumn(
-        "uniprot_id_sequence", process_file(col("af2_file"), col("file_content"))
-    )
+#    # Define schema for loading the files.
+#    schema = StructType(
+#        [
+#            StructField("file_content", StringType(), True),
+#            StructField("af2_file", StringType(), True),
+#        ]
+#    )
 
-    # Split the resulting column into separate columns.
-    result_df = result_df.select(
-        "af2_file",
-        col("uniprot_id_sequence.uniprot_id"),
-        col(f"uniprot_id_sequence.{col_name}"),
-    )
-    if mode in {"distance_matrix", "pae"}:
-        from pyspark.sql.functions import posexplode
+#    # Use Spark to read files in parallel.
+#    # This reads the entire content of each file as a (filename, content) pair.
+#    af2_files_df = (
+#        spark.read.format("text")
+#        .load(gcs_bucket_glob, schema=schema, wholetext=True)
+#        .withColumn("af2_file", col("_metadata.file_path"))
+#    )
+#    if mode == "distance_matrix":
+#        col_name = "dist_mat"
+#        rtype = "array<array<float>>"
+#    elif mode == "pae":
+#        col_name = "pae"
+#        rtype = "array<array<int>>"
+#    elif mode == "plddt":
+#        col_name = "plddt"
+#        rtype = "array<float>"
+#    else:
+#        col_name = "sequence"
+#        rtype = "string"
 
-        result_df = result_df.select(
-            "af2_file",
-            "uniprot_id",
-            posexplode(col(col_name)).alias("aa_index", col_name),
-        )
-    tmp_path = hl.utils.new_temp_file("process_af2_structures", "parquet")
-    logger.info(f"Writing processed AlphaFold2 structures to {tmp_path}")
-    result_df.write.mode("overwrite").save(tmp_path)
-    logger.info(f"Finished writing.")
-    result_df = spark.read.parquet(tmp_path)
+#    @pandas_udf(f"uniprot_id string, {col_name} {rtype}")
+#    def process_file(
+#        file_path_series: pd.Series, file_content_series: pd.Series
+#    ) -> pd.DataFrame:
+#        """
+#        Process a list of files in parallel using a Pandas UDF.
 
-    # Convert the Spark DataFrame to a Hail Table.
-    key = ["af2_file", "uniprot_id"]
-    if mode in {"distance_matrix", "pae"}:
-        key.append("aa_index")
+#        :param file_path_series: File paths.
+#        :param file_content_series: File contents.
+#        :return: Pandas DataFrame with UniProt IDs and sequences.
+#        """
+#        result = []
+#        for file_path, file_content in zip(file_path_series, file_content_series):
+#            # Extract UniProt ID from the file path.
+#            uniprot_id = os.path.basename(file_path).split("-")[1]
 
-    ht = hl.Table.from_spark(result_df, key=key)
+#            # Process the file content.
+#            af2_data = process_af2_file_by_mode(uniprot_id, file_content, mode=mode)
+#            result.append((uniprot_id, af2_data))
 
-    return ht
+#        return pd.DataFrame(result, columns=["uniprot_id", col_name])
+
+#    if mode in {"distance_matrix", "pae"}:
+#        from pyspark.sql.functions import posexplode
+
+#        result_df = result_df.select(
+#            "af2_file",
+#            "uniprot_id",
+#            posexplode(col(col_name)).alias("aa_index", col_name),
+#        )
+
+#    # Convert the Spark DataFrame to a Hail Table.
+#    key = ["af2_file", "uniprot_id"]
+#    if mode in {"distance_matrix", "pae"}:
+#        key.append("aa_index")
+#
+#    ht = hl.Table.from_spark(result_df, key=key)
+#
+#    return ht
 
 
 def remove_multi_frag_uniprots(ht: hl.Table) -> hl.Table:
@@ -762,13 +746,20 @@ def get_cumulative_oe(oe_expr):
     :param oe_expr: Array expression with observed and expected values.
     :return: Array expression with cumulative OE.
     """
-    oe_expr = hl.array_scan(
-        lambda i, j: j.annotate(
-            obs=i.obs + j.obs,
-            exp=i.exp + j.exp,
-        ),
-        oe_expr[0],
-        oe_expr[1:],
+    # Handle empty arrays
+    element_type = oe_expr.dtype.element_type
+    oe_expr = hl.case().when(
+        hl.len(oe_expr) == 0,
+        hl.empty_array(element_type)
+    ).default(
+        hl.array_scan(
+            lambda i, j: j.annotate(
+                obs=hl.or_else(i.obs, 0) + hl.or_else(j.obs, 0),
+                exp=hl.or_else(i.exp, 0.0) + hl.or_else(j.exp, 0.0),
+            ),
+            oe_expr[0],
+            oe_expr[1:],
+        )
     )
 
     return oe_expr
@@ -860,7 +851,9 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
             filtered_oe_expr.length() > 0, filtered_oe_expr
         )
 
-    min_oe_upper_expr = hl.sorted(filtered_oe_expr, key=lambda x: x.oe_upper)[0]
+    filtered_oe_expr = filtered_oe_expr.filter(lambda x: hl.is_defined(x.oe_upper))
+    # TODO: minimize on oe instead of oe_upper?
+    min_oe_upper_expr = hl.sorted(filtered_oe_expr, key=lambda x: x.oe_upper).first()
     dist_index_expr = min_oe_upper_expr.dist_index
     oe_expr = hl.or_missing(
         hl.is_defined(filtered_oe_expr), oe_expr[: dist_index_expr + 1]
@@ -873,58 +866,1481 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
 
     return min_oe_upper_expr
 
+SHOW_NUM = 50
+
+
+def debug_print_pae_matrix_for_region(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    center_residue_index_expr: hl.expr.Int32Expression,
+    max_pae: float,
+    title: str = "PAE matrix for region filtering",
+    min_plddt: Optional[float] = None,
+    plddt_cutoff_method: Optional[str] = None,
+) -> Dict[int, str]:
+    """
+    Generate debug output showing PAE values between each residue and all subsequent residues
+    in the sorted-by-distance array. This helps visualize how filter_on_pairwise_pae_in_region works.
+    Returns a dictionary where keys are center residue indices and values are output strings.
+    
+    :param dist_mat_expr: Array expression with distance matrix entries (sorted by distance)
+    :param center_residue_index_expr: Center residue index expression
+    :param max_pae: Maximum allowed PAE value
+    :param title: Title for the debug output
+    :return: Dictionary mapping center residue indices to their debug output strings
+    """
+    # Dictionary to store output per center residue
+    output_dict = {}
+    
+    # Get first key for debugging
+    ht = dist_mat_expr._indices.source
+    uniprot_id = None
+    transcript_id = None
+    first_row = ht.head(1)
+    if first_row.count() > 0:
+        uniprot_id = first_row.uniprot_id.collect()[0]
+        transcript_id = first_row.enst.collect()[0]
+    
+    # Filter and collect data
+    _ht_debug = ht.annotate(
+        dist_mat=dist_mat_expr,
+        center_idx=center_residue_index_expr
+    )
+    _ht_debug = _ht_debug.filter(
+        (_ht_debug.uniprot_id == uniprot_id) 
+        & (_ht_debug.enst == transcript_id)
+    )
+    
+    if _ht_debug.count() == 0:
+        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
+        return {}
+    
+    # Collect data for all center residues
+    debug_data = _ht_debug.select("dist_mat", "center_idx").collect()
+    
+    if not debug_data:
+        return {}
+    
+    # Group by center residue to show matrix for each
+    center_groups = {}
+    for row in debug_data:
+        center_idx = row.center_idx
+        if center_idx not in center_groups:
+            center_groups[center_idx] = []
+        center_groups[center_idx].append(row)
+    
+    # Show PAE matrix for each center residue
+    for center_idx in sorted(center_groups.keys()):
+        rows = center_groups[center_idx]
+        # Use first row for this center (they should all have the same dist_mat)
+        row = rows[0]
+        dist_mat = row.dist_mat
+        
+        # Build output for this center residue
+        center_output = f"    {BOLD}=== {title} ==={RESET}\n\n"
+        center_output += f"        {BOLD}PAE matrix (row = from residue, column = to residue):{RESET}\n\n"
+        center_output += f"        {BOLD}Color legend:{RESET}\n"
+        center_output += f"            {BOLD}PAE colors:{RESET} Uncolored (≤{max_pae})  {RED}Red (>{max_pae}){RESET}\n"
+
+        if min_plddt is not None:
+            center_output += f"            {BOLD}pLDDT colors:{RESET} Uncolored (≥{min_plddt})  {RED}Red (<{min_plddt}){RESET}\n"
+        
+        center_output += f"            {BOLD}Filtered residues:{RESET} {ORANGE}Orange{RESET} (excluded from region)\n"
+        
+        center_output += f"\n"
+        
+        # Check if PAE data is available in dist_mat
+        # Note: residue_i.pae might be a float (PAE from center) or an array (full PAE row)
+        # Also check for pae_array field which contains the full PAE array for each residue
+        has_pae_data = dist_mat and len(dist_mat) > 0 and (hasattr(dist_mat[0], 'pae') or hasattr(dist_mat[0], 'pae_array'))
+        pae_is_array = False
+        has_pae_array_field = False
+        if has_pae_data:
+            # Check if pae_array field exists (preferred for pairwise PAE)
+            if hasattr(dist_mat[0], 'pae_array') and dist_mat[0].pae_array is not None:
+                try:
+                    len(dist_mat[0].pae_array)
+                    has_pae_array_field = True
+                    pae_is_array = True
+                except (TypeError, AttributeError):
+                    pass
+            # Fall back to checking pae field
+            if not has_pae_array_field and hasattr(dist_mat[0], 'pae') and dist_mat[0].pae is not None:
+                try:
+                    len(dist_mat[0].pae)
+                    pae_is_array = True
+                except (TypeError, AttributeError):
+                    pae_is_array = False
+        
+        # Check if pLDDT data is available
+        has_plddt_data = dist_mat and len(dist_mat) > 0 and hasattr(dist_mat[0], 'plddt')
+        
+        # Get all residue indices for column headers
+        all_residue_indices = [entry.residue_index for entry in dist_mat]
+        
+        # Determine which residues would be filtered by pLDDT (if pLDDT filtering is used)
+        plddt_filtered_residues = set()
+        # Also track low pLDDT residues for exclude_low_plddt_from_stats (they remain but are excluded from PAE checks)
+        low_plddt_residues = set()
+        if min_plddt is not None and has_plddt_data and plddt_cutoff_method:
+            if plddt_cutoff_method == "truncate_at_first_low_plddt":
+                # Find first residue with low pLDDT and mark all after it
+                found_first_low = False
+                for residue in dist_mat:
+                    residue_idx = residue.residue_index
+                    if found_first_low:
+                        plddt_filtered_residues.add(residue_idx)
+                    elif hasattr(residue, 'plddt') and residue.plddt is not None and residue.plddt < min_plddt:
+                        found_first_low = True
+                        # Don't add the first low one, but mark all subsequent ones
+            elif plddt_cutoff_method == "remove_low_plddt_residues":
+                # Mark residues with low pLDDT
+                for residue in dist_mat:
+                    residue_idx = residue.residue_index
+                    if hasattr(residue, 'plddt') and residue.plddt is not None and residue.plddt < min_plddt:
+                        plddt_filtered_residues.add(residue_idx)
+            elif plddt_cutoff_method == "exclude_low_plddt_from_stats":
+                # Mark residues with low pLDDT (they remain in region but are excluded from PAE checks)
+                for residue in dist_mat:
+                    residue_idx = residue.residue_index
+                    if hasattr(residue, 'plddt') and residue.plddt is not None and residue.plddt < min_plddt:
+                        low_plddt_residues.add(residue_idx)
+            # For "mask_low_confidence_plddt", residues are not filtered from the region
+        
+        # Simulate the filtering logic to determine which residues would be filtered by PAE
+        # This mimics the scan operation in filter_on_pairwise_pae_in_region
+        # The logic: add residue if (pae_array is None) OR (NOT any(PAE > max_pae to residues in region))
+        # Note: pLDDT filtering happens FIRST in the actual code, so we simulate pLDDT filtering first,
+        # then PAE filtering on the remaining residues
+        pae_filtered_residues = set()
+        region = []
+        
+        if has_pae_array_field:
+            # First, apply pLDDT filtering to get the residues that would remain after pLDDT filtering
+            # (if pLDDT filtering removes residues)
+            remaining_after_plddt = []
+            if plddt_cutoff_method in ["truncate_at_first_low_plddt", "remove_low_plddt_residues"]:
+                # Only consider residues that pass pLDDT filtering
+                for residue in dist_mat:
+                    residue_idx = residue.residue_index
+                    if residue_idx not in plddt_filtered_residues:
+                        remaining_after_plddt.append(residue)
+            else:
+                # For exclude_low_plddt_from_stats, all residues remain (they're just marked)
+                remaining_after_plddt = dist_mat
+            
+            # Simulate the scan: build region incrementally from residues that passed pLDDT filtering
+            # A residue is added if its PAE to ALL residues in the current region is <= max_pae
+            # A residue is filtered if its PAE to ANY residue in the current region is > max_pae
+            # Note: For exclude_low_plddt_from_stats, low pLDDT residues are still checked for PAE,
+            # but when checking PAE from a new residue to the region, we skip low pLDDT residues in the region
+            for residue in remaining_after_plddt:
+                residue_idx = residue.residue_index
+                
+                # Check if this residue should be added to the region based on PAE
+                # Low pLDDT residues are still checked (they're not automatically added)
+                should_add = True
+                
+                if hasattr(residue, 'pae_array') and residue.pae_array is not None:
+                    # Check PAE from this residue to each residue already in the region
+                    # Skip low pLDDT residues in the region (they don't count for PAE filtering)
+                    for region_residue in region:
+                        region_residue_idx = region_residue.residue_index
+                        # Skip low pLDDT residues when checking PAE (they don't block other residues)
+                        if region_residue_idx in low_plddt_residues:
+                            continue
+                        try:
+                            if region_residue_idx < len(residue.pae_array):
+                                pae_to_region = residue.pae_array[region_residue_idx]
+                                if pae_to_region > max_pae:
+                                    # PAE exceeds threshold, so this residue should be filtered
+                                    should_add = False
+                                    break
+                        except (TypeError, AttributeError, IndexError):
+                            # If we can't get PAE value, treat as should not add (conservative)
+                            should_add = False
+                            break
+                # else: pae_array is None or doesn't exist
+                # In Hail code: (residue.pae_array is None) | ... means if None, add it
+                # So should_add = True is already set, which is correct
+                
+                if should_add:
+                    region.append(residue)
+                else:
+                    pae_filtered_residues.add(residue_idx)
+        else:
+            # If no PAE array field, all residues that passed pLDDT filtering are in the region
+            if plddt_cutoff_method in ["truncate_at_first_low_plddt", "remove_low_plddt_residues"]:
+                for residue in dist_mat:
+                    residue_idx = residue.residue_index
+                    if residue_idx not in plddt_filtered_residues:
+                        region.append(residue)
+            else:
+                # For exclude_low_plddt_from_stats or no pLDDT filtering, all residues are in the region
+                region = dist_mat
+        
+        # Determine which residues are in the final region (not filtered)
+        region_residue_indices = {res.residue_index for res in region}
+        
+        # Create column header (use variable for backslash since f-strings can't have backslashes)
+        from_to_label = "From\\To"
+        header = f"        {from_to_label:<8}"
+        for res_idx in all_residue_indices:
+            # Color orange if residue is not in the final region (filtered out)
+            is_filtered = res_idx not in region_residue_indices
+            if is_filtered:
+                header += f"{ORANGE}{res_idx:>8}{RESET}"
+            else:
+                header += f"{res_idx:>8}"
+        # Add pLDDT column header if pLDDT filtering is used
+        if min_plddt is not None and has_plddt_data:
+            header += f"{'pLDDT':>8}"
+        center_output += header + "\n"
+        header_sep_len = 8 + 8 * len(all_residue_indices)
+        if min_plddt is not None and has_plddt_data:
+            header_sep_len += 8
+        center_output += "        " + "-" * header_sep_len + "\n"
+        
+        # For each residue in the sorted array, show its PAE to all residues
+        for i, residue_i in enumerate(dist_mat):
+            residue_i_idx = residue_i.residue_index
+            row_str = f"        {residue_i_idx:>8}"
+            
+            # Check if this source residue is filtered (not in final region)
+            # If filtered, all PAE values in this row should be "-" since they're not used for filtering
+            is_source_filtered = residue_i_idx not in region_residue_indices
+            
+            # For each column (target residue)
+            for j, residue_j in enumerate(dist_mat):
+                residue_j_idx = residue_j.residue_index
+                
+                if j <= i:
+                    # Lower triangle or diagonal: show "-" or "0.0" for self
+                    if j == i:
+                        # row_str += f"{'0.0':>8}"
+                        row_str += f"{'-':>8}"
+                    else:
+                        row_str += f"{'-':>8}"
+                else:
+                    # Upper triangle: show actual PAE value
+                    # If source residue is filtered, show "-" (its PAE values don't count for filtering)
+                    if is_source_filtered:
+                        pae_str = f"{'-':>8}"
+                    # For exclude_low_plddt_from_stats, show "-" if source residue (residue_i) has low pLDDT
+                    elif plddt_cutoff_method == "exclude_low_plddt_from_stats" and residue_i_idx in low_plddt_residues:
+                        pae_str = f"{'-':>8}"
+                    else:
+                        pae_val = None
+                        if has_pae_data:
+                            # First try pae_array field (preferred for pairwise PAE)
+                            if has_pae_array_field and hasattr(residue_i, 'pae_array') and residue_i.pae_array is not None:
+                                try:
+                                    if residue_j_idx < len(residue_i.pae_array):
+                                        pae_val = residue_i.pae_array[residue_j_idx]
+                                except (TypeError, AttributeError, IndexError):
+                                    pass
+                            # Fall back to pae field if it's an array
+                            elif pae_is_array and hasattr(residue_i, 'pae') and residue_i.pae is not None:
+                                try:
+                                    if residue_j_idx < len(residue_i.pae):
+                                        pae_val = residue_i.pae[residue_j_idx]
+                                except (TypeError, AttributeError, IndexError):
+                                    pass
+                        
+                        # Format PAE value (ensure consistent width accounting for ANSI codes)
+                        if pae_val is not None:
+                            if pae_val > max_pae:
+                                # Format with color, ensuring the visible part is 5 chars wide
+                                pae_str = f"{RED}{pae_val:5.1f}{RESET}"
+                            else:
+                                pae_str = f"{pae_val:5.1f}"
+                        else:
+                            # No PAE data available
+                            pae_str = "  ?  "
+                    
+                    # Calculate visible width (without ANSI codes) and pad accordingly
+                    # ANSI codes don't count toward visible width, so we need to pad the visible content
+                    visible_pae_str = pae_str.replace(RED, '').replace(RESET, '')
+                    padding_needed = max(0, 8 - len(visible_pae_str))
+                    row_str += " " * padding_needed + pae_str
+            
+            # Add pLDDT column if pLDDT filtering is used
+            if min_plddt is not None and has_plddt_data:
+                plddt_val = None
+                if hasattr(residue_i, 'plddt'):
+                    plddt_val = residue_i.plddt
+                
+                if plddt_val is not None:
+                    if plddt_val < min_plddt:
+                        plddt_str = f"{RED}{plddt_val:>8.1f}{RESET}"
+                    else:
+                        plddt_str = f"{plddt_val:>8.1f}"
+                else:
+                    plddt_str = "     NA"
+                row_str += plddt_str
+            
+            center_output += row_str + "\n"
+        
+        # Add pLDDT row if pLDDT filtering is used
+        if min_plddt is not None and has_plddt_data:
+            plddt_row = f"        {'pLDDT':<8}"
+            for residue in dist_mat:
+                residue_idx = residue.residue_index
+                plddt_val = None
+                if hasattr(residue, 'plddt'):
+                    plddt_val = residue.plddt
+                
+                if plddt_val is not None:
+                    if plddt_val < min_plddt:
+                        plddt_str = f"{RED}{plddt_val:>8.1f}{RESET}"
+                    else:
+                        plddt_str = f"{plddt_val:>8.1f}"
+                else:
+                    plddt_str = "     NA"
+                plddt_row += plddt_str
+            # Add pLDDT column value (same as row label, or could show average/NA)
+            plddt_row += f"{'pLDDT':>8}"
+            center_output += "        " + "-" * header_sep_len + "\n"
+            center_output += "\n" + plddt_row + "\n"
+        
+        # Store output for this center residue
+        output_dict[center_idx] = center_output
+    
+    return output_dict
+
+
+# ANSI color codes
+RESET = '\033[0m'
+RED = '\033[91m'     # High PAE (above cutoff)
+BOLD = '\033[1m'
+ORANGE = '\033[38;5;214m'  # Filtered residues (bright orange, 256-color mode)
+HIGHLIGHT = '\033[1m\033[4m\033[92m'  # Bold, underline, green for minimum OE upper
+
+
+def get_debug_oe_table_string(oe_list, plddt_lookup=None, min_plddt=None, pae_lookup=None, max_pae=None):
+    # Print OE array (per-residue observed/expected)    
+    output_string = ""
+
+    # Determine which columns to include
+    has_plddt = min_plddt is not None and plddt_lookup is not None and len(plddt_lookup) > 0
+    has_pae = max_pae is not None and pae_lookup is not None and len(pae_lookup) > 0
+    
+    # Add color legend
+    legend_parts = []
+    if has_pae:
+        legend_parts.append(
+            f"        {BOLD}PAE colors:{RESET} Uncolored (≤{max_pae})  {RED}Red (>{max_pae}){RESET}"
+        )
+    if has_plddt:
+        legend_parts.append(
+            f"        {BOLD}pLDDT colors:{RESET} Uncolored (≥{min_plddt})  {RED}Red (<{min_plddt}){RESET}"
+        )
+    if legend_parts:
+        legend = '\n'.join(legend_parts)
+        output_string += f"\n    {BOLD}Color legend:{RESET}\n{legend}\n"
+
+    # Get all unique residue indices for PAE columns
+    # First, determine the residue field name from oe_list
+    residue_field_name = None
+    if len(oe_list) > 0:
+        if "residue_index" in oe_list[0]:
+            residue_field_name = "residue_index"
+        elif "aa_index" in oe_list[0]:
+            residue_field_name = "aa_index"
+    
+    # Get all residue indices from pae_lookup (all residues that have PAE data)
+    all_residue_indices = []
+    if has_pae:
+        # Get residue indices from pae_lookup keys (all residues with PAE data)
+        all_residue_indices = sorted(pae_lookup.keys())
+        # Also include any residue indices from oe_list that might not be in pae_lookup
+        if residue_field_name:
+            oe_residue_indices = set([entry[residue_field_name] for entry in oe_list])
+            all_residue_indices = sorted(set(all_residue_indices) | oe_residue_indices)
+    
+    # Build header
+    header = f"    {'Residue Index':<15} {'Observed':<12} {'Expected':<12} {'O/E':<10}"
+    if has_plddt:
+        header += f" {'pLDDT':<10}"
+    if has_pae:
+        header += " "  # Empty column before PAE
+        for res_idx in all_residue_indices:
+            header += f"{res_idx:>8}"
+    
+    # Add PAE header row if PAE columns are present
+    if has_pae:
+        # Calculate the width of columns before PAE section
+        pre_pae_width = 15 + 12 + 12 + 10  # Residue Index + Observed + Expected + O/E
+        if has_plddt:
+            pre_pae_width += 10  # pLDDT
+        pre_pae_width += 4  # "    " prefix
+        pre_pae_width += 1  # Empty column before PAE
+        
+        # Create PAE header row with "PAE to residue:" label
+        pae_header = "    " + " " * (15 + 1) + " " * (12 + 1) + " " * (12 + 1) + " " * (10 + 1)
+        if has_plddt:
+            pae_header += " " * (10 + 1)
+        pae_header += " "  # Empty column before PAE
+        # Add "PAE to residue:" label, centered over the PAE columns
+        pae_col_width = 8 * len(all_residue_indices)
+        pae_label = "PAE to residue:"
+        padding = max(0, (pae_col_width - len(pae_label)) // 2)
+        pae_header += " " * padding + pae_label
+        output_string += pae_header + "\n"
+
+    output_string += header + "\n"
+    
+    # Calculate separator length
+    sep_len = 50
+    if has_plddt:
+        sep_len += 11
+    if has_pae:
+        sep_len += 1 + 8 * len(all_residue_indices)
+    output_string += "    " + "-" * sep_len + "\n"
+    
+    residue_field_name = None
+    if len(oe_list) > 0:
+        if "residue_index" in oe_list[0]:
+            residue_field_name = "residue_index"
+        elif "aa_index" in oe_list[0]:
+            residue_field_name = "aa_index"
+        else:
+            oe_list = [x.annotate(residue_index=i) for i, x in enumerate(oe_list)]
+            residue_field_name = "residue_index"
+
+    for oe_entry in oe_list:
+        residue_idx = oe_entry[residue_field_name]
+        obs = oe_entry.obs
+        exp = oe_entry.exp
+        oe_ratio = obs / exp if exp > 0 else 0.0
+        
+        row_str = f"    {residue_idx:<15} {obs:<12} {exp:<12.2f} {oe_ratio:<10.3f}"
+        
+        if has_plddt:
+            plddt_val = plddt_lookup.get(residue_idx, None)
+            if plddt_val is not None:
+                # Color low pLDDT (below min_plddt) red
+                if plddt_val < min_plddt:
+                    plddt_str = f"{RED}{plddt_val:<10.1f}{RESET}"
+                else:
+                    plddt_str = f"{plddt_val:<10.1f}"
+            else:
+                plddt_str = "NA        "
+            row_str += f" {plddt_str}"
+        
+        if has_pae:
+            row_str += " "  # Empty column before PAE
+            # Get PAE array for this residue
+            pae_array = pae_lookup.get(residue_idx, None)
+            for target_res_idx in all_residue_indices:
+                pae_val = None
+                if pae_array is not None:
+                    try:
+                        if target_res_idx < len(pae_array):
+                            pae_val = pae_array[target_res_idx]
+                    except (TypeError, IndexError):
+                        pass
+                
+                if pae_val is not None:
+                    if pae_val > max_pae:
+                        pae_str = f"{RED}{pae_val:>8.2f}{RESET}"
+                    else:
+                        pae_str = f"{pae_val:>8.2f}"
+                else:
+                    pae_str = "     NA"
+                row_str += pae_str
+        
+        output_string += row_str + "\n"
+
+    return output_string
+
+
+def debug_print_oe_table(
+    oe_expr: hl.expr.ArrayExpression,
+    min_plddt: Optional[float] = None,
+    max_pae: Optional[float] = None,
+    dist_mat_expr: Optional[hl.expr.ArrayExpression] = None,
+) -> None:
+    output_string = "\n\n\n"
+    
+    # Get first key for debugging.
+    uniprot_id = None
+    transcript_id = None
+    ht = oe_expr._indices.source
+    first_row = ht.head(1)
+    if first_row.count() > 0:
+        uniprot_id = first_row.uniprot_id.collect()[0]
+        transcript_id = first_row.enst.collect()[0]
+
+    # Filter to the specific uniprot/transcript
+    _ht_debug = ht.filter(
+        (ht.uniprot_id == uniprot_id) 
+        & (ht.enst == transcript_id)
+    )
+    
+    output_string += f"{BOLD}=== Per-residue observed and expected values ==={RESET}\n\n"
+    
+    # Collect data - also get plddt_lookup, pae_lookup, and dist_mat if available
+    select_fields = ["oe"]
+    # Check if fields exist in the row schema
+    row_schema = _ht_debug.row.dtype
+    has_plddt_lookup = "plddt_lookup" in row_schema.fields
+    has_pae_lookup = "pae_lookup" in row_schema.fields
+    has_dist_mat = "dist_mat" in row_schema.fields
+    if has_plddt_lookup:
+        select_fields.append("plddt_lookup")
+    if has_pae_lookup:
+        select_fields.append("pae_lookup")
+    if has_dist_mat and max_pae is not None:
+        # Also get dist_mat to extract PAE arrays if pae_lookup is not available
+        select_fields.append("dist_mat")
+    
+    debug_data = _ht_debug.select(*select_fields).collect()
+    
+    if not debug_data:
+        return
+    
+    row = debug_data[0]
+    
+    # Build pLDDT lookup if available
+    plddt_lookup = None
+    if has_plddt_lookup and hasattr(row, 'plddt_lookup') and row.plddt_lookup is not None:
+        # Create dictionary mapping residue_index to pLDDT value
+        plddt_lookup = {entry.residue_index: entry.plddt for entry in row.plddt_lookup if entry is not None}
+    
+    # Build PAE lookup if available
+    # PAE lookup structure: array of structs with {residue_index: int, pae_array: array<float>}
+    pae_lookup = None
+    if max_pae is not None:
+        # First try to get it from dist_mat_expr parameter (most reliable since it's passed directly)
+        if dist_mat_expr is not None:
+            # Collect dist_mat_expr to extract PAE arrays
+            _ht_dist = dist_mat_expr._indices.source
+            _ht_dist = _ht_dist.annotate(dist_mat=dist_mat_expr)
+            _ht_dist = _ht_dist.filter(
+                (_ht_dist.uniprot_id == uniprot_id) 
+                & (_ht_dist.enst == transcript_id)
+            )
+            dist_data = _ht_dist.select("dist_mat").head(1).collect()
+            if dist_data and len(dist_data) > 0:
+                dist_row = dist_data[0]
+                if hasattr(dist_row, 'dist_mat') and dist_row.dist_mat is not None and len(dist_row.dist_mat) > 0:
+                    pae_lookup = {}
+                    for entry in dist_row.dist_mat:
+                        if entry is not None and hasattr(entry, 'residue_index') and hasattr(entry, 'pae_array') and entry.pae_array is not None:
+                            pae_lookup[entry.residue_index] = entry.pae_array
+        # If not available from dist_mat_expr, try pae_lookup field in table
+        if (pae_lookup is None or len(pae_lookup) == 0) and has_pae_lookup and hasattr(row, 'pae_lookup') and row.pae_lookup is not None:
+            # Create dictionary mapping residue_index to PAE array
+            pae_lookup = {}
+            for entry in row.pae_lookup:
+                if entry is not None and hasattr(entry, 'residue_index') and hasattr(entry, 'pae_array'):
+                    pae_lookup[entry.residue_index] = entry.pae_array
+        # If still not available, try to get it from dist_mat if available
+        if (pae_lookup is None or len(pae_lookup) == 0) and has_dist_mat and hasattr(row, 'dist_mat') and row.dist_mat is not None:
+            # Extract PAE arrays from dist_mat entries
+            pae_lookup = {}
+            for entry in row.dist_mat:
+                if entry is not None and hasattr(entry, 'residue_index') and hasattr(entry, 'pae_array') and entry.pae_array is not None:
+                    pae_lookup[entry.residue_index] = entry.pae_array
+    
+    # Print OE array (per-residue observed/expected)
+    output_string += get_debug_oe_table_string(row.oe, plddt_lookup=plddt_lookup, min_plddt=min_plddt, pae_lookup=pae_lookup, max_pae=max_pae)
+
+    logger.info(output_string)
+
+
+def debug_print_oe_and_regions(
+    ht: hl.Table,
+    title: str = "OE and Regions",
+) -> None:
+    """
+    Print debug output showing OE values and min_oe_upper regions for a given UniProt/transcript.
+    
+    :param ht: Hail Table with schema containing 'oe' and 'min_oe_upper' arrays
+    :param uniprot_id: UniProt ID to filter to
+    :param transcript_id: Transcript ID to filter to
+    :param title: Title for the debug output
+    :param pae_cutoff: PAE threshold - values above this are colored red, below are uncolored. Default is 15.0
+    """
+    output_string = "\n\n\n"
+    
+    # Get first key for debugging.
+    uniprot_id = None
+    transcript_id = None
+    first_row = ht.head(1)
+    if first_row.count() > 0:
+        uniprot_id = first_row.uniprot_id.collect()[0]
+        transcript_id = first_row.transcript_id.collect()[0]
+
+    # Filter to the specific uniprot/transcript
+    _ht_debug = ht.filter(
+        (ht.uniprot_id == uniprot_id) 
+        & (ht.transcript_id == transcript_id)
+    )
+    
+    if _ht_debug.count() == 0:
+        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
+        return
+    
+    output_string += f"{BOLD}=== {title} ==={RESET}\nUniProt ID: {uniprot_id}, Transcript ID: {transcript_id}\n"
+    
+    # Collect data
+    debug_data = _ht_debug.select("oe", "min_oe_upper").collect()
+    
+    if not debug_data:
+        return
+    
+    row = debug_data[0]
+    
+    
+    # Print min_oe_upper array (best region for each center residue)
+    output_string += f"\n    {BOLD}=== Min OE Upper Array (best region for each center residue) ==={RESET}\n\n"
+    
+    if not row.min_oe_upper or len(row.min_oe_upper) == 0:
+        output_string += "No min_oe_upper entries found.\n"
+        logger.info(output_string)
+        return
+    
+    # Find the entry with the minimum OE value (not oe_upper)
+    min_oe_idx = None
+    min_oe_val = None
+    for idx, entry in enumerate(row.min_oe_upper):
+        if hasattr(entry, 'oe') and entry.oe is not None:
+            if min_oe_val is None or entry.oe < min_oe_val:
+                min_oe_val = entry.oe
+                min_oe_idx = idx
+    
+    for idx, entry in enumerate(row.min_oe_upper):
+        is_min = (min_oe_idx is not None and idx == min_oe_idx)
+        
+        output_string += f"\n    {BOLD}Center Residue: {entry.residue_index}{RESET}\n"
+        output_string += f"      Observed: {entry.obs:7d}\n"
+        output_string += f"      Expected: {entry.exp:7.2f}\n"
+        
+        # Highlight minimum OE
+        if is_min:
+            output_string += f"      {HIGHLIGHT}O/E:      {entry.oe:7.2f} (MINIMUM){RESET}\n"
+        else:
+            output_string += f"      O/E:      {entry.oe:7.2f}\n"
+        
+        output_string += f"      OE Upper: {entry.oe_upper:7.2f}\n"
+        
+        # Region (array of residue indices)
+        if hasattr(entry, 'region') and entry.region:
+            region_str = ', '.join([f"{r:7d}" for r in entry.region])
+            output_string += f"      Region residues ({len(entry.region)}): {region_str}\n"
+        else:
+            output_string += f"      Region: None or empty\n"
+        
+        # Distances (array of distances)
+        if hasattr(entry, 'dists') and entry.dists:
+            dists_str = ', '.join([f"{d:7.2f}" for d in entry.dists])
+            output_string += f"      Distances ({len(entry.dists)}):       {dists_str}\n"
+        else:
+            output_string += f"      Distances: None or empty\n"
+    
+    logger.info(output_string)
+
+
+def debug_print_dist_mat_with_colors(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    title: str = "Distance matrix with PAE",
+    max_pae: Optional[float] = None,
+    min_plddt: Optional[float] = None,
+    oe_expr: Optional[hl.expr.ArrayExpression] = None,
+    min_res_idx: Optional[int] = None,
+    max_res_idx: Optional[int] = None,
+    min_dist: Optional[float] = None,
+    max_dist: Optional[float] = None,
+) -> Dict[int, str]:
+    """
+    Generate colored debug output showing distance matrix with PAE values color-coded.
+    Returns a dictionary where keys are center residue indices and values are output strings.
+    
+    :param dist_mat_expr: Array expression with distance matrix entries (must have dist, residue_index, and optionally pae, plddt)
+    :param title: Title for the debug output
+    :param max_pae: Maximum allowed PAE value - values above this are colored red, below are uncolored. If None, PAE won't be shown.
+    :param min_plddt: Minimum allowed pLDDT value. If None, pLDDT won't be shown.
+    :param oe_expr: Optional array expression with OE data (obs, exp, oe, oe_upper). If provided, will print
+        observed, expected, cumulative observed, cumulative expected, cumulative O/E, and cumulative OE upper.
+    :return: Dictionary mapping center residue indices to their debug output strings.
+        For the "Before sorting" full matrix case, returns a dict with key -1 and the full matrix output.
+    """
+    
+    # Get first key for debugging.
+    ht = dist_mat_expr._indices.source
+    uniprot_id = None
+    transcript_id = None
+    first_row = ht.head(1)
+    if first_row.count() > 0:
+        uniprot_id = first_row.uniprot_id.collect()[0]
+        transcript_id = first_row.enst.collect()[0]
+    
+    output_string = ""
+
+    # For "Before sorting by nearest neighbor", if PAE and pLDDT are not shown,
+    # show the full distance matrix (all residues as rows, distances to all residues as columns)
+    show_full_matrix = (
+        "Before sorting by nearest neighbor" in title and
+        max_pae is None and
+        min_plddt is None and
+        oe_expr is None
+    )
+
+    # Filter and collect data
+    select_fields = {"dist_mat": dist_mat_expr}
+    if oe_expr is not None:
+        select_fields["oe_expr"] = oe_expr
+    
+    _ht_debug = ht.annotate(**select_fields)
+    _ht_debug = _ht_debug.filter(
+        (_ht_debug.uniprot_id == uniprot_id) 
+        & (_ht_debug.enst == transcript_id)
+    )
+
+    if _ht_debug.count() == 0:
+        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
+        return
+    
+    header_string = ""
+    if not show_full_matrix:
+        header_string += "    "
+
+    header_string += f"{BOLD}=== {title} ==={RESET}\n"
+    
+    # Collect data for colored output
+    select_fields = ["dist_mat"]
+    if oe_expr is not None:
+        select_fields.append("oe_expr")
+    
+    debug_data = _ht_debug.select(*select_fields).collect()
+    
+    if not debug_data:
+        return {}
+    
+    # Dictionary to store output per center residue
+    output_dict = {}
+    
+    # Check if PAE and pLDDT fields exist in the struct type (only if requested)
+    has_pae_field = False
+    has_plddt_field = False
+    if debug_data and len(debug_data[0].dist_mat) > 0:
+        first_entry = debug_data[0].dist_mat[0]
+        if max_pae is not None:
+            has_pae_field = hasattr(first_entry, 'pae')
+        if min_plddt is not None:
+            has_plddt_field = hasattr(first_entry, 'plddt')
+    
+    # Check if OE fields exist
+    has_oe_data = oe_expr is not None and debug_data and len(debug_data[0].oe_expr) > 0
+    
+    # ANSI color codes for distances (blue to white gradient)
+    BLUE = '\033[94m'      # Closest (bright blue)
+    CYAN = '\033[96m'      # Medium-close (cyan)
+    WHITE = '\033[97m'     # Furthest (white)
+    
+    # ANSI color codes for residue indices (gradient from green to magenta)
+    GREEN_IDX = '\033[92m'    # First in sorted array (closest)
+    YELLOW_IDX = '\033[93m'   # Middle
+    MAGENTA_IDX = '\033[95m'  # Last in sorted array (furthest)
+    
+    # ANSI color code for highlighting minimum OE upper
+    HIGHLIGHT = '\033[1m\033[4m\033[92m'  # Bold and underline for minimum OE upper
+    
+    # Add color legends
+    legend_parts = [
+        f"            {BOLD}Residue index colors:{RESET} {GREEN_IDX}Lowest index{RESET} → {YELLOW_IDX}Middle{RESET} → {MAGENTA_IDX}Highest index{RESET}",
+        f"            {BOLD}Distance colors:{RESET} {BLUE}Closest{RESET} → {CYAN}Medium{RESET} → {WHITE}Furthest{RESET}"
+    ]
+    if max_pae is not None and has_pae_field:
+        legend_parts.append(
+            f"            {BOLD}PAE colors:{RESET} Uncolored (≤{max_pae})  {RED}Red (>{max_pae}){RESET}"
+        )
+    if min_plddt is not None and has_plddt_field:
+        legend_parts.append(
+            f"            {BOLD}pLDDT colors:{RESET} Uncolored (≥{min_plddt})  {RED}Red (<{min_plddt}){RESET}"
+        )
+    legend = '\n'.join(legend_parts)
+    legend_string = f"\n        {BOLD}Color legend:{RESET}\n{legend}\n\n"
+
+    
+        # If showing full matrix, we need all rows to build it, but only show it once
+    if show_full_matrix:
+        # Build full distance matrix from all center residues
+        # First, get all unique residue indices from the first row
+        if not debug_data or len(debug_data) == 0:
+            return {}
+        
+        first_row = debug_data[0]
+        all_unique_residues = sorted([entry.residue_index for entry in first_row.dist_mat])
+        
+        # Build distance lookup: center_residue -> {target_residue: distance}
+        dist_lookup = {}
+        for center_row in debug_data:
+            center_res = center_row.aa_index
+            if center_res not in dist_lookup:
+                dist_lookup[center_res] = {}
+            for entry in center_row.dist_mat:
+                target_res = entry.residue_index
+                dist_lookup[center_res][target_res] = entry.dist
+        
+        # Calculate min/max distances for coloring
+        all_distances = []
+        for center_res in dist_lookup:
+            for target_res in dist_lookup[center_res]:
+                all_distances.append(dist_lookup[center_res][target_res])
+        
+        if all_distances:
+            row_min_dist = min(all_distances) if min_dist is None else min_dist
+            row_max_dist = max(all_distances) if max_dist is None else max_dist
+            dist_range = row_max_dist - row_min_dist if row_max_dist > row_min_dist else 1.0
+        else:
+            row_min_dist = 0.0
+            row_max_dist = 1.0
+            dist_range = 1.0
+        
+        # Calculate residue index range for coloring
+        if all_unique_residues:
+            row_min_res_idx = min(all_unique_residues) if min_res_idx is None else min_res_idx
+            row_max_res_idx = max(all_unique_residues) if max_res_idx is None else max_res_idx
+            res_idx_range = row_max_res_idx - row_min_res_idx if row_max_res_idx > row_min_res_idx else 1.0
+        else:
+            row_min_res_idx = 0
+            row_max_res_idx = 1
+            res_idx_range = 1.0
+        
+        # Helper function to get color for residue index
+        def get_residue_color(res_idx):
+            if res_idx_range > 0:
+                normalized_res_idx = (res_idx - row_min_res_idx) / res_idx_range
+                if normalized_res_idx < 0.33:
+                    return GREEN_IDX
+                elif normalized_res_idx < 0.67:
+                    return YELLOW_IDX
+                else:
+                    return MAGENTA_IDX
+            else:
+                return GREEN_IDX
+        
+        # Create matrix header with colored residue indices
+        header = f"\n        {'Residue':<10}"
+        for res_idx in all_unique_residues:
+            color = get_residue_color(res_idx)
+            header += f"{color}{res_idx:>8}{RESET}"
+        output_string += header + "\n"
+        output_string += "        " + "-" * (10 + 8 * len(all_unique_residues)) + "\n"
+        
+        # Create matrix rows with colored row headers
+        for from_res in all_unique_residues:
+            if from_res in dist_lookup:
+                row_color = get_residue_color(from_res)
+                row_str = f"        {row_color}{from_res:<10}{RESET}"
+                for to_res in all_unique_residues:
+                    if to_res in dist_lookup[from_res]:
+                        dist_val = dist_lookup[from_res][to_res]
+                        # Color code distance
+                        if dist_range > 0:
+                            normalized = (dist_val - row_min_dist) / dist_range
+                            if normalized < 0.5:
+                                color = BLUE if normalized < 0.25 else CYAN
+                            else:
+                                color = CYAN if normalized < 0.75 else WHITE
+                        else:
+                            color = BLUE
+                        row_str += f"{color}{dist_val:>8.2f}{RESET}"
+                    else:
+                        row_str += f"{'?':>8}"
+                output_string += row_str + "\n"
+        
+        # For full matrix, store with key -1 (special key for full matrix)
+        full_output = "\n\n" + header_string + legend_string + output_string
+        output_dict[-1] = full_output
+        return output_dict
+    
+    # Normal processing: show data for each center residue
+    for row in debug_data:
+        center_idx = row.aa_index
+        
+        # Use provided min/max values if available, otherwise calculate from current row
+        residue_indices = [entry.residue_index for entry in row.dist_mat]
+        if not residue_indices:
+            # Empty dist_mat - skip this row
+            continue
+        
+        if min_res_idx is None or max_res_idx is None:
+            # Calculate from current row if not provided
+            row_min_res_idx = min(residue_indices)
+            row_max_res_idx = max(residue_indices)
+        else:
+            # Use provided values
+            row_min_res_idx = min_res_idx
+            row_max_res_idx = max_res_idx
+        res_idx_range = row_max_res_idx - row_min_res_idx if row_max_res_idx > row_min_res_idx else 1  # Avoid division by zero
+        
+        # Find min and max distances for gradient
+        distances = [entry.dist for entry in row.dist_mat]
+        if not distances:
+            # Empty dist_mat - skip this row
+            continue
+        
+        if min_dist is None or max_dist is None:
+            # Calculate from current row if not provided
+            row_min_dist = min(distances)
+            row_max_dist = max(distances)
+        else:
+            # Use provided values
+            row_min_dist = min_dist
+            row_max_dist = max_dist
+        dist_range = row_max_dist - row_min_dist if row_max_dist > row_min_dist else 1.0  # Avoid division by zero
+        
+        # Get OE data if available (should be parallel to dist_mat)
+        oe_entries = row.oe_expr if has_oe_data else None
+        
+        # Find minimum OE upper value and its index (if OE data is available)
+        min_oe_upper_idx = None
+        min_oe_upper_val = None
+        if has_oe_data and oe_entries:
+            # Filter to entries that have oe_upper defined and not None
+            valid_oe_entries = [(idx, entry) for idx, entry in enumerate(oe_entries) 
+                               if hasattr(entry, 'oe_upper') and entry.oe_upper is not None]
+            if valid_oe_entries:
+                # Find the entry with minimum OE upper
+                min_entry = min(valid_oe_entries, key=lambda x: x[1].oe_upper)
+                min_oe_upper_idx = min_entry[0]
+                min_oe_upper_val = min_entry[1].oe_upper
+        
+        # Build colored output
+        residue_strs = []
+        dist_strs = []
+        pae_strs = []
+        plddt_strs = []
+        obs_strs = []
+        exp_strs = []
+        cum_obs_strs = []
+        cum_exp_strs = []
+        cum_oe_strs = []
+        cum_oe_upper_strs = []
+        
+        for idx, entry in enumerate(row.dist_mat):
+            # Color code residue indices by their actual index value (not position in array)
+            res_idx_val = entry.residue_index
+            if res_idx_range > 0:
+                # Normalize residue index to 0-1 range
+                normalized_res_idx = (res_idx_val - row_min_res_idx) / res_idx_range
+                # Interpolate between green (lowest index) and magenta (highest index)
+                if normalized_res_idx < 0.33:
+                    color_idx = GREEN_IDX
+                elif normalized_res_idx < 0.67:
+                    color_idx = YELLOW_IDX
+                else:
+                    color_idx = MAGENTA_IDX
+            else:
+                # All residue indices are the same
+                color_idx = GREEN_IDX
+            residue_strs.append(f"{color_idx}{res_idx_val:7d}{RESET}")
+            
+            # Color code distances (blue for closest, white for furthest)
+            dist_val = entry.dist
+            if dist_range > 0:
+                # Normalize distance to 0-1 range
+                normalized = (dist_val - row_min_dist) / dist_range
+                # Interpolate between blue (0.0) and white (1.0)
+                if normalized < 0.5:
+                    # Blue to cyan gradient
+                    color = BLUE if normalized < 0.25 else CYAN
+                else:
+                    # Cyan to white gradient
+                    color = CYAN if normalized < 0.75 else WHITE
+            else:
+                # All distances are the same
+                color = BLUE
+            dist_strs.append(f"{color}{dist_val:7.2f}{RESET}")
+            
+            # Color code PAE values if available and requested
+            if max_pae is not None and has_pae_field:
+                pae_val = entry.pae
+                if pae_val > max_pae:
+                    # Color red if above cutoff
+                    pae_strs.append(f"{RED}{pae_val:7.2f}{RESET}")
+                else:
+                    # No color if below cutoff
+                    pae_strs.append(f"{pae_val:7.2f}")
+            elif max_pae is not None:
+                pae_strs.append("     NA")
+            
+            # Add pLDDT values if available and requested
+            if min_plddt is not None and has_plddt_field:
+                plddt_val = entry.plddt
+                if plddt_val is not None:
+                    # Color low pLDDT (below min_plddt) red
+                    if plddt_val < min_plddt:
+                        plddt_strs.append(f"{RED}{plddt_val:7.1f}{RESET}")
+                    else:
+                        plddt_strs.append(f"{plddt_val:7.1f}")
+                else:
+                    plddt_strs.append("     NA")
+            elif min_plddt is not None:
+                plddt_strs.append("     NA")
+            
+            # Add OE data if available (no coloring)
+            # Check if this residue is excluded from stats (for exclude_low_plddt_from_stats)
+            is_excluded = False
+            if hasattr(entry, 'exclude_from_stats'):
+                is_excluded = entry.exclude_from_stats is True
+            
+            if has_oe_data and oe_entries and idx < len(oe_entries):
+                oe_entry = oe_entries[idx]
+                
+                # If excluded from stats, show NA for all OE values
+                if is_excluded:
+                    obs_strs.append("     NA")
+                    exp_strs.append("     NA")
+                    cum_obs_strs.append("     NA")
+                    cum_exp_strs.append("     NA")
+                    cum_oe_strs.append("     NA")
+                    cum_oe_upper_strs.append("     NA")
+                else:
+                    # After get_cumulative_oe, obs and exp are cumulative
+                    # Calculate per-residue values from cumulative
+                    if idx == 0:
+                        # First entry: per-residue = cumulative
+                        per_residue_obs = oe_entry.obs
+                        per_residue_exp = oe_entry.exp
+                    else:
+                        # Subsequent entries: per-residue = current cumulative - previous cumulative
+                        prev_entry = oe_entries[idx - 1]
+                        per_residue_obs = oe_entry.obs - prev_entry.obs if (oe_entry.obs is not None and prev_entry.obs is not None) else None
+                        per_residue_exp = oe_entry.exp - prev_entry.exp if (oe_entry.exp is not None and prev_entry.exp is not None) else None
+                    
+                    # Handle None values in formatting
+                    if per_residue_obs is not None:
+                        obs_strs.append(f"{per_residue_obs:7d}")
+                    else:
+                        obs_strs.append("     NA")
+                    
+                    if per_residue_exp is not None:
+                        exp_strs.append(f"{per_residue_exp:7.2f}")
+                    else:
+                        exp_strs.append("     NA")
+                    
+                    # Cumulative values
+                    if oe_entry.obs is not None:
+                        cum_obs_strs.append(f"{oe_entry.obs:7d}")
+                    else:
+                        cum_obs_strs.append("     NA")
+                    
+                    if oe_entry.exp is not None:
+                        cum_exp_strs.append(f"{oe_entry.exp:7.2f}")
+                    else:
+                        cum_exp_strs.append("     NA")
+                    
+                    if oe_entry.oe is not None:
+                        cum_oe_strs.append(f"{oe_entry.oe:7.2f}")
+                    else:
+                        cum_oe_strs.append("     NA")
+                    
+                    # Highlight minimum OE upper value
+                    if oe_entry.oe_upper is not None:
+                        if min_oe_upper_idx is not None and idx == min_oe_upper_idx:
+                            cum_oe_upper_strs.append(f"{HIGHLIGHT}{oe_entry.oe_upper:7.2f}{RESET}")
+                        else:
+                            cum_oe_upper_strs.append(f"{oe_entry.oe_upper:7.2f}")
+                    else:
+                        cum_oe_upper_strs.append("     NA")
+            elif has_oe_data:
+                # OE data exists but this index is out of range
+                obs_strs.append("     NA")
+                exp_strs.append("     NA")
+                cum_obs_strs.append("     NA")
+                cum_exp_strs.append("     NA")
+                cum_oe_strs.append("     NA")
+                cum_oe_upper_strs.append("     NA")
+        
+        # Build output for this center residue (content only, no header/legend)
+        output = (
+            f"        Residue indices:     {', '.join(residue_strs)}\n"
+            f"        Distances:           {', '.join(dist_strs)}\n"
+        )
+        
+        if max_pae is not None and has_pae_field:
+            output += (
+                f"        PAE:                 {', '.join(pae_strs)}\n"
+            )
+        
+        if min_plddt is not None and has_plddt_field:
+            output += (
+                f"        pLDDT:               {', '.join(plddt_strs)}\n"
+            )
+        
+        if has_oe_data:
+            output += (
+                f"        Observed:            {', '.join(obs_strs)}\n"
+                f"        Expected:            {', '.join(exp_strs)}\n"
+                f"        Cumulative Observed: {', '.join(cum_obs_strs)}\n"
+                f"        Cumulative Expected: {', '.join(cum_exp_strs)}\n"
+                f"        Cumulative O/E:      {', '.join(cum_oe_strs)}\n"
+                f"        Cumulative OE Upper: {', '.join(cum_oe_upper_strs)}\n"
+            )
+            if min_oe_upper_idx is not None:
+                min_oe_entry = oe_entries[min_oe_upper_idx]
+                output += f"\n        {BOLD}Minimum OE Upper:{RESET} {HIGHLIGHT}{min_oe_upper_val:.2f}{RESET} at index {min_oe_upper_idx} (residue {row.dist_mat[min_oe_upper_idx].residue_index})\n"
+                
+                # Add Observed, Expected, O/E, and OE Upper values
+                if hasattr(min_oe_entry, 'obs') and min_oe_entry.obs is not None:
+                    output += f"        Observed:      {min_oe_entry.obs:7d}\n"
+                else:
+                    output += f"        Observed:      {'N/A':>7}\n"
+                
+                if hasattr(min_oe_entry, 'exp') and min_oe_entry.exp is not None:
+                    output += f"        Expected:    {min_oe_entry.exp:7.2f}\n"
+                else:
+                    output += f"        Expected:    {'N/A':>7}\n"
+                
+                if hasattr(min_oe_entry, 'oe') and min_oe_entry.oe is not None:
+                    output += f"        O/E:          {min_oe_entry.oe:7.2f}\n"
+                else:
+                    output += f"        O/E:          {'N/A':>7}\n"
+                
+                if hasattr(min_oe_entry, 'oe_upper') and min_oe_entry.oe_upper is not None:
+                    output += f"        OE Upper:     {min_oe_entry.oe_upper:7.2f}\n"
+                else:
+                    output += f"        OE Upper:     {'N/A':>7}\n"
+                
+                # Add region information if available
+                if hasattr(min_oe_entry, 'region') and min_oe_entry.region is not None and len(min_oe_entry.region) > 0:
+                    region_str = ', '.join([f"{r:7d}" for r in min_oe_entry.region])
+                    output += f"        Region residues ({len(min_oe_entry.region)}): {region_str}\n"
+                else:
+                    # If region is not available, build it from dist_mat up to min_oe_upper_idx
+                    region_residues = [entry.residue_index for entry in row.dist_mat[:min_oe_upper_idx + 1]]
+                    region_str = ', '.join([f"{r:7d}" for r in region_residues])
+                    output += f"        Region residues ({len(region_residues)}): {region_str}\n"
+        
+        # Store output for this center residue
+        # Include header and legend in the output string
+        full_output = "\n\n" + header_string + legend_string + output
+        output_dict[center_idx] = full_output
+
+    return output_dict
+
 
 def get_3d_residue(
+    center_residue_index_expr: hl.expr.Int32Expression,
     dist_mat_expr: hl.expr.ArrayExpression,
     oe_expr: hl.expr.ArrayExpression,
-    pae_expr: Optional[hl.expr.ArrayExpression] = None,
     alpha: float = 0.05,
     oe_upper_method: str = "gamma",
     min_exp_mis: int = MIN_EXP_MIS,
-    max_pae: Optional[float] = 15,
+    pae_cutoff_method: str = "truncate_on_pairwise_pae_with_center",
+    plddt_cutoff_method: Optional[str] = None,
+    debug: bool = False,
+    max_pae: Optional[float] = None,
+    min_plddt: Optional[float] = None,
 ) -> hl.expr.StructExpression:
     """
     Get the 3D residue with the lowest upper bound of the OE confidence interval.
 
-    :param dist_mat_expr: Array expression with distance matrix.
+    :param dist_mat_expr: Array[Struct] with at least `residue_index` and `dist`.
     :param oe_expr: Array expression with observed and expected values.
+    :param pae_expr: Optional array expression with PAE (Predicted Aligned Error) values.
+        - For center-based options: 1D array of PAE(center_residue, neighbor_residue).
+        - For region-based option: 2D array of PAE(region_i, region_j) where
+          pae_expr[i][j] = PAE(residue_i, residue_j) for this region.
+        Default is None.
+    :param plddt_expr: Optional array expression with pLDDT (per-residue confidence) values.
+        1D array of pLDDT scores for each residue, parallel to dist_mat_expr.
+        Default is None.
     :param alpha: Significance level for the OE confidence interval. Default is 0.05.
+    :param oe_upper_method: Method to use for calculating OE upper bound. Default is "gamma".
     :param min_exp_mis: Minimum number of expected missense variants in a region to be
         considered for constraint calculation. Default is MIN_EXP_MIS.
+    :param max_pae: Maximum allowed PAE for including residues in the region. Default is 15.
+    :param pae_cutoff_method: Strategy for handling residues with high PAE values. Options:
+        - "truncate_on_pairwise_pae_with_center": Remove all residues after the first one
+          with PAE(center, neighbor) > max_pae (sequential cutoff).
+        - "filter_on_pairwise_pae_with_center": Remove only residues with
+          PAE(center, neighbor) > max_pae, keep others (filter individual residues).
+        - "filter_on_pairwise_pae_in_region": Filter out residues whose maximum pairwise
+          PAE to any residue in the region exceeds max_pae. Requires 2D pae_expr.
+        - "remove_all_residues_after_first_over_cutoff": Alias for
+          "truncate_on_pairwise_pae_with_center" (for backward compatibility).
+        - "remove_residues_after_first_high_pairwise_pae_with_current_residue": Alias for
+          "truncate_on_pairwise_pae_with_center" (for backward compatibility).
+        - "remove_residues_with_high_pairwise_pae_with_current_residue": Alias for
+          "filter_on_pairwise_pae_with_center" (for backward compatibility).
+        - "remove_residues_with_high_pairwise_pae_in_region": Alias for
+          "filter_on_pairwise_pae_in_region" (for backward compatibility).
+        Default is "truncate_on_pairwise_pae_with_center".
+    :param min_plddt: Minimum allowed pLDDT for including residues in the region.
+        Default is None.
+    :param plddt_cutoff_method: Strategy for handling residues with low pLDDT values. Options:
+        - "truncate_at_first_low_plddt": Remove all residues after the first one with
+          pLDDT < min_plddt (sequential cutoff).
+        - "remove_low_plddt_residues": Remove only residues with pLDDT < min_plddt,
+          keep others (filter individual residues).
+        - "mask_low_confidence_plddt": Mask (set to missing) residues with pLDDT < min_plddt
+          instead of removing them.
+        - "exclude_low_plddt_from_stats": Keep low pLDDT residues in regions (for assignment
+          based on distance) but exclude them from statistical calculations (Obs, Exp, OE,
+          OE upper, nLL, etc.).
+        Default is None (no pLDDT filtering).
     :return: Struct expression with the 3D residue with the lowest upper bound of the OE
         confidence interval.
     """
+    # Dictionary to collect all debug outputs, keyed by center residue index
+    # Structure: {center_res_idx: {step_name: output_string}}
+    debug_outputs_by_residue = {}
+    
+    # Extract UniProt ID and Transcript ID once for debug output
+    debug_uniprot_id = None
+    debug_transcript_id = None
+    if debug:
+        _ht_debug = dist_mat_expr._indices.source
+        first_row = _ht_debug.head(1)
+        if first_row.count() > 0:
+            debug_uniprot_id = first_row.uniprot_id.collect()[0]
+            debug_transcript_id = first_row.enst.collect()[0]
+        # Print UniProt ID and Transcript ID once at the beginning
+        logger.info(f"\nUniProt ID: {debug_uniprot_id}, Transcript ID: {debug_transcript_id}\n")
+        debug_print_oe_table(oe_expr, min_plddt=min_plddt, max_pae=max_pae, dist_mat_expr=dist_mat_expr)
+    
     # Annotate neighbor order per residue.
     dist_mat_expr = add_idx_to_array(
         dist_mat_expr, "residue_index", element_name="dist"
     )
 
-    if pae_expr is not None and max_pae is not None:
-        dist_mat_expr = hl.zip(dist_mat_expr, pae_expr).map(
-            lambda x: x[0].annotate(pae=x[1])
+    # Calculate global min/max for consistent coloring across debug statements
+    # We need to collect these values once and reuse them
+    debug_min_max = None
+    if debug:
+        # Get min/max values from the original dist_mat_expr for consistent coloring
+        # We'll calculate these from the first row's dist_mat
+        _ht_debug = dist_mat_expr._indices.source
+        _ht_debug = _ht_debug.annotate(dist_mat=dist_mat_expr).head(1)
+        if _ht_debug.count() > 0:
+            debug_data = _ht_debug.select("dist_mat").collect()
+            if debug_data and len(debug_data[0].dist_mat) > 0:
+                all_residue_indices = [entry.residue_index for entry in debug_data[0].dist_mat]
+                all_distances = [entry.dist for entry in debug_data[0].dist_mat]
+                if all_residue_indices and all_distances:
+                    debug_min_max = {
+                        'min_res_idx': min(all_residue_indices),
+                        'max_res_idx': max(all_residue_indices),
+                        'min_dist': min(all_distances),
+                        'max_dist': max(all_distances),
+                    }
+
+     # Debug: Show dist_mat_expr before sorting by nearest neighbor.
+    if debug:
+        debug_dict = debug_print_dist_mat_with_colors(
+            dist_mat_expr,
+            title="get_3d_residue: Before sorting by nearest neighbor",
+            min_res_idx=debug_min_max['min_res_idx'] if debug_min_max else None,
+            max_res_idx=debug_min_max['max_res_idx'] if debug_min_max else None,
+            min_dist=debug_min_max['min_dist'] if debug_min_max else None,
+            max_dist=debug_min_max['max_dist'] if debug_min_max else None,
         )
+        # Store debug output (key -1 is for full matrix, otherwise it's center_res_idx)
+        for center_idx, output_str in debug_dict.items():
+            if center_idx not in debug_outputs_by_residue:
+                debug_outputs_by_residue[center_idx] = {}
+            debug_outputs_by_residue[center_idx]["Before sorting"] = output_str
 
     dist_mat_expr = hl.sorted(dist_mat_expr, key=lambda x: x.dist)
 
-    drop_fields = []
-    if pae_expr is not None and max_pae is not None:
-        pae_cutoff_idx = hl.enumerate(dist_mat_expr).find(lambda x: x[1].pae > max_pae)
-        dist_mat_expr = hl.if_else(
-            hl.is_defined(pae_cutoff_idx),
-            dist_mat_expr[: pae_cutoff_idx[0]],
+    # Debug: Show sorting by nearest neighbor.
+    if debug:
+        debug_dict = debug_print_dist_mat_with_colors(
             dist_mat_expr,
+            title="get_3d_residue: After sorting by nearest neighbor",
+            max_pae=max_pae,
+            min_plddt=min_plddt,
+            min_res_idx=debug_min_max['min_res_idx'] if debug_min_max else None,
+            max_res_idx=debug_min_max['max_res_idx'] if debug_min_max else None,
+            min_dist=debug_min_max['min_dist'] if debug_min_max else None,
+            max_dist=debug_min_max['max_dist'] if debug_min_max else None,
         )
-        drop_fields.append("pae")
+        # Store debug output
+        for center_idx, output_str in debug_dict.items():
+            if center_idx not in debug_outputs_by_residue:
+                debug_outputs_by_residue[center_idx] = {}
+            debug_outputs_by_residue[center_idx]["After sorting"] = output_str
+    
+    drop_fields = []
+    # Apply pLDDT filtering FIRST (before PAE filtering)
+    # This makes sense because pLDDT is a per-residue confidence score - if a residue
+    # has low confidence, we should filter it out before doing pairwise PAE checks
+    if min_plddt is not None:
+        # Check if pLDDT data is available in dist_mat
+        has_plddt_field = 'plddt' in dist_mat_expr.dtype.element_type.fields
+        
+        if not has_plddt_field:
+            raise ValueError("pLDDT data is not available in dist_mat_expr!")
+        
+        if plddt_cutoff_method == "truncate_at_first_low_plddt":
+            # Remove all residues after the first one with pLDDT < min_plddt
+            plddt_cutoff_idx = hl.enumerate(dist_mat_expr).find(
+                lambda x: hl.is_defined(x[1].plddt) & (x[1].plddt < min_plddt)
+            )
+            dist_mat_expr = hl.if_else(
+                hl.is_defined(plddt_cutoff_idx),
+                dist_mat_expr[: plddt_cutoff_idx[0]],
+                dist_mat_expr,
+            )
 
+        elif plddt_cutoff_method == "remove_low_plddt_residues":
+            # Remove only residues with pLDDT < min_plddt, keep others
+            dist_mat_expr = dist_mat_expr.filter(
+                lambda x: ~hl.is_defined(x.plddt) | (x.plddt >= min_plddt)
+            )
+
+        elif plddt_cutoff_method == "exclude_low_plddt_from_stats":
+            # Keep all residues but mark low confidence ones to exclude from stats
+            # Mark residues with exclude_from_stats flag but keep them in the array
+            dist_mat_expr = dist_mat_expr.map(
+                lambda x: x.annotate(
+                    exclude_from_stats=hl.is_defined(x.plddt) & (x.plddt < min_plddt)
+                )
+            )
+
+        else:
+            raise ValueError(f"Unknown plddt_cutoff_method: {plddt_cutoff_method}")
+    
+    # Apply PAE filtering AFTER pLDDT filtering
+    if max_pae is not None:
+        # Check if PAE data is available in dist_mat (as arrays)
+        # Each residue may have a 'pae_array' field (full PAE array) or 'pae' field (single value)
+        has_pae_arrays = 'pae' in dist_mat_expr.dtype.element_type.fields or 'pae_array' in dist_mat_expr.dtype.element_type.fields
+        
+        if not has_pae_arrays:
+            raise ValueError("PAE data is not available in dist_mat_expr!")
+
+        if pae_cutoff_method == "truncate_on_pairwise_pae_with_center":
+            # Find first neighbor where PAE(center, neighbor) > max_pae
+            # Each residue has a 'pae' field which is PAE from center to that residue
+            pae_cutoff_idx = hl.enumerate(dist_mat_expr).find(
+                lambda x: hl.is_defined(x[1].pae) & (x[1].pae > max_pae)
+            )
+            if pae_cutoff_idx is not None:
+                dist_mat_expr = hl.if_else(
+                    hl.is_defined(pae_cutoff_idx),
+                    dist_mat_expr[: pae_cutoff_idx[0]],
+                    dist_mat_expr,
+                )
+        elif pae_cutoff_method == "filter_on_pairwise_pae_with_center":
+            # Keep only neighbors with PAE(center, neighbor) <= max_pae
+            # Each residue has a 'pae' field which is PAE from center to that residue
+            dist_mat_expr = dist_mat_expr.filter(
+                lambda x: ~hl.is_defined(x.pae) | (x.pae <= max_pae)
+            )
+        elif pae_cutoff_method == "filter_on_pairwise_pae_in_region":
+            # Debug: Show PAE matrix before filtering (pLDDT filtering has already been applied)
+            if debug:
+                debug_dict = debug_print_pae_matrix_for_region(
+                    dist_mat_expr,
+                    center_residue_index_expr,
+                    max_pae=max_pae,
+                    title="get_3d_residue: PAE matrix before filter_on_pairwise_pae_in_region (after pLDDT filtering)",
+                    min_plddt=min_plddt,
+                    plddt_cutoff_method=plddt_cutoff_method,
+                )
+                # Store debug output
+                for center_idx, output_str in debug_dict.items():
+                    if center_idx not in debug_outputs_by_residue:
+                        debug_outputs_by_residue[center_idx] = {}
+                    debug_outputs_by_residue[center_idx]["PAE matrix before filter"] = output_str
+            
+            # Build region by scanning: for each residue, check if its PAE to any residue
+            # already in the region exceeds max_pae. If not, add it to the region.
+            # Note: pLDDT filtering has already been applied, so we're only considering
+            # high-confidence residues (or all residues if exclude_low_plddt_from_stats was used)
+            # Check if pae_array field exists (for pairwise PAE)
+            has_pae_array_field = 'pae_array' in dist_mat_expr.dtype.element_type.fields
+            if not has_pae_array_field:
+                raise ValueError("PAE array data is not available in dist_mat_expr!")
+            # Check PAE from new residue to each residue in region
+            # residue.pae_array[x.residue_index] gives PAE from residue to x
+            # Logic: add residue if (pae_array is None) OR (NOT any(PAE > max_pae to residues in region))
+            # This means: add if pae_array is None OR if all PAE values to residues in region are <= max_pae
+            dist_mat_expr = dist_mat_expr.scan(
+                lambda region, residue: hl.if_else(
+                    (residue.pae_array is None) | ~hl.any(
+                        region.map(
+                            lambda x: hl.is_defined(residue.pae_array) & 
+                                     (residue.pae_array[x.residue_index] > max_pae)
+                        )
+                    ),
+                    region.append(residue),
+                    region
+                ),
+                hl.empty_array(dist_mat_expr.dtype.element_type)
+            )
+
+            # Get the final region (last element of the scan result)
+            dist_mat_expr = dist_mat_expr[-1]
+
+        else:
+            raise ValueError(f"Unknown pae_cutoff_method: {pae_cutoff_method}")
+    
     dist_mat_expr = dist_mat_expr.map(lambda x: x.drop(*drop_fields))
 
     # Annotate neighbor observed and expected, cumulative observed and expected, and
     # upper bound of OE confidence interval.
-    oe_expr = dist_mat_expr.map(lambda x: x.annotate(**oe_expr[x.residue_index]))
-    oe_expr = oe_expr.filter(lambda x: hl.is_defined(x))
+    if "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields:
+        oe_expr = dist_mat_expr.map(
+            lambda x: x.annotate(
+                **hl.or_missing(
+                    ~x.exclude_from_stats,
+                    oe_expr[x.residue_index]
+                )
+            )
+        )
+    else:
+        oe_expr = dist_mat_expr.map(lambda x: x.annotate(**oe_expr[x.residue_index]))
+    
     oe_expr = get_cumulative_oe(oe_expr)
     oe_expr = calculate_oe_upper(oe_expr, alpha=alpha, oe_upper_method=oe_upper_method)
-
+    
+    # Debug: Show OE calculations after calculate_oe_upper
+    if debug:
+        debug_dict = debug_print_dist_mat_with_colors(
+            dist_mat_expr,
+            title="get_3d_residue: After calculate_oe_upper",
+            max_pae=max_pae,
+            min_plddt=min_plddt,
+            oe_expr=oe_expr,
+            min_res_idx=debug_min_max['min_res_idx'] if debug_min_max else None,
+            max_res_idx=debug_min_max['max_res_idx'] if debug_min_max else None,
+            min_dist=debug_min_max['min_dist'] if debug_min_max else None,
+            max_dist=debug_min_max['max_dist'] if debug_min_max else None,
+        )
+        # Store debug output
+        for center_idx, output_str in debug_dict.items():
+            if center_idx not in debug_outputs_by_residue:
+                debug_outputs_by_residue[center_idx] = {}
+            debug_outputs_by_residue[center_idx]["After calculate_oe_upper"] = output_str
+    
+    # Print all debug outputs grouped by residue
+    if debug and debug_outputs_by_residue:
+        # First, handle the full matrix case (key -1) if it exists
+        if -1 in debug_outputs_by_residue:
+            logger.info(debug_outputs_by_residue[-1]["Before sorting"])
+            del debug_outputs_by_residue[-1]
+        
+        # Then print per-residue outputs
+        for center_idx in sorted(debug_outputs_by_residue.keys()):
+            residue_outputs = debug_outputs_by_residue[center_idx]
+            
+            # Print center residue index once before all steps.
+            combined_output = f"\n{BOLD}Center residue index: {center_idx}{RESET}\n"
+            
+            # Combine all steps for this residue.
+            for step_name in ["Before sorting", "After sorting", "PAE matrix before filter", "After calculate_oe_upper"]:
+                if step_name in residue_outputs:
+                    combined_output += residue_outputs[step_name] + "\n"
+            if combined_output:
+                logger.info(combined_output)
+    
     # Get the 3D region with the lowest upper bound of the OE confidence interval for
     # each residue.
     min_moeuf_expr = get_min_oe_upper(oe_expr, min_exp_mis=min_exp_mis)
@@ -936,58 +2352,170 @@ def determine_regions_with_min_oe_upper(
     af2_ht: hl.Table,
     oe_codon_ht: hl.Table,
     pae_ht: Optional[hl.Table] = None,
+    plddt_ht: Optional[hl.Table] = None,
     alpha: float = 0.05,
     oe_upper_method: str = "gamma",
     min_exp_mis: int = MIN_EXP_MIS,
     max_pae: Optional[float] = 15,
+    pae_cutoff_method: str = "truncate_on_pairwise_pae_with_center",
+    min_plddt: Optional[float] = None,
+    plddt_cutoff_method: Optional[str] = None,
+    debug: bool = False,
 ) -> hl.Table:
     """
     Determine the most intolerant region for each UniProt ID and residue index.
 
     :param af2_ht: Hail Table with AlphaFold2 data.
     :param oe_codon_ht: Hail Table with observed and expected values for codons.
+    :param pae_ht: Optional Hail Table with PAE (Predicted Aligned Error) data.
+        Default is None.
+    :param plddt_ht: Optional Hail Table with pLDDT (per-residue confidence) data.
+        Default is None.
+    :param alpha: Significance level for the OE confidence interval. Default is 0.05.
+    :param oe_upper_method: Method to use for calculating OE upper bound. Default is "gamma".
     :param min_exp_mis: Minimum number of expected missense variants in a region to be
         considered for constraint calculation. Default is MIN_EXP_MIS.
+    :param max_pae: Maximum allowed PAE for including residues in the region. Default is 15.
+    :param pae_cutoff_method: Strategy for handling residues with high PAE values. Options:
+        - "truncate_on_pairwise_pae_with_center": Remove all residues after the first one
+          with PAE(center, neighbor) > max_pae (sequential cutoff).
+        - "filter_on_pairwise_pae_with_center": Remove only residues with
+          PAE(center, neighbor) > max_pae, keep others (filter individual residues).
+        - "filter_on_pairwise_pae_in_region": Filter out residues whose maximum pairwise
+          PAE to any residue in the region exceeds max_pae. Requires 2D pae_expr.
+        Default is "truncate_on_pairwise_pae_with_center".
+    :param min_plddt: Minimum allowed pLDDT for including residues in the region.
+        Default is None.
+    :param plddt_cutoff_method: Strategy for handling residues with low pLDDT values. Options:
+        - "truncate_at_first_low_plddt": Remove all residues after the first one with
+          pLDDT < min_plddt (sequential cutoff).
+        - "remove_low_plddt_residues": Remove only residues with pLDDT < min_plddt,
+          keep others (filter individual residues).
+        - "mask_low_confidence_plddt": Mask (set to missing) residues with pLDDT < min_plddt
+          instead of removing them.
+        - "exclude_low_plddt_from_stats": Keep low pLDDT residues in regions (for assignment
+          based on distance) but exclude them from statistical calculations (Obs, Exp, OE,
+          OE upper, nLL, etc.).
+        Default is None (no pLDDT filtering).
     :return: Hail Table with the most intolerant region for each UniProt ID and residue
         index
     """
-    ht = af2_ht.annotate(oe=oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript)
-    ht = ht.explode(ht.oe)
-    ht = ht.annotate(
-        **ht.oe,
-        **(
-            {"pae": pae_ht[ht.uniprot_id, ht.aa_index].pae}
-            if pae_ht is not None
-            else {}
-        ),
-    )
+    ann_expr = {"oe": oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript}
+    if pae_ht is not None:
+        # For pairwise PAE in region, we need each residue's PAE array, not just the center's
+        # Create an array of structs (residue_index, pae_array) for lookup
+        _pae_lookup_ht = pae_ht.group_by("uniprot_id").aggregate(
+            pae_lookup=hl.agg.collect(
+                hl.struct(
+                    residue_index=pae_ht.aa_index,
+                    pae_array=pae_ht.pae
+                )
+            )
+        )
+        pae_lookup_array = _pae_lookup_ht[af2_ht.uniprot_id].pae_lookup
+        # Annotate pae_lookup onto the HT for debugging
+        ann_expr["pae_lookup"] = pae_lookup_array
+        # Get center's PAE array for single PAE value
+        center_pae_array = pae_ht[af2_ht.uniprot_id, af2_ht.aa_index].pae
+        # Annotate each element of dist_mat with its corresponding PAE array
+        ann_expr["dist_mat"] = af2_ht.dist_mat.map(
+            lambda x: x.annotate(
+                pae_array=hl.or_missing(
+                    hl.is_defined(pae_lookup_array),
+                    pae_lookup_array.find(lambda y: y.residue_index == x.residue_index).pae_array
+                ),
+                pae=hl.or_missing(
+                    hl.is_defined(center_pae_array),
+                    center_pae_array[x.residue_index]
+                )  # Keep single PAE value (from center to this residue) for backward compatibility
+            )
+        )
 
-    ht = ht.transmute(
+    
+    if plddt_ht is not None:
+        # Create lookup for pLDDT values (for debugging)
+        _plddt_lookup_ht = plddt_ht.group_by("uniprot_id").aggregate(
+            plddt_lookup=hl.agg.collect(
+                hl.struct(
+                    residue_index=plddt_ht.aa_index,
+                    plddt=plddt_ht.plddt
+                )
+            ),
+        )
+        ann_expr["plddt_lookup"] = _plddt_lookup_ht[af2_ht.uniprot_id].plddt_lookup
+        
+        # Add pLDDT to dist_mat (similar to how PAE is added)
+        plddt_lookup_array = _plddt_lookup_ht[af2_ht.uniprot_id].plddt_lookup
+        # Annotate each element of dist_mat with its corresponding pLDDT value
+        # dist_mat may have already been created with PAE, or we need to create it
+        if "dist_mat" in ann_expr:
+            # dist_mat already exists (from PAE annotation), add pLDDT to it
+            ann_expr["dist_mat"] = ann_expr["dist_mat"].map(
+                lambda x: x.annotate(
+                    plddt=hl.or_missing(
+                        hl.is_defined(plddt_lookup_array),
+                        plddt_lookup_array.find(lambda y: y.residue_index == x.residue_index).plddt
+                    )
+                )
+            )
+        else:
+            # dist_mat hasn't been created yet (no PAE), so create it with pLDDT
+            ann_expr["dist_mat"] = af2_ht.dist_mat.map(
+                lambda x: x.annotate(
+                    plddt=hl.or_missing(
+                        hl.is_defined(plddt_lookup_array),
+                        plddt_lookup_array.find(lambda y: y.residue_index == x.residue_index).plddt
+                    )
+                )
+            )
+    
+    ht = af2_ht.annotate(**ann_expr)
+    ht = ht.explode(ht.oe)
+    # After explode, ht.oe is a struct with 'enst' and 'oe' (array)
+    # Unpack the struct fields - this adds 'enst' and 'oe' (array) as top-level fields
+    # But ht.oe still refers to the struct, so we need to drop it and use the unpacked 'oe' field
+    ht = ht.annotate(oe_array=ht.oe.oe, enst=ht.oe.enst).drop("oe")
+    ht = ht.rename({"oe_array": "oe"})
+
+    ht = ht.annotate(
         transcript_id=ht.enst,
-        oe=ht.oe,
         min_oe_upper=get_3d_residue(
+            ht.aa_index,
             ht.dist_mat,
             ht.oe,
-            pae_expr=ht.pae if pae_ht is not None else None,
             alpha=alpha,
             oe_upper_method=oe_upper_method,
             min_exp_mis=min_exp_mis,
-            max_pae=max_pae,
+            pae_cutoff_method=pae_cutoff_method,
+            plddt_cutoff_method=plddt_cutoff_method,
+            debug=debug,
+            max_pae=max_pae if pae_ht is not None else None,
+            min_plddt=min_plddt if plddt_ht is not None else None,
         ),
-    )
+    ).drop("enst")
 
     ht = ht.group_by("uniprot_id", "transcript_id").aggregate(
         oe=hl.agg.take(ht.oe, 1)[0],
-        min_oe_upper=hl.agg.collect(
-            ht.min_oe_upper.annotate(residue_index=ht.aa_index).drop("dist")
+        min_oe_upper=hl.agg.filter(
+            hl.is_defined(ht.min_oe_upper),
+            hl.agg.collect(
+                ht.min_oe_upper.annotate(residue_index=ht.aa_index).drop("dist")
+            ),
         ),
     )
-
+    # TODO: minimize on oe or oe_upper?
     ht = ht.annotate(
         oe=hl.enumerate(ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
         min_oe_upper=hl.sorted(ht.min_oe_upper, key=lambda x: x.oe),
     )
-
+    
+    # Debug: Show OE and regions for first uniprot/transcript
+    if debug:
+        debug_print_oe_and_regions(
+            ht,
+            title="determine_regions_with_min_oe_upper: Final output",
+        )
+    
     return ht
 
 
@@ -1128,17 +2656,32 @@ def get_min_region(regions_expr, min_field="oe_upper", min_exp_mis=None):
     return min_region_expr
 
 
-def prep_region_struct(region_expr, oe_expr):
+def prep_region_struct(region_expr, oe_expr, excluded_residues=None):
     """
     Prepare a region struct.
 
     :param region_expr: Region expression.
     :param oe_expr: OE expression.
+    :param excluded_residues: Optional dict mapping residue_index to exclude_from_stats flag.
+        If provided, excluded residues will be filtered out from statistical calculations.
     :return: Region struct expression.
     """
     oe_expr = annotate_region_with_oe(region_expr, oe_expr)
-    oe_agg_expr = get_agg_oe_for_region(oe_expr)
-    nll_expr = calculate_neg_log_likelihood(oe_expr, oe_agg_expr.oe)
+    
+    # Filter out excluded residues from stats if excluded_residues dict is provided
+    if excluded_residues is not None:
+        oe_expr_for_stats = oe_expr.filter(
+            lambda x: hl.if_else(
+                hl.is_defined(excluded_residues.get(x.residue_index)),
+                ~excluded_residues.get(x.residue_index),  # If in dict, exclude if True
+                True  # If not in dict, include it
+            )
+        )
+    else:
+        oe_expr_for_stats = oe_expr
+    
+    oe_agg_expr = get_agg_oe_for_region(oe_expr_for_stats)
+    nll_expr = calculate_neg_log_likelihood(oe_expr_for_stats, oe_agg_expr.oe)
     return hl.struct(
         region=region_expr,
         **oe_agg_expr,
@@ -1205,13 +2748,21 @@ def run_forward(
 
     num_residues = ht.oe.length()
     null_region = hl.range(num_residues)
-    null_model = prep_region_struct(null_region, ht.oe)
+    
+    # Get excluded_residues dict if present (for pLDDT exclusion method)
+    has_excluded_res = "excluded_residues" in ht.min_oe_upper.dtype.element_type.fields
+    excluded_residues_global = None
+    if has_excluded_res:
+        # Get excluded_residues from first region (should be same for all)
+        excluded_residues_global = ht.min_oe_upper[0].excluded_residues
+    
+    null_model = prep_region_struct(null_region, ht.oe, excluded_residues=excluded_residues_global)
     ht = ht.select(
         "oe",
         num_residues=num_residues,
         null_model=null_model,
         regions=hl.enumerate(
-            ht.min_oe_upper.map(lambda x: x.select("region")).filter(
+            ht.min_oe_upper.map(lambda x: x.select("region", *["excluded_residues"] if has_excluded_res else [])).filter(
                 lambda x: x.region.length() < num_residues
             )
         ),
@@ -1221,9 +2772,16 @@ def run_forward(
         found_best=False,
     )
     ht = ht.explode("regions")
-    ht = ht.transmute(idx=ht.regions[0], region=ht.regions[1].region)
+    ht = ht.transmute(
+        idx=ht.regions[0],
+        region=ht.regions[1].region,
+        **(
+            {"excluded_residues": ht.regions[1].get("excluded_residues")} 
+            if has_excluded_res else {}
+        )
+    )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    # ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
+    ###ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
     ht = ht.repartition(1, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
     round_num = 1
@@ -1231,7 +2789,7 @@ def run_forward(
         # For each region in regions, update the list of selected by
         # removing the residues in the region from the "catch all remaining"
         # region, and adding the new region to the selected list.
-        region_expr = prep_region_struct(ht.region, ht.oe)
+        region_expr = prep_region_struct(ht.region, ht.oe, excluded_residues=(ht.excluded_residues if has_excluded_res else None))
         ht = ht.annotate(_region=region_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep1", "ht")
         )
@@ -1240,7 +2798,7 @@ def run_forward(
         ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep2", "ht")
         )
-        updated_null_expr = prep_region_struct(ht._updated_null.region, ht.oe)
+        updated_null_expr = prep_region_struct(ht._updated_null.region, ht.oe, excluded_residues=(ht.excluded_residues if has_excluded_res else None))
         ht = ht.annotate(_updated_null=updated_null_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep3", "ht")
         )
@@ -1419,8 +2977,12 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
         _bg_after_selected=ht.full_region,
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    # ht = ht.repartition(200, shuffle=True)
+    
+    
+    ###ht = ht.repartition(200, shuffle=True)
     ht = ht.repartition(1, shuffle=True)
+    
+    
     ht = ht.checkpoint(hl.utils.new_temp_file("forward_explode", "ht"))
     round_num = 1
 
@@ -2074,7 +3636,7 @@ def run_forward_no_catch_all_standardized(
 
 def create_missense_viewer_input_ht(
     pos_ht: hl.Table,
-    proemis3d_ht: hl.Table,
+    proemis3d_hts: Dict[str, hl.Table],
 ) -> hl.Table:
     """
     Create missense viewer input Hail Table.
@@ -2095,127 +3657,130 @@ def create_missense_viewer_input_ht(
     ).aggregate(locus_by_aapos=hl.dict(hl.agg.collect((pos_ht.aapos, pos_ht.locus))))
     pos_ht = pos_ht.key_by("uniprot_id", "enst").cache()
 
-    chisq_expr = calculate_oe_neq_1_chisq(proemis3d_ht.obs, proemis3d_ht.exp)
-    proemis3d_ht = proemis3d_ht.annotate(
-        chisq=chisq_expr, p_value=hl.pchisqtail(chisq_expr, 1)
-    )
-
-    # Key by all fields except 'pos' and collect by key into a field named 'pos'.
-    proemis3d_ht = proemis3d_ht.key_by(
-        "uniprot_id", "transcript_id", "region_index", "is_null"
-    ).collect_by_key("pos")
-
-    # Sort the 'pos' field in ascending order.
-    proemis3d_ht = proemis3d_ht.annotate(
-        pos=hl.sorted(proemis3d_ht.pos, key=lambda x: x.residue_index)
-    )
-
-    # Annotate with 'start' and 'stop' positions for regions by merging adjacent
-    # positions.
-    proemis3d_ht = proemis3d_ht.annotate(
-        pos=hl.fold(
-            lambda i, j: hl.if_else(
-                j.residue_index > (i[-1][1] + 1),
-                i.append(
-                    (
-                        j.residue_index,
-                        j.residue_index,
-                        j.obs,
-                        j.exp,
-                        j.oe,
-                        j.oe_upper,
-                        j.chisq,
-                        j.p_value,
-                    )
-                ),
-                i[:-1].append(
-                    (
-                        i[-1][0],
-                        j.residue_index,
-                        j.obs,
-                        j.exp,
-                        j.oe,
-                        j.oe_upper,
-                        j.chisq,
-                        j.p_value,
-                    )
-                ),
-            ),
-            [
-                (
-                    proemis3d_ht.pos[0].residue_index,
-                    proemis3d_ht.pos[0].residue_index,
-                    proemis3d_ht.pos[0].obs,
-                    proemis3d_ht.pos[0].exp,
-                    proemis3d_ht.pos[0].oe,
-                    proemis3d_ht.pos[0].oe_upper,
-                    proemis3d_ht.pos[0].chisq,
-                    proemis3d_ht.pos[0].p_value,
-                )
-            ],
-            proemis3d_ht.pos[1:],
+    proemis3d_annotated_hts = {}
+    for model, proemis3d_ht in proemis3d_hts.items():
+        chisq_expr = calculate_oe_neq_1_chisq(proemis3d_ht.obs, proemis3d_ht.exp)
+        proemis3d_ht = proemis3d_ht.annotate(
+            chisq=chisq_expr, p_value=hl.pchisqtail(chisq_expr, 1)
         )
-    )
-    proemis3d_ht = proemis3d_ht.explode("pos")
 
-    # Key by 'gene_id' and transform 'pos' into 'start' and 'stop' fields.
-    proemis3d_ht = proemis3d_ht.key_by(
-        "uniprot_id", "transcript_id", "region_index", "is_null"
-    )
-    proemis3d_ht = proemis3d_ht.transmute(
-        start=proemis3d_ht.pos[0],
-        stop=proemis3d_ht.pos[1],
-        obs_mis=proemis3d_ht.pos[2],
-        exp_mis=proemis3d_ht.pos[3],
-        obs_exp=proemis3d_ht.pos[4],
-        oe_upper=proemis3d_ht.pos[5],
-        chisq=proemis3d_ht.pos[6],
-        p_value=proemis3d_ht.pos[7],
-    )
+        # Key by all fields except 'pos' and collect by key into a field named 'pos'.
+        proemis3d_ht = proemis3d_ht.key_by(
+            "uniprot_id", "transcript_id", "region_index", "is_null"
+        ).collect_by_key("pos")
 
-    # Select fields in preferred order and collect by key into a field named 'regions'.
-    proemis3d_ht = proemis3d_ht.collect_by_key("regions")
-    proemis3d_ht = proemis3d_ht.annotate(
-        **pos_ht[proemis3d_ht.uniprot_id, proemis3d_ht.transcript_id]
-    )
-    proemis3d_ht = proemis3d_ht.annotate(
-        regions=proemis3d_ht.regions.map(
-            lambda x: x.select(
-                chrom=proemis3d_ht.locus_by_aapos[x.start].contig,
-                start=hl.if_else(
-                    proemis3d_ht.locus_by_aapos[x.start].position
-                    <= proemis3d_ht.locus_by_aapos[x.stop].position,
-                    proemis3d_ht.locus_by_aapos[x.start].position,
-                    proemis3d_ht.locus_by_aapos[x.stop].position,
+        # Sort the 'pos' field in ascending order.
+        proemis3d_ht = proemis3d_ht.annotate(
+            pos=hl.sorted(proemis3d_ht.pos, key=lambda x: x.residue_index)
+        )
+
+        # Annotate with 'start' and 'stop' positions for regions by merging adjacent
+        # positions.
+        proemis3d_ht = proemis3d_ht.annotate(
+            pos=hl.fold(
+                lambda i, j: hl.if_else(
+                    j.residue_index > (i[-1][1] + 1),
+                    i.append(
+                        (
+                            j.residue_index,
+                            j.residue_index,
+                            j.obs,
+                            j.exp,
+                            j.oe,
+                            j.oe_upper,
+                            j.chisq,
+                            j.p_value,
+                        )
+                    ),
+                    i[:-1].append(
+                        (
+                            i[-1][0],
+                            j.residue_index,
+                            j.obs,
+                            j.exp,
+                            j.oe,
+                            j.oe_upper,
+                            j.chisq,
+                            j.p_value,
+                        )
+                    ),
                 ),
-                stop=hl.if_else(
-                    proemis3d_ht.locus_by_aapos[x.start].position
-                    <= proemis3d_ht.locus_by_aapos[x.stop].position,
-                    proemis3d_ht.locus_by_aapos[x.stop].position + 2,
-                    proemis3d_ht.locus_by_aapos[x.start].position + 2,
-                ),
-                aa_start=x.start,
-                aa_stop=x.stop,
-                obs_mis=x.obs_mis,
-                exp_mis=x.exp_mis,
-                obs_exp=x.obs_exp,
-                oe_upper=x.oe_upper,
-                region_index=proemis3d_ht.region_index,
-                is_null=proemis3d_ht.is_null,
-                chisq_diff_null=x.chisq,
-                p_value=x.p_value,
+                [
+                    (
+                        proemis3d_ht.pos[0].residue_index,
+                        proemis3d_ht.pos[0].residue_index,
+                        proemis3d_ht.pos[0].obs,
+                        proemis3d_ht.pos[0].exp,
+                        proemis3d_ht.pos[0].oe,
+                        proemis3d_ht.pos[0].oe_upper,
+                        proemis3d_ht.pos[0].chisq,
+                        proemis3d_ht.pos[0].p_value,
+                    )
+                ],
+                proemis3d_ht.pos[1:],
             )
         )
-    )
-    proemis3d_ht = proemis3d_ht.group_by("transcript_id", "uniprot_id").aggregate(
-        gnomad_proemis3d_constraint=hl.struct(
-            has_no_rmc_evidence=False,
-            passed_qc=True,
-            regions=hl.flatten(hl.agg.collect(proemis3d_ht.regions)),
+        proemis3d_ht = proemis3d_ht.explode("pos")
+
+        # Key by 'gene_id' and transform 'pos' into 'start' and 'stop' fields.
+        proemis3d_ht = proemis3d_ht.key_by(
+            "uniprot_id", "transcript_id", "region_index", "is_null"
         )
-        # regions=hl.flatten(hl.agg.collect(ht.regions))
-    )
-    proemis3d_ht = proemis3d_ht.key_by("transcript_id")
+        proemis3d_ht = proemis3d_ht.transmute(
+            start=proemis3d_ht.pos[0],
+            stop=proemis3d_ht.pos[1],
+            obs_mis=proemis3d_ht.pos[2],
+            exp_mis=proemis3d_ht.pos[3],
+            obs_exp=proemis3d_ht.pos[4],
+            oe_upper=proemis3d_ht.pos[5],
+            chisq=proemis3d_ht.pos[6],
+            p_value=proemis3d_ht.pos[7],
+        )
+
+        # Select fields in preferred order and collect by key into a field named 'regions'.
+        proemis3d_ht = proemis3d_ht.collect_by_key("regions")
+        proemis3d_ht = proemis3d_ht.annotate(
+            **pos_ht[proemis3d_ht.uniprot_id, proemis3d_ht.transcript_id]
+        )
+        proemis3d_ht = proemis3d_ht.annotate(
+            regions=proemis3d_ht.regions.map(
+                lambda x: x.select(
+                    chrom=proemis3d_ht.locus_by_aapos[x.start].contig,
+                    start=hl.if_else(
+                        proemis3d_ht.locus_by_aapos[x.start].position
+                        <= proemis3d_ht.locus_by_aapos[x.stop].position,
+                        proemis3d_ht.locus_by_aapos[x.start].position,
+                        proemis3d_ht.locus_by_aapos[x.stop].position,
+                    ),
+                    stop=hl.if_else(
+                        proemis3d_ht.locus_by_aapos[x.start].position
+                        <= proemis3d_ht.locus_by_aapos[x.stop].position,
+                        proemis3d_ht.locus_by_aapos[x.stop].position + 2,
+                        proemis3d_ht.locus_by_aapos[x.start].position + 2,
+                    ),
+                    aa_start=x.start,
+                    aa_stop=x.stop,
+                    obs_mis=x.obs_mis,
+                    exp_mis=x.exp_mis,
+                    obs_exp=x.obs_exp,
+                    oe_upper=x.oe_upper,
+                    region_index=proemis3d_ht.region_index,
+                    is_null=proemis3d_ht.is_null,
+                    chisq_diff_null=x.chisq,
+                    p_value=x.p_value,
+                )
+            )
+        )
+        ###proemis3d_ht = proemis3d_ht.group_by("transcript_id", "uniprot_id").aggregate(
+        ###    **{f"gnomad_3d_constraint.{model}": hl.struct(
+        ###        has_no_rmc_evidence=False,
+        ###        passed_qc=True,
+        ###        regions=hl.flatten(hl.agg.collect(proemis3d_ht.regions)),
+        ###    )
+        ###    # regions=hl.flatten(hl.agg.collect(ht.regions))
+        ###)
+        proemis3d_ht = proemis3d_ht.key_by("transcript_id")
+    
     rmc_ht = get_rmc_browser_ht().ht()
     rmc_ht = rmc_ht.annotate(
         regions=rmc_ht.regions.map(
