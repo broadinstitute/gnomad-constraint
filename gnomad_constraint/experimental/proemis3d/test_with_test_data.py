@@ -633,9 +633,18 @@ def main(args):
         plddt_ht = get_af2_plddt_ht().ht()
 
         # Filter to specified uniprot_id and transcript_id
-        af2_ht = af2_dist_ht.filter(af2_dist_ht.uniprot_id == args.uniprot_id).cache()
-        pae_ht = pae_ht.filter(pae_ht.uniprot_id == args.uniprot_id).cache()
-        plddt_ht = plddt_ht.filter(plddt_ht.uniprot_id == args.uniprot_id).cache()
+        af2_ht = af2_dist_ht.filter(af2_dist_ht.uniprot_id == args.uniprot_id).checkpoint(
+            "gs://gnomad-tmp-4day/persist_TableJPHb5MNnu1",
+            _read_if_exists=True,
+        )
+        pae_ht = pae_ht.filter(pae_ht.uniprot_id == args.uniprot_id).checkpoint(
+            "gs://gnomad-tmp-4day/persist_TablexAIXznhyjJ",
+            _read_if_exists=True,
+        )
+        plddt_ht = plddt_ht.filter(plddt_ht.uniprot_id == args.uniprot_id).checkpoint(
+            "gs://gnomad-tmp-4day/persist_TablepIRZHsbrUp",
+            _read_if_exists=True,
+        )
 
         # Filter gencode_pos_ht to specified uniprot_id and transcript_id
         # This is the key filtering - generate_codon_oe_table will only process
@@ -643,7 +652,10 @@ def main(args):
         gencode_pos_ht = gencode_pos_ht.filter(
             (gencode_pos_ht.uniprot_id == args.uniprot_id)
             & (gencode_pos_ht.enst == args.transcript_id)
-        ).cache()
+        ).checkpoint(
+            "gs://gnomad-tmp-4day/persist_TableiRja6Y6Dlm",
+            _read_if_exists=True,
+        )
 
         # obs_exp_ht is keyed by (locus, alleles) and needs to be aggregated by (locus, transcript)
         # before being passed to generate_codon_oe_table
@@ -654,7 +666,10 @@ def main(args):
                 obs=hl.agg.sum(obs_exp_ht.calibrate_mu.observed_variants[0]),
                 exp=hl.agg.sum(obs_exp_ht.expected_variants[0]),
             )
-            .cache()
+            .checkpoint(
+                "gs://gnomad-tmp-4day/persist_Tableci91MXQwxA",
+                _read_if_exists=True,
+            )
         )
 
         # Generate oe_codon_ht from obs_exp_ht and gencode_pos_ht
@@ -671,7 +686,10 @@ def main(args):
         )
         oe_codon_ht = oe_codon_ht.filter(
             hl.len(oe_codon_ht.oe_by_transcript) > 0
-        ).cache()
+        ).checkpoint(
+            "gs://gnomad-tmp-4day/persist_Table12mJDtRPiE",
+            _read_if_exists=True,
+        )
 
         print("Loaded production data (filtered):")
         print(f"  af2_ht: {af2_ht.count()} rows")
