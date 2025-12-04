@@ -32,6 +32,10 @@ Usage:
 
     # List available tests
     python test_with_test_data.py --list-tests
+
+    # Run with a specific uniprot/transcript from production data
+    python test_with_test_data.py --uniprot-id P12345 --transcript-id ENST00000123456
+    python test_with_test_data.py --uniprot-id P12345 --transcript-id ENST00000123456 --run-forward
 """
 
 import argparse
@@ -40,8 +44,16 @@ import sys
 
 import hail as hl
 
+from gnomad_constraint.experimental.proemis3d.resources import (
+    get_af2_dist_ht,
+    get_af2_pae_ht,
+    get_af2_plddt_ht,
+    get_gencode_pos_ht,
+    get_obs_exp_ht,
+)
 from gnomad_constraint.experimental.proemis3d.utils import (
     determine_regions_with_min_oe_upper,
+    generate_codon_oe_table,
     run_forward,
 )
 
@@ -177,10 +189,10 @@ def test_determine_regions_with_min_oe_upper(
         + f"{BOLD}=== Test:{RESET}"
         + " " * 65
         + f"{BOLD}==={RESET}\n"
-        + f"{BOLD}===    max_pae= {max_pae_str:<58}==={RESET}\n"
-        + f"{BOLD}===    min_plddt= {min_plddt_str:<56}==={RESET}\n"
-        + f"{BOLD}===    plddt_cutoff_method= {plddt_method_str:<46}==={RESET}\n"
-        + f"{BOLD}===    pae_cutoff_method= {pae_method_str:<48}==={RESET}\n"
+        + f"{BOLD}===    max_pae: {max_pae_str:<58}==={RESET}\n"
+        + f"{BOLD}===    min_plddt: {min_plddt_str:<56}==={RESET}\n"
+        + f"{BOLD}===    plddt_cutoff_method: {plddt_method_str:<46}==={RESET}\n"
+        + f"{BOLD}===    pae_cutoff_method: {pae_method_str:<48}==={RESET}\n"
         + f"{BOLD}={RESET}" * 77
         + "\n"
     )
@@ -218,13 +230,13 @@ def test_run_forward(
         + f"{BOLD}=== Testing run_forward with parameters:{RESET}"
         + " " * 34
         + f"{BOLD}==={RESET}\n"
-        + f"{BOLD}===    min_exp_mis= {min_exp_mis:<54}==={RESET}\n"
-        + f"{BOLD}===    oe_upper_method= {oe_upper_method:<50}==={RESET}\n"
-        + f"{BOLD}===    model_comparison_method= {model_comparison_method:<42}==={RESET}\n"
-        + f"{BOLD}===    lrt_alpha= {lrt_alpha:<56}==={RESET}\n"
-        + f"{BOLD}===    lrt_df_added= {lrt_df_added:<53}==={RESET}\n"
-        + f"{BOLD}===    bonferroni_per_round= {bonferroni_per_round:<45}==={RESET}\n"
-        + f"{BOLD}===    aic_weight_thresh= {aic_weight_thresh:<48}==={RESET}\n"
+        + f"{BOLD}===    min_exp_mis: {min_exp_mis:<54}==={RESET}\n"
+        + f"{BOLD}===    oe_upper_method: {oe_upper_method:<50}==={RESET}\n"
+        + f"{BOLD}===    model_comparison_method: {model_comparison_method:<42}==={RESET}\n"
+        + f"{BOLD}===    lrt_alpha: {lrt_alpha:<56}==={RESET}\n"
+        + f"{BOLD}===    lrt_df_added: {lrt_df_added:<53}==={RESET}\n"
+        + f"{BOLD}===    bonferroni_per_round: {bonferroni_per_round:<45}==={RESET}\n"
+        + f"{BOLD}===    aic_weight_thresh: {aic_weight_thresh:<48}==={RESET}\n"
         + f"{BOLD}={RESET}" * 77
         + "\n"
     )
@@ -606,24 +618,94 @@ def main(args):
     # Initialize Hail
     hl.init(tmp_dir="gs://gnomad-tmp-4day")
 
-    # Load test datasets
-    # Use GCS path for cloud environments, or local path for local testing
-    if args.local:
-        test_data_dir = "test_data"
+    # Check if running with a specific uniprot/transcript
+    if args.uniprot_id and args.transcript_id:
+        # Load production data and filter to specified uniprot/transcript
+        print(
+            f"Loading production data for UniProt ID: {args.uniprot_id}, Transcript ID: {args.transcript_id}"
+        )
+
+        # Load production tables
+        af2_dist_ht = get_af2_dist_ht().ht()
+        obs_exp_ht = get_obs_exp_ht().ht()
+        gencode_pos_ht = get_gencode_pos_ht().ht()
+        pae_ht = get_af2_pae_ht().ht()
+        plddt_ht = get_af2_plddt_ht().ht()
+
+        # Filter to specified uniprot_id and transcript_id
+        af2_ht = af2_dist_ht.filter(af2_dist_ht.uniprot_id == args.uniprot_id).cache()
+        pae_ht = pae_ht.filter(pae_ht.uniprot_id == args.uniprot_id).cache()
+        plddt_ht = plddt_ht.filter(plddt_ht.uniprot_id == args.uniprot_id).cache()
+
+        # Filter gencode_pos_ht to specified uniprot_id and transcript_id
+        # This is the key filtering - generate_codon_oe_table will only process
+        # positions in this table
+        gencode_pos_ht = gencode_pos_ht.filter(
+            (gencode_pos_ht.uniprot_id == args.uniprot_id)
+            & (gencode_pos_ht.enst == args.transcript_id)
+        ).cache()
+
+        # obs_exp_ht is keyed by (locus, alleles) and needs to be aggregated by (locus, transcript)
+        # before being passed to generate_codon_oe_table
+        print("Aggregating obs_exp_ht by (locus, transcript)...")
+        obs_exp_ht = (
+            obs_exp_ht.group_by("locus", "transcript")
+            .aggregate(
+                obs=hl.agg.sum(obs_exp_ht.calibrate_mu.observed_variants[0]),
+                exp=hl.agg.sum(obs_exp_ht.expected_variants[0]),
+            )
+            .cache()
+        )
+
+        # Generate oe_codon_ht from obs_exp_ht and gencode_pos_ht
+        print("Generating oe_codon_ht from obs_exp_ht and gencode_pos_ht...")
+        oe_codon_ht = generate_codon_oe_table(obs_exp_ht, gencode_pos_ht)
+
+        # Filter oe_codon_ht to specified uniprot_id and transcript_id
+        # oe_by_transcript is an array of structs with 'enst' field
+        oe_codon_ht = oe_codon_ht.filter(oe_codon_ht.uniprot_id == args.uniprot_id)
+        oe_codon_ht = oe_codon_ht.annotate(
+            oe_by_transcript=oe_codon_ht.oe_by_transcript.filter(
+                lambda x: x.enst == args.transcript_id
+            )
+        )
+        oe_codon_ht = oe_codon_ht.filter(
+            hl.len(oe_codon_ht.oe_by_transcript) > 0
+        ).cache()
+
+        print("Loaded production data (filtered):")
+        print(f"  af2_ht: {af2_ht.count()} rows")
+        print(f"  oe_codon_ht: {oe_codon_ht.count()} rows")
+        print(f"  pae_ht: {pae_ht.count()} rows")
+        print(f"  plddt_ht: {plddt_ht.count()} rows")
+
+        if af2_ht.count() == 0:
+            print(f"Error: No data found for UniProt ID {args.uniprot_id}")
+            sys.exit(1)
+        if oe_codon_ht.count() == 0:
+            print(
+                f"Error: No OE data found for UniProt ID {args.uniprot_id} and Transcript ID {args.transcript_id}"
+            )
+            sys.exit(1)
     else:
-        # Default to GCS path
-        test_data_dir = "gs://gnomad-tmp-4day/proemis3d_test_data"
+        # Load test datasets
+        # Use GCS path for cloud environments, or local path for local testing
+        if args.local:
+            test_data_dir = "test_data"
+        else:
+            # Default to GCS path
+            test_data_dir = "gs://gnomad-tmp-4day/proemis3d_test_data"
 
-    af2_ht = hl.read_table(f"{test_data_dir}/af2_test.ht")
-    oe_codon_ht = hl.read_table(f"{test_data_dir}/oe_codon_test.ht")
-    pae_ht = hl.read_table(f"{test_data_dir}/pae_test.ht")
-    plddt_ht = hl.read_table(f"{test_data_dir}/plddt_test.ht")
+        af2_ht = hl.read_table(f"{test_data_dir}/af2_test.ht")
+        oe_codon_ht = hl.read_table(f"{test_data_dir}/oe_codon_test.ht")
+        pae_ht = hl.read_table(f"{test_data_dir}/pae_test.ht")
+        plddt_ht = hl.read_table(f"{test_data_dir}/plddt_test.ht")
 
-    print("Loaded test datasets:")
-    print(f"  af2_ht: {af2_ht.count()} rows")
-    print(f"  oe_codon_ht: {oe_codon_ht.count()} rows")
-    print(f"  pae_ht: {pae_ht.count()} rows")
-    print(f"  plddt_ht: {plddt_ht.count()} rows")
+        print("Loaded test datasets:")
+        print(f"  af2_ht: {af2_ht.count()} rows")
+        print(f"  oe_codon_ht: {oe_codon_ht.count()} rows")
+        print(f"  pae_ht: {pae_ht.count()} rows")
+        print(f"  plddt_ht: {plddt_ht.count()} rows")
 
     # Handle list-tests flag
     if args.list_tests:
@@ -631,23 +713,44 @@ def main(args):
         return
 
     # Determine which tests to run
-    if args.test:
-        # Run a specific test
-        if args.test not in ALL_TESTS:
-            print(f"Error: Unknown test '{args.test}'")
-            print("Use --list-tests to see available tests")
-            sys.exit(1)
-        tests_to_run = [args.test]
-    elif args.group:
-        # Run a group of tests
-        if args.group not in TEST_GROUPS:
-            print(f"Error: Unknown test group '{args.group}'")
-            print("Use --list-tests to see available groups")
-            sys.exit(1)
-        tests_to_run = TEST_GROUPS[args.group]
+    # When using production data (uniprot_id/transcript_id), default to
+    # no_filtering test
+    if args.uniprot_id and args.transcript_id:
+        if args.test:
+            # Run a specific test
+            if args.test not in ALL_TESTS:
+                print(f"Error: Unknown test '{args.test}'")
+                print("Use --list-tests to see available tests")
+                sys.exit(1)
+            tests_to_run = [args.test]
+        elif args.group:
+            print(
+                "Warning: --group is not supported when using --uniprot-id/--transcript-id"
+            )
+            print("Running 'no_filtering' test instead")
+            tests_to_run = ["no_filtering"]
+        else:
+            # Default to no_filtering when using production data
+            tests_to_run = ["no_filtering"]
     else:
-        # Run all tests by default
-        tests_to_run = TEST_GROUPS["all"]
+        # Using test data - normal test selection logic
+        if args.test:
+            # Run a specific test
+            if args.test not in ALL_TESTS:
+                print(f"Error: Unknown test '{args.test}'")
+                print("Use --list-tests to see available tests")
+                sys.exit(1)
+            tests_to_run = [args.test]
+        elif args.group:
+            # Run a group of tests
+            if args.group not in TEST_GROUPS:
+                print(f"Error: Unknown test group '{args.group}'")
+                print("Use --list-tests to see available groups")
+                sys.exit(1)
+            tests_to_run = TEST_GROUPS[args.group]
+        else:
+            # Run all tests by default
+            tests_to_run = TEST_GROUPS["all"]
 
     # Run the selected tests
     run_tests(
@@ -698,5 +801,21 @@ if __name__ == "__main__":
         action="store_true",
         help="Also run run_forward tests after determine_regions_with_min_oe_upper",
     )
+    parser.add_argument(
+        "--uniprot-id",
+        type=str,
+        help="UniProt ID to use instead of test data (requires --transcript-id)",
+    )
+    parser.add_argument(
+        "--transcript-id",
+        type=str,
+        help="Transcript ID (ENST) to use instead of test data (requires --uniprot-id)",
+    )
 
-    main(parser.parse_args())
+    args = parser.parse_args()
+
+    # Validate that both uniprot_id and transcript_id are provided together
+    if (args.uniprot_id is None) != (args.transcript_id is None):
+        parser.error("--uniprot-id and --transcript-id must be provided together")
+
+    main(args)

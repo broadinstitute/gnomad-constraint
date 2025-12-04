@@ -6,8 +6,7 @@ from typing import Dict, Optional
 import hail as hl
 import numpy as np
 
-# Import getAIC from utils to avoid circular imports
-from gnomad_constraint.experimental.proemis3d.utils import getAIC
+# Note: getAIC is imported inside functions that use it to avoid circular imports
 
 logger = logging.getLogger("proemis3d_debug")
 logger.setLevel(logging.INFO)
@@ -895,6 +894,19 @@ def debug_print_dist_mat_with_colors(
 
     # Check if OE fields exist
     has_oe_data = oe_expr is not None and debug_data and len(debug_data[0].oe_expr) > 0
+
+    # ANSI color codes for distances (blue to white gradient)
+    BLUE = "\033[94m"  # Closest (bright blue)
+    CYAN = "\033[96m"  # Medium-close (cyan)
+    WHITE = "\033[97m"  # Furthest (white)
+
+    # ANSI color codes for residue indices (gradient from green to magenta)
+    GREEN_IDX = "\033[92m"  # First in sorted array (closest)
+    YELLOW_IDX = "\033[93m"  # Middle
+    MAGENTA_IDX = "\033[95m"  # Last in sorted array (furthest)
+
+    # ANSI color code for highlighting minimum OE upper
+    HIGHLIGHT = "\033[1m\033[4m\033[92m"  # Bold and underline for minimum OE upper
 
     # Add color legends
     legend_parts = [
@@ -2052,6 +2064,9 @@ def _debug_run_forward_model_comparison(
             _candidate_nll_debug = hl.or_missing(
                 hl.is_defined(_best_region_debug), _best_region_debug.nll
             )
+            # Lazy import to avoid circular dependency
+            from gnomad_constraint.experimental.proemis3d.utils import getAIC
+
             _aic_cand_debug = hl.or_missing(
                 hl.is_defined(_best_region_debug),
                 getAIC(_best_region_debug.null_model, 0)
@@ -2130,7 +2145,9 @@ def _debug_run_forward_model_comparison(
                     else:
                         candidate_nll_str = "NA"
                     output_string += f"            Candidate NLL: {candidate_nll_str}\n"
-                    if row.aic_cand is not None:
+                    # For AIC method, Candidate AIC will be highlighted below
+                    # For other methods, show it uncolored here
+                    if row.aic_cand is not None and model_comparison_method != "aic":
                         if row.best_aic is not None and row.aic_cand < row.best_aic:
                             aic_cand_str = f"{GREEN}{row.aic_cand:.4f}{RESET}"
                         else:
@@ -2145,11 +2162,18 @@ def _debug_run_forward_model_comparison(
                             else lrt_alpha
                         )
                         output_string += f"            LRT statistic: {lrt_stat:.4f}\n"
-                        output_string += f"            LRT p-value: {p_lrt_val:.6f}\n"
+                        # Highlight LRT p-value (the key comparison statistic)
+                        accept = p_lrt_val <= adj_alpha
+                        if accept:
+                            p_lrt_str = (
+                                f"{BOLD}{UNDERLINE}{GREEN}{p_lrt_val:.6f}{RESET}"
+                            )
+                        else:
+                            p_lrt_str = f"{BOLD}{UNDERLINE}{RED}{p_lrt_val:.6f}{RESET}"
+                        output_string += f"            LRT p-value: {p_lrt_str}\n"
                         output_string += (
                             f"            Adjusted alpha: {adj_alpha:.6f}\n"
                         )
-                        accept = p_lrt_val <= adj_alpha
                         if accept:
                             accept_str = f"{GREEN}{accept}{RESET}"
                         else:
@@ -2161,6 +2185,16 @@ def _debug_run_forward_model_comparison(
                             if row.aic_cand is not None
                             else False
                         )
+                        # Highlight Candidate AIC (the key comparison statistic)
+                        if accept:
+                            aic_cand_str = (
+                                f"{BOLD}{UNDERLINE}{GREEN}{row.aic_cand:.4f}{RESET}"
+                            )
+                        else:
+                            aic_cand_str = (
+                                f"{BOLD}{UNDERLINE}{RED}{row.aic_cand:.4f}{RESET}"
+                            )
+                        output_string += f"            Candidate AIC: {aic_cand_str}\n"
                         if accept:
                             accept_str = f"{GREEN}{accept}{RESET}"
                         else:
@@ -2171,10 +2205,17 @@ def _debug_run_forward_model_comparison(
                             w_cand_val = 1 / (
                                 1 + np.exp(0.5 * (row.aic_cand - row.best_aic))
                             )
-                            output_string += (
-                                f"            AIC weight: {w_cand_val:.4f}\n"
-                            )
                             accept = w_cand_val >= aic_weight_thresh
+                            # Highlight AIC weight (the key comparison statistic)
+                            if accept:
+                                w_cand_str = (
+                                    f"{BOLD}{UNDERLINE}{GREEN}{w_cand_val:.4f}{RESET}"
+                                )
+                            else:
+                                w_cand_str = (
+                                    f"{BOLD}{UNDERLINE}{RED}{w_cand_val:.4f}{RESET}"
+                                )
+                            output_string += f"            AIC weight: {w_cand_str}\n"
                             if accept:
                                 accept_str = f"{GREEN}{accept}{RESET}"
                             else:
@@ -2321,40 +2362,38 @@ def _debug_run_forward_final(ht, debug_outputs):
         ).collect()
         if debug_data:
             row = debug_data[0]
-            output_string = f"\n\n\n{BOLD}=== run_forward: Final State ==={RESET}\n"
+            output_string = f"\n{BOLD}=== run_forward: Final State ==={RESET}\n"
             output_string += f"    {BOLD}Total selected regions: {len(row.selected) if row.selected else 0}{RESET}\n"
             if row.selected_nll is not None:
                 selected_nll_str = f"{BOLD}{UNDERLINE}{row.selected_nll:.4f}{RESET}"
             else:
                 selected_nll_str = "NA"
             output_string += (
-                f"    {BOLD}Final selected NLL:{RESET} {selected_nll_str}\n"
+                f"    {BOLD}Final selected NLL: {selected_nll_str}{RESET}\n"
             )
             if row.best_aic is not None:
                 best_aic_str = f"{row.best_aic:.4f}"
             else:
                 best_aic_str = "NA"
-            output_string += f"    {BOLD}Final best AIC:{RESET} {best_aic_str}\n"
+            output_string += f"    {BOLD}Final best AIC: {best_aic_str}{RESET}\n"
             if row.selected:
                 output_string += f"\n    {BOLD}Selected Regions:{RESET}\n"
                 for idx, region in enumerate(row.selected):
                     output_string += f"        {BOLD}Region {idx}:{RESET}\n"
                     output_string += (
-                        f"            {BOLD}Observed:{RESET} {region.obs:7d}\n"
+                        f"            {BOLD}Observed: {region.obs:7d}{RESET}\n"
                     )
                     output_string += (
-                        f"            {BOLD}Expected:{RESET} {region.exp:7.2f}\n"
+                        f"            {BOLD}Expected: {region.exp:7.2f}{RESET}\n"
                     )
                     if region.oe is not None:
                         oe_str = f"{region.oe:7.2f}"
                     else:
                         oe_str = "     NA"
-                    output_string += f"            {BOLD}O/E: {oe_str}{RESET}\n"
+                    output_string += f"            {BOLD}O/E:      {oe_str}{RESET}\n"
                     if hasattr(region, "region") and region.region:
                         region_str = ", ".join([f"{r:7d}" for r in region.region])
-                        output_string += (
-                            f"            {BOLD}Residues: {region_str}{RESET}\n"
-                        )
+                        output_string += f"            {BOLD}Residues ({len(region.region):3d}): {region_str}{RESET}\n"
                         if row.oe:
                             obs_list = []
                             exp_list = []
@@ -2383,8 +2422,8 @@ def _debug_run_forward_final(ht, debug_outputs):
                                         if exp_val is not None
                                         else "    NA"
                                     )
-                            output_string += f"            {BOLD}Observed ({len(obs_list):3d}):  {', '.join(obs_list)}{RESET}\n"
-                            output_string += f"            {BOLD}Expected ({len(exp_list):3d}):  {', '.join(exp_list)}{RESET}\n"
+                            output_string += f"            {BOLD}Observed ({len(obs_list):3d}): {', '.join(obs_list)}{RESET}\n"
+                            output_string += f"            {BOLD}Expected ({len(exp_list):3d}): {', '.join(exp_list)}{RESET}\n"
             output_string += f"\n\n    {BOLD}Null Model (catch-all):{RESET}\n"
             output_string += f"        {BOLD}Observed: {row.null_model.obs:7d}{RESET}\n"
             output_string += (
@@ -2394,5 +2433,128 @@ def _debug_run_forward_final(ht, debug_outputs):
                 oe_str = f"{row.null_model.oe:7.2f}"
             else:
                 oe_str = "     NA"
-            output_string += f"        {BOLD}O/E: {oe_str}{RESET}\n"
+            output_string += f"        {BOLD}O/E:      {oe_str}{RESET}\n"
+            # Add residues and per-residue observed/expected if available
+            if hasattr(row.null_model, "region") and row.null_model.region and row.oe:
+                region_str = ", ".join([f"{r:7d}" for r in row.null_model.region])
+                output_string += f"        {BOLD}Residues ({len(row.null_model.region):3d}): {region_str}{RESET}\n"
+                obs_list = []
+                exp_list = []
+                for res_idx in row.null_model.region:
+                    if res_idx < len(row.oe):
+                        oe_entry = row.oe[res_idx]
+                        obs_val = (
+                            oe_entry.obs
+                            if hasattr(oe_entry, "obs") and oe_entry.obs is not None
+                            else None
+                        )
+                        exp_val = (
+                            oe_entry.exp
+                            if hasattr(oe_entry, "exp") and oe_entry.exp is not None
+                            else None
+                        )
+                        obs_list.append(
+                            f"{obs_val:7d}" if obs_val is not None else "     NA"
+                        )
+                        exp_list.append(
+                            f"{exp_val:7.2f}" if exp_val is not None else "     NA"
+                        )
+                    else:
+                        obs_list.append("     NA")
+                        exp_list.append("     NA")
+                output_string += f"        {BOLD}Observed ({len(obs_list):3d}): {', '.join(obs_list)}{RESET}\n"
+                output_string += f"        {BOLD}Expected ({len(exp_list):3d}): {', '.join(exp_list)}{RESET}\n"
             debug_outputs.append(output_string)
+
+
+def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
+    """
+    Unified debug function for run_forward algorithm.
+
+    :param stage: Stage name - one of: "round_start", "best_candidate",
+                  "model_comparison", "after_update", "final"
+    :param debug_outputs: List to append debug output strings to
+    :param kwargs: Stage-specific keyword arguments
+    """
+    if stage == "round_start":
+        _debug_run_forward_round_start(
+            kwargs["ht"],
+            kwargs["round_num"],
+            kwargs["region_expr"],
+            kwargs["model_comparison_method"],
+            debug_outputs,
+        )
+    elif stage == "best_candidate":
+        _debug_run_forward_best_candidate(
+            kwargs["ht"],
+            kwargs["ht2"],
+            kwargs["round_num"],
+            debug_outputs,
+        )
+    elif stage == "model_comparison":
+        _debug_run_forward_model_comparison(
+            kwargs["ht"],
+            kwargs["ht2"],
+            kwargs["round_num"],
+            kwargs["model_comparison_method"],
+            kwargs["lrt_alpha"],
+            kwargs["lrt_df_added"],
+            kwargs["bonferroni_per_round"],
+            kwargs["aic_weight_thresh"],
+            debug_outputs,
+        )
+    elif stage == "after_update":
+        _debug_run_forward_after_update(
+            kwargs["ht"],
+            kwargs["round_num"],
+            kwargs["candidates_before_filter"],
+            debug_outputs,
+        )
+    elif stage == "final":
+        _debug_run_forward_final(kwargs["ht"], debug_outputs)
+    else:
+        raise ValueError(f"Unknown debug stage: {stage}")
+
+
+def debug_get_3d_residue(
+    stage: str,
+    dist_mat_expr: hl.expr.ArrayExpression,
+    oe_expr: hl.expr.ArrayExpression,
+    max_pae: Optional[float],
+    min_plddt: Optional[float],
+    pae_cutoff_method: str,
+    plddt_cutoff_method: Optional[str],
+    center_residue_index_expr: hl.expr.Int32Expression,
+    debug_min_max: Optional[dict],
+    debug_outputs_by_residue: dict,
+    oe_expr_after_calc: Optional[hl.expr.ArrayExpression] = None,
+):
+    """
+    Unified debug function for get_3d_residue.
+
+    :param stage: Stage name - one of: "initial", "before_sorting", "after_sorting",
+                  "pae_matrix_before_filter", "after_calculate_oe_upper", "final"
+    :param dist_mat_expr: Distance matrix expression at current step
+    :param oe_expr: Original OE expression
+    :param max_pae: Maximum PAE cutoff
+    :param min_plddt: Minimum pLDDT cutoff
+    :param pae_cutoff_method: PAE cutoff method
+    :param plddt_cutoff_method: pLDDT cutoff method
+    :param center_residue_index_expr: Center residue index expression
+    :param debug_min_max: Dict with min/max values for consistent coloring
+    :param debug_outputs_by_residue: Dict to store debug outputs
+    :param oe_expr_after_calc: OE expression after calculate_oe_upper (optional)
+    """
+    _debug_get_3d_residue(
+        dist_mat_expr,
+        oe_expr,
+        max_pae,
+        min_plddt,
+        pae_cutoff_method,
+        plddt_cutoff_method,
+        center_residue_index_expr,
+        debug_min_max,
+        debug_outputs_by_residue,
+        stage,
+        oe_expr_after_calc,
+    )
