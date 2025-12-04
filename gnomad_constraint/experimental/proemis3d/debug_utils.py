@@ -803,6 +803,43 @@ def debug_print_oe_and_regions(
     logger.info(output_string)
 
 
+def _debug_calculate_min_max_for_coloring(
+    dist_mat_expr: hl.expr.ArrayExpression,
+) -> Optional[Dict[str, int]]:
+    """
+    Calculate min/max values from dist_mat_expr for consistent coloring across debug statements.
+    
+    This ensures that residue indices and distances use the same color scale across
+    all debug output, making it easier to compare values visually.
+    
+    :param dist_mat_expr: Hail expression for distance matrix array
+    :return: Dictionary with min_res_idx, max_res_idx, min_dist, max_dist, or None if calculation fails
+    """
+    try:
+        # Get min/max values from the original dist_mat_expr for consistent coloring
+        # We'll calculate these from the first row's dist_mat
+        _ht_debug = dist_mat_expr._indices.source
+        _ht_debug = _ht_debug.annotate(dist_mat=dist_mat_expr).head(1)
+        if _ht_debug.count() > 0:
+            debug_data = _ht_debug.select("dist_mat").collect()
+            if debug_data and len(debug_data[0].dist_mat) > 0:
+                all_residue_indices = [
+                    entry.residue_index for entry in debug_data[0].dist_mat
+                ]
+                all_distances = [entry.dist for entry in debug_data[0].dist_mat]
+                if all_residue_indices and all_distances:
+                    return {
+                        "min_res_idx": min(all_residue_indices),
+                        "max_res_idx": max(all_residue_indices),
+                        "min_dist": min(all_distances),
+                        "max_dist": max(all_distances),
+                    }
+    except Exception:
+        # If calculation fails, return None (debug functions will handle None gracefully)
+        pass
+    return None
+
+
 def debug_print_dist_mat_with_colors(
     dist_mat_expr: hl.expr.ArrayExpression,
     title: str = "Distance matrix with PAE",
@@ -2225,6 +2262,31 @@ def _debug_run_forward_model_comparison(
                             )
                 output_string += f"\n        Found best (stop): {row.found_best}\n"
                 debug_outputs.append(output_string)
+
+
+def _debug_collect_candidates_before_update(ht: hl.Table) -> list:
+    """
+    Collect candidate regions before they are updated/removed.
+    
+    This is used to show which candidates were removed when a region is selected.
+    
+    :param ht: Hail Table with candidate regions
+    :return: List of candidate data (center_residue_index, region, oe) for the first uniprot/transcript
+    """
+    candidates_before_filter = []
+    _ht_debug_before_update = ht.head(1)
+    if _ht_debug_before_update.count() > 0:
+        uniprot_id_before = _ht_debug_before_update.uniprot_id.collect()[0]
+        transcript_id_before = _ht_debug_before_update.transcript_id.collect()[0]
+        _ht_candidates_before = ht.filter(
+            (ht.uniprot_id == uniprot_id_before)
+            & (ht.transcript_id == transcript_id_before)
+        )
+        # Collect region (candidate regions) before they're removed, along with oe data
+        candidates_before_filter = _ht_candidates_before.select(
+            "center_residue_index", "region", "oe"
+        ).collect()
+    return candidates_before_filter
 
 
 def _debug_run_forward_after_update(

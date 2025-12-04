@@ -36,17 +36,8 @@ from gnomad_constraint.experimental.proemis3d.data_import import (
     process_pext_base_ht,
 )
 from gnomad_constraint.experimental.proemis3d.debug_utils import (
-    BOLD,
-    GREEN,
-    RED,
-    RESET,
-    UNDERLINE,
     debug_get_3d_residue,
-    debug_print_dist_mat_with_colors,
-    debug_print_forward_round,
     debug_print_oe_and_regions,
-    debug_print_oe_table,
-    debug_print_pae_matrix_for_region,
     debug_run_forward,
 )
 from gnomad_constraint.experimental.proemis3d.resources import (
@@ -954,24 +945,11 @@ def get_3d_residue(
     # We need to collect these values once and reuse them
     debug_min_max = None
     if debug:
-        # Get min/max values from the original dist_mat_expr for consistent coloring
-        # We'll calculate these from the first row's dist_mat
-        _ht_debug = dist_mat_expr._indices.source
-        _ht_debug = _ht_debug.annotate(dist_mat=dist_mat_expr).head(1)
-        if _ht_debug.count() > 0:
-            debug_data = _ht_debug.select("dist_mat").collect()
-            if debug_data and len(debug_data[0].dist_mat) > 0:
-                all_residue_indices = [
-                    entry.residue_index for entry in debug_data[0].dist_mat
-                ]
-                all_distances = [entry.dist for entry in debug_data[0].dist_mat]
-                if all_residue_indices and all_distances:
-                    debug_min_max = {
-                        "min_res_idx": min(all_residue_indices),
-                        "max_res_idx": max(all_residue_indices),
-                        "min_dist": min(all_distances),
-                        "max_dist": max(all_distances),
-                    }
+        from gnomad_constraint.experimental.proemis3d.debug_utils import (
+            _debug_calculate_min_max_for_coloring,
+        )
+
+        debug_min_max = _debug_calculate_min_max_for_coloring(dist_mat_expr)
 
     # Debug: Initial state (print UniProt/Transcript ID and OE table)
     if debug:
@@ -1841,24 +1819,11 @@ def run_forward(
 
         if debug:
             # Collect candidates BEFORE updating region (for showing removed candidates)
-            candidates_before_filter = None
-            _ht_debug_before_update = ht.head(1)
-            if _ht_debug_before_update.count() > 0:
-                uniprot_id_before = _ht_debug_before_update.uniprot_id.collect()[0]
-                transcript_id_before = _ht_debug_before_update.transcript_id.collect()[
-                    0
-                ]
-                _ht_candidates_before = ht.filter(
-                    (ht.uniprot_id == uniprot_id_before)
-                    & (ht.transcript_id == transcript_id_before)
-                )
-                # Collect region (candidate regions) before they're removed, along with
-                # oe data
-                candidates_before_filter = _ht_candidates_before.select(
-                    "center_residue_index", "region", "oe"
-                ).collect()
-            else:
-                candidates_before_filter = []
+            from gnomad_constraint.experimental.proemis3d.debug_utils import (
+                _debug_collect_candidates_before_update,
+            )
+
+            candidates_before_filter = _debug_collect_candidates_before_update(ht)
 
         ht = ht.annotate(
             **hl.if_else(found_best_expr, curr_vals, _updated_vals()),
