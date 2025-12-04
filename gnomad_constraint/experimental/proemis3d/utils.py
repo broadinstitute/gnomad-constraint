@@ -1244,13 +1244,12 @@ def determine_regions_with_min_oe_upper(
         index
     """
     af2_ht = af2_ht.annotate(
-        dist_mat=add_idx_to_array(
-            af2_ht.dist_mat, "residue_index", element_name="dist"
-        )
+        dist_mat=add_idx_to_array(af2_ht.dist_mat, "residue_index", element_name="dist")
     ).key_by("uniprot_id", "aa_index")
-    pae_ht = pae_ht.key_by("uniprot_id", "aa_index")
+
     ann_expr = {"oe": oe_codon_ht[af2_ht.uniprot_id].oe_by_transcript}
     if pae_ht is not None:
+        pae_ht = pae_ht.key_by("uniprot_id", "aa_index")
         # For pairwise PAE in region, we need each residue's PAE array, not just the center's
         # Create an array of structs (residue_index, pae_array) for lookup
         _pae_lookup_ht = pae_ht.group_by("uniprot_id").aggregate(
@@ -1292,7 +1291,7 @@ def determine_regions_with_min_oe_upper(
                     lambda x: hl.struct(residue_index=x[0], plddt=x[1])
                 )
             )
-        
+
         ann_expr["plddt_lookup"] = _plddt_lookup_ht[af2_ht.uniprot_id].plddt_lookup
 
         # Add pLDDT to dist_mat (similar to how PAE is added)
