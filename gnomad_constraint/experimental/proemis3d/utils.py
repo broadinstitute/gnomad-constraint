@@ -869,9 +869,6 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
     return min_oe_upper_expr
 
 
-SHOW_NUM = 50
-
-
 def debug_print_pae_matrix_for_region(
     dist_mat_expr: hl.expr.ArrayExpression,
     center_residue_index_expr: hl.expr.Int32Expression,
@@ -1269,10 +1266,14 @@ def debug_print_pae_matrix_for_region(
 
 # ANSI color codes
 RESET = "\033[0m"
-RED = "\033[91m"  # High PAE (above cutoff)
+RED = "\033[91m"  # High PAE (above cutoff), moderate constraint
 BOLD = "\033[1m"
 ORANGE = "\033[38;5;214m"  # Filtered residues (bright orange, 256-color mode)
-HIGHLIGHT = "\033[1m\033[4m\033[92m"  # Bold, underline, green for minimum OE upper
+# Bold, underline, green for minimum OE upper, very constrained
+HIGHLIGHT = "\033[1m\033[4m\033[92m"
+UNDERLINE = "\033[4m"
+GREEN = "\033[92m"  # Good values (low AIC, very negative NLL)
+YELLOW = "\033[93m"  # Moderate values
 
 
 def get_debug_oe_table_string(
@@ -2452,6 +2453,17 @@ def get_3d_residue(
         else:
             raise ValueError(f"Unknown pae_cutoff_method: {pae_cutoff_method}")
 
+    # Save excluded_residues dict before dropping fields (if exclude_from_stats exists)
+    excluded_residues_dict_expr = None
+    if "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields:
+        # Create a dict mapping residue_index to exclude_from_stats flag
+        # Only include residues that are actually excluded (exclude_from_stats == True)
+        excluded_residues_dict_expr = hl.dict(
+            dist_mat_expr.filter(lambda x: x.exclude_from_stats).map(
+                lambda x: (x.residue_index, hl.bool(True))
+            )
+        )
+
     dist_mat_expr = dist_mat_expr.map(lambda x: x.drop(*drop_fields))
 
     # Annotate neighbor observed and expected, cumulative observed and expected, and
@@ -2521,6 +2533,12 @@ def get_3d_residue(
     # Get the 3D region with the lowest upper bound of the OE confidence interval for
     # each residue.
     min_moeuf_expr = get_min_oe_upper(oe_expr, min_exp_mis=min_exp_mis)
+
+    # If excluded_residues dict was created, add it to the return value
+    if excluded_residues_dict_expr is not None:
+        min_moeuf_expr = min_moeuf_expr.annotate(
+            excluded_residues=excluded_residues_dict_expr
+        )
 
     return min_moeuf_expr
 
@@ -2842,19 +2860,20 @@ def prep_region_struct(region_expr, oe_expr, excluded_residues=None):
         If provided, excluded residues will be filtered out from statistical calculations.
     :return: Region struct expression.
     """
-    oe_expr = annotate_region_with_oe(region_expr, oe_expr)
-
     # Filter out excluded residues from stats if excluded_residues dict is provided
+    # We need to filter region_expr first, then annotate with OE
     if excluded_residues is not None:
-        oe_expr_for_stats = oe_expr.filter(
-            lambda x: hl.if_else(
-                hl.is_defined(excluded_residues.get(x.residue_index)),
-                ~excluded_residues.get(x.residue_index),  # If in dict, exclude if True
+        region_expr_for_stats = region_expr.filter(
+            lambda res_idx: hl.if_else(
+                hl.is_defined(excluded_residues.get(res_idx)),
+                ~excluded_residues.get(res_idx),  # If in dict, exclude if True
                 True,  # If not in dict, include it
             )
         )
     else:
-        oe_expr_for_stats = oe_expr
+        region_expr_for_stats = region_expr
+
+    oe_expr_for_stats = annotate_region_with_oe(region_expr_for_stats, oe_expr)
 
     oe_agg_expr = get_agg_oe_for_region(oe_expr_for_stats)
     nll_expr = calculate_neg_log_likelihood(oe_expr_for_stats, oe_agg_expr.oe)
@@ -2882,6 +2901,423 @@ def calculate_oe_neq_1_chisq(
     return ((obs_expr - exp_expr) ** 2) / exp_expr
 
 
+def debug_print_forward_round(
+    ht: hl.Table,
+    uniprot_id: str,
+    transcript_id: str,
+    model_comparison_method: str,
+    title: str = "Forward Algorithm Round",
+) -> str:
+    """
+    Print debug output for a round of the forward algorithm.
+
+    :param ht: Hail Table with forward algorithm state
+    :param uniprot_id: UniProt ID
+    :param transcript_id: Transcript ID
+    :param model_comparison_method: Model comparison method being used
+    :param title: Title for the debug output
+    """
+    output_string = "\n"
+
+    # Filter to the specific uniprot/transcript
+    _ht_debug = ht.filter(
+        (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
+    )
+
+    if _ht_debug.count() == 0:
+        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
+        return
+
+    output_string += f"{BOLD}    === {title} ==={RESET}\n"
+
+    # Collect data
+    # Note: key fields (idx, uniprot_id, transcript_id) are automatically included in collect()
+    # Check if excluded_residues is available
+    has_excluded_res_debug = "excluded_residues" in _ht_debug.row.dtype.fields
+    debug_data = _ht_debug.select(
+        "region",
+        "selected",
+        "selected_nll",
+        "null_model",
+        "best_aic",
+        "found_best",
+        "_region",
+        "_updated_null",
+        "oe",
+        "center_residue_index",
+        *["excluded_residues"] if has_excluded_res_debug else [],
+    ).collect()
+
+    if not debug_data:
+        return ""
+
+    # Print current state (use first row for state info, should be same for all)
+    row = debug_data[0] if debug_data else None
+    if row is None:
+        return ""
+
+    output_string += f"        {BOLD}Current State:{RESET}\n"
+    output_string += (
+        f"            Selected regions: {len(row.selected) if row.selected else 0}\n"
+    )
+    if row.selected_nll is None:
+        selected_nll_str = "NA"
+    elif row.selected_nll == 0:
+        selected_nll_str = "NA (set to 0.0 as initial state)"
+    else:
+        selected_nll_str = f"{row.selected_nll:.4f}"
+    output_string += f"            Selected NLL: {selected_nll_str}\n"
+    best_aic_str = f"{row.best_aic:.4f}" if row.best_aic is not None else "NA"
+    output_string += f"            Best AIC: {best_aic_str}\n"
+    output_string += f"            Found best: {row.found_best}\n"
+
+    if row.null_model:
+        output_string += f"\n        {BOLD}Null Model (catch-all):{RESET}\n"
+        obs_str = (
+            f"{row.null_model.obs:7d}" if row.null_model.obs is not None else "     NA"
+        )
+        output_string += f"            Observed: {obs_str}\n"
+        exp_str = (
+            f"{row.null_model.exp:7.2f}"
+            if row.null_model.exp is not None
+            else "     NA"
+        )
+        output_string += f"            Expected: {exp_str}\n"
+        # Color aggregate O/E values
+        if row.null_model.oe is not None:
+            oe_str = f"{row.null_model.oe:7.2f}"
+        else:
+            oe_str = "     NA"
+        output_string += f"            O/E:      {oe_str}\n"
+        # Color NLL values (more negative = better fit)
+        if row.null_model.nll is not None:
+            nll_str = f"{BOLD}{UNDERLINE}{row.null_model.nll:.4f}{RESET}"
+        else:
+            nll_str = "NA"
+        output_string += f"            NLL:      {nll_str}\n\n"
+        if hasattr(row.null_model, "region") and row.null_model.region:
+            region_str = ", ".join([f"{r:7d}" for r in row.null_model.region])
+            output_string += f"            Region residues: {region_str}\n"
+
+            # Print per-residue observed and expected values for null model
+            # Get oe from first row (should be same for all)
+            if debug_data and len(debug_data) > 0:
+                first_row = debug_data[0]
+                if hasattr(first_row, "oe") and first_row.oe:
+                    obs_list = []
+                    exp_list = []
+                    # Get excluded_residues if available
+                    excluded_residues_dict = None
+                    if (
+                        hasattr(first_row, "excluded_residues")
+                        and first_row.excluded_residues is not None
+                    ):
+                        excluded_residues_dict = first_row.excluded_residues
+                    for res_idx in row.null_model.region:
+                        # Check if this residue is excluded from stats
+                        is_excluded = False
+                        if excluded_residues_dict is not None:
+                            if hasattr(excluded_residues_dict, "get"):
+                                exclude_flag = excluded_residues_dict.get(res_idx)
+                                is_excluded = (
+                                    exclude_flag is True
+                                    if exclude_flag is not None
+                                    else False
+                                )
+                            elif isinstance(excluded_residues_dict, dict):
+                                is_excluded = (
+                                    excluded_residues_dict.get(res_idx, False) is True
+                                )
+
+                        if is_excluded:
+                            obs_list.append("     NA")
+                            exp_list.append("     NA")
+                        elif res_idx < len(first_row.oe):
+                            oe_entry = first_row.oe[res_idx]
+                            obs_val = (
+                                oe_entry.obs
+                                if hasattr(oe_entry, "obs") and oe_entry.obs is not None
+                                else None
+                            )
+                            exp_val = (
+                                oe_entry.exp
+                                if hasattr(oe_entry, "exp") and oe_entry.exp is not None
+                                else None
+                            )
+
+                            obs_list.append(
+                                f"{obs_val:7d}" if obs_val is not None else "    NA"
+                            )
+                            exp_list.append(
+                                f"{exp_val:7.2f}" if exp_val is not None else "    NA"
+                            )
+                        else:
+                            obs_list.append("     NA")
+                            exp_list.append("     NA")
+                    output_string += f"            Observed ({len(obs_list):3d}):  {', '.join(obs_list)}\n"
+                    output_string += f"            Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
+
+    # Print all candidate regions being evaluated
+    # First, filter to only valid candidates (those with valid _region data)
+    valid_candidates = []
+    for row in debug_data:
+        if (
+            hasattr(row, "_region")
+            and row._region
+            and hasattr(row._region, "obs")
+            and row._region.obs is not None
+        ):
+            valid_candidates.append(row)
+
+    # Find the minimum total NLL to highlight the best candidate
+    min_total_nll = None
+    min_total_nll_idx = None
+    for row_idx, row in enumerate(valid_candidates):
+        if (
+            hasattr(row, "_region")
+            and row._region
+            and hasattr(row._region, "nll")
+            and row._region.nll is not None
+        ):
+            if min_total_nll is None or row._region.nll < min_total_nll:
+                min_total_nll = row._region.nll
+                min_total_nll_idx = row_idx
+
+    output_string += (
+        f"\n        {BOLD}Candidate Regions ({len(valid_candidates)} total):{RESET}\n"
+    )
+    for row_idx, row in enumerate(valid_candidates):
+        if hasattr(row, "_region") and row._region:
+            idx_str = str(row.idx) if row.idx is not None else "NA"
+            center_res_str = (
+                f" (center residue: {row.center_residue_index})"
+                if hasattr(row, "center_residue_index")
+                and row.center_residue_index is not None
+                else ""
+            )
+            output_string += (
+                f"\n            {BOLD}Candidate {row_idx + 1}{center_res_str}:{RESET}\n"
+            )
+            obs_str = (
+                f"{row._region.obs:7d}"
+                if (hasattr(row._region, "obs") and row._region.obs is not None)
+                else "     NA"
+            )
+            output_string += f"                Observed: {obs_str}\n"
+            exp_str = (
+                f"{row._region.exp:7.2f}"
+                if (hasattr(row._region, "exp") and row._region.exp is not None)
+                else "     NA"
+            )
+            output_string += f"                Expected: {exp_str}\n"
+            # Keep O/E uncolored for candidates (selection is based on NLL, not O/E)
+            oe_str = (
+                f"{row._region.oe:7.2f}"
+                if (hasattr(row._region, "oe") and row._region.oe is not None)
+                else "     NA"
+            )
+            output_string += f"                O/E:      {oe_str}\n"
+            # Color NLL values (more negative = better fit)
+            if (
+                hasattr(row._region, "region_nll")
+                and row._region.region_nll is not None
+            ):
+                region_nll_str = f"{row._region.region_nll:.4f}"
+            else:
+                region_nll_str = "NA"
+            output_string += f"                Region NLL: {region_nll_str}\n"
+            # Highlight the best (lowest) total NLL
+            if hasattr(row._region, "nll") and row._region.nll is not None:
+                if min_total_nll_idx is not None and row_idx == min_total_nll_idx:
+                    total_nll_str = f"{HIGHLIGHT}{row._region.nll:.4f} (BEST){RESET}"
+                else:
+                    total_nll_str = f"{BOLD}{UNDERLINE}{row._region.nll:.4f}{RESET}"
+            else:
+                total_nll_str = "NA"
+            output_string += f"                {BOLD}{UNDERLINE}Total NLL: {total_nll_str}{RESET}\n\n"
+            if hasattr(row._region, "region") and row._region.region:
+                region_str = ", ".join([f"{r:7d}" for r in row._region.region])
+                output_string += f"                Region residues: {region_str}\n"
+
+                # Print per-residue observed and expected values
+                if hasattr(row, "oe") and row.oe:
+                    obs_list = []
+                    exp_list = []
+                    # Get excluded_residues if available
+                    excluded_residues_dict = None
+                    if (
+                        hasattr(row, "excluded_residues")
+                        and row.excluded_residues is not None
+                    ):
+                        excluded_residues_dict = row.excluded_residues
+                    for res_idx in row._region.region:
+                        # Check if this residue is excluded from stats
+                        is_excluded = False
+                        if excluded_residues_dict is not None:
+                            # excluded_residues_dict is a dict-like structure
+                            # Check if res_idx is in the dict and if its value is True
+                            if hasattr(excluded_residues_dict, "get"):
+                                exclude_flag = excluded_residues_dict.get(res_idx)
+                                is_excluded = (
+                                    exclude_flag is True
+                                    if exclude_flag is not None
+                                    else False
+                                )
+                            elif isinstance(excluded_residues_dict, dict):
+                                is_excluded = (
+                                    excluded_residues_dict.get(res_idx, False) is True
+                                )
+
+                        if is_excluded:
+                            obs_list.append("     NA")
+                            exp_list.append("     NA")
+                        elif res_idx < len(row.oe):
+                            oe_entry = row.oe[res_idx]
+                            obs_val = (
+                                oe_entry.obs
+                                if hasattr(oe_entry, "obs") and oe_entry.obs is not None
+                                else None
+                            )
+                            exp_val = (
+                                oe_entry.exp
+                                if hasattr(oe_entry, "exp") and oe_entry.exp is not None
+                                else None
+                            )
+
+                            obs_list.append(
+                                f"{obs_val:7d}" if obs_val is not None else "    NA"
+                            )
+                            exp_list.append(
+                                f"{exp_val:7.2f}" if exp_val is not None else "    NA"
+                            )
+                        else:
+                            obs_list.append("     NA")
+                            exp_list.append("     NA")
+                    output_string += f"                Observed ({len(obs_list):3d}):  {', '.join(obs_list)}\n"
+                    output_string += f"                Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
+
+            # Print updated null model after removing candidate region
+            if hasattr(row, "_updated_null") and row._updated_null:
+                output_string += f"\n                {BOLD}Updated Null Model:{RESET}\n"
+                obs_str = (
+                    f"{row._updated_null.obs:7d}"
+                    if (
+                        hasattr(row._updated_null, "obs")
+                        and row._updated_null.obs is not None
+                    )
+                    else "     NA"
+                )
+                output_string += f"                    Observed: {obs_str}\n"
+                exp_str = (
+                    f"{row._updated_null.exp:7.2f}"
+                    if (
+                        hasattr(row._updated_null, "exp")
+                        and row._updated_null.exp is not None
+                    )
+                    else "     NA"
+                )
+                output_string += f"                    Expected: {exp_str}\n"
+                # Color aggregate O/E
+                if (
+                    hasattr(row._updated_null, "oe")
+                    and row._updated_null.oe is not None
+                ):
+                    oe_str = f"{row._updated_null.oe:7.2f}"
+                else:
+                    oe_str = "     NA"
+                output_string += f"                    O/E:      {oe_str}\n"
+                # Color NLL values
+                if (
+                    hasattr(row._updated_null, "nll")
+                    and row._updated_null.nll is not None
+                ):
+                    nll_str = f"{row._updated_null.nll:.4f}"
+                else:
+                    nll_str = "NA"
+                output_string += f"                    NLL:      {nll_str}\n\n"
+                if hasattr(row._updated_null, "region") and row._updated_null.region:
+                    region_str = ", ".join(
+                        [f"{r:7d}" for r in row._updated_null.region]
+                    )
+                    output_string += (
+                        f"                    Region residues: {region_str}\n"
+                    )
+
+                    # Print per-residue observed and expected values for updated null
+                    # model
+                    if hasattr(row, "oe") and row.oe:
+                        obs_list = []
+                        exp_list = []
+                        # Get excluded_residues if available
+                        excluded_residues_dict = None
+                        if (
+                            hasattr(row, "excluded_residues")
+                            and row.excluded_residues is not None
+                        ):
+                            excluded_residues_dict = row.excluded_residues
+                        for res_idx in row._updated_null.region:
+                            # Check if this residue is excluded from stats
+                            is_excluded = False
+                            if excluded_residues_dict is not None:
+                                if hasattr(excluded_residues_dict, "get"):
+                                    exclude_flag = excluded_residues_dict.get(res_idx)
+                                    is_excluded = (
+                                        exclude_flag is True
+                                        if exclude_flag is not None
+                                        else False
+                                    )
+                                elif isinstance(excluded_residues_dict, dict):
+                                    is_excluded = (
+                                        excluded_residues_dict.get(res_idx, False)
+                                        is True
+                                    )
+
+                            if is_excluded:
+                                obs_list.append("     NA")
+                                exp_list.append("     NA")
+                            elif res_idx < len(row.oe):
+                                oe_entry = row.oe[res_idx]
+                                obs_val = (
+                                    oe_entry.obs
+                                    if hasattr(oe_entry, "obs")
+                                    and oe_entry.obs is not None
+                                    else None
+                                )
+                                exp_val = (
+                                    oe_entry.exp
+                                    if hasattr(oe_entry, "exp")
+                                    and oe_entry.exp is not None
+                                    else None
+                                )
+
+                                obs_list.append(
+                                    f"{obs_val:7d}" if obs_val is not None else "    NA"
+                                )
+                                exp_list.append(
+                                    f"{exp_val:7.2f}"
+                                    if exp_val is not None
+                                    else "    NA"
+                                )
+                            else:
+                                obs_list.append("     NA")
+                                exp_list.append("     NA")
+                        output_string += f"                    Observed ({len(obs_list):3d}):  {', '.join(obs_list)}\n"
+                        output_string += f"                    Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
+
+    # Print model comparison info if available (from first row)
+    if hasattr(row, "aic_cand") and row.aic_cand is not None:
+        output_string += (
+            f"\n    {BOLD}Model Comparison ({model_comparison_method}):{RESET}\n"
+        )
+        output_string += f"      Candidate AIC: {row.aic_cand:.4f}\n"
+        if hasattr(row, "p_lrt") and row.p_lrt is not None:
+            output_string += f"      LRT p-value: {row.p_lrt:.6f}\n"
+        if hasattr(row, "w_cand") and row.w_cand is not None:
+            output_string += f"      AIC weight: {row.w_cand:.4f}\n"
+
+    return output_string
+
+
 def run_forward(
     ht,
     min_exp_mis=MIN_EXP_MIS,
@@ -2891,6 +3327,7 @@ def run_forward(
     lrt_df_added: int = 1,
     bonferroni_per_round: bool = True,
     aic_weight_thresh: float = 0.80,
+    debug: bool = False,
 ):
     """
     Run the forward algorithm to find the most intolerant region.
@@ -2942,7 +3379,9 @@ def run_forward(
         regions=hl.enumerate(
             ht.min_oe_upper.map(
                 lambda x: x.select(
-                    "region", *["excluded_residues"] if has_excluded_res else []
+                    "region",
+                    "residue_index",
+                    *["excluded_residues"] if has_excluded_res else [],
                 )
             ).filter(lambda x: x.region.length() < num_residues)
         ),
@@ -2951,10 +3390,12 @@ def run_forward(
         best_aic=getAIC(null_model, null_model.nll),
         found_best=False,
     )
+
     ht = ht.explode("regions")
     ht = ht.transmute(
         idx=ht.regions[0],
         region=ht.regions[1].region,
+        center_residue_index=ht.regions[1].residue_index,
         **(
             {"excluded_residues": ht.regions[1].get("excluded_residues")}
             if has_excluded_res
@@ -2965,6 +3406,10 @@ def run_forward(
     # ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
     ht = ht.repartition(1, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
+
+    # Collect debug output to print at the end
+    debug_outputs = []
+
     round_num = 1
     while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
         # For each region in regions, update the list of selected by
@@ -2998,6 +3443,32 @@ def run_forward(
             region_nll=region_expr.nll,
             nll=updated_null_expr.nll + ht.selected_nll + region_expr.nll,
         )
+
+        if debug:
+            debug_outputs.append(
+                f"\n\n{BOLD}=== run_forward: Round {round_num} ==={RESET}\n"
+            )
+            # Get first key for debugging
+            uniprot_id = None
+            transcript_id = None
+            first_row = ht.head(1)
+            if first_row.count() > 0:
+                uniprot_id = first_row.uniprot_id.collect()[0]
+                transcript_id = first_row.transcript_id.collect()[0]
+            debug_outputs.append(
+                f"\nUniProt ID: {uniprot_id}, Transcript ID: {transcript_id}\n"
+            )
+
+            # Debug after preparing candidate region
+            debug_output = debug_print_forward_round(
+                ht.annotate(_region=region_expr),
+                uniprot_id,
+                transcript_id,
+                model_comparison_method,
+                title=f"run_forward: Round {round_num} - After preparing candidate region",
+            )
+            if debug_output:
+                debug_outputs.append(debug_output)
 
         # Scan candidates this round; keep those with enough expected missense.
         ht2 = ht.select(exp=region_expr.exp, nll=region_expr.nll)
@@ -3043,6 +3514,128 @@ def run_forward(
         best_region = ht2[ht.uniprot_id, ht.transcript_id].best_region
         m_candidates = hl.or_else(ht2[ht.uniprot_id, ht.transcript_id].m_candidates, 1)
 
+        if debug:
+            # Debug after finding best candidate
+            _ht_debug = ht.head(1)
+            if _ht_debug.count() > 0:
+                uniprot_id = _ht_debug.uniprot_id.collect()[0]
+                transcript_id = _ht_debug.transcript_id.collect()[0]
+                _ht_debug = ht.filter(
+                    (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
+                )
+                # Only print if this uniprot/transcript has rows with defined regions
+                has_regions = _ht_debug.aggregate(
+                    hl.agg.any(hl.is_defined(_ht_debug.region))
+                )
+                if has_regions:
+                    best_region_debug = (
+                        ht2.filter(
+                            (ht2.uniprot_id == uniprot_id)
+                            & (ht2.transcript_id == transcript_id)
+                        )
+                        .select("best_region", "m_candidates", "min_idx")
+                        .collect()
+                    )
+                    _ht_debug_oe = _ht_debug.select("oe").collect()
+                    # Get center_residue_index for the best candidate
+                    center_residue_idx = None
+                    if best_region_debug and best_region_debug[0].min_idx is not None:
+                        _ht_center = (
+                            _ht_debug.filter(
+                                (_ht_debug.uniprot_id == uniprot_id)
+                                & (_ht_debug.transcript_id == transcript_id)
+                                & (_ht_debug.idx == best_region_debug[0].min_idx)
+                            )
+                            .select("center_residue_index")
+                            .collect()
+                        )
+                        if _ht_center and len(_ht_center) > 0:
+                            center_residue_idx = _ht_center[0].center_residue_index
+                    if best_region_debug:
+                        br_row = best_region_debug[0]
+                        output_string = f"\n    {BOLD}=== run_forward: Round {round_num} - Best Candidate ==={RESET}\n\n"
+                        output_string += f"        Number of candidates evaluated: {br_row.m_candidates}\n"
+                        if br_row.best_region:
+                            center_res_str = (
+                                f" (center residue: {center_residue_idx})"
+                                if center_residue_idx is not None
+                                else ""
+                            )
+                            output_string += f"\n        {BOLD}Best Candidate Region{center_res_str}:{RESET}\n"
+                            output_string += (
+                                f"            Observed: {br_row.best_region.obs:7d}\n"
+                            )
+                            output_string += (
+                                f"            Expected: {br_row.best_region.exp:7.2f}\n"
+                            )
+                            # Color aggregate O/E
+                            if br_row.best_region.oe is not None:
+                                oe_str = f"{br_row.best_region.oe:7.2f}"
+                            else:
+                                oe_str = "     NA"
+                            output_string += f"            O/E:      {oe_str}\n"
+                            # Color NLL values
+                            if br_row.best_region.region_nll is not None:
+                                region_nll_str = f"{br_row.best_region.region_nll:.4f}"
+                            else:
+                                region_nll_str = "NA"
+                            output_string += (
+                                f"            Region NLL: {region_nll_str}\n"
+                            )
+                            if br_row.best_region.nll is not None:
+                                total_nll_str = f"{br_row.best_region.nll:.4f}"
+                            else:
+                                total_nll_str = "NA"
+                            output_string += f"            {BOLD}{UNDERLINE}Total NLL: {total_nll_str}{RESET}\n\n"
+                            if (
+                                hasattr(br_row.best_region, "region")
+                                and br_row.best_region.region
+                            ):
+                                region_str = ", ".join(
+                                    [f"{r:7d}" for r in br_row.best_region.region]
+                                )
+                                output_string += (
+                                    f"            Region residues: {region_str}\n"
+                                )
+
+                                # Print per-residue observed and expected values
+                                if (
+                                    _ht_debug_oe
+                                    and len(_ht_debug_oe) > 0
+                                    and _ht_debug_oe[0].oe
+                                ):
+                                    obs_list = []
+                                    exp_list = []
+                                    for res_idx in br_row.best_region.region:
+                                        if res_idx < len(_ht_debug_oe[0].oe):
+                                            oe_entry = _ht_debug_oe[0].oe[res_idx]
+                                            obs_val = (
+                                                oe_entry.obs
+                                                if hasattr(oe_entry, "obs")
+                                                and oe_entry.obs is not None
+                                                else None
+                                            )
+                                            exp_val = (
+                                                oe_entry.exp
+                                                if hasattr(oe_entry, "exp")
+                                                and oe_entry.exp is not None
+                                                else None
+                                            )
+
+                                            obs_list.append(
+                                                f"{obs_val:7d}"
+                                                if obs_val is not None
+                                                else "    NA"
+                                            )
+                                            exp_list.append(
+                                                f"{exp_val:7.2f}"
+                                                if exp_val is not None
+                                                else "    NA"
+                                            )
+                                    output_string += f"            Observed ({len(obs_list):3d}):  {', '.join(obs_list)}\n"
+                                    output_string += f"            Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
+                        debug_outputs.append(output_string)
+
         # Totals for LRT (candidate only if best_region defined).
         current_nll = ht.selected_nll + ht.null_model.nll
         candidate_nll = hl.or_missing(hl.is_defined(best_region), best_region.nll)
@@ -3078,6 +3671,198 @@ def run_forward(
             w_cand = 1 / (1 + hl.exp(0.5 * (aic_cand - ht.best_aic)))
             found_best_expr |= w_cand < aic_weight_thresh
 
+        if debug:
+            # Debug model comparison after expressions are computed
+            _ht_debug = ht.head(1)
+            if _ht_debug.count() > 0:
+                uniprot_id = _ht_debug.uniprot_id.collect()[0]
+                transcript_id = _ht_debug.transcript_id.collect()[0]
+                _ht_debug = ht.filter(
+                    (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
+                )
+                # Only print if this uniprot/transcript has rows with defined regions
+                has_regions = _ht_debug.aggregate(
+                    hl.agg.any(hl.is_defined(_ht_debug.region))
+                )
+                if has_regions:
+                    _ht_debug2 = ht2.filter(
+                        (ht2.uniprot_id == uniprot_id)
+                        & (ht2.transcript_id == transcript_id)
+                    )
+                    # Re-derive expressions from the filtered table
+                    _best_region_debug = _ht_debug2[
+                        (_ht_debug.uniprot_id, _ht_debug.transcript_id)
+                    ].best_region
+                    _m_candidates_debug = hl.or_else(
+                        _ht_debug2[
+                            (_ht_debug.uniprot_id, _ht_debug.transcript_id)
+                        ].m_candidates,
+                        1,
+                    )
+                    _current_nll_debug = (
+                        _ht_debug.selected_nll + _ht_debug.null_model.nll
+                    )
+                    _candidate_nll_debug = hl.or_missing(
+                        hl.is_defined(_best_region_debug), _best_region_debug.nll
+                    )
+                    _aic_cand_debug = hl.or_missing(
+                        hl.is_defined(_best_region_debug),
+                        getAIC(_best_region_debug.null_model, 0)
+                        + getAIC(
+                            _ht_debug.selected.append(
+                                _best_region_debug.drop("null_model")
+                            ),
+                            _best_region_debug.nll,
+                        ),
+                    )
+                    _found_best_debug = _ht_debug.found_best | hl.is_missing(
+                        _best_region_debug
+                    )
+                    if model_comparison_method == "lrt":
+                        _lrt_stat_debug = hl.or_missing(
+                            hl.is_defined(_best_region_debug),
+                            2 * (_current_nll_debug - _candidate_nll_debug),
+                        )
+                        _p_lrt_debug = hl.or_missing(
+                            hl.is_defined(_best_region_debug),
+                            hl.pchisqtail(_lrt_stat_debug, lrt_df_added),
+                        )
+                        _adj_alpha_debug = hl.if_else(
+                            bonferroni_per_round,
+                            lrt_alpha / hl.max(1, _m_candidates_debug),
+                            lrt_alpha,
+                        )
+                        _found_best_debug |= _p_lrt_debug > _adj_alpha_debug
+                    elif model_comparison_method == "aic":
+                        _found_best_debug |= _aic_cand_debug >= _ht_debug.best_aic
+                    elif model_comparison_method == "aic_weight":
+                        _w_cand_debug = 1 / (
+                            1 + hl.exp(0.5 * (_aic_cand_debug - _ht_debug.best_aic))
+                        )
+                        _found_best_debug |= _w_cand_debug < aic_weight_thresh
+
+                    debug_data = (
+                        _ht_debug.annotate(
+                            current_nll=_current_nll_debug,
+                            candidate_nll=_candidate_nll_debug,
+                            aic_cand=_aic_cand_debug,
+                            found_best=_found_best_debug,
+                        )
+                        .select(
+                            "selected_nll",
+                            "null_model",
+                            "best_aic",
+                            "current_nll",
+                            "candidate_nll",
+                            "aic_cand",
+                            "found_best",
+                        )
+                        .collect()
+                    )
+                    debug_data2 = _ht_debug2.select(
+                        "best_region",
+                        "m_candidates",
+                    ).collect()
+                    if debug_data and debug_data2:
+                        row = debug_data[0]
+                        row2 = debug_data2[0]
+                    output_string = f"\n{BOLD}    === run_forward: Round {round_num} - Model Comparison ==={RESET}\n"
+                    output_string += f"        {BOLD}Current Model:{RESET}\n"
+                    # Color NLL values
+                    if row.current_nll is not None:
+                        current_nll_str = (
+                            f"{BOLD}{UNDERLINE}{row.current_nll:.4f}{RESET}"
+                        )
+                    else:
+                        current_nll_str = "NA"
+                    output_string += f"            Current NLL: {current_nll_str}\n"
+                    # Color AIC values
+                    if row.best_aic is not None:
+                        best_aic_str = f"{row.best_aic:.4f}"
+                    else:
+                        best_aic_str = "NA"
+                    output_string += f"            Best AIC: {best_aic_str}\n"
+                    if row2.best_region and row.candidate_nll is not None:
+                        output_string += f"\n          {BOLD}Candidate Model:{RESET}\n"
+                        # Color candidate NLL
+                        if row.candidate_nll is not None:
+                            candidate_nll_str = (
+                                f"{BOLD}{UNDERLINE}{row.candidate_nll:.4f}{RESET}"
+                            )
+                        else:
+                            candidate_nll_str = "NA"
+                        output_string += (
+                            f"            Candidate NLL: {candidate_nll_str}\n"
+                        )
+                        if row.aic_cand is not None:
+                            # Color candidate AIC - highlight if better (lower) than
+                            # current
+                            if row.best_aic is not None and row.aic_cand < row.best_aic:
+                                aic_cand_str = f"{GREEN}{row.aic_cand:.4f}{RESET}"
+                            else:
+                                aic_cand_str = f"{row.aic_cand:.4f}"
+                            output_string += (
+                                f"            Candidate AIC: {aic_cand_str}\n"
+                            )
+                        if model_comparison_method == "lrt":
+                            lrt_stat = 2 * (row.current_nll - row.candidate_nll)
+                            # Use Hail's pchisqtail for consistency
+                            p_lrt_val = hl.eval(hl.pchisqtail(lrt_stat, lrt_df_added))
+                            adj_alpha = (
+                                lrt_alpha / max(1, row2.m_candidates)
+                                if bonferroni_per_round
+                                else lrt_alpha
+                            )
+                            output_string += (
+                                f"            LRT statistic: {lrt_stat:.4f}\n"
+                            )
+                            output_string += (
+                                f"            LRT p-value: {p_lrt_val:.6f}\n"
+                            )
+                            output_string += (
+                                f"            Adjusted alpha: {adj_alpha:.6f}\n"
+                            )
+                            # Color acceptance status
+                            accept = p_lrt_val <= adj_alpha
+                            if accept:
+                                accept_str = f"{GREEN}{accept}{RESET}"
+                            else:
+                                accept_str = f"{RED}{accept}{RESET}"
+                            output_string += (
+                                f"            Accept candidate: {accept_str}\n"
+                            )
+                        elif model_comparison_method == "aic":
+                            accept = (
+                                row.aic_cand < row.best_aic
+                                if row.aic_cand is not None
+                                else False
+                            )
+                            if accept:
+                                accept_str = f"{GREEN}{accept}{RESET}"
+                            else:
+                                accept_str = f"{RED}{accept}{RESET}"
+                            output_string += (
+                                f"            Accept candidate: {accept_str}\n"
+                            )
+                        elif model_comparison_method == "aic_weight":
+                            if row.aic_cand is not None:
+                                w_cand_val = 1 / (
+                                    1 + np.exp(0.5 * (row.aic_cand - row.best_aic))
+                                )
+                                output_string += (
+                                    f"            AIC weight: {w_cand_val:.4f}\n"
+                                )
+                                accept = w_cand_val >= aic_weight_thresh
+                                if accept:
+                                    accept_str = f"{GREEN}{accept}{RESET}"
+                                else:
+                                    accept_str = f"{RED}{accept}{RESET}"
+                                output_string += (
+                                    f"            Accept candidate: {accept_str}\n"
+                                )
+                    output_string += f"\n        Found best (stop): {row.found_best}\n"
+                    debug_outputs.append(output_string)
+
         # Current (no-change) state.
         curr_vals = hl.struct(
             null_model=ht.null_model,
@@ -3103,6 +3888,28 @@ def run_forward(
                 region=next_region,
             )
 
+        if debug:
+            # Collect candidates BEFORE updating region (for showing removed candidates)
+            _ht_debug_before_update = ht.head(1)
+            if _ht_debug_before_update.count() > 0:
+                uniprot_id_before = _ht_debug_before_update.uniprot_id.collect()[0]
+                transcript_id_before = _ht_debug_before_update.transcript_id.collect()[
+                    0
+                ]
+                _ht_candidates_before = ht.filter(
+                    (ht.uniprot_id == uniprot_id_before)
+                    & (ht.transcript_id == transcript_id_before)
+                )
+                # Collect region (candidate regions) before they're removed, along with
+                # oe data
+                candidates_before_filter = _ht_candidates_before.select(
+                    "center_residue_index", "region", "oe"
+                ).collect()
+            else:
+                candidates_before_filter = []
+                uniprot_id_before = None
+                transcript_id_before = None
+
         ht = ht.annotate(
             **hl.if_else(found_best_expr, curr_vals, _updated_vals()),
             found_best=found_best_expr,
@@ -3110,8 +3917,293 @@ def run_forward(
 
         # Keep only rows that still have remaining candidate regions or the idx==0.
         ht = ht.filter(hl.is_defined(ht.region) | (ht.idx == 0))
+
+        if debug:
+            # Debug after round completion
+            _ht_debug = ht.head(1)
+            if _ht_debug.count() > 0:
+                uniprot_id = _ht_debug.uniprot_id.collect()[0]
+                transcript_id = _ht_debug.transcript_id.collect()[0]
+                _ht_debug = ht.filter(
+                    (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
+                )
+                # Only print if this uniprot/transcript has rows with defined regions
+                has_regions = _ht_debug.aggregate(
+                    hl.agg.any(hl.is_defined(_ht_debug.region))
+                )
+                if has_regions:
+                    debug_data = _ht_debug.select(
+                        "selected", "selected_nll", "best_aic", "found_best", "region"
+                    ).collect()
+                    if debug_data:
+                        row = debug_data[0]
+                        output_string = f"\n\n\n{BOLD}    === run_forward: Round {round_num} - After Update ==={RESET}\n"
+                        output_string += f"        Selected regions: {len(row.selected) if row.selected else 0}\n"
+                        # Show the newly selected region (last one in the array)
+                        if row.selected and len(row.selected) > 0:
+                            latest_region = row.selected[-1]
+                            output_string += (
+                                f"\n        {BOLD}Newly Selected Region:{RESET}\n"
+                            )
+                            if (
+                                hasattr(latest_region, "obs")
+                                and latest_region.obs is not None
+                            ):
+                                output_string += (
+                                    f"            Observed: {latest_region.obs:7d}\n"
+                                )
+                            if (
+                                hasattr(latest_region, "exp")
+                                and latest_region.exp is not None
+                            ):
+                                output_string += (
+                                    f"            Expected: {latest_region.exp:7.2f}\n"
+                                )
+                            if (
+                                hasattr(latest_region, "oe")
+                                and latest_region.oe is not None
+                            ):
+                                output_string += (
+                                    f"            O/E:      {latest_region.oe:7.2f}\n"
+                                )
+                            if (
+                                hasattr(latest_region, "region")
+                                and latest_region.region
+                            ):
+                                region_str = ", ".join(
+                                    [f"{r:7d}" for r in latest_region.region]
+                                )
+                                output_string += f"            {BOLD}Residues ({len(latest_region.region)}): {region_str}{RESET}\n"
+                        # Color selected NLL
+                        if row.selected_nll is not None:
+                            selected_nll_str = (
+                                f"{BOLD}{UNDERLINE}{row.selected_nll:.4f}{RESET}"
+                            )
+                        else:
+                            selected_nll_str = "NA"
+                        output_string += (
+                            f"\n            Selected NLL: {selected_nll_str}\n"
+                        )
+                        # Color best AIC
+                        if row.best_aic is not None:
+                            best_aic_str = f"{row.best_aic:.4f}"
+                        else:
+                            best_aic_str = "NA"
+                        output_string += f"            Best AIC: {best_aic_str}\n"
+                        output_string += f"            Found best: {row.found_best}\n"
+
+                        # Always show all candidates from this round with chosen region
+                        # residues colored red
+                        if (
+                            row.selected
+                            and len(row.selected) > 0
+                            and candidates_before_filter
+                        ):
+                            latest_region = row.selected[-1]
+                            chosen_residues = (
+                                set(latest_region.region)
+                                if hasattr(latest_region, "region")
+                                and latest_region.region
+                                else set()
+                            )
+                            output_string += f"\n        {BOLD}All Candidates from This Round (with chosen region residues colored red):{RESET}\n"
+                            for cand_idx, cand_row in enumerate(
+                                candidates_before_filter
+                            ):
+                                if hasattr(cand_row, "region") and cand_row.region:
+                                    center_res_str = (
+                                        f" (center residue: {cand_row.center_residue_index})"
+                                        if hasattr(cand_row, "center_residue_index")
+                                        and cand_row.center_residue_index is not None
+                                        else ""
+                                    )
+                                    output_string += f"\n            {BOLD}Candidate {cand_idx + 1}{center_res_str}:{RESET}\n"
+                                    # Calculate obs/exp/oe from oe array for this
+                                    # candidate's residues
+                                    region_residues = cand_row.region
+                                    if hasattr(cand_row, "oe") and cand_row.oe:
+                                        total_obs = 0
+                                        total_exp = 0.0
+                                        for res_idx in region_residues:
+                                            if res_idx < len(cand_row.oe):
+                                                oe_entry = cand_row.oe[res_idx]
+                                                if (
+                                                    hasattr(oe_entry, "obs")
+                                                    and oe_entry.obs is not None
+                                                ):
+                                                    total_obs += oe_entry.obs
+                                                if (
+                                                    hasattr(oe_entry, "exp")
+                                                    and oe_entry.exp is not None
+                                                ):
+                                                    total_exp += oe_entry.exp
+                                        if total_exp > 0:
+                                            total_oe = total_obs / total_exp
+                                        else:
+                                            total_oe = None
+                                        output_string += f"                Observed: {total_obs:7d}\n"
+                                        output_string += f"                Expected: {total_exp:7.2f}\n"
+                                        if total_oe is not None:
+                                            output_string += f"                O/E:      {total_oe:7.2f}\n"
+                                    # Show region residues with chosen region residues
+                                    # colored red
+                                    residue_strs = []
+                                    for res in region_residues:
+                                        if res in chosen_residues:
+                                            residue_strs.append(f"{RED}{res}{RESET}")
+                                        else:
+                                            residue_strs.append(f"{res}")
+                                    region_str = ", ".join(residue_strs)
+                                    output_string += f"                {BOLD}Residues ({len(region_residues)}): {region_str}{RESET}\n"
+                                    # Calculate remaining residues after removing chosen
+                                    # region
+                                    remaining_residues = [
+                                        r
+                                        for r in region_residues
+                                        if r not in chosen_residues
+                                    ]
+                                    if remaining_residues:
+                                        remaining_str = ", ".join(
+                                            [f"{r}" for r in remaining_residues]
+                                        )
+                                        output_string += f"                Remaining after removal: {remaining_str} ({len(remaining_residues)} residues)\n"
+                                    else:
+                                        output_string += f"                {RED}(All residues removed - candidate eliminated){RESET}\n"
+                        debug_outputs.append(output_string)
+
         ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}", "ht"))
         round_num += 1
+
+    if debug:
+        # Debug final state before flattening
+        _ht_debug = ht.head(1)
+        if _ht_debug.count() > 0:
+            uniprot_id = _ht_debug.uniprot_id.collect()[0]
+            transcript_id = _ht_debug.transcript_id.collect()[0]
+            _ht_debug = ht.filter(
+                (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
+            )
+            debug_data = _ht_debug.select(
+                "selected", "selected_nll", "best_aic", "null_model", "oe"
+            ).collect()
+            if debug_data:
+                row = debug_data[0]
+                output_string = f"\n\n\n{BOLD}=== run_forward: Final State ==={RESET}\n"
+                output_string += f"    {BOLD}Total selected regions: {len(row.selected) if row.selected else 0}{RESET}\n"
+                # Color final selected NLL
+                if row.selected_nll is not None:
+                    selected_nll_str = f"{BOLD}{UNDERLINE}{row.selected_nll:.4f}{RESET}"
+                else:
+                    selected_nll_str = "NA"
+                output_string += (
+                    f"    {BOLD}Final selected NLL:{RESET} {selected_nll_str}\n"
+                )
+                # Color final best AIC
+                if row.best_aic is not None:
+                    best_aic_str = f"{row.best_aic:.4f}"
+                else:
+                    best_aic_str = "NA"
+                output_string += f"    {BOLD}Final best AIC:{RESET} {best_aic_str}\n"
+                if row.selected:
+                    output_string += f"\n    {BOLD}Selected Regions:{RESET}\n"
+                    for idx, region in enumerate(row.selected):
+                        output_string += f"        {BOLD}Region {idx}:{RESET}\n"
+                        output_string += (
+                            f"            {BOLD}Observed:{RESET} {region.obs:7d}\n"
+                        )
+                        output_string += (
+                            f"            {BOLD}Expected:{RESET} {region.exp:7.2f}\n"
+                        )
+                        # Color aggregate O/E
+                        if region.oe is not None:
+                            oe_str = f"{region.oe:7.2f}"
+                        else:
+                            oe_str = "     NA"
+                        output_string += f"            {BOLD}O/E: {oe_str}{RESET}\n"
+                        if hasattr(region, "region") and region.region:
+                            region_str = ", ".join([f"{r:7d}" for r in region.region])
+                            output_string += (
+                                f"            {BOLD}Residues: {region_str}{RESET}\n"
+                            )
+
+                            # Print per-residue observed and expected values
+                            if row.oe:
+                                obs_list = []
+                                exp_list = []
+                                for res_idx in region.region:
+                                    if res_idx < len(row.oe):
+                                        oe_entry = row.oe[res_idx]
+                                        obs_val = (
+                                            oe_entry.obs
+                                            if hasattr(oe_entry, "obs")
+                                            and oe_entry.obs is not None
+                                            else None
+                                        )
+                                        exp_val = (
+                                            oe_entry.exp
+                                            if hasattr(oe_entry, "exp")
+                                            and oe_entry.exp is not None
+                                            else None
+                                        )
+
+                                        obs_list.append(
+                                            f"{obs_val:7d}"
+                                            if obs_val is not None
+                                            else "    NA"
+                                        )
+                                        exp_list.append(
+                                            f"{exp_val:7.2f}"
+                                            if exp_val is not None
+                                            else "    NA"
+                                        )
+                                output_string += f"            {BOLD}Observed ({len(obs_list):3d}):  {', '.join(obs_list)}{RESET}\n"
+                                output_string += f"            {BOLD}Expected ({len(exp_list):3d}):  {', '.join(exp_list)}{RESET}\n"
+                output_string += f"\n\n    {BOLD}Null Model (catch-all):{RESET}\n"
+                output_string += (
+                    f"        {BOLD}Observed: {row.null_model.obs:7d}{RESET}\n"
+                )
+                output_string += (
+                    f"        {BOLD}Expected: {row.null_model.exp:7.2f}{RESET}\n"
+                )
+                # Color aggregate O/E
+                if row.null_model.oe is not None:
+                    oe_str = f"{row.null_model.oe:7.2f}"
+                else:
+                    oe_str = "     NA"
+                output_string += f"        {BOLD}O/E: {oe_str}{RESET}\n"
+                if (
+                    hasattr(row.null_model, "region")
+                    and row.null_model.region
+                    and row.oe
+                ):
+                    obs_list = []
+                    exp_list = []
+                    for res_idx in row.null_model.region:
+                        if res_idx < len(row.oe):
+                            oe_entry = row.oe[res_idx]
+                            obs_val = (
+                                oe_entry.obs
+                                if hasattr(oe_entry, "obs") and oe_entry.obs is not None
+                                else None
+                            )
+                            exp_val = (
+                                oe_entry.exp
+                                if hasattr(oe_entry, "exp") and oe_entry.exp is not None
+                                else None
+                            )
+
+                            obs_list.append(
+                                f"{obs_val:7d}" if obs_val is not None else "    NA"
+                            )
+                            exp_list.append(
+                                f"{exp_val:7.2f}" if exp_val is not None else "    NA"
+                            )
+                    output_string += f"        {BOLD}Observed ({len(obs_list):3d}): {', '.join(obs_list)}{RESET}\n"
+                    output_string += f"        {BOLD}Expected ({len(exp_list):3d}): {', '.join(exp_list)}{RESET}\n"
+                debug_outputs.append(output_string)
+
+        # Print all collected debug output
+        logger.info("\n".join(debug_outputs))
 
     # Flatten final selected + null, explode to residues, compute per-residue stats.
     selected_expr = ht.selected.map(lambda x: x.annotate(is_null=False))
