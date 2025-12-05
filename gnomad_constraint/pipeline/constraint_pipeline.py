@@ -657,57 +657,69 @@ def main(args):
                     #        for p in [90, 95, 98, 99]
                     #    },
                     # },
-                    "new_loftee": {
+                    "loftee1": {
                         **{
-                            f"new_loftee_{p}": ht[f"new_loftee_{p}"]
-                            for p in ["99", "99_5", "99_9"]
+                            f"loftee1_{l}": ht[f"loftee1_{l}"]
+                            for l in ["LC", "HC"]
+                        },
+                    },
+                    "loftee2": {
+                        **{
+                            f"loftee2_{l}": ht[f"loftee2_{l}"]
+                            for l in ["relaxed", "strict"]
+                        },
+                    },
+                    "misannot_Pposterior": {
+                        **{
+                            f"misannot_Pposterior_{p}": ht[f"misannot_Pposterior_{p}"]
+                            for p in ["99_5"]
                         },
                         **{
-                            f"new_loftee_{p}_HC_LC": (
-                                ht[f"new_loftee_{p}"]
+                            f"misannot_Pposterior_{p}_HC_LC": (
+                                ht[f"misannot_Pposterior_{p}"]
                                 | (
-                                    hl.is_missing(ht[f"new_loftee_{p}"])
+                                    hl.is_missing(ht[f"misannot_Pposterior_{p}"])
                                     & hl.set({"HC", "LC"}).contains(ht.modifier)
                                 )
                             )
-                            for p in ["99", "99_5", "99_9"]
+                            for p in ["99_5"]
                         },
                         **{
-                            f"new_loftee_{p}_HC": (
-                                ht[f"new_loftee_{p}"]
+                            f"misannot_Pposterior_{p}_HC": (
+                                ht[f"misannot_Pposterior_{p}"]
                                 | (
-                                    hl.is_missing(ht[f"new_loftee_{p}"])
+                                    hl.is_missing(ht[f"misannot_Pposterior_{p}"])
                                     & (ht.modifier == "HC")
                                 )
                             )
-                            for p in ["99", "99_5", "99_9"]
+                            for p in ["99_5"]
                         },
                         **{
-                            f"new_loftee_{p}_HC_LC_na_genes": (
-                                ht[f"new_loftee_{p}"]
+                            f"misannot_Pposterior_{p}_HC_LC_na_genes": (
+                                ht[f"misannot_Pposterior_{p}"]
                                 | (
                                     hl.set(genes_NA).contains(ht.gene)
                                     & hl.set({"HC", "LC"}).contains(ht.modifier)
                                 )
                             )
-                            for p in ["99", "99_5", "99_9"]
+                            for p in ["99_5"]
                         },
                         **{
-                            f"new_loftee_{p}_HC_na_genes": (
-                                ht[f"new_loftee_{p}"]
+                            f"misannot_Pposterior_{p}_HC_na_genes": (
+                                ht[f"misannot_Pposterior_{p}"]
                                 | (
                                     hl.set(genes_NA).contains(ht.gene)
                                     & (ht.modifier == "HC")
                                 )
                             )
-                            for p in ["99", "99_5", "99_9"]
+                            for p in ["99_5"]
                         },
-                    }
+                    },
                 },
                 additional_grouping_combinations=[
                     # ["am"],
                     # ["esm"],
-                    ["new_loftee"],
+                    ["misannot_Pposterior"], 
                     # ["lof", "am"],
                     # ["lof", "esm"],
                     # ["new_loftee", "am"],

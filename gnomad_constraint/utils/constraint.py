@@ -857,6 +857,35 @@ def aggregate_per_variant_expected_ht(
     :return: Table with the observed and expected counts.
     """
     ht = ht.transmute(**ht.calibrate_mu)
+    new_loftee = hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
+    )
+    loftee2 = hl.read_table(
+        "gs://gkr-loftee2/resources/ht/loftee2_alpha_classified_variants.ht"
+    )
+    new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
+    loftee2_keyed = loftee2[ht.locus, ht.alleles, ht.transcript]
+    ann_expr = {
+        **{
+            f"loftee1_{l}": hl.or_else(
+                ht.lof == l, False
+            )
+            for l in ["LC", "HC"]
+        },
+        **{
+            f"loftee2_{l}": hl.or_else(
+                loftee2_keyed[f"loftee2_{l}"], False)
+            for l in ["relaxed", "strict"]
+        },
+        **{
+            f"misannot_Pposterior_{n}": hl.or_else(
+                new_loftee_keyed.misannot_Pposterior < p, False
+            )
+            for n, p in [("99_5", 0.995)]
+        },
+    }
+    ht = ht.annotate(**ann_expr)
+
     groupings = (
         "annotation",
         "modifier",
@@ -882,9 +911,11 @@ def aggregate_per_variant_expected_ht(
         # 'esm_tx_per_95',
         # 'esm_tx_per_98',
         # 'esm_tx_per_99',
-        "new_loftee_99",
-        "new_loftee_99_5",
-        "new_loftee_99_9",
+        "misannot_Pposterior_99_5",
+        "loftee1_LC",
+        "loftee1_HC",
+        "loftee2_relaxed",
+        "loftee2_strict",
     )
     # *(MU_GROUPING if include_mu_annotations_in_grouping else []),
     # *[
