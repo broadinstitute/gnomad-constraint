@@ -381,11 +381,12 @@ def get_exomes_observed_and_possible(
     # set the observed and possible variant annotations to missing. Otherwise, set the
     # observed and possible variant annotations based on the frequency array.
     obs_pos_expr = hl.struct(
+        exomes_freq=exomes_freq_expr,
         **hl.or_missing(
             hl.is_defined(exomes_coverage_expr)
             & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
             single_variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
-        )
+        ),
     )
     obs_pos_globals = hl.struct(
         exomes_freq_meta=exomes_freq_meta,
@@ -830,12 +831,11 @@ def create_per_variant_expected_ht(
         )
     )
 
+    # TODO: Check that this is needed
     # tmp_path = new_temp_file(prefix="constraint", extension="ht")
     # ht.drop(*calibrate_mu_fields).write(tmp_path)
 
-    # return hl.read_table(tmp_path, _n_partitions=2000)
-
-    return ht.drop(*calibrate_mu_fields)
+    return ht.drop(*calibrate_mu_fields)  # hl.read_table(tmp_path, _n_partitions=2000)
 
 
 def aggregate_per_variant_expected_ht(
@@ -866,15 +866,9 @@ def aggregate_per_variant_expected_ht(
     new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
     loftee2_keyed = loftee2[ht.locus, ht.alleles, ht.transcript]
     ann_expr = {
+        **{f"loftee1_{l}": hl.or_else(ht.lof == l, False) for l in ["LC", "HC"]},
         **{
-            f"loftee1_{l}": hl.or_else(
-                ht.lof == l, False
-            )
-            for l in ["LC", "HC"]
-        },
-        **{
-            f"loftee2_{l}": hl.or_else(
-                loftee2_keyed[f"loftee2_{l}"], False)
+            f"loftee2_{l}": hl.or_else(loftee2_keyed[f"loftee2_{l}"], False)
             for l in ["relaxed", "strict"]
         },
         **{
@@ -1353,6 +1347,7 @@ def compute_constraint_metrics(
     def _add_oe_ci_z(
         oe_info: hl.expr.StructExpression,
         m: Dict[str, str],
+        add_flags: bool = False,
         expected_field: str = "expected_variants",
     ) -> hl.expr.StructExpression:
         """
@@ -1383,19 +1378,22 @@ def compute_constraint_metrics(
             oe=divide_null(obs, exp),
             oe_ci=oe_confidence_interval(obs, exp),
             z_raw=z_raw,
-            flags=add_filters_expr(filters=flags),
+            flags=(
+                add_filters_expr(filters=flags) if add_flags else hl.empty_set(hl.tstr)
+            ),
         )
 
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
     meta = hl.eval(ht.constraint_group_meta)
+    freq_meta_len = len(hl.eval(ht.exomes_freq_meta))
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, m: x.annotate(
-                oe_info=x.oe_info.map(lambda oe: _add_oe_ci_z(oe, m)),
-                adj_r_oe_info=x.oe_info.map(
-                    lambda oe: _add_oe_ci_z(oe, m, "adj_r_expected")
-                ),
+                oe_info=[
+                    _add_oe_ci_z(x.oe_info[i], m, add_flags=i == 0)
+                    for i in range(freq_meta_len)
+                ]
             ),
             ht.constraint_groups,
             meta,
