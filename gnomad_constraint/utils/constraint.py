@@ -30,8 +30,9 @@ from gnomad.utils.constraint import (
     weighted_agg_sum_expr,
 )
 from gnomad.utils.filtering import add_filters_expr
-from gnomad.utils.vep import filter_vep_transcript_csqs_expr
+from gnomad.utils.vep import CSQ_CODING, filter_vep_transcript_csqs_expr
 from hail.utils.misc import divide_null, new_temp_file
+from numpy.lib import r_
 
 from gnomad_constraint.resources.resource_utils import (
     AGGREGATE_SUM_FIELDS,
@@ -364,6 +365,7 @@ def get_exomes_observed_and_possible(
     # use the pared-down downsamplings list.
     downsamplings = [m["downsampling"] for m in exomes_freq_meta if "downsampling" in m]
     downsamplings = DOWNSAMPLINGS["v4"] if gen_ancs is None else downsamplings
+    downsamplings = sorted(map(int, list(set(downsamplings))))
     downsamplings = downsamplings if include_downsamplings else None
     logger.info("The following downsamplings will be used: %s", downsamplings)
 
@@ -380,11 +382,12 @@ def get_exomes_observed_and_possible(
     # If the exome coverage is undefined or the variant does not pass the exome filters,
     # set the observed and possible variant annotations to missing. Otherwise, set the
     # observed and possible variant annotations based on the frequency array.
+    exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
     obs_pos_expr = hl.struct(
         exomes_freq=exomes_freq_expr,
         **hl.or_missing(
-            hl.is_defined(exomes_coverage_expr)
-            & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
+            hl.is_defined(exomes_coverage_expr),
+            # & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
             single_variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
         ),
     )
@@ -841,6 +844,7 @@ def create_per_variant_expected_ht(
 def aggregate_per_variant_expected_ht(
     ht,
     include_mu_annotations_in_grouping: bool = False,
+    max_array_size: int = 200,
 ):
     """
     Aggregate the per-variant expected Table.
@@ -854,9 +858,9 @@ def aggregate_per_variant_expected_ht(
     :param ht: Table returned by `create_per_variant_expected_ht`.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate
         key annotations in the grouping. Default is False.
+    :param max_array_size: Maximum array size before batching. Default is 500.
     :return: Table with the observed and expected counts.
     """
-    ht = ht.transmute(**ht.calibrate_mu)
     new_loftee = hl.read_table(
         "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
     )
@@ -919,6 +923,25 @@ def aggregate_per_variant_expected_ht(
     #    ],
     # ]
 
+    aggregate_fields_to_sum = [
+        "mu_snp",
+        "mu",
+        "observed_variants",
+        "possible_variants",
+        "predicted_proportion_observed",
+        "coverage_correction",
+        "expected_variants",
+    ]
+
+    if "calibrate_mu" in ht.row:
+        ht = ht.annotate(**ht.calibrate_mu)
+
+    ht = ht.filter(hl.set(CSQ_CODING).contains(ht.annotation))
+    ht = ht.key_by()
+    ht = ht.select(*groupings, *aggregate_fields_to_sum)
+    # ht = ht.naive_coalesce(1000).checkpoint(new_temp_file("pre_aggregation", "ht"))
+    ht = ht.checkpoint(new_temp_file("pre_aggregation", "ht"))
+
     ht = ht.group_by(*groupings).aggregate(
         **aggregate_expected_variants_expr(
             ht,
@@ -929,7 +952,48 @@ def aggregate_per_variant_expected_ht(
         )
     )
 
-    return ht  # .naive_coalesce(1000)
+    """
+    # Check array lengths to determine if we need to batch.
+    arrays = [
+        f for f in aggregate_fields_to_sum if isinstance(ht[f], hl.ArrayExpression)
+    ]
+    array_length = len(ht.filter(hl.is_defined(ht[arrays[0]]))[arrays[0]].take(1)[0])
+    logger.info(f"Array length: {array_length}")
+
+    if not array_length > max_array_size:
+        # No large arrays, use standard aggregation.
+        ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
+    else:
+        # Calculate number of batches needed.
+        num_batches = (array_length + max_array_size - 1) // max_array_size
+
+        batches = []
+        for i in range(num_batches):
+            start_idx = i * max_array_size
+            end_idx = min((i + 1) * max_array_size, array_length)
+            logger.info(
+                f"Processing batch {i+1}/{num_batches} (indices {start_idx}:{end_idx})"
+            )
+
+            _ht = ht.annotate(
+                **{f: ht[f][start_idx:end_idx] for f in arrays}
+            ).checkpoint(new_temp_file(f"batch_{i}", "ht"))
+            batches.append(
+                _ht.group_by(*groupings).aggregate(
+                    **aggregate_expected_variants_expr(
+                        _ht,
+                        fields_to_sum=aggregate_fields_to_sum if i == 0 else arrays)
+                ).checkpoint(new_temp_file(f"batch_{i}.agg", "ht"))
+            )
+        ht = batches[0]
+        batches = [_ht[ht.key] for _ht in batches[1:]]
+        ht = ht.annotate(
+            **{f: hl.flatten([ht[f]] + [_ht[f] for _ht in batches]) for f in arrays}
+        )
+
+    """
+    ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
+    return ht.naive_coalesce(1000)
 
 
 # TODO: Move this up after review in this location.
@@ -991,7 +1055,7 @@ def calculate_mu_by_downsampling(
 
 
 # TODO: I think we decided this isn't needed right? We can just use canonical.
-def filter_to_mane_select_over_canonical(ht: hl.Table) -> hl.Table:
+def mane_select_over_canonical_filter_expr(ht: hl.Table) -> hl.Table:
     """
     Filter to MANE Select over canonical transcripts.
 
@@ -1009,47 +1073,33 @@ def filter_to_mane_select_over_canonical(ht: hl.Table) -> hl.Table:
     genes = genes.annotate(
         only_canonical=~(genes.mane_present) & (genes.canonical_present)
     )
-    ms_ht = ht.annotate(
-        _only_canonical=genes[ht.gene_id].only_canonical,
-        _mane_present=genes[ht.gene_id].mane_present,
-    )
-    ms_ht = ms_ht.filter(
-        (ms_ht.transcript.startswith("ENST"))
-        & (
-            (ms_ht._mane_present & ms_ht.mane_select)
-            | (ms_ht._only_canonical & ms_ht.canonical)
-        )
-    )
+    only_canonical_expr = genes[ht.gene_id].only_canonical
+    mane_present_expr = genes[ht.gene_id].mane_present
 
-    return ms_ht
+    return (ht.transcript.startswith("ENST")) & (
+        (mane_present_expr & ht.mane_select) | (only_canonical_expr & ht.canonical)
+    )
 
 
 # TODO: Move to gnomad_methods?
 def add_oe_upper_rank_and_decile(
     ht: hl.Table,
-    len_meta: int,
     use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
     """
     Compute the rank and decile of the oe upper confidence interval.
 
     :param ht: Table with the oe upper confidence interval.
-    :param use_mane_select_over_canonical: Use MANE Select rather than canonical
-        transcripts for filtering the Table when determining ranks for the lof oe upper
-        confidence interval. If a gene
-        does not have a MANE Select transcript, the canonical transcript (if available)
-        will be used instead. Default is True.
+
     :return: Struct containing the rank and decile of the oe upper confidence interval.
     """
     total_count = ht.count()
-
     if use_mane_select_over_canonical:
-        ms_ht = filter_to_mane_select_over_canonical(ht)
+        rank_filter_expr = mane_select_over_canonical_filter_expr(ht)
     else:
-        ms_ht = ht.filter((ht.canonical) & (ht.transcript.startswith("ENST")))
+        rank_filter_expr = ht.transcript.startswith("ENST") & ht.canonical
 
-    ms_ht = ms_ht.checkpoint(new_temp_file("constraint_metrics.canonical"))
-
+    ms_ht = ht.filter(rank_filter_expr)
     n_transcripts = ms_ht.count()
     logger.info(
         "Retaining %d out of %d transcripts to use for rank annotations.",
@@ -1057,32 +1107,97 @@ def add_oe_upper_rank_and_decile(
         total_count,
     )
 
-    ms_ht = ms_ht.annotate(upper_rank=hl.empty_array(hl.tint64))
-    for i in range(len_meta):
-        # Rank in ascending order.
-        ms_ht = ms_ht.order_by(ms_ht.constraint_groups[i].oe_info[0].oe_ci.upper)
-        ms_ht = ms_ht.add_index(name="rank")
-        ms_ht = ms_ht.annotate(upper_rank=ms_ht.upper_rank.append(ms_ht.rank))
+    """
+    ms_ht = ms_ht.select(
+        oe_ci_upper=ms_ht.constraint_groups.map(
+            lambda x: x.oe_info.map(
+                lambda y: hl.struct(
+                    upper_ci=y.oe_ci.upper,
+                    upper_ci_chisq=y.oe_ci_chisq.upper,
+                    upper_ci_gamma=y.oe_ci_gamma.upper,
+                )
+            )
+        ),
+    ).naive_coalesce(100).checkpoint(new_temp_file("oe_ci_upper.before_rank", "ht"))
 
-    ms_ht = ms_ht.annotate(
-        upper_bin_sextile=ms_ht.upper_rank.map(lambda x: hl.int(x * 6 / n_transcripts)),
-        upper_bin_decile=ms_ht.upper_rank.map(lambda x: hl.int(x * 10 / n_transcripts)),
+    num_constraint_groups = hl.eval(ms_ht.constraint_group_meta.length())
+    num_freq_groups = hl.eval(ms_ht.exomes_freq_meta.length())
+    for i in range(num_constraint_groups):
+        for j in range(num_freq_groups):
+            ms_ht = ms_ht.annotate(upper_ci_rank1=hl.struct())
+            for k in ["upper_ci", "upper_ci_chisq", "upper_ci_gamma"]:
+                # Rank in ascending order.
+                ms_ht = ms_ht.order_by(ms_ht.oe_ci_upper[i][j][k])
+                _rank = hl.struct(**{f'{k}_rank': hl.scan.count()})
+                if "upper_ci_rank1" in ms_ht.row:
+                    _rank = ms_ht.upper_ci_rank1.annotate(**_rank)
+                ms_ht = ms_ht.annotate(upper_ci_rank1=_rank)
+
+            _rank = ms_ht.upper_ci_rank1
+            if "upper_ci_rank2" in ms_ht.row:
+                _rank = ms_ht.upper_ci_rank2.append(_rank)
+            else:
+                _rank = [_rank]
+            ms_ht = ms_ht.annotate(upper_ci_rank2=_rank)
+            ms_ht = ms_ht.checkpoint(new_temp_file(f"constraint_group{i}.freq_groups{j}", "ht"))
+
+        _rank = ms_ht.upper_ci_rank2
+        if "upper_ci_rank3" in ms_ht.row:
+            _rank = ms_ht.upper_ci_rank3.append(_rank)
+        else:
+            _rank = [_rank]
+        ms_ht = ms_ht.annotate(upper_ci_rank3=_rank)
+
+    ms_ht = ms_ht.checkpoint(new_temp_file("oe_ci_upper.rank", "ht"))
+    """
+
+    ms_ht = hl.read_table(
+        "gs://gnomad-tmp-4day/oe_ci_upper.rank-664KaxZ6k3vyUFBpZIJaqh.ht"
     )
 
     # Map rank and bin annotations back to original Table.
-    ms_ht = ms_ht.key_by(*list(ht.key))
-    ms_keyed = ms_ht[ht.key]
-
-    return ht.annotate(
+    ht = ht.annotate(upper_ci_rank3=ms_ht.key_by(*list(ht.key))[ht.key].upper_ci_rank3)
+    ht = ht.annotate(
         constraint_groups=hl.enumerate(ht.constraint_groups).map(
             lambda x: x[1].annotate(
-                **{
-                    k: ms_keyed[k][x[0]]
-                    for k in ["upper_rank", "upper_bin_sextile", "upper_bin_decile"]
-                }
+                oe_info=hl.enumerate(x[1].oe_info).map(
+                    lambda y: hl.bind(
+                        lambda r: y[1].annotate(
+                            **{
+                                f"oe_ci{k}": y[1][f"oe_ci{k}"].annotate(
+                                    **hl.or_missing(
+                                        hl.is_defined(r),
+                                        hl.struct(
+                                            upper_rank=r[f"upper_ci{k}_rank"],
+                                            upper_bin_percentile=hl.int(
+                                                r[f"upper_ci{k}_rank"]
+                                                * 100
+                                                / n_transcripts
+                                            ),
+                                            upper_bin_decile=hl.int(
+                                                r[f"upper_ci{k}_rank"]
+                                                * 10
+                                                / n_transcripts
+                                            ),
+                                            upper_bin_sextile=hl.int(
+                                                r[f"upper_ci{k}_rank"]
+                                                * 6
+                                                / n_transcripts
+                                            ),
+                                        ),
+                                    )
+                                )
+                                for k in ["", "_chisq", "_gamma"]
+                            }
+                        ),
+                        ht.upper_ci_rank3[x[0]][y[0]],
+                    )
+                )
             )
         )
-    )
+    ).drop("upper_ci_rank3")
+
+    return ht
 
 
 # TODO: Move to gnomad_methods?
@@ -1297,6 +1412,74 @@ def aggregate_by_constraint_groups(
     return ht
 
 
+def gamma_ci(
+    obs: hl.expr.Int32Expression,
+    exp: hl.expr.Float64Expression,
+    alpha: float = 0.05,
+) -> hl.expr.Float64Expression:
+    """
+    Calculate the upper bound of the OE confidence interval using the Gamma distribution.
+
+    This function uses the built-in qgamma function from the custom Hail wheel.
+
+    :param obs: Observed count
+    :param exp: Expected count
+    :param alpha: Significance level for the confidence interval. Default is 0.05.
+    :return: Upper bound of the OE confidence interval
+    """
+    # Calculate shape and scale parameters for Gamma distribution
+    shape = obs + hl.literal(1.0)
+    scale = divide_null(
+        hl.literal(1.0), exp
+    )  # Use divide_null to handle division by zero
+    p = hl.literal(1.0 - alpha)
+
+    # Use the built-in qgamma function from the custom Hail wheel
+    # divide_null will return null if exp is 0, making the result null as well
+
+    return hl.struct(
+        lower=hl.qgamma(hl.literal(alpha), shape, scale),
+        upper=hl.qgamma(p, shape, scale),
+    )
+
+
+def chisq_ci(
+    obs: hl.expr.Int32Expression,
+    exp: hl.expr.Float64Expression,
+    alpha: float = 0.05,
+) -> hl.expr.StructExpression:
+    """
+    Calculate the upper bound of the OE confidence interval using the chi-squared distribution.
+
+    :param obs: Observed count.
+    :param exp: Expected count.
+    :param alpha: Significance level for the confidence interval. Default is 0.05.
+    :return: Upper bound of the OE confidence interval.
+    """
+    return hl.struct(
+        lower=hl.qchisqtail(alpha, 2 * obs, lower_tail=True) / (2 * exp),
+        upper=hl.qchisqtail(1 - alpha, 2 * (obs + 1), lower_tail=True) / (2 * exp),
+    )
+
+
+def calculate_oe_confidence_interval(
+    obs, exp, alpha=0.05, oe_upper_method: str = "gamma"
+):
+    """
+    Calculate the upper bound of the OE confidence interval.
+
+    :param oe_expr: Array expression with observed and expected values.
+    :param alpha: Significance level for the OE confidence interval. Default is 0.05.
+    :return: Array expression with upper bound of the OE confidence interval.
+    """
+    # Calculate upper bound of oe confidence interval.
+    if oe_upper_method not in ["gamma", "chisq"]:
+        raise ValueError(f"Invalid OE upper method: {oe_upper_method}")
+
+    oe_upper_func = gamma_ci if oe_upper_method == "gamma" else chisq_ci
+    return oe_upper_func(obs, exp, alpha)
+
+
 def compute_constraint_metrics(
     ht: hl.Table,
     gencode_ht: hl.Table,
@@ -1333,23 +1516,28 @@ def compute_constraint_metrics(
         'Rec', and 'LI' to use as starting values.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
         model convergence criteria as met. Default is 0.001.
-    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is considered an outlier for lof variants. Values below this threshold will be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is considered an outlier for missense variants. Values below this threshold will be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is considered an outlier for synonymous variants. Values below this threshold will be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is considered an outlier for synonymous variants. Values above this threshold will be considered outliers. Default is  8.0.
-    :param use_mane_select_over_canonical: Use MANE Select rather than canonical transcripts for filtering the Table when determining ranks for the lof oe upper confidence interval.
-        If a gene does not have a MANE Select transcript, the canonical transcript (if available) will be used instead. Default is True.
+    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is
+        considered an outlier for lof variants. Values below this threshold will be
+        considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is
+        considered an outlier for missense variants. Values below this threshold will
+        be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is
+        considered an outlier for synonymous variants. Values below this threshold will
+        be considered outliers. Default is -8.0.
+    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is
+        considered an outlier for synonymous variants. Values above this threshold will
+        be considered outliers. Default is  8.0.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical
+        transcripts for filtering the Table when determining ranks for the lof oe
+        upper confidence interval. If a gene does not have a MANE Select transcript,
+        the canonical transcript (if available) will be used instead. Default is True.
     :param gencode_ht: Table containing GENCODE annotations.
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
 
-    def _add_oe_ci_z(
-        oe_info: hl.expr.StructExpression,
-        m: Dict[str, str],
-        add_flags: bool = False,
-        expected_field: str = "expected_variants",
-    ) -> hl.expr.StructExpression:
+    def _add_oe_ci_z(oe_info: hl.expr.StructExpression) -> hl.expr.StructExpression:
         """
         Add oe, oe_ci, and z_raw to the oe_info struct.
 
@@ -1357,86 +1545,130 @@ def compute_constraint_metrics(
         :return: Struct containing oe, oe_ci, and z_raw.
         """
         obs = oe_info.observed_variants
-        exp = oe_info[expected_field]
-        z_raw = calculate_raw_z_score(obs, exp)
-        z_threshold = dict(
-            {
-                "lof": (raw_z_outlier_threshold_lower_lof, None),
-                "mis": (raw_z_outlier_threshold_lower_missense, None),
-                "syn": (
-                    raw_z_outlier_threshold_lower_syn,
-                    raw_z_outlier_threshold_upper_syn,
-                ),
-            }
-        )
-        z_threshold = z_threshold.get(
-            hl.coalesce(m.get("lof"), m.get("csq_set", "None")),
-            (None, None),
-        )
-        flags = get_constraint_flags(exp, z_raw, z_threshold[0], z_threshold[1])
+        exp = oe_info.expected_variants
         return oe_info.annotate(
             oe=divide_null(obs, exp),
             oe_ci=oe_confidence_interval(obs, exp),
-            z_raw=z_raw,
-            flags=(
-                add_filters_expr(filters=flags) if add_flags else hl.empty_set(hl.tstr)
+            oe_ci_chisq=calculate_oe_confidence_interval(
+                obs, exp, oe_upper_method="chisq"
             ),
+            oe_ci_gamma=calculate_oe_confidence_interval(
+                obs, exp, oe_upper_method="gamma"
+            ),
+            z_raw=calculate_raw_z_score(obs, exp),
         )
 
+    """
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
-    meta = hl.eval(ht.constraint_group_meta)
-    freq_meta_len = len(hl.eval(ht.exomes_freq_meta))
     ht = ht.annotate(
-        constraint_groups=hl.map(
-            lambda x, m: x.annotate(
-                oe_info=[
-                    _add_oe_ci_z(x.oe_info[i], m, add_flags=i == 0)
-                    for i in range(freq_meta_len)
-                ]
-            ),
-            ht.constraint_groups,
-            meta,
+        constraint_groups=ht.constraint_groups.map(
+            lambda x: x.annotate(
+                oe_info=x.oe_info.map(lambda oe_info: _add_oe_ci_z(oe_info))
+            )
         )
     )
-    # ht = ht.annotate(constraint_flags=...)
-    ht = ht.checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw", "ht"))
+
+    z_threshold = {
+        "lof": (raw_z_outlier_threshold_lower_lof, None),
+        "mis": (raw_z_outlier_threshold_lower_missense, None),
+        "syn": (
+            raw_z_outlier_threshold_lower_syn,
+            raw_z_outlier_threshold_upper_syn,
+        ),
+    }
+    """
+    meta = hl.eval(ht.constraint_group_meta)
+    freq_meta = hl.eval(ht.exomes_freq_meta)
+    syn_idx = meta.index({"csq_set": "syn"})
+    mis_idx = meta.index({"csq_set": "mis"})
+    lof_idx = meta.index({"lof": "hc"})
+    all_freq_idx = freq_meta.index({"group": "adj"})
+    """ht = ht.annotate(
+        constraint_groups=[
+            ht.constraint_groups[i].annotate(
+                flags=add_filters_expr(
+                    get_constraint_flags(
+                        ht.constraint_groups[i].oe_info[all_freq_idx].expected_variants,
+                        ht.constraint_groups[i].oe_info[all_freq_idx].z_raw,
+                        z_threshold.get(
+                            "lof" if m.get("lof") else m.get("csq_set", "None"),
+                            (None, None),
+                        )[0],
+                        z_threshold.get(
+                            "lof" if m.get("lof") else m.get("csq_set", "None"),
+                            (None, None),
+                        )[1],
+                        flag_postfix="lof" if m.get("lof") else m.get("csq_set", None),
+                    )
+                )
+            )
+            for i, m in enumerate(meta)
+        ]
+    ).checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw", "ht"))
 
     # Add z-score 'sd' annotation to globals.
-    # ht = ht.annotate_globals(
-    #    sd_raw_z=ht.aggregate(
-    #        hl.agg.filter(
-    #            ~ht.no_variants,
-    #            [
-    #                calculate_raw_z_score_sd(
-    #                    ht.constraint_groups[i].oe_info[0].z_raw,
-    #                    ht.constraint_groups[i].oe_info[0].flags,
-    #                    mirror_neg_raw_z=m.get("csq_set") != "syn",
-    #                )
-    #                for i, m in enumerate(meta)
-    #            ],
-    #        )
-    #    )
-    # )
+    ht = ht.annotate_globals(
+        sd_raw_z=ht.aggregate(
+            hl.agg.filter(
+                ~ht.no_variants,
+                [
+                    calculate_raw_z_score_sd(
+                        ht.constraint_groups[i].oe_info[all_freq_idx].z_raw,
+                        ht.constraint_groups[i].flags,
+                        mirror_neg_raw_z=m.get("csq_set") != "syn",
+                    )
+                    for i, m in enumerate(meta)
+                ],
+            )
+        )
+    )
 
     # Compute z-score from raw z-score and standard deviations.
-    # TODO: Need to fix z_score
-    # ht = ht.annotate(
-    #    constraint_groups=hl.map(
-    #        lambda x, sd_raw_z: x.annotate(z_score=x.oe_info[0].z_raw / sd_raw_z),
-    #        ht.constraint_groups,
-    #        ht.sd_raw_z,
-    #    )
-    # )
+    ht = ht.annotate(
+        constraint_groups=hl.map(
+            lambda x, sd_raw_z: x.annotate(
+                z_score=x.oe_info[all_freq_idx].z_raw / sd_raw_z
+            ),
+            ht.constraint_groups,
+            ht.sd_raw_z,
+        ),
+        constraint_flags=(
+            ht.constraint_groups[syn_idx].flags
+            | ht.constraint_groups[mis_idx].flags
+            | ht.constraint_groups[lof_idx].flags
+        )
+    ).checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw.flags", "ht"))
+    """
+
+    ht = hl.read_table(
+        "gs://gnomad-tmp-4day/constraint_metrics.oe.oe_ci.z_raw.flags-D9jfiSqRyWZoPb6VmAzNZw.ht"
+    )
 
     # Add a rank and decile of the upper confidence interval for MANE Select or
     # canonical ensembl transcripts.
-    ht = add_oe_upper_rank_and_decile(ht, len(meta), use_mane_select_over_canonical)
+    ht = add_oe_upper_rank_and_decile(ht, use_mane_select_over_canonical).checkpoint(
+        new_temp_file("constraint_metrics.oe.oe_ci.z_raw.flags.rank_and_decile", "ht")
+    )
 
-    # TODO: Add back pLI computation
     # Compute the observed:expected ratio.
     if expected_values is None:
         expected_values = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
+
+    hc_lof_expr = ht.constraint_groups[lof_idx].oe_info[all_freq_idx]
+    ht = ht.annotate(
+        **compute_pli(
+            ht,
+            obs_expr=hc_lof_expr.observed_variants,
+            exp_expr=hc_lof_expr.expected_variants,
+            expected_values=expected_values,
+            min_diff_convergence=min_diff_convergence,
+        )
+    ).checkpoint(
+        new_temp_file(
+            "constraint_metrics.oe.oe_ci.z_raw.flags.rank_and_decile.pli", "ht"
+        )
+    )
 
     # Add transcript annotations from GENCODE.
     ht = add_gencode_transcript_annotations(ht, gencode_ht)

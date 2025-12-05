@@ -178,7 +178,7 @@ def run_prepare_context(
     sfs_bin_expr = sfs_bin_expr.or_missing()
 
     adj_r_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
     )
 
     ht = ht.annotate(
@@ -567,12 +567,21 @@ def main(args):
             res.check_resource_existence()
 
             # Use new shuffle method to prevent shuffle errors.
-            hl._set_flags(use_new_shuffle="1")
+            # hl._set_flags(use_new_shuffle="1")
 
-            ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 50000})
+            ht = res.per_variant_apply_ht.ht()
+            # ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 8000})
+            ht = aggregate_per_variant_expected_ht(
+                ht, include_mu_annotations_in_grouping=True
+            )
+            ht = ht.checkpoint(
+                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.per_variant_expected.aggregated_with_mu_annotations.coverage_corrected.with_downsamplings.ht",
+                overwrite=overwrite,
+            )
+            # hl._set_flags(use_new_shuffle=None)
+
             ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
-            hl._set_flags(use_new_shuffle=None)
 
             logger.info(
                 "Done aggregating per-variant expected variant count by transcript, "
@@ -639,6 +648,34 @@ def main(args):
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
+            ht = hl.read_table(
+                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.per_variant_expected.aggregated_with_mu_annotations.coverage_corrected.with_downsamplings.ht"
+            )
+            aggregate_by_constraint_groups(
+                ht,
+                keys=tuple(
+                    [
+                        i
+                        for i in list(ht.key)
+                        if i
+                        in [
+                            "gene",
+                            "transcript",
+                            "canonical",
+                            "mane_select",
+                            "gene_id",
+                            "context",
+                            "ref",
+                            "alt",
+                            "methylation_level",
+                        ]
+                    ]
+                ),
+            ).write(
+                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.constraint_group_with_mu_annotations.coverage_corrected.with_downsamplings.ht",
+                overwrite=overwrite,
+            )
+
             ht = res.apply_ht.ht()
             aggregate_by_constraint_groups(
                 ht,
@@ -746,7 +783,7 @@ def main(args):
             res.check_resource_existence()
 
             # Compute constraint metrics.
-            ht = res.constraint_group_ht.ht(read_args={"_n_partitions": 500})
+            ht = res.constraint_group_ht.ht(read_args={"_n_partitions": 10000})
             compute_constraint_metrics(
                 ht=ht,
                 gencode_ht=constraint_res.get_gencode_ht(version),
