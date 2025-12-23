@@ -862,7 +862,7 @@ def aggregate_per_variant_expected_ht(
     :return: Table with the observed and expected counts.
     """
     new_loftee = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
+        "gs://gkr-loftee2/resources/ht/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
     )
     loftee2 = hl.read_table(
         "gs://gkr-loftee2/resources/ht/loftee2_alpha_classified_variants.ht"
@@ -870,7 +870,7 @@ def aggregate_per_variant_expected_ht(
     new_loftee_keyed = new_loftee[ht.locus, ht.alleles, ht.transcript]
     loftee2_keyed = loftee2[ht.locus, ht.alleles, ht.transcript]
     ann_expr = {
-        **{f"loftee1_{l}": hl.or_else(ht.lof == l, False) for l in ["LC", "HC"]},
+        **{f"loftee1_{l}": hl.or_else(ht.modifier == l, False) for l in ["LC", "HC"]},
         **{
             f"loftee2_{l}": hl.or_else(loftee2_keyed[f"loftee2_{l}"], False)
             for l in ["relaxed", "strict"]
@@ -931,6 +931,7 @@ def aggregate_per_variant_expected_ht(
         "predicted_proportion_observed",
         "coverage_correction",
         "expected_variants",
+        "adj_r",
     ]
 
     if "calibrate_mu" in ht.row:
@@ -952,46 +953,6 @@ def aggregate_per_variant_expected_ht(
         )
     )
 
-    """
-    # Check array lengths to determine if we need to batch.
-    arrays = [
-        f for f in aggregate_fields_to_sum if isinstance(ht[f], hl.ArrayExpression)
-    ]
-    array_length = len(ht.filter(hl.is_defined(ht[arrays[0]]))[arrays[0]].take(1)[0])
-    logger.info(f"Array length: {array_length}")
-
-    if not array_length > max_array_size:
-        # No large arrays, use standard aggregation.
-        ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
-    else:
-        # Calculate number of batches needed.
-        num_batches = (array_length + max_array_size - 1) // max_array_size
-
-        batches = []
-        for i in range(num_batches):
-            start_idx = i * max_array_size
-            end_idx = min((i + 1) * max_array_size, array_length)
-            logger.info(
-                f"Processing batch {i+1}/{num_batches} (indices {start_idx}:{end_idx})"
-            )
-
-            _ht = ht.annotate(
-                **{f: ht[f][start_idx:end_idx] for f in arrays}
-            ).checkpoint(new_temp_file(f"batch_{i}", "ht"))
-            batches.append(
-                _ht.group_by(*groupings).aggregate(
-                    **aggregate_expected_variants_expr(
-                        _ht,
-                        fields_to_sum=aggregate_fields_to_sum if i == 0 else arrays)
-                ).checkpoint(new_temp_file(f"batch_{i}.agg", "ht"))
-            )
-        ht = batches[0]
-        batches = [_ht[ht.key] for _ht in batches[1:]]
-        ht = ht.annotate(
-            **{f: hl.flatten([ht[f]] + [_ht[f] for _ht in batches]) for f in arrays}
-        )
-
-    """
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
     return ht.naive_coalesce(1000)
 
@@ -1253,13 +1214,13 @@ def build_constraint_consequence_groups(
         "csq_set": {"syn": csq_expr == "synonymous_variant", "mis": mis_expr},
         "lof": {
             # Filter to classic LoF annotations.
-            # "classic": lof_classic_expr,
+            "classic": lof_classic_expr,
             # Filter to LOFTEE HC or LC.
-            "hc_lc": lof_hc_lc_expr,
+            # "hc_lc": lof_hc_lc_expr,
             # Filter to classic LoF annotations with LOFTEE HC or LC.
             # "classic_hc_lc": lof_classic_expr & lof_hc_lc_expr,
             # Filter to LoF annotations with LOFTEE HC.
-            "hc": lof_hc_expr,
+            # "hc": lof_hc_expr,
         },
     }
 
@@ -1367,7 +1328,11 @@ def aggregate_by_constraint_groups(
             lambda f: hl.agg.filter(
                 f,
                 aggregate_expected_variants_expr(
-                    ht, additional_fields_to_sum=["adj_r", "adj_r_expected"]
+                    ht,
+                    additional_exprs_to_sum={
+                        "adj_r": ht.adj_r,
+                        "adj_r_expected": ht.adj_r_expected,
+                    },
                 ),
             ),
             ht.constraint_groups,

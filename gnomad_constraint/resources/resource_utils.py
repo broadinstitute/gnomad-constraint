@@ -350,7 +350,6 @@ def get_preprocessed_ht(**kwargs) -> TableResource:
     return get_constraint_data(
         "context.preprocessed",
         sub_dir="preprocessed_data",
-        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -400,7 +399,6 @@ def get_per_variant_expected_dataset(
         "per_variant_expected",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -419,7 +417,6 @@ def get_aggregated_per_variant_expected(
         "per_variant_expected.aggregated",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -436,7 +433,6 @@ def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResour
         "constraint_group",
         sub_dir="apply_models",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 
@@ -455,7 +451,6 @@ def get_constraint_metrics_dataset(
         "constraint_metrics",
         sub_dir="metrics",
         custom_vep_annotation=custom_vep_annotation,
-        temp_post_fix="loeuf_all_rerun_6_12_25.downsampling",
         **kwargs,
     )
 

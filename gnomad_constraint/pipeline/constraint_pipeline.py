@@ -293,7 +293,7 @@ def get_constraint_resources(
         "--build-models",
         output_resources={
             f"model_{m}": constraint_res.get_models(
-                m, **common_params, path_post_fix=path_post_fix
+                m, **common_params, path_post_fix="coverage_corrected"  # path_post_fix
             )
             for m in models
         },
@@ -303,7 +303,9 @@ def get_constraint_resources(
         "--apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": constraint_res.get_per_variant_expected_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                custom_vep_annotation,
+                **common_params,
+                path_post_fix="coverage_corrected",  # path_post_fix
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -570,16 +572,6 @@ def main(args):
             # hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            # ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 8000})
-            ht = aggregate_per_variant_expected_ht(
-                ht, include_mu_annotations_in_grouping=True
-            )
-            ht = ht.checkpoint(
-                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.per_variant_expected.aggregated_with_mu_annotations.coverage_corrected.with_downsamplings.ht",
-                overwrite=overwrite,
-            )
-            # hl._set_flags(use_new_shuffle=None)
-
             ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
 
@@ -648,9 +640,7 @@ def main(args):
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
-            ht = hl.read_table(
-                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.per_variant_expected.aggregated_with_mu_annotations.coverage_corrected.with_downsamplings.ht"
-            )
+            ht = res.apply_ht.ht()
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(
@@ -669,22 +659,6 @@ def main(args):
                             "alt",
                             "methylation_level",
                         ]
-                    ]
-                ),
-            ).write(
-                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.constraint_group_with_mu_annotations.coverage_corrected.with_downsamplings.ht",
-                overwrite=overwrite,
-            )
-
-            ht = res.apply_ht.ht()
-            aggregate_by_constraint_groups(
-                ht,
-                keys=tuple(
-                    [
-                        i
-                        for i in list(ht.key)
-                        if i
-                        in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
                     ]
                 ),
                 additional_groupings={
@@ -764,6 +738,8 @@ def main(args):
                 additional_grouping_combinations=[
                     # ["am"],
                     # ["esm"],
+                    ["loftee1"],
+                    ["loftee2"],
                     ["misannot_Pposterior"],
                     # ["lof", "am"],
                     # ["lof", "esm"],
