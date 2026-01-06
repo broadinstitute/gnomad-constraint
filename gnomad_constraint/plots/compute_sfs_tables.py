@@ -133,7 +133,6 @@ def preprocess_constraint_data(
 
     # Get frequency metadata.
     freq_meta = hl.eval(ht.exomes_freq_meta)
-    print(freq_meta)
 
     # Build list of frequency metadata entries to include.
     freq_meta_include = [(0, "AC_ds730947", "global")]
@@ -220,8 +219,6 @@ def preprocess_constraint_data(
     logger.info("Exploding frequency data by downsampling level")
     ht = ht.explode(ht.freq)
     ht = ht.annotate(**ht.freq).drop("freq")
-
-    ht.describe()
 
     return ht
 
