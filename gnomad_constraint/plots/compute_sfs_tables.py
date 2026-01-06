@@ -4,12 +4,14 @@ Script to compute Site Frequency Spectrum (SFS) tables from constraint pipeline 
 This script generates SFS tables for each combination of:
 - Functional categories: synonymous (syn), missense (mis), loss-of-function (lof)
 - Mutation type categories: transversion, transition, CpG (methylated and non-methylated)
+- Optional: Genetic ancestry groups (afr, amr, eas, nfe, sas)
 
 The output format is tables with:
 - Rows: Different downsampling levels (AC_ds10, AC_ds100, etc.)
 - Columns: Allele count bins (0, 1, 2, ..., 10, 10-100, 100-1000, 1000-10000, >10000)
 - Values: Number of variants with that allele count in that downsampling
 
+When grouping by ancestry, separate tables are generated for each ancestry group.
 
 The output is modeled after the SFS tables sent to Julia Goodrich by Jeremy Guez.
 """
@@ -87,7 +89,9 @@ def get_most_severe_consequence_expr(
         return csq_expr.filter(lambda x: x[csq_field] == ms_csq).first()
 
 
-def preprocess_constraint_data(ht: hl.Table) -> hl.Table:
+def preprocess_constraint_data(
+    ht: hl.Table, gen_ancs: Optional[List[str]] = None
+) -> hl.Table:
     """
     Preprocess constraint data for SFS computation.
 
@@ -96,7 +100,7 @@ def preprocess_constraint_data(ht: hl.Table) -> hl.Table:
         - Loads the constraint data
         - Selects relevant annotations
         - Creates AC group expressions
-        - Explodes frequency data by downsampling level
+        - Explodes frequency data by downsampling level and ancestry group
         - Saves the preprocessed data
 
     Compute the allele count of variants in the same way as we do for observed and
@@ -113,7 +117,9 @@ def preprocess_constraint_data(ht: hl.Table) -> hl.Table:
           (genome AF undefined), or also considered in the observed variant set. The
           boolean value is stored as an integer (0 or 1).
 
-    :param ht_path: Path to the input constraint table.
+    :param ht: Input constraint table.
+    :param gen_ancs: Optional list of genetic ancestry groups to include.
+        If None, only "global" is included. Default is None.
     :return: Preprocessed Hail table
     """
     # Define consequences to keep.
@@ -127,13 +133,30 @@ def preprocess_constraint_data(ht: hl.Table) -> hl.Table:
 
     # Get frequency metadata.
     freq_meta = hl.eval(ht.exomes_freq_meta)
-    freq_meta = [(0, "AC_ds730947")] + [
-        (i, f"AC_ds{m['downsampling']}")
+    print(freq_meta)
+
+    # Build list of frequency metadata entries to include.
+    freq_meta_include = [(0, "AC_ds730947", "global")]
+
+    # Include global downsamplings.
+    freq_meta_include += [
+        (i, f"AC_ds{m['downsampling']}", "global")
         for i, m in enumerate(freq_meta)
         if "downsampling" in m.keys()
         and "gen_anc" in m.keys()
         and m["gen_anc"] == "global"
     ]
+
+    # Include ancestry-specific downsamplings if requested.
+    if gen_ancs is not None:
+        freq_meta_include += [
+            (i, f"AC_ds{m['downsampling']}", gen_anc)
+            for gen_anc in gen_ancs
+            for i, m in enumerate(freq_meta)
+            if "downsampling" in m.keys()
+            and "gen_anc" in m.keys()
+            and m["gen_anc"] == gen_anc
+        ]
 
     # Annotate transcript consequences.
     ht = ht.annotate(
@@ -166,8 +189,9 @@ def preprocess_constraint_data(ht: hl.Table) -> hl.Table:
                     )
                 ),
                 downsampling=m,
+                gen_anc=gen_anc,
             )
-            for i, m in freq_meta
+            for i, m, gen_anc in freq_meta_include
         ],
     )
 
@@ -197,20 +221,30 @@ def preprocess_constraint_data(ht: hl.Table) -> hl.Table:
     ht = ht.explode(ht.freq)
     ht = ht.annotate(**ht.freq).drop("freq")
 
+    ht.describe()
+
     return ht
 
 
-def aggregate_sfs_data(ht: hl.Table) -> hl.Table:
+def aggregate_sfs_data(ht: hl.Table, group_by_ancestry: bool = False) -> hl.Table:
     """
-    Aggregate SFS data by downsampling level and AC group.
+    Aggregate SFS data by downsampling level, AC group, and optionally ancestry group.
 
     :param ht: Preprocessed Hail table.
+    :param group_by_ancestry: Whether to group by genetic ancestry. Default is False.
     :return: Aggregated Hail table.
     """
-    logger.info("Aggregating SFS data by downsampling level and AC group")
+    group_keys = ["downsampling", "ac_group"]
+    if group_by_ancestry:
+        logger.info(
+            "Aggregating SFS data by downsampling level, AC group, and ancestry group"
+        )
+        group_keys += ["gen_anc"]
+    else:
+        logger.info("Aggregating SFS data by downsampling level and AC group")
 
     agg_ht = (
-        ht.group_by("downsampling", "ac_group")
+        ht.group_by(*group_keys)
         .aggregate(
             n=hl.struct(
                 total=hl.agg.count(),
@@ -402,6 +436,7 @@ def export_sfs_tables(
     agg_ht: hl.Table,
     output_dir: str,
     ms_csq_groups: Optional[List[str]] = None,
+    group_by_ancestry: bool = False,
 ) -> None:
     """
     Export SFS tables for all combinations of functional categories and mutation types.
@@ -409,6 +444,8 @@ def export_sfs_tables(
     :param agg_ht: Aggregated Hail table
     :param output_dir: Directory to save SFS tables
     :param ms_csq_groups: List of most severe consequence groups to process
+    :param group_by_ancestry: Whether to export separate tables per ancestry group.
+        Default is False.
     """
     if ms_csq_groups is None:
         ms_csq_groups = [
@@ -442,6 +479,17 @@ def export_sfs_tables(
     # Rename downsampling to Sample_size.
     agg_ht = agg_ht.annotate(**agg_ht.n).rename({"downsampling": "Sample_size"})
 
+    # Check if gen_anc field exists in the table.
+    has_gen_anc = "gen_anc" in agg_ht.row.dtype.fields
+
+    if group_by_ancestry and not has_gen_anc:
+        logger.warning(
+            "group_by_ancestry is True but gen_anc field not found in aggregated table. "
+            "Proceeding without ancestry grouping. "
+            "Make sure to set --group-by-ancestry during aggregation step."
+        )
+        group_by_ancestry = False
+
     logger.info("Exporting SFS tables for %d combinations", len(name_map))
 
     for ms_csq in ms_csq_groups:
@@ -450,41 +498,90 @@ def export_sfs_tables(
         for file_name, grouping in name_map.items():
             logger.info("  Processing %s", file_name)
 
-            # Aggregate by sample size and AC group.
-            ht = agg_ht.group_by("Sample_size").aggregate(
-                _=hl.agg.group_by(
-                    agg_ht.ac_group,
-                    hl.agg.explode(
-                        hl.agg.sum,
-                        [
-                            agg_ht[ms_csq].get(
-                                hl.struct(
-                                    most_severe_consequence=ms,
-                                    lof=l,
-                                    mutation_type=mt,
-                                    transition=t,
-                                    cpg=c,
-                                    methylation_level=ml,
-                                )
-                            )
-                            for ms in grouping["most_severe_consequence"]
-                            for l in grouping["lof"]
-                            for mt in grouping["mutation_type"]
-                            for t in grouping["transition"]
-                            for c in grouping["cpg"]
-                            for ml in grouping["methylation_level"]
-                        ],
-                    ),
+            if group_by_ancestry and has_gen_anc:
+                # Get unique ancestry groups
+                gen_ancs = sorted(
+                    hl.eval(agg_ht.aggregate(hl.agg.collect_as_set(agg_ht.gen_anc)))
                 )
-            )
 
-            # Select AC groups as columns.
-            ht = ht.select(**{g: ht._.get(g, 0) for g in ac_groups})
+                for gen_anc in gen_ancs:
+                    logger.info("    Processing ancestry group: %s", gen_anc)
 
-            # Export to file.
-            output_path = f"{output_dir}/{ms_csq}/{file_name}"
-            logger.info("    Exporting to %s", output_path)
-            ht.export(output_path)
+                    # Filter to this ancestry group
+                    ht_anc = agg_ht.filter(agg_ht.gen_anc == gen_anc)
+
+                    # Aggregate by sample size and AC group.
+                    ht = ht_anc.group_by("Sample_size").aggregate(
+                        _=hl.agg.group_by(
+                            ht_anc.ac_group,
+                            hl.agg.explode(
+                                hl.agg.sum,
+                                [
+                                    ht_anc[ms_csq].get(
+                                        hl.struct(
+                                            most_severe_consequence=ms,
+                                            lof=l,
+                                            mutation_type=mt,
+                                            transition=t,
+                                            cpg=c,
+                                            methylation_level=ml,
+                                        )
+                                    )
+                                    for ms in grouping["most_severe_consequence"]
+                                    for l in grouping["lof"]
+                                    for mt in grouping["mutation_type"]
+                                    for t in grouping["transition"]
+                                    for c in grouping["cpg"]
+                                    for ml in grouping["methylation_level"]
+                                ],
+                            ),
+                        )
+                    )
+
+                    # Select AC groups as columns.
+                    ht = ht.select(**{g: ht._.get(g, 0) for g in ac_groups})
+
+                    # Export to file with ancestry group in path.
+                    output_path = f"{output_dir}/{ms_csq}/{gen_anc}/{file_name}"
+                    logger.info("      Exporting to %s", output_path)
+                    ht.export(output_path)
+            else:
+                # Aggregate by sample size and AC group (aggregate across all
+                # ancestries).
+                ht = agg_ht.group_by("Sample_size").aggregate(
+                    _=hl.agg.group_by(
+                        agg_ht.ac_group,
+                        hl.agg.explode(
+                            hl.agg.sum,
+                            [
+                                agg_ht[ms_csq].get(
+                                    hl.struct(
+                                        most_severe_consequence=ms,
+                                        lof=l,
+                                        mutation_type=mt,
+                                        transition=t,
+                                        cpg=c,
+                                        methylation_level=ml,
+                                    )
+                                )
+                                for ms in grouping["most_severe_consequence"]
+                                for l in grouping["lof"]
+                                for mt in grouping["mutation_type"]
+                                for t in grouping["transition"]
+                                for c in grouping["cpg"]
+                                for ml in grouping["methylation_level"]
+                            ],
+                        ),
+                    )
+                )
+
+                # Select AC groups as columns.
+                ht = ht.select(**{g: ht._.get(g, 0) for g in ac_groups})
+
+                # Export to file.
+                output_path = f"{output_dir}/{ms_csq}/{file_name}"
+                logger.info("    Exporting to %s", output_path)
+                ht.export(output_path)
 
 
 def main(args):
@@ -497,28 +594,33 @@ def main(args):
         tmp_dir=args.tmp_dir,
     )
 
+    genetic_ancestry_groups = (
+        args.genetic_ancestry_groups if args.group_by_ancestry else None
+    )
+
     # Step 1: Preprocess data.
     if args.preprocess_data:
         logger.info("Step 1: Preprocessing constraint data")
-        preprocess_constraint_data(hl.read_table(args.input_ht_path)).write(
-            args.preprocessed_ht_path, overwrite=args.overwrite
-        )
+        preprocess_constraint_data(
+            hl.read_table(args.input_ht_path), gen_ancs=genetic_ancestry_groups
+        ).write(args.preprocessed_ht_path, overwrite=args.overwrite)
 
     # Step 2: Aggregate SFS data.
     if args.aggregate_data:
         logger.info("Step 2: Aggregating SFS data")
-        aggregate_sfs_data(hl.read_table(args.preprocessed_ht_path)).write(
-            args.aggregated_ht_path, overwrite=args.overwrite
-        )
+        aggregate_sfs_data(
+            hl.read_table(args.preprocessed_ht_path),
+            group_by_ancestry=args.group_by_ancestry,
+        ).write(args.aggregated_ht_path, overwrite=args.overwrite)
 
     # Step 3: Export SFS tables.
     if args.export_tables:
         logger.info("Step 3: Exporting SFS tables")
-        hl.read_table(args.aggregated_ht_path)
         export_sfs_tables(
             hl.read_table(args.aggregated_ht_path),
             output_dir=args.output_dir,
             ms_csq_groups=args.ms_csq_groups,
+            group_by_ancestry=args.group_by_ancestry,
         )
 
 
@@ -591,6 +693,18 @@ if __name__ == "__main__":
             "canonical_most_severe_consequence",
             "mane_select_most_severe_consequence",
         ],
+    )
+    parser.add_argument(
+        "--genetic-ancestry-groups",
+        help="Genetic ancestry groups to include in frequency data",
+        nargs="+",
+        choices=["afr", "amr", "eas", "nfe", "sas"],
+        default=["afr", "amr", "eas", "nfe", "sas"],
+    )
+    parser.add_argument(
+        "--group-by-ancestry",
+        help="Whether to aggregate and export SFS tables separately by ancestry group",
+        action="store_true",
     )
 
     args = parser.parse_args()
