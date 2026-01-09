@@ -1709,20 +1709,18 @@ def debug_print_forward_round(
                     output_string += f"            Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
 
     # Print all candidate regions being evaluated
-    # First, filter to only valid candidates (those with valid _region data
-    # and exp >= min_exp_mis)
+    # Filter to match exactly what the aggregation filters:
+    # hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis)
     valid_candidates = []
     for row in debug_data:
         if (
             hasattr(row, "_region")
             and row._region
-            and hasattr(row._region, "obs")
-            and row._region.obs is not None
+            and hasattr(row._region, "nll")
+            and row._region.nll is not None  # matches hl.is_defined(ht2.nll)
             and hasattr(row._region, "exp")
             and row._region.exp is not None
-            and row._region.exp >= min_exp_mis
-            and hasattr(row._region, "nll")
-            and row._region.nll is not None
+            and row._region.exp >= min_exp_mis  # matches (ht2.exp >= min_exp_mis)
         ):
             valid_candidates.append(row)
 
@@ -1769,15 +1767,30 @@ def debug_print_forward_round(
                     pass
 
             # Check if this is a better candidate
+            # This exactly matches the aggregation logic in run_forward:
+            # Updates when: (accum.min_nll > ht2.nll) | ((accum.min_nll == ht2.nll) & (oe_upper_func(accum) > oe_upper_func(ht2)))
+            # Keeps accum when: accum.min_nll < ht2.nll
+            # In Hail, if OE upper comparison is missing, the condition doesn't match,
+            # so it keeps accum
             is_better = False
             if best_nll is None:
+                # First candidate (matches hl.is_missing(accum))
                 is_better = True
-            elif row._region.nll < best_nll:
+            elif best_nll > row._region.nll:
+                # This NLL is lower (matches accum.min_nll > ht2.nll)
                 is_better = True
-            elif row._region.nll == best_nll and oe_upper_val is not None:
-                # Tie-breaking: lower OE upper is better
-                if best_oe_upper is None or oe_upper_val < best_oe_upper:
-                    is_better = True
+            elif best_nll == row._region.nll:
+                # NLLs are equal - use OE upper for tie-breaking
+                # Matches: (accum.min_nll == ht2.nll) & (oe_upper_func(accum) > oe_upper_func(ht2))
+                # We update if best_oe_upper > oe_upper_val (i.e., this one has lower OE
+                # upper)
+                if best_oe_upper is not None and oe_upper_val is not None:
+                    # Both have OE upper - choose lower one
+                    if best_oe_upper > oe_upper_val:
+                        is_better = True
+                # If either is missing, keep the current best (first one encountered)
+                # This matches Hail behavior where missing comparisons don't match the
+                # condition
 
             if is_better:
                 best_candidate_idx = row_idx
