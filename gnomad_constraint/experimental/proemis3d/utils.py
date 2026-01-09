@@ -1698,6 +1698,7 @@ def run_forward(
                 region_expr=region_expr,
                 model_comparison_method=model_comparison_method,
                 oe_upper_method=oe_upper_method,
+                min_exp_mis=min_exp_mis,
             )
 
         # Scan candidates this round; keep those with enough expected missense.

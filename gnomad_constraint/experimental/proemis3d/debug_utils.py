@@ -1557,6 +1557,7 @@ def debug_print_forward_round(
     model_comparison_method: str,
     title: str = "Forward Algorithm Round",
     oe_upper_method: str = "gamma",
+    min_exp_mis: int = 1,
 ) -> str:
     """
     Print debug output for a round of the forward algorithm.
@@ -1708,7 +1709,8 @@ def debug_print_forward_round(
                     output_string += f"            Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
 
     # Print all candidate regions being evaluated
-    # First, filter to only valid candidates (those with valid _region data)
+    # First, filter to only valid candidates (those with valid _region data
+    # and exp >= min_exp_mis)
     valid_candidates = []
     for row in debug_data:
         if (
@@ -1716,12 +1718,29 @@ def debug_print_forward_round(
             and row._region
             and hasattr(row._region, "obs")
             and row._region.obs is not None
+            and hasattr(row._region, "exp")
+            and row._region.exp is not None
+            and row._region.exp >= min_exp_mis
+            and hasattr(row._region, "nll")
+            and row._region.nll is not None
         ):
             valid_candidates.append(row)
 
-    # Find the minimum total NLL to highlight the best candidate
-    min_total_nll = None
-    min_total_nll_idx = None
+    # Find the best candidate using the same logic as the aggregation:
+    # 1. Minimum NLL
+    # 2. If NLL is equal, use OE upper (lower OE upper is better)
+    best_candidate_idx = None
+    best_nll = None
+    best_oe_upper = None
+
+    # Import OE upper functions for tie-breaking
+    from gnomad_constraint.experimental.proemis3d.utils import (
+        chisq_upper_ci,
+        gamma_upper_ci,
+    )
+
+    oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
+
     for row_idx, row in enumerate(valid_candidates):
         if (
             hasattr(row, "_region")
@@ -1729,9 +1748,41 @@ def debug_print_forward_round(
             and hasattr(row._region, "nll")
             and row._region.nll is not None
         ):
-            if min_total_nll is None or row._region.nll < min_total_nll:
-                min_total_nll = row._region.nll
-                min_total_nll_idx = row_idx
+            # Calculate OE upper for tie-breaking
+            oe_upper_val = None
+            if (
+                hasattr(row._region, "obs")
+                and row._region.obs is not None
+                and hasattr(row._region, "exp")
+                and row._region.exp is not None
+                and row._region.exp > 0
+            ):
+                try:
+                    oe_upper_val = hl.eval(
+                        oe_upper_func(
+                            hl.literal(row._region.obs),
+                            hl.literal(row._region.exp),
+                            0.05,
+                        )
+                    )
+                except Exception:
+                    pass
+
+            # Check if this is a better candidate
+            is_better = False
+            if best_nll is None:
+                is_better = True
+            elif row._region.nll < best_nll:
+                is_better = True
+            elif row._region.nll == best_nll and oe_upper_val is not None:
+                # Tie-breaking: lower OE upper is better
+                if best_oe_upper is None or oe_upper_val < best_oe_upper:
+                    is_better = True
+
+            if is_better:
+                best_candidate_idx = row_idx
+                best_nll = row._region.nll
+                best_oe_upper = oe_upper_val
 
     output_string += (
         f"\n        {BOLD}Candidate Regions ({len(valid_candidates)} total):{RESET}\n"
@@ -1792,9 +1843,9 @@ def debug_print_forward_round(
             else:
                 region_nll_str = "NA"
             output_string += f"                Region NLL: {region_nll_str}\n"
-            # Highlight the best (lowest) total NLL
+            # Highlight the best candidate (lowest NLL, or lower OE upper if tied)
             if hasattr(row._region, "nll") and row._region.nll is not None:
-                if min_total_nll_idx is not None and row_idx == min_total_nll_idx:
+                if best_candidate_idx is not None and row_idx == best_candidate_idx:
                     total_nll_str = f"{HIGHLIGHT}{row._region.nll:.4f} (BEST){RESET}"
                 else:
                     total_nll_str = f"{BOLD}{UNDERLINE}{row._region.nll:.4f}{RESET}"
@@ -1991,6 +2042,7 @@ def _debug_run_forward_round_start(
     model_comparison_method,
     debug_outputs,
     oe_upper_method: str = "gamma",
+    min_exp_mis: int = 1,
 ):
     """Handle debug output for the start of a round."""
     debug_outputs.append(f"\n\n{BOLD}=== run_forward: Round {round_num} ==={RESET}\n")
@@ -2008,6 +2060,7 @@ def _debug_run_forward_round_start(
             model_comparison_method,
             title=f"run_forward: Round {round_num} - After preparing candidate region",
             oe_upper_method=oe_upper_method,
+            min_exp_mis=min_exp_mis,
         )
         if debug_output:
             debug_outputs.append(debug_output)
@@ -2648,6 +2701,7 @@ def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
             kwargs["model_comparison_method"],
             debug_outputs,
             kwargs.get("oe_upper_method", "gamma"),
+            kwargs.get("min_exp_mis", 1),
         )
     elif stage == "best_candidate":
         _debug_run_forward_best_candidate(
