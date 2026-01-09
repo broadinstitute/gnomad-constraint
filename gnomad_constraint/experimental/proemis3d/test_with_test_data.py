@@ -636,15 +636,15 @@ def main(args):
         af2_ht = af2_dist_ht.filter(
             af2_dist_ht.uniprot_id == args.uniprot_id
         ).checkpoint(
-            "gs://gnomad-tmp-4day/proemis3d_test_data/af2_test.uniprot_id_{args.uniprot_id}.ht",
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/af2_test.uniprot_id_{args.uniprot_id}.ht",
             _read_if_exists=True,
         )
         pae_ht = pae_ht.filter(pae_ht.uniprot_id == args.uniprot_id).checkpoint(
-            "gs://gnomad-tmp-4day/proemis3d_test_data/pae_test.uniprot_id_{args.uniprot_id}.ht",
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/pae_test.uniprot_id_{args.uniprot_id}.ht",
             _read_if_exists=True,
         )
         plddt_ht = plddt_ht.filter(plddt_ht.uniprot_id == args.uniprot_id).checkpoint(
-            "gs://gnomad-tmp-4day/proemis3d_test_data/plddt_test.uniprot_id_{args.uniprot_id}.ht",
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/plddt_test.uniprot_id_{args.uniprot_id}.ht",
             _read_if_exists=True,
         )
 
@@ -655,7 +655,7 @@ def main(args):
             (gencode_pos_ht.uniprot_id == args.uniprot_id)
             & (gencode_pos_ht.enst == args.transcript_id)
         ).checkpoint(
-            "gs://gnomad-tmp-4day/proemis3d_test_data/gencode_pos_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/gencode_pos_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
             _read_if_exists=True,
         )
 
@@ -663,7 +663,7 @@ def main(args):
         obs_exp_ht = obs_exp_ht.filter(
             obs_exp_ht.transcript == args.transcript_id
         ).checkpoint(
-            "gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.ht",
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.ht",
             _read_if_exists=True,
         )
 
@@ -677,7 +677,7 @@ def main(args):
                 exp=hl.agg.sum(obs_exp_ht.expected_variants[0]),
             )
             .checkpoint(
-                "gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.agg.ht",
+                f"gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.agg.ht",
                 _read_if_exists=True,
             )
         )
@@ -697,7 +697,7 @@ def main(args):
         oe_codon_ht = oe_codon_ht.filter(
             hl.len(oe_codon_ht.oe_by_transcript) > 0
         ).checkpoint(
-            "gs://gnomad-tmp-4day/proemis3d_test_data/oe_codon_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/oe_codon_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
             _read_if_exists=True,
         )
 
