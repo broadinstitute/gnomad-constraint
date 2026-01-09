@@ -651,26 +651,20 @@ def main(args):
         # Filter gencode_pos_ht to specified uniprot_id and transcript_id
         # This is the key filtering - generate_codon_oe_table will only process
         # positions in this table
-        gencode_pos_ht = (
-            gencode_pos_ht.filter(
-                (gencode_pos_ht.uniprot_id == args.uniprot_id)
-                & (gencode_pos_ht.enst == args.transcript_id)
-            )
-            .checkpoint(
-                f"gs://gnomad-tmp-4day/proemis3d_test_data/gencode_pos_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
-                _read_if_exists=True,
-            )
-            .naive_coalesce(1)
+        gencode_pos_ht = gencode_pos_ht.filter(
+            (gencode_pos_ht.uniprot_id == args.uniprot_id)
+            & (gencode_pos_ht.enst == args.transcript_id)
+        ).checkpoint(
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/gencode_pos_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
+            _read_if_exists=True,
         )
 
         # Filter obs_exp_ht to specified transcript_id.
-        obs_exp_ht = (
-            obs_exp_ht.filter(obs_exp_ht.transcript == args.transcript_id)
-            .checkpoint(
-                f"gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.ht",
-                _read_if_exists=True,
-            )
-            .naive_coalesce(1)
+        obs_exp_ht = obs_exp_ht.filter(
+            obs_exp_ht.transcript == args.transcript_id
+        ).checkpoint(
+            f"gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.ht",
+            _read_if_exists=True,
         )
 
         # obs_exp_ht is keyed by (locus, alleles) and needs to be aggregated by (locus, transcript)

@@ -813,7 +813,7 @@ def chisq_upper_ci(
     :param alpha: Significance level for the confidence interval. Default is 0.05.
     :return: Upper bound of the OE confidence interval.
     """
-    return hl.qchisqtail(1 - alpha / 2, 2 * (obs + 1), lower_tail=True) / (2 * exp)
+    return hl.qchisqtail(1 - alpha, 2 * (obs + 1), lower_tail=True) / (2 * exp)
 
 
 def calculate_oe_upper(oe_expr, alpha=0.05, oe_upper_method: str = "gamma"):
@@ -1602,6 +1602,8 @@ def run_forward(
     if model_comparison_method not in {"aic", "aic_weight", "lrt"}:
         raise ValueError(f"Invalid model comparison method: {model_comparison_method}")
 
+    oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
+
     num_residues = ht.oe.length()
     null_region = hl.range(num_residues)
 
@@ -1695,10 +1697,11 @@ def run_forward(
                 round_num=round_num,
                 region_expr=region_expr,
                 model_comparison_method=model_comparison_method,
+                oe_upper_method=oe_upper_method,
             )
 
         # Scan candidates this round; keep those with enough expected missense.
-        ht2 = ht.select(exp=region_expr.exp, nll=region_expr.nll)
+        ht2 = ht.select(obs=region_expr.obs, exp=region_expr.exp, nll=region_expr.nll)
         ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis))
 
         # For each (uniprot, transcript), find argmin by NLL + count candidates.
@@ -1707,22 +1710,56 @@ def run_forward(
             .aggregate(
                 m_candidates=hl.agg.count(),
                 **hl.agg.fold(
-                    hl.missing(hl.tstruct(min_idx=hl.tint, min_nll=hl.tfloat)),
+                    hl.missing(
+                        hl.tstruct(
+                            min_idx=hl.tint,
+                            min_nll=hl.tfloat,
+                            min_nll_obs=hl.tint64,
+                            min_nll_exp=hl.tfloat,
+                        )
+                    ),
                     lambda accum: (
                         hl.case()
                         .when(
-                            hl.is_missing(accum) | (accum.min_nll > ht2.nll),
-                            hl.struct(min_idx=ht2.idx, min_nll=ht2.nll),
+                            hl.is_missing(accum)
+                            | (accum.min_nll > ht2.nll)
+                            | (
+                                (accum.min_nll == ht2.nll)
+                                & (
+                                    oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
+                                    > oe_upper_func(ht2.obs, ht2.exp)
+                                )
+                            ),
+                            hl.struct(
+                                min_idx=ht2.idx,
+                                min_nll=ht2.nll,
+                                min_nll_obs=ht2.obs,
+                                min_nll_exp=ht2.exp,
+                            ),
                         )
-                        .when(accum.min_nll <= ht2.nll, accum)
+                        .when(accum.min_nll < ht2.nll, accum)
                         .or_missing()
                     ),
                     lambda accum1, accum2: (
                         hl.case()
                         .when(hl.is_missing(accum1), accum2)
                         .when(hl.is_missing(accum2), accum1)
-                        .when(accum1.min_nll <= accum2.min_nll, accum1)
-                        .default(accum2)
+                        .when(
+                            (accum1.min_nll > accum2.min_nll)
+                            | (
+                                (accum1.min_nll == accum2.min_nll)
+                                & (
+                                    oe_upper_func(
+                                        accum1.min_nll_obs, accum1.min_nll_exp
+                                    )
+                                    > oe_upper_func(
+                                        accum2.min_nll_obs, accum2.min_nll_exp
+                                    )
+                                )
+                            ),
+                            accum2,
+                        )
+                        .default(accum1)
                     ),
                 ),
             )
@@ -1748,6 +1785,7 @@ def run_forward(
                 ht=ht,
                 ht2=ht2,
                 round_num=round_num,
+                oe_upper_method=oe_upper_method,
             )
 
         # Totals for LRT (candidate only if best_region defined).
@@ -1850,6 +1888,7 @@ def run_forward(
                 ht=ht,
                 round_num=round_num,
                 candidates_before_filter=candidates_before_filter,
+                oe_upper_method=oe_upper_method,
             )
 
         round_num += 1
@@ -1871,7 +1910,6 @@ def run_forward(
     ht = ht.annotate(region_length=hl.len(ht.region))
     ht = ht.explode("region")
     chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
-    oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
     ht = ht.annotate(
         residue_index=ht.region,
         oe_upper=oe_upper_func(ht.obs, ht.exp, 0.05),

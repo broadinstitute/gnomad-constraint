@@ -7,6 +7,8 @@ import hail as hl
 import numpy as np
 
 # Note: getAIC is imported inside functions that use it to avoid circular imports
+# OE upper functions are imported inside functions that use them to avoid
+# circular imports
 
 logger = logging.getLogger("proemis3d_debug")
 logger.setLevel(logging.INFO)
@@ -28,6 +30,41 @@ MAGENTA_IDX = "\033[95m"  # Last in sorted array (furthest)
 BLUE = "\033[94m"  # Closest (bright blue)
 CYAN = "\033[96m"  # Medium-close (cyan)
 WHITE = "\033[97m"  # Furthest (white)
+
+
+def _calculate_oe_upper(
+    obs: int, exp: float, oe_upper_method: str = "gamma", alpha: float = 0.05
+) -> Optional[float]:
+    """
+    Calculate OE upper confidence interval for debug output.
+
+    :param obs: Observed count
+    :param exp: Expected count
+    :param oe_upper_method: Method to use ("gamma" or "chisq")
+    :param alpha: Significance level (default 0.05)
+    :return: OE upper value or None if calculation fails
+    """
+    if obs is None or exp is None or exp <= 0:
+        return None
+
+    try:
+        # Lazy import to avoid circular dependency
+        from gnomad_constraint.experimental.proemis3d.utils import (
+            chisq_upper_ci,
+            gamma_upper_ci,
+        )
+
+        oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
+        oe_upper_val = hl.eval(
+            oe_upper_func(
+                hl.literal(obs),
+                hl.literal(exp),
+                alpha,
+            )
+        )
+        return float(oe_upper_val)
+    except Exception:
+        return None
 
 
 def debug_print_pae_matrix_for_region(
@@ -808,10 +845,10 @@ def _debug_calculate_min_max_for_coloring(
 ) -> Optional[Dict[str, int]]:
     """
     Calculate min/max values from dist_mat_expr for consistent coloring across debug statements.
-    
+
     This ensures that residue indices and distances use the same color scale across
     all debug output, making it easier to compare values visually.
-    
+
     :param dist_mat_expr: Hail expression for distance matrix array
     :return: Dictionary with min_res_idx, max_res_idx, min_dist, max_dist, or None if calculation fails
     """
@@ -835,7 +872,8 @@ def _debug_calculate_min_max_for_coloring(
                         "max_dist": max(all_distances),
                     }
     except Exception:
-        # If calculation fails, return None (debug functions will handle None gracefully)
+        # If calculation fails, return None (debug functions will handle None
+        # gracefully)
         pass
     return None
 
@@ -1518,6 +1556,7 @@ def debug_print_forward_round(
     transcript_id: str,
     model_comparison_method: str,
     title: str = "Forward Algorithm Round",
+    oe_upper_method: str = "gamma",
 ) -> str:
     """
     Print debug output for a round of the forward algorithm.
@@ -1728,6 +1767,22 @@ def debug_print_forward_round(
                 else "     NA"
             )
             output_string += f"                O/E:      {oe_str}\n"
+            # Calculate and display OE upper
+            if (
+                hasattr(row._region, "obs")
+                and row._region.obs is not None
+                and hasattr(row._region, "exp")
+                and row._region.exp is not None
+            ):
+                oe_upper_val = _calculate_oe_upper(
+                    row._region.obs, row._region.exp, oe_upper_method
+                )
+                oe_upper_str = (
+                    f"{oe_upper_val:7.2f}" if oe_upper_val is not None else "     NA"
+                )
+            else:
+                oe_upper_str = "     NA"
+            output_string += f"                OE Upper: {oe_upper_str}\n"
             # Color NLL values (more negative = better fit)
             if (
                 hasattr(row._region, "region_nll")
@@ -1930,7 +1985,12 @@ def debug_print_forward_round(
 
 
 def _debug_run_forward_round_start(
-    ht, round_num, region_expr, model_comparison_method, debug_outputs
+    ht,
+    round_num,
+    region_expr,
+    model_comparison_method,
+    debug_outputs,
+    oe_upper_method: str = "gamma",
 ):
     """Handle debug output for the start of a round."""
     debug_outputs.append(f"\n\n{BOLD}=== run_forward: Round {round_num} ==={RESET}\n")
@@ -1947,12 +2007,15 @@ def _debug_run_forward_round_start(
             transcript_id,
             model_comparison_method,
             title=f"run_forward: Round {round_num} - After preparing candidate region",
+            oe_upper_method=oe_upper_method,
         )
         if debug_output:
             debug_outputs.append(debug_output)
 
 
-def _debug_run_forward_best_candidate(ht, ht2, round_num, debug_outputs):
+def _debug_run_forward_best_candidate(
+    ht, ht2, round_num, debug_outputs, oe_upper_method: str = "gamma"
+):
     """Handle debug output for the best candidate."""
     _ht_debug = ht.head(1)
     if _ht_debug.count() > 0:
@@ -2009,6 +2072,26 @@ def _debug_run_forward_best_candidate(ht, ht2, round_num, debug_outputs):
                     else:
                         oe_str = "     NA"
                     output_string += f"            O/E:      {oe_str}\n"
+                    # Calculate and display OE upper
+                    if (
+                        hasattr(br_row.best_region, "obs")
+                        and br_row.best_region.obs is not None
+                        and hasattr(br_row.best_region, "exp")
+                        and br_row.best_region.exp is not None
+                    ):
+                        oe_upper_val = _calculate_oe_upper(
+                            br_row.best_region.obs,
+                            br_row.best_region.exp,
+                            oe_upper_method,
+                        )
+                        oe_upper_str = (
+                            f"{oe_upper_val:7.2f}"
+                            if oe_upper_val is not None
+                            else "     NA"
+                        )
+                    else:
+                        oe_upper_str = "     NA"
+                    output_string += f"            OE Upper: {oe_upper_str}\n"
                     if br_row.best_region.region_nll is not None:
                         region_nll_str = f"{br_row.best_region.region_nll:.4f}"
                     else:
@@ -2267,9 +2350,9 @@ def _debug_run_forward_model_comparison(
 def _debug_collect_candidates_before_update(ht: hl.Table) -> list:
     """
     Collect candidate regions before they are updated/removed.
-    
+
     This is used to show which candidates were removed when a region is selected.
-    
+
     :param ht: Hail Table with candidate regions
     :return: List of candidate data (center_residue_index, region, oe) for the first uniprot/transcript
     """
@@ -2290,7 +2373,11 @@ def _debug_collect_candidates_before_update(ht: hl.Table) -> list:
 
 
 def _debug_run_forward_after_update(
-    ht, round_num, candidates_before_filter, debug_outputs
+    ht,
+    round_num,
+    candidates_before_filter,
+    debug_outputs,
+    oe_upper_method: str = "gamma",
 ):
     """Handle debug output after round update."""
     _ht_debug = ht.head(1)
@@ -2389,6 +2476,21 @@ def _debug_run_forward_after_update(
                                     output_string += (
                                         f"                O/E:      {total_oe:7.2f}\n"
                                     )
+                                # Calculate and display OE upper
+                                if total_exp > 0:
+                                    oe_upper_val = _calculate_oe_upper(
+                                        total_obs, total_exp, oe_upper_method
+                                    )
+                                    oe_upper_str = (
+                                        f"{oe_upper_val:7.2f}"
+                                        if oe_upper_val is not None
+                                        else "     NA"
+                                    )
+                                else:
+                                    oe_upper_str = "     NA"
+                                output_string += (
+                                    f"                OE Upper: {oe_upper_str}\n"
+                                )
                             residue_strs = []
                             for res in region_residues:
                                 if res in chosen_residues:
@@ -2545,6 +2647,7 @@ def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
             kwargs["region_expr"],
             kwargs["model_comparison_method"],
             debug_outputs,
+            kwargs.get("oe_upper_method", "gamma"),
         )
     elif stage == "best_candidate":
         _debug_run_forward_best_candidate(
@@ -2552,6 +2655,7 @@ def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
             kwargs["ht2"],
             kwargs["round_num"],
             debug_outputs,
+            kwargs.get("oe_upper_method", "gamma"),
         )
     elif stage == "model_comparison":
         _debug_run_forward_model_comparison(
@@ -2571,6 +2675,7 @@ def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
             kwargs["round_num"],
             kwargs["candidates_before_filter"],
             debug_outputs,
+            kwargs.get("oe_upper_method", "gamma"),
         )
     elif stage == "final":
         _debug_run_forward_final(kwargs["ht"], debug_outputs)
