@@ -1722,14 +1722,28 @@ def run_forward(
                     lambda accum: (
                         hl.case()
                         .when(
-                            hl.is_missing(accum)
-                            | (accum.min_nll > ht2.nll)
-                            | (
-                                (accum.min_nll == ht2.nll)
-                                & (
-                                    oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
-                                    > oe_upper_func(ht2.obs, ht2.exp)
-                                )
+                            hl.is_missing(accum),
+                            hl.struct(
+                                min_idx=ht2.idx,
+                                min_nll=ht2.nll,
+                                min_nll_obs=ht2.obs,
+                                min_nll_exp=ht2.exp,
+                            ),
+                        )
+                        .when(
+                            accum.min_nll > ht2.nll,
+                            hl.struct(
+                                min_idx=ht2.idx,
+                                min_nll=ht2.nll,
+                                min_nll_obs=ht2.obs,
+                                min_nll_exp=ht2.exp,
+                            ),
+                        )
+                        .when(
+                            (accum.min_nll == ht2.nll)
+                            & (
+                                oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
+                                > oe_upper_func(ht2.obs, ht2.exp)
                             ),
                             hl.struct(
                                 min_idx=ht2.idx,
@@ -1739,7 +1753,17 @@ def run_forward(
                             ),
                         )
                         .when(accum.min_nll < ht2.nll, accum)
-                        .or_missing()
+                        .when(
+                            (accum.min_nll == ht2.nll)
+                            & (
+                                oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
+                                < oe_upper_func(ht2.obs, ht2.exp)
+                            ),
+                            accum,  # Keep accum when it has lower OE upper
+                        )
+                        .default(
+                            accum
+                        )  # NLLs equal and OE upper equal or missing - keep first (accum)
                     ),
                     lambda accum1, accum2: (
                         hl.case()
@@ -1758,9 +1782,26 @@ def run_forward(
                                     )
                                 )
                             ),
-                            accum2,
+                            accum2,  # accum2 has lower NLL, or same NLL with lower OE upper
                         )
-                        .default(accum1)
+                        .when(
+                            (accum1.min_nll < accum2.min_nll)
+                            | (
+                                (accum1.min_nll == accum2.min_nll)
+                                & (
+                                    oe_upper_func(
+                                        accum1.min_nll_obs, accum1.min_nll_exp
+                                    )
+                                    < oe_upper_func(
+                                        accum2.min_nll_obs, accum2.min_nll_exp
+                                    )
+                                )
+                            ),
+                            accum1,  # accum1 has lower NLL, or same NLL with lower OE upper
+                        )
+                        .default(
+                            accum1
+                        )  # NLLs equal and OE upper equal or missing - keep first
                     ),
                 ),
             )
