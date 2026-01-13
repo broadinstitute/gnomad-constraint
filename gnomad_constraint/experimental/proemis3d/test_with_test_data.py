@@ -182,7 +182,7 @@ def test_determine_regions_with_min_oe_upper(
     )
     pae_method_str = str(pae_cutoff_method) if pae_cutoff_method is not None else "None"
 
-    print(
+    debug_output = (
         "\n"
         + f"{BOLD}={RESET}" * 77
         + "\n"
@@ -196,7 +196,7 @@ def test_determine_regions_with_min_oe_upper(
         + f"{BOLD}={RESET}" * 77
         + "\n"
     )
-    result = determine_regions_with_min_oe_upper(
+    result, debug_output_min_oe_upper = determine_regions_with_min_oe_upper(
         af2_ht=af2_ht,
         oe_codon_ht=oe_codon_ht,
         pae_ht=pae_ht if max_pae is not None else None,
@@ -207,9 +207,11 @@ def test_determine_regions_with_min_oe_upper(
         pae_cutoff_method=pae_cutoff_method,
         debug=True,
     )
-    print("\n\n\n")
+    if debug_output_min_oe_upper:
+        debug_output += debug_output_min_oe_upper
+        debug_output += "\n\n\n"
 
-    return result
+    return result, debug_output
 
 
 def test_run_forward(
@@ -223,7 +225,7 @@ def test_run_forward(
     aic_weight_thresh=0.80,
 ):
     """Run run_forward test with the given parameters."""
-    print(
+    debug_output = (
         "\n"
         + f"{BOLD}={RESET}" * 77
         + "\n"
@@ -251,7 +253,7 @@ def test_run_forward(
         oe=regions_ht.oe.map(lambda x: x.select("obs", "exp"))
     )
 
-    result = run_forward(
+    result, debug_output_run_forward = run_forward(
         regions_ht_prepared,
         min_exp_mis=min_exp_mis,
         oe_upper_method=oe_upper_method,
@@ -262,9 +264,12 @@ def test_run_forward(
         aic_weight_thresh=aic_weight_thresh,
         debug=True,
     )
-    print("\n\n\n")
 
-    return result
+    if debug_output_run_forward:
+        debug_output += debug_output_run_forward
+        debug_output += "\n\n\n"
+
+    return result, debug_output
 
 
 def create_symmetric_dist_matrix(num_residues: int) -> dict:
@@ -577,6 +582,7 @@ def run_tests(
     test_names, af2_ht, oe_codon_ht, pae_ht, plddt_ht, run_forward_tests=False
 ):
     """Run the specified tests."""
+    debug_output = ""
     for test_name in test_names:
         if test_name not in ALL_TESTS:
             print(f"Warning: Unknown test '{test_name}', skipping...")
@@ -584,19 +590,23 @@ def run_tests(
 
         test_params = ALL_TESTS[test_name]
         # Run determine_regions_with_min_oe_upper
-        regions_ht = test_determine_regions_with_min_oe_upper(
-            af2_ht=af2_ht,
-            oe_codon_ht=oe_codon_ht,
-            pae_ht=pae_ht,
-            plddt_ht=plddt_ht,
-            **test_params,
+        regions_ht, min_oe_upper_debug_output = (
+            test_determine_regions_with_min_oe_upper(
+                af2_ht=af2_ht,
+                oe_codon_ht=oe_codon_ht,
+                pae_ht=pae_ht,
+                plddt_ht=plddt_ht,
+                **test_params,
+            )
         )
+        if min_oe_upper_debug_output:
+            debug_output += min_oe_upper_debug_output
 
         # Optionally run run_forward on the result
         if run_forward_tests and regions_ht is not None:
             # Test with different model comparison methods
             for model_method in ["aic", "lrt", "aic_weight"]:
-                test_run_forward(
+                result_ht, forward_debug_output = test_run_forward(
                     regions_ht,
                     min_exp_mis=16,
                     oe_upper_method="gamma",
@@ -606,6 +616,10 @@ def run_tests(
                     bonferroni_per_round=True,
                     aic_weight_thresh=0.80,
                 )
+                if forward_debug_output:
+                    debug_output += forward_debug_output
+
+    return debug_output
 
 
 def main(args):
@@ -746,45 +760,45 @@ def main(args):
     # Determine which tests to run
     # When using production data (uniprot_id/transcript_id), default to
     # no_filtering test
-    if args.uniprot_id and args.transcript_id:
-        if args.test:
-            # Run a specific test
-            if args.test not in ALL_TESTS:
-                print(f"Error: Unknown test '{args.test}'")
-                print("Use --list-tests to see available tests")
-                sys.exit(1)
-            tests_to_run = [args.test]
-        elif args.group:
-            print(
-                "Warning: --group is not supported when using --uniprot-id/--transcript-id"
-            )
-            print("Running 'no_filtering' test instead")
-            tests_to_run = ["no_filtering"]
-        else:
-            # Default to no_filtering when using production data
-            tests_to_run = ["no_filtering"]
+    # if args.uniprot_id and args.transcript_id:
+    #    if args.test:
+    #        # Run a specific test
+    #        if args.test not in ALL_TESTS:
+    #            print(f"Error: Unknown test '{args.test}'")
+    #            print("Use --list-tests to see available tests")
+    #            sys.exit(1)
+    #        tests_to_run = [args.test]
+    #    #elif args.group:
+    #        print(
+    #            "Warning: --group is not supported when using --uniprot-id/--transcript-id"
+    #        )
+    #        print("Running 'no_filtering' test instead")
+    #        tests_to_run = ["no_filtering"]
+    #    else:
+    #        # Default to no_filtering when using production data
+    #        tests_to_run = ["no_filtering"]
+    # else:
+    #    # Using test data - normal test selection logic
+    if args.test:
+        # Run a specific test
+        if args.test not in ALL_TESTS:
+            print(f"Error: Unknown test '{args.test}'")
+            print("Use --list-tests to see available tests")
+            sys.exit(1)
+        tests_to_run = [args.test]
+    elif args.group:
+        # Run a group of tests
+        if args.group not in TEST_GROUPS:
+            print(f"Error: Unknown test group '{args.group}'")
+            print("Use --list-tests to see available groups")
+            sys.exit(1)
+        tests_to_run = TEST_GROUPS[args.group]
     else:
-        # Using test data - normal test selection logic
-        if args.test:
-            # Run a specific test
-            if args.test not in ALL_TESTS:
-                print(f"Error: Unknown test '{args.test}'")
-                print("Use --list-tests to see available tests")
-                sys.exit(1)
-            tests_to_run = [args.test]
-        elif args.group:
-            # Run a group of tests
-            if args.group not in TEST_GROUPS:
-                print(f"Error: Unknown test group '{args.group}'")
-                print("Use --list-tests to see available groups")
-                sys.exit(1)
-            tests_to_run = TEST_GROUPS[args.group]
-        else:
-            # Run all tests by default
-            tests_to_run = TEST_GROUPS["all"]
+        # Run all tests by default
+        tests_to_run = TEST_GROUPS["all"]
 
     # Run the selected tests
-    run_tests(
+    debug_output = run_tests(
         tests_to_run,
         af2_ht,
         oe_codon_ht,
@@ -795,7 +809,12 @@ def main(args):
 
     print("\nAll tests completed!")
 
-    hl.stop()
+    # Write output file if specified.
+    if args.output_file:
+        with hl.hadoop_open(args.output_file, "wb") as f:
+            f.write(debug_output.encode("utf-8"))
+    else:
+        print(debug_output)
 
 
 if __name__ == "__main__":
@@ -841,6 +860,12 @@ if __name__ == "__main__":
         "--transcript-id",
         type=str,
         help="Transcript ID (ENST) to use instead of test data (requires --uniprot-id)",
+    )
+    parser.add_argument(
+        "--output-file",
+        type=str,
+        help="Path to write all output to a file. Use GCS path (gs://...) when running on a cluster. "
+        "Local paths will be created on the driver node.",
     )
 
     args = parser.parse_args()

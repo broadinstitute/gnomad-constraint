@@ -107,7 +107,7 @@ def debug_print_pae_matrix_for_region(
     )
 
     if _ht_debug.count() == 0:
-        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
+        # Return empty dict - caller can handle the message if needed
         return {}
 
     # Collect data for all center residues
@@ -611,7 +611,7 @@ def debug_print_oe_table(
     min_plddt: Optional[float] = None,
     max_pae: Optional[float] = None,
     dist_mat_expr: Optional[hl.expr.ArrayExpression] = None,
-) -> None:
+) -> str:
     output_string = "\n\n\n"
 
     # Get first key for debugging.
@@ -648,7 +648,7 @@ def debug_print_oe_table(
     debug_data = _ht_debug.select(*select_fields).collect()
 
     if not debug_data:
-        return
+        return ""
 
     row = debug_data[0]
 
@@ -740,13 +740,13 @@ def debug_print_oe_table(
         max_pae=max_pae,
     )
 
-    logger.info(output_string)
+    return output_string
 
 
 def debug_print_oe_and_regions(
     ht: hl.Table,
     title: str = "OE and Regions",
-) -> None:
+) -> str:
     """
     Print debug output showing OE values and min_oe_upper regions for a given UniProt/transcript.
 
@@ -772,8 +772,7 @@ def debug_print_oe_and_regions(
     )
 
     if _ht_debug.count() == 0:
-        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
-        return
+        return f"{title}: No data found for {uniprot_id} / {transcript_id}"
 
     output_string += f"{BOLD}=== {title} ==={RESET}\nUniProt ID: {uniprot_id}, Transcript ID: {transcript_id}\n"
 
@@ -781,7 +780,7 @@ def debug_print_oe_and_regions(
     debug_data = _ht_debug.select("oe", "min_oe_upper").collect()
 
     if not debug_data:
-        return
+        return output_string
 
     row = debug_data[0]
 
@@ -790,8 +789,7 @@ def debug_print_oe_and_regions(
 
     if not row.min_oe_upper or len(row.min_oe_upper) == 0:
         output_string += "No min_oe_upper entries found.\n"
-        logger.info(output_string)
-        return
+        return output_string
 
     # Find the entry with the minimum OE value (not oe_upper)
     min_oe_idx = None
@@ -837,7 +835,7 @@ def debug_print_oe_and_regions(
         else:
             output_string += f"      Distances: None or empty\n"
 
-    logger.info(output_string)
+    return output_string
 
 
 def _debug_calculate_min_max_for_coloring(
@@ -935,8 +933,8 @@ def debug_print_dist_mat_with_colors(
     )
 
     if _ht_debug.count() == 0:
-        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
-        return
+        # Return empty dict - caller can handle the message if needed
+        return {}
 
     header_string = ""
     if not show_full_matrix:
@@ -1416,7 +1414,7 @@ def _debug_get_3d_residue(
     debug_outputs_by_residue: dict,
     step_name: str,
     oe_expr_after_calc: Optional[hl.expr.ArrayExpression] = None,
-):
+) -> Optional[dict]:
     """
     Handle all debug output for get_3d_residue.
 
@@ -1428,9 +1426,11 @@ def _debug_get_3d_residue(
     :param plddt_cutoff_method: pLDDT cutoff method.
     :param center_residue_index_expr: Center residue index expression.
     :param debug_min_max: Dict with min/max values for consistent coloring.
-    :param debug_outputs_by_residue: Dict to store debug outputs.
+    :param debug_outputs_by_residue: Dict with previously collected debug outputs (for "final" step).
     :param step_name: Name of the current step.
     :param oe_expr_after_calc: OE expression after calculate_oe_upper (optional).
+    :return: For intermediate steps, returns a new dict with structure {center_res_idx: {step_name: output_string}}.
+             For "final" step, returns a formatted string (wrapped in a dict with key "final").
     """
     if step_name == "initial":
         # Extract UniProt ID and Transcript ID once for debug output
@@ -1440,15 +1440,16 @@ def _debug_get_3d_residue(
             debug_uniprot_id = first_row.uniprot_id.collect()[0]
             debug_transcript_id = first_row.enst.collect()[0]
             # Print UniProt ID and Transcript ID once at the beginning
-            logger.info(
-                f"\nUniProt ID: {debug_uniprot_id}, Transcript ID: {debug_transcript_id}\n"
-            )
-            debug_print_oe_table(
+            debug_output = f"\nUniProt ID: {debug_uniprot_id}, Transcript ID: {debug_transcript_id}\n"
+            debug_output += debug_print_oe_table(
                 oe_expr,
                 min_plddt=min_plddt,
                 max_pae=max_pae,
                 dist_mat_expr=dist_mat_expr,
             )
+            # Return new dict instead of mutating input
+            return {-1: {"initial": debug_output}}
+        return None
 
     elif step_name == "before_sorting":
         debug_dict = debug_print_dist_mat_with_colors(
@@ -1459,11 +1460,11 @@ def _debug_get_3d_residue(
             min_dist=debug_min_max["min_dist"] if debug_min_max else None,
             max_dist=debug_min_max["max_dist"] if debug_min_max else None,
         )
-        # Store debug output (key -1 is for full matrix, otherwise it's center_res_idx)
+        # Return new dict instead of mutating input
+        result = {}
         for center_idx, output_str in debug_dict.items():
-            if center_idx not in debug_outputs_by_residue:
-                debug_outputs_by_residue[center_idx] = {}
-            debug_outputs_by_residue[center_idx]["Before sorting"] = output_str
+            result[center_idx] = {"Before sorting": output_str}
+        return result if result else None
 
     elif step_name == "after_sorting":
         debug_dict = debug_print_dist_mat_with_colors(
@@ -1476,11 +1477,11 @@ def _debug_get_3d_residue(
             min_dist=debug_min_max["min_dist"] if debug_min_max else None,
             max_dist=debug_min_max["max_dist"] if debug_min_max else None,
         )
-        # Store debug output
+        # Return new dict instead of mutating input
+        result = {}
         for center_idx, output_str in debug_dict.items():
-            if center_idx not in debug_outputs_by_residue:
-                debug_outputs_by_residue[center_idx] = {}
-            debug_outputs_by_residue[center_idx]["After sorting"] = output_str
+            result[center_idx] = {"After sorting": output_str}
+        return result if result else None
 
     elif step_name == "pae_matrix_before_filter":
         debug_dict = debug_print_pae_matrix_for_region(
@@ -1491,13 +1492,11 @@ def _debug_get_3d_residue(
             min_plddt=min_plddt,
             plddt_cutoff_method=plddt_cutoff_method,
         )
-        # Store debug output
+        # Return new dict instead of mutating input
+        result = {}
         for center_idx, output_str in debug_dict.items():
-            if center_idx not in debug_outputs_by_residue:
-                debug_outputs_by_residue[center_idx] = {}
-            debug_outputs_by_residue[center_idx][
-                "PAE matrix before filter"
-            ] = output_str
+            result[center_idx] = {"PAE matrix before filter": output_str}
+        return result if result else None
 
     elif step_name == "after_calculate_oe_upper":
         debug_dict = debug_print_dist_mat_with_colors(
@@ -1511,25 +1510,30 @@ def _debug_get_3d_residue(
             min_dist=debug_min_max["min_dist"] if debug_min_max else None,
             max_dist=debug_min_max["max_dist"] if debug_min_max else None,
         )
-        # Store debug output
+        # Return new dict instead of mutating input
+        result = {}
         for center_idx, output_str in debug_dict.items():
-            if center_idx not in debug_outputs_by_residue:
-                debug_outputs_by_residue[center_idx] = {}
-            debug_outputs_by_residue[center_idx][
-                "After calculate_oe_upper"
-            ] = output_str
+            result[center_idx] = {"After calculate_oe_upper": output_str}
+        return result if result else None
 
     elif step_name == "final":
-        # Print all debug outputs grouped by residue
+        # Aggregate all debug outputs grouped by residue
         if debug_outputs_by_residue:
             debug_string = ""
             # First, handle the full matrix case (key -1) if it exists
             if -1 in debug_outputs_by_residue:
-                debug_string += debug_outputs_by_residue[-1]["Before sorting"]
-                del debug_outputs_by_residue[-1]
+                # Include initial output (UniProt ID, Transcript ID, OE table) if
+                # present
+                if "initial" in debug_outputs_by_residue[-1]:
+                    debug_string += debug_outputs_by_residue[-1]["initial"]
+                # Include "Before sorting" output if present
+                if "Before sorting" in debug_outputs_by_residue[-1]:
+                    debug_string += debug_outputs_by_residue[-1]["Before sorting"]
 
             # Then print per-residue outputs
             for center_idx in sorted(debug_outputs_by_residue.keys()):
+                if center_idx == -1:
+                    continue  # Already handled above
                 residue_outputs = debug_outputs_by_residue[center_idx]
 
                 # Print center residue index once before all steps.
@@ -1546,8 +1550,12 @@ def _debug_get_3d_residue(
                         combined_output += residue_outputs[step_name_inner] + "\n"
                 if combined_output:
                     debug_string += combined_output
-
-            logger.info(debug_string)
+            # Return as dict with "final" key to indicate it's a formatted string
+            return debug_string
+        return None
+    else:
+        # Unknown step_name
+        return None
 
 
 def debug_print_forward_round(
@@ -1576,8 +1584,7 @@ def debug_print_forward_round(
     )
 
     if _ht_debug.count() == 0:
-        logger.info(f"{title}: No data found for {uniprot_id} / {transcript_id}")
-        return
+        return f"{title}: No data found for {uniprot_id} / {transcript_id}"
 
     output_string += f"{BOLD}    === {title} ==={RESET}\n"
 
@@ -2053,19 +2060,17 @@ def _debug_run_forward_round_start(
     round_num,
     region_expr,
     model_comparison_method,
-    debug_outputs,
     oe_upper_method: str = "gamma",
     min_exp_mis: int = 1,
-):
+) -> list:
     """Handle debug output for the start of a round."""
-    debug_outputs.append(f"\n\n{BOLD}=== run_forward: Round {round_num} ==={RESET}\n")
+    result = []
+    result.append(f"\n\n{BOLD}=== run_forward: Round {round_num} ==={RESET}\n")
     first_row = ht.head(1)
     if first_row.count() > 0:
         uniprot_id = first_row.uniprot_id.collect()[0]
         transcript_id = first_row.transcript_id.collect()[0]
-        debug_outputs.append(
-            f"\nUniProt ID: {uniprot_id}, Transcript ID: {transcript_id}\n"
-        )
+        result.append(f"\nUniProt ID: {uniprot_id}, Transcript ID: {transcript_id}\n")
         debug_output = debug_print_forward_round(
             ht.annotate(_region=region_expr),
             uniprot_id,
@@ -2076,13 +2081,15 @@ def _debug_run_forward_round_start(
             min_exp_mis=min_exp_mis,
         )
         if debug_output:
-            debug_outputs.append(debug_output)
+            result.append(debug_output)
+    return result
 
 
 def _debug_run_forward_best_candidate(
-    ht, ht2, round_num, debug_outputs, oe_upper_method: str = "gamma"
-):
+    ht, ht2, round_num, oe_upper_method: str = "gamma"
+) -> list:
     """Handle debug output for the best candidate."""
+    result = []
     _ht_debug = ht.head(1)
     if _ht_debug.count() > 0:
         uniprot_id = _ht_debug.uniprot_id.collect()[0]
@@ -2210,7 +2217,8 @@ def _debug_run_forward_best_candidate(
                                     )
                             output_string += f"            Observed ({len(obs_list):3d}):  {', '.join(obs_list)}\n"
                             output_string += f"            Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
-                debug_outputs.append(output_string)
+                result.append(output_string)
+    return result
 
 
 def _debug_run_forward_model_comparison(
@@ -2222,9 +2230,9 @@ def _debug_run_forward_model_comparison(
     lrt_df_added,
     bonferroni_per_round,
     aic_weight_thresh,
-    debug_outputs,
-):
+) -> list:
     """Handle debug output for model comparison."""
+    result = []
     _ht_debug = ht.head(1)
     if _ht_debug.count() > 0:
         uniprot_id = _ht_debug.uniprot_id.collect()[0]
@@ -2410,7 +2418,8 @@ def _debug_run_forward_model_comparison(
                                 f"            Accept candidate: {accept_str}\n"
                             )
                 output_string += f"\n        Found best (stop): {row.found_best}\n"
-                debug_outputs.append(output_string)
+                result.append(output_string)
+    return result
 
 
 def _debug_collect_candidates_before_update(ht: hl.Table) -> list:
@@ -2442,10 +2451,10 @@ def _debug_run_forward_after_update(
     ht,
     round_num,
     candidates_before_filter,
-    debug_outputs,
     oe_upper_method: str = "gamma",
-):
+) -> list:
     """Handle debug output after round update."""
+    result = []
     _ht_debug = ht.head(1)
     if _ht_debug.count() > 0:
         uniprot_id = _ht_debug.uniprot_id.collect()[0]
@@ -2575,11 +2584,13 @@ def _debug_run_forward_after_update(
                                 output_string += f"                Remaining after removal: {remaining_str} ({len(remaining_residues)} residues)\n"
                             else:
                                 output_string += f"                {RED}(All residues removed - candidate eliminated){RESET}\n"
-                debug_outputs.append(output_string)
+                result.append(output_string)
+    return result
 
 
-def _debug_run_forward_final(ht, debug_outputs):
+def _debug_run_forward_final(ht) -> list:
     """Handle debug output for final state."""
+    result = []
     _ht_debug = ht.head(1)
     if _ht_debug.count() > 0:
         uniprot_id = _ht_debug.uniprot_id.collect()[0]
@@ -2694,38 +2705,37 @@ def _debug_run_forward_final(ht, debug_outputs):
                         exp_list.append("     NA")
                 output_string += f"        {BOLD}Observed ({len(obs_list):3d}): {', '.join(obs_list)}{RESET}\n"
                 output_string += f"        {BOLD}Expected ({len(exp_list):3d}): {', '.join(exp_list)}{RESET}\n"
-            debug_outputs.append(output_string)
+            result.append(output_string)
+    return result
 
 
-def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
+def debug_run_forward(stage: str, **kwargs) -> list:
     """
     Unified debug function for run_forward algorithm.
 
     :param stage: Stage name - one of: "round_start", "best_candidate",
                   "model_comparison", "after_update", "final"
-    :param debug_outputs: List to append debug output strings to
     :param kwargs: Stage-specific keyword arguments
+    :return: List of debug output strings
     """
     if stage == "round_start":
-        _debug_run_forward_round_start(
+        return _debug_run_forward_round_start(
             kwargs["ht"],
             kwargs["round_num"],
             kwargs["region_expr"],
             kwargs["model_comparison_method"],
-            debug_outputs,
             kwargs.get("oe_upper_method", "gamma"),
             kwargs.get("min_exp_mis", 1),
         )
     elif stage == "best_candidate":
-        _debug_run_forward_best_candidate(
+        return _debug_run_forward_best_candidate(
             kwargs["ht"],
             kwargs["ht2"],
             kwargs["round_num"],
-            debug_outputs,
             kwargs.get("oe_upper_method", "gamma"),
         )
     elif stage == "model_comparison":
-        _debug_run_forward_model_comparison(
+        return _debug_run_forward_model_comparison(
             kwargs["ht"],
             kwargs["ht2"],
             kwargs["round_num"],
@@ -2734,18 +2744,16 @@ def debug_run_forward(stage: str, debug_outputs: list, **kwargs):
             kwargs["lrt_df_added"],
             kwargs["bonferroni_per_round"],
             kwargs["aic_weight_thresh"],
-            debug_outputs,
         )
     elif stage == "after_update":
-        _debug_run_forward_after_update(
+        return _debug_run_forward_after_update(
             kwargs["ht"],
             kwargs["round_num"],
             kwargs["candidates_before_filter"],
-            debug_outputs,
             kwargs.get("oe_upper_method", "gamma"),
         )
     elif stage == "final":
-        _debug_run_forward_final(kwargs["ht"], debug_outputs)
+        return _debug_run_forward_final(kwargs["ht"])
     else:
         raise ValueError(f"Unknown debug stage: {stage}")
 
@@ -2762,7 +2770,7 @@ def debug_get_3d_residue(
     debug_min_max: Optional[dict],
     debug_outputs_by_residue: dict,
     oe_expr_after_calc: Optional[hl.expr.ArrayExpression] = None,
-):
+) -> Optional[dict]:
     """
     Unified debug function for get_3d_residue.
 
@@ -2779,7 +2787,7 @@ def debug_get_3d_residue(
     :param debug_outputs_by_residue: Dict to store debug outputs
     :param oe_expr_after_calc: OE expression after calculate_oe_upper (optional)
     """
-    _debug_get_3d_residue(
+    return _debug_get_3d_residue(
         dist_mat_expr,
         oe_expr,
         max_pae,
