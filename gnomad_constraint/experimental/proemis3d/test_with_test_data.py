@@ -599,6 +599,7 @@ def run_tests(
                 **test_params,
             )
         )
+        regions_ht = regions_ht.cache()
         if min_oe_upper_debug_output:
             debug_output += min_oe_upper_debug_output
 

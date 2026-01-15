@@ -826,6 +826,15 @@ def debug_print_oe_and_regions(
         else:
             output_string += f"      Region: None or empty\n"
 
+        # Null region (residues remaining if this candidate is selected)
+        if hasattr(entry, "null_region") and entry.null_region:
+            null_region_str = ", ".join([f"{r:7d}" for r in entry.null_region])
+            output_string += (
+                f"      Null region ({len(entry.null_region)}): {null_region_str}\n"
+            )
+        else:
+            output_string += f"      Null region: None or empty\n"
+
         # Distances (array of distances)
         if hasattr(entry, "dists") and entry.dists:
             dists_str = ", ".join([f"{d:7.2f}" for d in entry.dists])
@@ -886,6 +895,7 @@ def debug_print_dist_mat_with_colors(
     max_res_idx: Optional[int] = None,
     min_dist: Optional[float] = None,
     max_dist: Optional[float] = None,
+    plddt_cutoff_method: Optional[str] = None,
 ) -> Dict[int, str]:
     """
     Generate colored debug output showing distance matrix with PAE values color-coded.
@@ -946,6 +956,12 @@ def debug_print_dist_mat_with_colors(
     select_fields = ["dist_mat"]
     if oe_expr is not None:
         select_fields.append("oe_expr")
+    # Also select 'oe' field if available (for computing null region with all residues)
+    if "oe" in ht.row:
+        select_fields.append("oe")
+    # Also select 'plddt_lookup' if available (for filtering by pLDDT in truncate methods)
+    if "plddt_lookup" in ht.row:
+        select_fields.append("plddt_lookup")
 
     debug_data = _ht_debug.select(*select_fields).collect()
 
@@ -1377,13 +1393,15 @@ def debug_print_dist_mat_with_colors(
                     output += f"            Region OE Upper:    {'NA':>7}\n"
 
                 # Add region information if available
+                region_residues = None
                 if (
                     hasattr(min_oe_entry, "region")
                     and min_oe_entry.region is not None
                     and len(min_oe_entry.region) > 0
                 ):
-                    region_str = ", ".join([f"{r}" for r in min_oe_entry.region])
-                    output += f"            Region residues ({len(min_oe_entry.region)}): {region_str}\n"
+                    region_residues = list(min_oe_entry.region)
+                    region_str = ", ".join([f"{r}" for r in region_residues])
+                    output += f"            Region residues ({len(region_residues)}): {region_str}\n"
                 else:
                     # If region is not available, build it from dist_mat up to
                     # min_oe_upper_idx
@@ -1393,6 +1411,71 @@ def debug_print_dist_mat_with_colors(
                     ]
                     region_str = ", ".join([f"{r}" for r in region_residues])
                     output += f"            Region residues ({len(region_residues)}): {region_str}\n"
+
+                # Compute and display null region: all valid residues minus the selected region
+                # This shows what residues would remain if this candidate is selected
+                # For truncate methods, need to get all residues with high pLDDT (not just those in dist_mat)
+                if region_residues is not None:
+                    all_valid_residues = None
+                    
+                    if plddt_cutoff_method == "truncate_at_first_low_plddt" and min_plddt is not None:
+                        # For truncate: get all residues with pLDDT >= min_plddt from plddt_lookup
+                        # (dist_mat only contains residues up to truncation point, but we want all high pLDDT residues)
+                        if hasattr(row, "plddt_lookup") and row.plddt_lookup is not None:
+                            # Build set of all residues with pLDDT >= min_plddt
+                            all_valid_residues = set()
+                            for entry in row.plddt_lookup:
+                                if (hasattr(entry, "residue_index") and 
+                                    hasattr(entry, "plddt") and 
+                                    entry.plddt is not None and 
+                                    entry.plddt >= min_plddt):
+                                    all_valid_residues.add(entry.residue_index)
+                        elif hasattr(row, "oe") and row.oe is not None:
+                            # Fall back: use oe array and check pLDDT from dist_mat
+                            # Get all residues from oe
+                            all_residues_from_oe = set(
+                                entry.residue_index for entry in row.oe if hasattr(entry, "residue_index")
+                            )
+                            # Build pLDDT map from dist_mat
+                            plddt_map = {}
+                            for entry in row.dist_mat:
+                                if hasattr(entry, "residue_index") and hasattr(entry, "plddt"):
+                                    plddt_map[entry.residue_index] = entry.plddt
+                            
+                            # Filter: include residues with pLDDT >= min_plddt
+                            # For residues in dist_mat, check pLDDT
+                            # For residues not in dist_mat, they're likely after truncation, so exclude them
+                            all_valid_residues = set()
+                            for res_idx in all_residues_from_oe:
+                                if res_idx in plddt_map:
+                                    if plddt_map[res_idx] is not None and plddt_map[res_idx] >= min_plddt:
+                                        all_valid_residues.add(res_idx)
+                                # Skip residues not in dist_mat (they're after truncation point)
+                        else:
+                            # Fall back to dist_mat (only residues up to truncation point)
+                            all_valid_residues = set(entry.residue_index for entry in row.dist_mat)
+                    elif hasattr(row, "oe") and row.oe is not None:
+                        # For other methods: try to use oe array to get all residues
+                        all_valid_residues = set(
+                            entry.residue_index for entry in row.oe if hasattr(entry, "residue_index")
+                        )
+                        # If oe doesn't have residue_index, fall back to dist_mat
+                        if not all_valid_residues:
+                            all_valid_residues = set(entry.residue_index for entry in row.dist_mat)
+                    elif row.dist_mat:
+                        # Fall back to dist_mat (all residues that passed filtering)
+                        all_valid_residues = set(entry.residue_index for entry in row.dist_mat)
+                    
+                    if all_valid_residues:
+                        # Compute null region as all valid residues minus the selected region
+                        null_region_residues = sorted(all_valid_residues - set(region_residues))
+                        if null_region_residues:
+                            null_region_str = ", ".join([f"{r}" for r in null_region_residues])
+                            output += f"            Null region ({len(null_region_residues)}): {null_region_str}\n"
+                # Also check if null_region is already available (from determine_regions_with_min_oe_upper)
+                elif hasattr(min_oe_entry, "null_region") and min_oe_entry.null_region:
+                    null_region_str = ", ".join([f"{r}" for r in min_oe_entry.null_region])
+                    output += f"            Null region ({len(min_oe_entry.null_region)}): {null_region_str}\n"
 
         # Store output for this center residue
         # Include header and legend in the output string
@@ -1509,6 +1592,7 @@ def _debug_get_3d_residue(
             max_res_idx=debug_min_max["max_res_idx"] if debug_min_max else None,
             min_dist=debug_min_max["min_dist"] if debug_min_max else None,
             max_dist=debug_min_max["max_dist"] if debug_min_max else None,
+            plddt_cutoff_method=plddt_cutoff_method,
         )
         # Return new dict instead of mutating input
         result = {}

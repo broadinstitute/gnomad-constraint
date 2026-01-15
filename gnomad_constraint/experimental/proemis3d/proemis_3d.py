@@ -440,12 +440,12 @@ def main(args):
         # )
         
         
-        ###af2_ht = hl.read_table(
-        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/af2_dist.ht"
-        ###)
         af2_ht = hl.read_table(
-            "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/af2_dist.ht"
+            "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/af2_dist.ht"
         )
+        ###af2_ht = hl.read_table(
+        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/af2_dist.ht"
+        ###)
         
         
         # ht = determine_regions_with_min_oe_upper(
@@ -461,12 +461,12 @@ def main(args):
         # )
         
         
-        ###ht = hl.read_table(
-        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/codon_oe.ht"
-        ###)
         ht = hl.read_table(
-            "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/codon_oe.ht"
+            "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/codon_oe.ht"
         )
+        ###ht = hl.read_table(
+        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/codon_oe.ht"
+        ###)
 
         plddt_out = ""
         plddt_ht_for_filtering = None
@@ -535,19 +535,19 @@ def main(args):
         
         
         
-        #ht = ht.repartition(200).checkpoint(
-        #    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
-        #    _read_if_exists=True,
-        #    #overwrite=True,
-        #)
+        ht = ht.repartition(200).checkpoint(
+            f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.{args.model_comparison_method}.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
+            #_read_if_exists=True,
+            overwrite=True,
+        )
         ###ht = hl.read_table(
         ###    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht"
         ###)
-        ht = ht.repartition(1).checkpoint(
-            f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
-            _read_if_exists=True,
-            # overwrite=True,
-        )
+        ###ht = ht.repartition(1).checkpoint(
+        ###    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
+        ###    _read_if_exists=True,
+        ###    # overwrite=True,
+        ###)
         ht.show(5)
 
         if args.run_forward:

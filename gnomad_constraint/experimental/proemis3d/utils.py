@@ -1398,6 +1398,29 @@ def determine_regions_with_min_oe_upper(
         oe=hl.enumerate(ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
         min_oe_upper=hl.sorted(ht.min_oe_upper, key=lambda x: x.oe),
     )
+    
+    # Compute valid_residues: the union of all residues from all candidate regions.
+    # This represents residues that passed all filtering (pLDDT, PAE) and should be
+    # included in the null model. Residues that were hard-filtered (e.g., by
+    # truncate_at_first_low_plddt or remove_low_plddt_residues) won't appear here.
+    # Note: hl.array() on a set returns a sorted array.
+    ht = ht.annotate(
+        valid_residues=hl.array(
+            hl.set(ht.min_oe_upper.flatmap(lambda x: x.region))
+        )
+    )
+    
+    # For each candidate region, compute the null_region (residues remaining if this
+    # candidate is selected). This is: valid_residues - candidate_region
+    ht = ht.annotate(
+        min_oe_upper=ht.min_oe_upper.map(
+            lambda x: x.annotate(
+                null_region=hl.array(
+                    hl.set(ht.valid_residues).difference(hl.set(x.region))
+                )
+            )
+        )
+    )
 
     # Debug: Show OE and regions for first uniprot/transcript
     if debug:
@@ -1641,9 +1664,24 @@ def run_forward(
     oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
 
     num_residues = ht.oe.length()
-    null_region = hl.range(num_residues)
+    
+    # Use valid_residues from determine_regions_with_min_oe_upper if available,
+    # otherwise compute from union of all residues in candidate regions.
+    # This excludes residues that were hard-filtered (completely removed) by
+    # pLDDT methods (truncate_at_first_low_plddt, remove_low_plddt_residues) or
+    # PAE methods.
+    if "valid_residues" in ht.row:
+        null_region = ht.valid_residues
+    else:
+        # Fallback: compute from union of all regions
+        # Note: hl.array() on a set returns a sorted array
+        null_region = hl.array(
+            hl.set(ht.min_oe_upper.flatmap(lambda x: x.region))
+        )
 
-    # Get excluded_residues dict if present (for pLDDT exclusion method)
+    # Get excluded_residues dict if present (for pLDDT soft-exclusion method:
+    # exclude_low_plddt_from_stats). These residues remain in regions for assignment
+    # but are excluded from statistical calculations.
     has_excluded_res = "excluded_residues" in ht.min_oe_upper.dtype.element_type.fields
     excluded_residues_global = None
     if has_excluded_res:
@@ -1653,9 +1691,12 @@ def run_forward(
     null_model = prep_region_struct(
         null_region, ht.oe, excluded_residues=excluded_residues_global
     )
+    null_region_length = null_region.length()
+    
     ht = ht.select(
         "oe",
         num_residues=num_residues,
+        null_region_length=null_region_length,
         null_model=null_model,
         regions=hl.enumerate(
             ht.min_oe_upper.map(
@@ -1664,7 +1705,7 @@ def run_forward(
                     "residue_index",
                     *["excluded_residues"] if has_excluded_res else [],
                 )
-            ).filter(lambda x: x.region.length() < num_residues)
+            ).filter(lambda x: x.region.length() < null_region_length)
         ),
         selected=hl.empty_array(null_model.dtype),
         selected_nll=0.0,
@@ -2002,418 +2043,6 @@ def run_forward(
 
     return ht
 
-
-def run_forward_small_batch(
-    ht,
-    min_exp_mis=MIN_EXP_MIS,
-    oe_upper_method: str = "gamma",
-    model_comparison_method: str = "aic",
-    lrt_alpha: float = 0.001,
-    lrt_df_added: int = 1,
-    bonferroni_per_round: bool = True,
-    aic_weight_thresh: float = 0.80,
-    debug: bool = False,
-):
-    """
-    Run the forward algorithm optimized for small numbers of transcripts.
-
-    This version is identical to `run_forward` but skips the expensive checkpoint
-    and repartition operations that add overhead for small batches. Everything
-    stays in Hail without any Python loops.
-
-    Key differences from `run_forward`:
-    - No repartitioning after explode (avoids shuffle overhead)
-    - No checkpoints within rounds (avoids I/O overhead)
-    - Single checkpoint per round at the end (minimal I/O)
-
-    For large numbers of transcripts, use `run_forward` instead, which uses
-    checkpoints to avoid recomputation overhead that grows with data size.
-
-    model_comparison_method:
-      - "aic"         : choose region if AIC(candidate) < AIC(current)
-      - "aic_weight"  : choose region if Akaike weight(candidate) >= aic_weight_thresh
-      - "lrt"         : choose region if LRT p-value <= (alpha [Bonferroni-adjusted per round if enabled])
-
-    :param ht: Hail Table with the most intolerant region for each UniProt ID and residue
-        index.
-    :param min_exp_mis: Minimum number of expected missense variants in a region to be
-        considered for constraint calculation. Default is MIN_EXP_MIS.
-    :param oe_upper_method: Method to use for calculating the upper bound of the OE
-        confidence interval. Default is "gamma".
-    :param model_comparison_method: Method to use for comparing the candidate region to
-        the current region. Options are "aic", "aic_weight", and "lrt". Default is
-        "aic".
-    :param lrt_alpha: Significance level for the LRT. Default is 0.001.
-    :param lrt_df_added: Degrees of freedom added per region for the LRT. Default is 1.
-    :param bonferroni_per_round: Whether to adjust the alpha level by the number of
-        candidates scanned this round. Default is True.
-    :param aic_weight_thresh: Threshold for the Akaike weight. Default is 0.80.
-    :param debug: Whether to generate debug output. Default is False.
-    :return: Hail Table annotated with the observed and expected values for each residue.
-    """
-    if oe_upper_method not in ["gamma", "chisq"]:
-        raise ValueError(f"Invalid OE upper method: {oe_upper_method}")
-    if model_comparison_method not in {"aic", "aic_weight", "lrt"}:
-        raise ValueError(f"Invalid model comparison method: {model_comparison_method}")
-
-    oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
-
-    num_residues = ht.oe.length()
-    null_region = hl.range(num_residues)
-
-    # Get excluded_residues dict if present (for pLDDT exclusion method)
-    has_excluded_res = "excluded_residues" in ht.min_oe_upper.dtype.element_type.fields
-    excluded_residues_global = None
-    if has_excluded_res:
-        # Get excluded_residues from first region (should be same for all)
-        excluded_residues_global = ht.min_oe_upper[0].excluded_residues
-
-    null_model = prep_region_struct(
-        null_region, ht.oe, excluded_residues=excluded_residues_global
-    )
-    ht = ht.select(
-        "oe",
-        num_residues=num_residues,
-        null_model=null_model,
-        regions=hl.enumerate(
-            ht.min_oe_upper.map(
-                lambda x: x.select(
-                    "region",
-                    "residue_index",
-                    *["excluded_residues"] if has_excluded_res else [],
-                )
-            ).filter(lambda x: x.region.length() < num_residues)
-        ),
-        selected=hl.empty_array(null_model.dtype),
-        selected_nll=0.0,
-        best_aic=getAIC(null_model, null_model.nll),
-        found_best=False,
-    )
-
-    ht = ht.explode("regions")
-    ht = ht.transmute(
-        idx=ht.regions[0],
-        region=ht.regions[1].region,
-        center_residue_index=ht.regions[1].residue_index,
-        **(
-            {"excluded_residues": ht.regions[1].get("excluded_residues")}
-            if has_excluded_res
-            else {}
-        ),
-    )
-    ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    # SMALL BATCH: Skip repartitioning - keep natural partitioning
-    # SMALL BATCH: Single initial checkpoint instead of multiple
-    ht = ht.checkpoint(hl.utils.new_temp_file("forward_small_explode", "ht"))
-
-    # Collect debug output to print at the end
-    debug_outputs = []
-
-    round_num = 1
-    while ht.aggregate(hl.agg.any(hl.is_defined(ht.region))):
-        # For each region in regions, update the list of selected by
-        # removing the residues in the region from the "catch all remaining"
-        # region, and adding the new region to the selected list.
-        region_expr = prep_region_struct(
-            ht.region,
-            ht.oe,
-            excluded_residues=(ht.excluded_residues if has_excluded_res else None),
-        )
-        # SMALL BATCH: No checkpoint after _region annotation
-        ht = ht.annotate(_region=region_expr)
-        region_expr = ht._region
-        updated_null_expr = remove_residues_from_region(ht.null_model, region_expr)
-        # SMALL BATCH: No checkpoint after _updated_null annotation
-        ht = ht.annotate(_updated_null=updated_null_expr)
-        updated_null_expr = prep_region_struct(
-            ht._updated_null.region,
-            ht.oe,
-            excluded_residues=(ht.excluded_residues if has_excluded_res else None),
-        )
-        # SMALL BATCH: No checkpoint after prep_region_struct
-        ht = ht.annotate(_updated_null=updated_null_expr)
-        updated_null_expr = ht._updated_null
-        region_expr = ht._region
-        region_expr = region_expr.annotate(
-            null_model=updated_null_expr,
-            region_nll=region_expr.nll,
-            nll=updated_null_expr.nll + ht.selected_nll + region_expr.nll,
-        )
-
-        if debug:
-            new_outputs = debug_run_forward(
-                "round_start",
-                ht=ht,
-                round_num=round_num,
-                region_expr=region_expr,
-                model_comparison_method=model_comparison_method,
-                oe_upper_method=oe_upper_method,
-                min_exp_mis=min_exp_mis,
-            )
-            debug_outputs.extend(new_outputs)
-
-        # Scan candidates this round; keep those with enough expected missense.
-        ht2 = ht.select(obs=region_expr.obs, exp=region_expr.exp, nll=region_expr.nll)
-        ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis))
-
-        # For each (uniprot, transcript), find argmin by NLL + count candidates.
-        ht2 = (
-            ht2.group_by("uniprot_id", "transcript_id").aggregate(
-                m_candidates=hl.agg.count(),
-                **hl.agg.fold(
-                    hl.missing(
-                        hl.tstruct(
-                            min_idx=hl.tint,
-                            min_nll=hl.tfloat,
-                            min_nll_obs=hl.tint64,
-                            min_nll_exp=hl.tfloat,
-                        )
-                    ),
-                    lambda accum: (
-                        hl.case()
-                        .when(
-                            hl.is_missing(accum),
-                            hl.struct(
-                                min_idx=ht2.idx,
-                                min_nll=ht2.nll,
-                                min_nll_obs=ht2.obs,
-                                min_nll_exp=ht2.exp,
-                            ),
-                        )
-                        .when(
-                            accum.min_nll > ht2.nll,
-                            hl.struct(
-                                min_idx=ht2.idx,
-                                min_nll=ht2.nll,
-                                min_nll_obs=ht2.obs,
-                                min_nll_exp=ht2.exp,
-                            ),
-                        )
-                        .when(
-                            (accum.min_nll == ht2.nll)
-                            & (
-                                oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
-                                > oe_upper_func(ht2.obs, ht2.exp)
-                            ),
-                            hl.struct(
-                                min_idx=ht2.idx,
-                                min_nll=ht2.nll,
-                                min_nll_obs=ht2.obs,
-                                min_nll_exp=ht2.exp,
-                            ),
-                        )
-                        .when(accum.min_nll < ht2.nll, accum)
-                        .when(
-                            (accum.min_nll == ht2.nll)
-                            & (
-                                oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
-                                < oe_upper_func(ht2.obs, ht2.exp)
-                            ),
-                            accum,  # Keep accum when it has lower OE upper
-                        )
-                        .default(
-                            accum
-                        )  # NLLs equal and OE upper equal or missing - keep first (accum)
-                    ),
-                    lambda accum1, accum2: (
-                        hl.case()
-                        .when(hl.is_missing(accum1), accum2)
-                        .when(hl.is_missing(accum2), accum1)
-                        .when(
-                            (accum1.min_nll > accum2.min_nll)
-                            | (
-                                (accum1.min_nll == accum2.min_nll)
-                                & (
-                                    oe_upper_func(
-                                        accum1.min_nll_obs, accum1.min_nll_exp
-                                    )
-                                    > oe_upper_func(
-                                        accum2.min_nll_obs, accum2.min_nll_exp
-                                    )
-                                )
-                            ),
-                            accum2,  # accum2 has lower NLL, or same NLL with lower OE upper
-                        )
-                        .when(
-                            (accum1.min_nll < accum2.min_nll)
-                            | (
-                                (accum1.min_nll == accum2.min_nll)
-                                & (
-                                    oe_upper_func(
-                                        accum1.min_nll_obs, accum1.min_nll_exp
-                                    )
-                                    < oe_upper_func(
-                                        accum2.min_nll_obs, accum2.min_nll_exp
-                                    )
-                                )
-                            ),
-                            accum1,  # accum1 has lower NLL, or same NLL with lower OE upper
-                        )
-                        .default(
-                            accum1
-                        )  # NLLs equal and OE upper equal or missing - keep first
-                    ),
-                ),
-            )
-            # SMALL BATCH: No checkpoint after aggregation
-        )
-        _ht = ht.select(region=region_expr)
-        ht2 = ht2.annotate(
-            best_region=_ht[ht2.uniprot_id, ht2.transcript_id, ht2.min_idx].region
-        )
-        # SMALL BATCH: No checkpoint after best_region annotation
-
-        best_region = ht2[ht.uniprot_id, ht.transcript_id].best_region
-        m_candidates = hl.or_else(ht2[ht.uniprot_id, ht.transcript_id].m_candidates, 1)
-
-        if debug:
-            new_outputs = debug_run_forward(
-                "best_candidate",
-                ht=ht,
-                ht2=ht2,
-                round_num=round_num,
-                oe_upper_method=oe_upper_method,
-            )
-            debug_outputs.extend(new_outputs)
-
-        # Totals for LRT (candidate only if best_region defined).
-        current_nll = ht.selected_nll + ht.null_model.nll
-        candidate_nll = hl.or_missing(hl.is_defined(best_region), best_region.nll)
-
-        # Candidate AIC (only if defined).
-        aic_cand = hl.or_missing(
-            hl.is_defined(best_region),
-            getAIC(best_region.null_model, 0)
-            + getAIC(
-                ht.selected.append(best_region.drop("null_model")),
-                best_region.nll,
-            ),
-        )
-
-        # Build found_best as a fresh per-row expression.
-        found_best_expr = ht.found_best | hl.is_missing(best_region)
-
-        if model_comparison_method == "lrt":
-            lrt_stat = hl.or_missing(
-                hl.is_defined(best_region), 2 * (current_nll - candidate_nll)
-            )
-            p_lrt = hl.or_missing(
-                hl.is_defined(best_region), hl.pchisqtail(lrt_stat, lrt_df_added)
-            )
-            adj_alpha = hl.if_else(
-                bonferroni_per_round, lrt_alpha / hl.max(1, m_candidates), lrt_alpha
-            )
-            found_best_expr |= p_lrt > adj_alpha
-
-        elif model_comparison_method == "aic":
-            found_best_expr |= aic_cand >= ht.best_aic
-
-        elif model_comparison_method == "aic_weight":
-            w_cand = 1 / (1 + hl.exp(0.5 * (aic_cand - ht.best_aic)))
-            found_best_expr |= w_cand < aic_weight_thresh
-
-        if debug:
-            new_outputs = debug_run_forward(
-                "model_comparison",
-                ht=ht,
-                ht2=ht2,
-                round_num=round_num,
-                model_comparison_method=model_comparison_method,
-                lrt_alpha=lrt_alpha,
-                lrt_df_added=lrt_df_added,
-                bonferroni_per_round=bonferroni_per_round,
-                aic_weight_thresh=aic_weight_thresh,
-            )
-            debug_outputs.extend(new_outputs)
-
-        # Current (no-change) state.
-        curr_vals = hl.struct(
-            null_model=ht.null_model,
-            selected=ht.selected,
-            selected_nll=ht.selected_nll,
-            best_aic=ht.best_aic,
-            region=hl.missing(ht.region.dtype),
-        )
-
-        # Build updated state LAZILY so we don't touch best_region when stopping.
-        def _updated_vals():
-            next_region = remove_residues_from_region(
-                hl.struct(region=ht.region), best_region
-            ).region
-            next_region = hl.or_missing(
-                hl.is_defined(next_region) & (next_region.length() > 0), next_region
-            )
-            return hl.struct(
-                null_model=best_region.null_model,
-                selected=ht.selected.append(best_region.drop("null_model")),
-                selected_nll=ht.selected_nll + best_region.region_nll,
-                best_aic=aic_cand,
-                region=next_region,
-            )
-
-        if debug:
-            # Collect candidates BEFORE updating region (for showing removed candidates)
-            from gnomad_constraint.experimental.proemis3d.debug_utils import (
-                _debug_collect_candidates_before_update,
-            )
-
-            candidates_before_filter = _debug_collect_candidates_before_update(ht)
-
-        ht = ht.annotate(
-            **hl.if_else(found_best_expr, curr_vals, _updated_vals()),
-            found_best=found_best_expr,
-        )
-
-        # Keep only rows that still have remaining candidate regions or the idx==0.
-        ht = ht.filter(hl.is_defined(ht.region) | (ht.idx == 0))
-
-        # SMALL BATCH: Single checkpoint at end of round (vs 4+ in run_forward)
-        ht = ht.checkpoint(
-            hl.utils.new_temp_file(f"forward_small_round_{round_num}", "ht")
-        )
-
-        if debug:
-            new_outputs = debug_run_forward(
-                "after_update",
-                ht=ht,
-                round_num=round_num,
-                candidates_before_filter=candidates_before_filter,
-                oe_upper_method=oe_upper_method,
-            )
-            debug_outputs.extend(new_outputs)
-
-        round_num += 1
-
-    if debug:
-        new_outputs = debug_run_forward("final", ht=ht)
-        debug_outputs.extend(new_outputs)
-
-    # Flatten final selected + null, explode to residues, compute per-residue stats.
-    selected_expr = ht.selected.map(lambda x: x.annotate(is_null=False))
-    ht = ht.select(
-        selected=add_idx_to_array(
-            selected_expr.append(ht.null_model.annotate(is_null=True)), "region_index"
-        )
-    )
-    ht = ht.explode("selected")
-    ht = ht.select(**ht.selected)
-    ht = ht.annotate(region_length=hl.len(ht.region))
-    ht = ht.explode("region")
-    chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
-    ht = ht.annotate(
-        residue_index=ht.region,
-        oe_upper=oe_upper_func(ht.obs, ht.exp, 0.05),
-        chisq=chisq_expr,
-        p_value=hl.pchisqtail(chisq_expr, 1),
-    )
-    ht = ht.key_by("uniprot_id", "transcript_id", "residue_index").select(
-        "region_index", "obs", "exp", "oe", "oe_upper", "chisq", "p_value", "is_null"
-    )
-
-    if debug:
-        return ht, "\n".join(debug_outputs)
-
-    return ht
 
 
 def _write_debug_output(debug_output_file: str, debug_output_str: str):
