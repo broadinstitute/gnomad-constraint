@@ -896,6 +896,7 @@ def debug_print_dist_mat_with_colors(
     min_dist: Optional[float] = None,
     max_dist: Optional[float] = None,
     plddt_cutoff_method: Optional[str] = None,
+    pae_cutoff_method: Optional[str] = None,
 ) -> Dict[int, str]:
     """
     Generate colored debug output showing distance matrix with PAE values color-coded.
@@ -959,9 +960,18 @@ def debug_print_dist_mat_with_colors(
     # Also select 'oe' field if available (for computing null region with all residues)
     if "oe" in ht.row:
         select_fields.append("oe")
-    # Also select 'plddt_lookup' if available (for filtering by pLDDT in truncate methods)
+    # Also select 'plddt_lookup' if available (for filtering by pLDDT in
+    # truncate methods)
     if "plddt_lookup" in ht.row:
         select_fields.append("plddt_lookup")
+    # Also select 'valid_residues' if available (computed from all centers in
+    # determine_regions_with_min_oe_upper)
+    if "valid_residues" in ht.row:
+        select_fields.append("valid_residues")
+    # Also select 'min_oe_upper' if available (to compute valid_residues from
+    # all candidate regions)
+    if "min_oe_upper" in ht.row:
+        select_fields.append("min_oe_upper")
 
     debug_data = _ht_debug.select(*select_fields).collect()
 
@@ -1414,67 +1424,211 @@ def debug_print_dist_mat_with_colors(
 
                 # Compute and display null region: all valid residues minus the selected region
                 # This shows what residues would remain if this candidate is selected
-                # For truncate methods, need to get all residues with high pLDDT (not just those in dist_mat)
+                #
+                # Priority order:
+                # 1. Use valid_residues if available (computed from all centers)
+                # 2. Compute from min_oe_upper if available (union of all candidate regions)
+                # 3. For truncate methods, get all residues with high pLDDT (not just those in dist_mat)
+                # 4. Fall back to dist_mat or oe array
                 if region_residues is not None:
                     all_valid_residues = None
-                    
-                    if plddt_cutoff_method == "truncate_at_first_low_plddt" and min_plddt is not None:
+
+                    # First, try to use valid_residues if available (computed from all
+                    # centers)
+                    if (
+                        hasattr(row, "valid_residues")
+                        and row.valid_residues is not None
+                    ):
+                        all_valid_residues = set(row.valid_residues)
+                    # Second, try to compute from min_oe_upper (union of all candidate
+                    # regions from all centers)
+                    elif hasattr(row, "min_oe_upper") and row.min_oe_upper is not None:
+                        all_valid_residues = set()
+                        for entry in row.min_oe_upper:
+                            if hasattr(entry, "region") and entry.region is not None:
+                                all_valid_residues.update(entry.region)
+                    # Third, try to query the table for all min_oe_upper entries for this uniprot/transcript
+                    # (this works after determine_regions_with_min_oe_upper has computed all candidate regions)
+                    elif uniprot_id is not None and transcript_id is not None:
+                        try:
+                            # Query table for all rows with same uniprot/transcript
+                            _ht_all = ht.filter(
+                                (ht.uniprot_id == uniprot_id)
+                                & (ht.enst == transcript_id)
+                            )
+                            if "min_oe_upper" in _ht_all.row:
+                                all_min_oe_upper = _ht_all.select(
+                                    "min_oe_upper"
+                                ).collect()
+                                all_valid_residues = set()
+                                for row_data in all_min_oe_upper:
+                                    if row_data.min_oe_upper is not None:
+                                        for entry in row_data.min_oe_upper:
+                                            if (
+                                                hasattr(entry, "region")
+                                                and entry.region is not None
+                                            ):
+                                                all_valid_residues.update(entry.region)
+                        except Exception:
+                            # If query fails, all_valid_residues will remain None and
+                            # we'll fall back to other methods
+                            all_valid_residues = None
+                    # Third, for all PAE filtering methods, use oe array to get all residues
+                    # (residues excluded for this center may still be included for other centers)
+                    # This applies to: truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center,
+                    # and filter_on_pairwise_pae_in_region
+                    elif (
+                        pae_cutoff_method
+                        in [
+                            "truncate_on_pairwise_pae_with_center",
+                            "filter_on_pairwise_pae_with_center",
+                            "filter_on_pairwise_pae_in_region",
+                        ]
+                        and hasattr(row, "oe")
+                        and row.oe is not None
+                    ):
+                        # Use oe array to get all residues (before center-specific PAE
+                        # filtering)
+                        all_valid_residues = set(
+                            entry.residue_index
+                            for entry in row.oe
+                            if hasattr(entry, "residue_index")
+                        )
+                        # Apply pLDDT filtering if specified
+                        if (
+                            plddt_cutoff_method == "truncate_at_first_low_plddt"
+                            and min_plddt is not None
+                        ):
+                            # Filter by pLDDT from oe array or plddt_lookup
+                            if (
+                                hasattr(row, "plddt_lookup")
+                                and row.plddt_lookup is not None
+                            ):
+                                plddt_map = {
+                                    entry.residue_index: entry.plddt
+                                    for entry in row.plddt_lookup
+                                    if hasattr(entry, "residue_index")
+                                    and hasattr(entry, "plddt")
+                                }
+                            else:
+                                # Build pLDDT map from oe array
+                                plddt_map = {
+                                    entry.residue_index: entry.plddt
+                                    for entry in row.oe
+                                    if hasattr(entry, "residue_index")
+                                    and hasattr(entry, "plddt")
+                                }
+                            # Filter: only include residues with pLDDT >= min_plddt
+                            all_valid_residues = {
+                                r
+                                for r in all_valid_residues
+                                if r in plddt_map
+                                and plddt_map[r] is not None
+                                and plddt_map[r] >= min_plddt
+                            }
+                    # Fourth, handle pLDDT truncate methods specially
+                    elif (
+                        plddt_cutoff_method == "truncate_at_first_low_plddt"
+                        and min_plddt is not None
+                    ):
                         # For truncate: get all residues with pLDDT >= min_plddt from plddt_lookup
                         # (dist_mat only contains residues up to truncation point, but we want all high pLDDT residues)
-                        if hasattr(row, "plddt_lookup") and row.plddt_lookup is not None:
+                        if (
+                            hasattr(row, "plddt_lookup")
+                            and row.plddt_lookup is not None
+                        ):
                             # Build set of all residues with pLDDT >= min_plddt
                             all_valid_residues = set()
                             for entry in row.plddt_lookup:
-                                if (hasattr(entry, "residue_index") and 
-                                    hasattr(entry, "plddt") and 
-                                    entry.plddt is not None and 
-                                    entry.plddt >= min_plddt):
+                                if (
+                                    hasattr(entry, "residue_index")
+                                    and hasattr(entry, "plddt")
+                                    and entry.plddt is not None
+                                    and entry.plddt >= min_plddt
+                                ):
                                     all_valid_residues.add(entry.residue_index)
                         elif hasattr(row, "oe") and row.oe is not None:
                             # Fall back: use oe array and check pLDDT from dist_mat
                             # Get all residues from oe
                             all_residues_from_oe = set(
-                                entry.residue_index for entry in row.oe if hasattr(entry, "residue_index")
+                                entry.residue_index
+                                for entry in row.oe
+                                if hasattr(entry, "residue_index")
                             )
                             # Build pLDDT map from dist_mat
                             plddt_map = {}
                             for entry in row.dist_mat:
-                                if hasattr(entry, "residue_index") and hasattr(entry, "plddt"):
+                                if hasattr(entry, "residue_index") and hasattr(
+                                    entry, "plddt"
+                                ):
                                     plddt_map[entry.residue_index] = entry.plddt
-                            
+
                             # Filter: include residues with pLDDT >= min_plddt
                             # For residues in dist_mat, check pLDDT
-                            # For residues not in dist_mat, they're likely after truncation, so exclude them
+                            # For residues not in dist_mat, they're likely after
+                            # truncation, so exclude them
                             all_valid_residues = set()
                             for res_idx in all_residues_from_oe:
                                 if res_idx in plddt_map:
-                                    if plddt_map[res_idx] is not None and plddt_map[res_idx] >= min_plddt:
+                                    if (
+                                        plddt_map[res_idx] is not None
+                                        and plddt_map[res_idx] >= min_plddt
+                                    ):
                                         all_valid_residues.add(res_idx)
-                                # Skip residues not in dist_mat (they're after truncation point)
+                                # Skip residues not in dist_mat (they're after
+                                # truncation point)
                         else:
-                            # Fall back to dist_mat (only residues up to truncation point)
-                            all_valid_residues = set(entry.residue_index for entry in row.dist_mat)
+                            # Fall back to dist_mat (only residues up to truncation
+                            # point)
+                            all_valid_residues = set(
+                                entry.residue_index for entry in row.dist_mat
+                            )
                     elif hasattr(row, "oe") and row.oe is not None:
                         # For other methods: try to use oe array to get all residues
                         all_valid_residues = set(
-                            entry.residue_index for entry in row.oe if hasattr(entry, "residue_index")
+                            entry.residue_index
+                            for entry in row.oe
+                            if hasattr(entry, "residue_index")
                         )
                         # If oe doesn't have residue_index, fall back to dist_mat
                         if not all_valid_residues:
-                            all_valid_residues = set(entry.residue_index for entry in row.dist_mat)
+                            all_valid_residues = set(
+                                entry.residue_index for entry in row.dist_mat
+                            )
                     elif row.dist_mat:
                         # Fall back to dist_mat (all residues that passed filtering)
-                        all_valid_residues = set(entry.residue_index for entry in row.dist_mat)
-                    
+                        all_valid_residues = set(
+                            entry.residue_index for entry in row.dist_mat
+                        )
+
                     if all_valid_residues:
-                        # Compute null region as all valid residues minus the selected region
-                        null_region_residues = sorted(all_valid_residues - set(region_residues))
+                        # Compute null region as all valid residues minus the selected
+                        # region
+                        null_region_residues = sorted(
+                            all_valid_residues - set(region_residues)
+                        )
                         if null_region_residues:
-                            null_region_str = ", ".join([f"{r}" for r in null_region_residues])
-                            output += f"            Null region ({len(null_region_residues)}): {null_region_str}\n"
-                # Also check if null_region is already available (from determine_regions_with_min_oe_upper)
+                            null_region_str = ", ".join(
+                                [f"{r}" for r in null_region_residues]
+                            )
+                            # Add note if using center-specific data (not valid_residues
+                            # from all centers)
+                            note = ""
+                            if not (
+                                hasattr(row, "valid_residues")
+                                and row.valid_residues is not None
+                            ) and not (
+                                hasattr(row, "min_oe_upper")
+                                and row.min_oe_upper is not None
+                            ):
+                                note = " (center-specific; actual null region computed from all centers)"
+                            output += f"            Null region ({len(null_region_residues)}): {null_region_str}{note}\n"
+                # Also check if null_region is already available (from
+                # determine_regions_with_min_oe_upper)
                 elif hasattr(min_oe_entry, "null_region") and min_oe_entry.null_region:
-                    null_region_str = ", ".join([f"{r}" for r in min_oe_entry.null_region])
+                    null_region_str = ", ".join(
+                        [f"{r}" for r in min_oe_entry.null_region]
+                    )
                     output += f"            Null region ({len(min_oe_entry.null_region)}): {null_region_str}\n"
 
         # Store output for this center residue
@@ -1593,6 +1747,7 @@ def _debug_get_3d_residue(
             min_dist=debug_min_max["min_dist"] if debug_min_max else None,
             max_dist=debug_min_max["max_dist"] if debug_min_max else None,
             plddt_cutoff_method=plddt_cutoff_method,
+            pae_cutoff_method=pae_cutoff_method,
         )
         # Return new dict instead of mutating input
         result = {}

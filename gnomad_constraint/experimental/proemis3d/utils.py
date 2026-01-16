@@ -1398,18 +1398,25 @@ def determine_regions_with_min_oe_upper(
         oe=hl.enumerate(ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
         min_oe_upper=hl.sorted(ht.min_oe_upper, key=lambda x: x.oe),
     )
-    
-    # Compute valid_residues: the union of all residues from all candidate regions.
-    # This represents residues that passed all filtering (pLDDT, PAE) and should be
-    # included in the null model. Residues that were hard-filtered (e.g., by
-    # truncate_at_first_low_plddt or remove_low_plddt_residues) won't appear here.
+
+    # Compute valid_residues: the union of all residues from all candidate regions
+    # across all center residues. This represents residues that passed all filtering
+    # (pLDDT, PAE) and should be included in the null model.
+    #
+    # Note: Since PAE is a matrix and filtering is center-specific, a residue excluded
+    # from candidate regions for one center may still be included for another center.
+    # Therefore, valid_residues includes any residue that appears in at least one
+    # candidate region from any center.
+    #
+    # Residues that were hard-filtered (e.g., by truncate_at_first_low_plddt or
+    # remove_low_plddt_residues) won't appear in any candidate region and thus won't
+    # appear here.
+    #
     # Note: hl.array() on a set returns a sorted array.
     ht = ht.annotate(
-        valid_residues=hl.array(
-            hl.set(ht.min_oe_upper.flatmap(lambda x: x.region))
-        )
+        valid_residues=hl.array(hl.set(ht.min_oe_upper.flatmap(lambda x: x.region)))
     )
-    
+
     # For each candidate region, compute the null_region (residues remaining if this
     # candidate is selected). This is: valid_residues - candidate_region
     ht = ht.annotate(
@@ -1664,7 +1671,7 @@ def run_forward(
     oe_upper_func = gamma_upper_ci if oe_upper_method == "gamma" else chisq_upper_ci
 
     num_residues = ht.oe.length()
-    
+
     # Use valid_residues from determine_regions_with_min_oe_upper if available,
     # otherwise compute from union of all residues in candidate regions.
     # This excludes residues that were hard-filtered (completely removed) by
@@ -1675,9 +1682,7 @@ def run_forward(
     else:
         # Fallback: compute from union of all regions
         # Note: hl.array() on a set returns a sorted array
-        null_region = hl.array(
-            hl.set(ht.min_oe_upper.flatmap(lambda x: x.region))
-        )
+        null_region = hl.array(hl.set(ht.min_oe_upper.flatmap(lambda x: x.region)))
 
     # Get excluded_residues dict if present (for pLDDT soft-exclusion method:
     # exclude_low_plddt_from_stats). These residues remain in regions for assignment
@@ -1692,7 +1697,7 @@ def run_forward(
         null_region, ht.oe, excluded_residues=excluded_residues_global
     )
     null_region_length = null_region.length()
-    
+
     ht = ht.select(
         "oe",
         num_residues=num_residues,
@@ -2042,7 +2047,6 @@ def run_forward(
         return ht, "\n".join(debug_outputs)
 
     return ht
-
 
 
 def _write_debug_output(debug_output_file: str, debug_output_str: str):
