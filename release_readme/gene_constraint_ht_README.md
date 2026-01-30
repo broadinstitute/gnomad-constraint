@@ -16,6 +16,7 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `lof_hc_lc.obs`: Number of observed high and low confidence predicted loss-of-function (pLoF) variants in transcript
 - `lof_hc_lc.exp`: Number of expected high and low confidence pLoF variants in transcript
 - `lof_hc_lc.possible`: Number of possible high and low confidence pLoF variants in transcript
+- `lof_hc_lc.oe`: Observed to expected (`oe`) ratio for high and low confidence pLoF variants (`lof_hc_lc.obs` divided by `lof_hc_lc.exp`)
 - `lof_hc_lc.mu`: Mutation rate summed across all possible high and low confidence pLoF variants in transcript
 - `lof_hc_lc.oe_ci.lower`: Lower bound of 90% confidence interval (CI) for observed to expected (`oe`) ratio for high and low confidence pLoF variants
 - `lof_hc_lc.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for high and low confidence pLoF variants (lower values indicate more constrained)
@@ -29,7 +30,7 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `lof.obs`: Number of observed high confidence predicted loss-of-function (pLoF) variants in transcript
 - `lof.exp`: Number of expected high confidence pLoF variants in transcript
 - `lof.possible`: Number of possible high confidence pLoF variants in transcript
-- `lof.oe`: Observed over expected ratio for high confidence pLoF variants in transcript (`lof.obs` divided by `lof.exp`)
+- `lof.oe`: Observed to expected ratio for high confidence pLoF variants in transcript (`lof.obs` divided by `lof.exp`)
 - `lof.mu`: Mutation rate summed across all possible high confidence pLoF variants in transcript
 - `lof.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants
 - `lof.oe_ci.upper`: LOEUF: upper bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants (lower values indicate more constrained)
@@ -46,7 +47,7 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `mis.obs`: Number of observed missense variants in transcript
 - `mis.exp`: Number of expected missense variants in transcript
 - `mis.possible`: Number of possible missense variants in transcript
-- `mis.oe`: Observed over expected ratio for missense variants in transcript (`mis.obs` divided by `mis.exp`)
+- `mis.oe`: Observed to expected ratio for missense variants in transcript (`mis.obs` divided by `mis.exp`)
 - `mis.mu`: Mutation rate summed across all possible missense variants in transcript
 - `mis.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for missense variants
 - `mis.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for missense variants
@@ -60,7 +61,7 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `syn.obs`: Number of observed synonymous variants in transcript
 - `syn.exp`: Number of expected synonymous variants in transcript
 - `syn.possible`: Number of possible synonymous variants in transcript
-- `syn.oe`: Observed over expected ratio for synonymous variants in transcript (`syn.obs` divided by `syn.exp`)
+- `syn.oe`: Observed to expected ratio for synonymous variants in transcript (`syn.obs` divided by `syn.exp`)
 - `syn.mu`: Mutation rate summed across all synonymous variants in transcript
 - `syn.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for synonymous variants
 - `syn.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for synonymous variants
