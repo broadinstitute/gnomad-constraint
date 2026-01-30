@@ -1476,13 +1476,15 @@ def debug_print_dist_mat_with_colors(
                     # Third, for all PAE filtering methods, use oe array to get all residues
                     # (residues excluded for this center may still be included for other centers)
                     # This applies to: truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center,
-                    # and filter_on_pairwise_pae_in_region
+                    # filter_on_pairwise_pae_in_region, exclude_on_pairwise_pae_with_center, exclude_on_pairwise_pae_in_region
                     elif (
                         pae_cutoff_method
                         in [
                             "truncate_on_pairwise_pae_with_center",
                             "filter_on_pairwise_pae_with_center",
                             "filter_on_pairwise_pae_in_region",
+                            "exclude_on_pairwise_pae_with_center",
+                            "exclude_on_pairwise_pae_in_region",
                         ]
                         and hasattr(row, "oe")
                         and row.oe is not None
@@ -1725,7 +1727,7 @@ def _debug_get_3d_residue(
             dist_mat_expr,
             center_residue_index_expr,
             max_pae=max_pae,
-            title="get_3d_residue: PAE matrix before filter_on_pairwise_pae_in_region (after pLDDT filtering)",
+            title="get_3d_residue: PAE matrix before region PAE filtering (after pLDDT filtering)",
             min_plddt=min_plddt,
             plddt_cutoff_method=plddt_cutoff_method,
         )
@@ -2014,7 +2016,7 @@ def debug_print_forward_round(
 
             # Check if this is a better candidate
             # This exactly matches the aggregation logic in run_forward:
-            # Updates when: (accum.min_nll > ht2.nll) | ((accum.min_nll == ht2.nll) & (oe_upper_func(accum) > oe_upper_func(ht2)))
+            # Updates when: (accum.min_nll > ht2.nll) | ((hl.abs(accum.min_nll - ht2.nll) < 1e-10) & (oe_upper_func(accum) > oe_upper_func(ht2)))
             # Keeps accum when: accum.min_nll < ht2.nll
             # In Hail, if OE upper comparison is missing, the condition doesn't match,
             # so it keeps accum
@@ -2022,21 +2024,34 @@ def debug_print_forward_round(
             if best_nll is None:
                 # First candidate (matches hl.is_missing(accum))
                 is_better = True
-            elif best_nll > row._region.nll:
-                # This NLL is lower (matches accum.min_nll > ht2.nll)
-                is_better = True
-            elif best_nll == row._region.nll:
-                # NLLs are equal - use OE upper for tie-breaking
-                # Matches: (accum.min_nll == ht2.nll) & (oe_upper_func(accum) > oe_upper_func(ht2))
+            elif hl.eval(hl.approx_equal(best_nll, row._region.nll, tolerance=1e-10)):
+                # print("NLLs are approximately equal")
+                # print(f"\tbest_candidate_idx: {best_candidate_idx}")
+                # print(f"\trow_idx: {row_idx}")
+                # print(f"\tbest_nll: {best_nll}, row._region.nll: {row._region.nll}")
+                # print(f"\tbest_oe_upper: {best_oe_upper}, oe_upper_val: {oe_upper_val}")
+                # NLLs are approximately equal - use OE upper for tie-breaking
+                # Matches: (hl.abs(accum.min_nll - ht2.nll) < 1e-10) & (oe_upper_func(accum) > oe_upper_func(ht2))
                 # We update if best_oe_upper > oe_upper_val (i.e., this one has lower OE
                 # upper)
                 if best_oe_upper is not None and oe_upper_val is not None:
                     # Both have OE upper - choose lower one
-                    if best_oe_upper > oe_upper_val:
+                    if hl.eval(
+                        hl.approx_equal(best_oe_upper, oe_upper_val, tolerance=1e-10)
+                    ) or (best_oe_upper > oe_upper_val):
+                        # print("\tbest_oe_upper > oe_upper_val")
                         is_better = True
                 # If either is missing, keep the current best (first one encountered)
                 # This matches Hail behavior where missing comparisons don't match the
                 # condition
+            elif best_nll > row._region.nll:
+                # print("best_nll > row._region.nll")
+                # This NLL is lower (matches accum.min_nll > ht2.nll)
+                # print(f"\tbest_candidate_idx: {best_candidate_idx}")
+                # print(f"\trow_idx: {row_idx}")
+                # print(f"\tbest_nll: {best_nll}, row._region.nll: {row._region.nll}")
+                # print(f"\tbest_oe_upper: {best_oe_upper}, oe_upper_val: {oe_upper_val}")
+                is_better = True
 
             if is_better:
                 best_candidate_idx = row_idx

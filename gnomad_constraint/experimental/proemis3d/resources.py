@@ -264,7 +264,7 @@ def get_forward_ht(
     """
     name = f".{name}" if name else ""
     return TableResource(
-        f"{get_proemis3d_root(version, test)}/output/proemis3D_forward{name}.ht"
+        f"{get_proemis3d_root(version, test)}/test_gene_set_run/output/proemis3D_forward{name}.ht"
     )
 
 

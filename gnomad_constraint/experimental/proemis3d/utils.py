@@ -912,6 +912,12 @@ def get_3d_residue(
           PAE(center, neighbor) > max_pae, keep others (filter individual residues).
         - "filter_on_pairwise_pae_in_region": Filter out residues whose maximum pairwise
           PAE to any residue in the region exceeds max_pae. Requires 2D pae_expr.
+        - "exclude_on_pairwise_pae_with_center": Like filter_on_pairwise_pae_with_center but residues with
+          PAE(center, neighbor) > max_pae are kept and marked exclude_from_stats (NA in
+          stats), not removed.
+        - "exclude_on_pairwise_pae_in_region": Like filter_on_pairwise_pae_in_region but residues with
+          high pairwise PAE in region are kept and marked exclude_from_stats (NA in
+          stats), not removed.
         - "remove_all_residues_after_first_over_cutoff": Alias for
           "truncate_on_pairwise_pae_with_center" (for backward compatibility).
         - "remove_residues_after_first_high_pairwise_pae_with_current_residue": Alias for
@@ -1075,17 +1081,32 @@ def get_3d_residue(
             pae_cutoff_idx = hl.enumerate(dist_mat_expr).find(
                 lambda x: hl.is_defined(x[1].pae) & (x[1].pae > max_pae)
             )
-            if pae_cutoff_idx is not None:
-                dist_mat_expr = hl.if_else(
-                    hl.is_defined(pae_cutoff_idx),
-                    dist_mat_expr[: pae_cutoff_idx[0]],
-                    dist_mat_expr,
-                )
+            dist_mat_expr = hl.if_else(
+                hl.is_defined(pae_cutoff_idx),
+                dist_mat_expr[: pae_cutoff_idx[0]],
+                dist_mat_expr,
+            )
         elif pae_cutoff_method == "filter_on_pairwise_pae_with_center":
             # Keep only neighbors with PAE(center, neighbor) <= max_pae
             # Each residue has a 'pae' field which is PAE from center to that residue
             dist_mat_expr = dist_mat_expr.filter(
                 lambda x: ~hl.is_defined(x.pae) | (x.pae <= max_pae)
+            )
+        elif pae_cutoff_method == "exclude_on_pairwise_pae_with_center":
+            # Like filter_on_pairwise_pae_with_center but keep all residues and set
+            # exclude_from_stats for those with PAE(center, neighbor) > max_pae
+            has_exclude = (
+                "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
+            )
+            dist_mat_expr = dist_mat_expr.map(
+                lambda x: x.annotate(
+                    exclude_from_stats=(
+                        hl.or_else(x.exclude_from_stats, False)
+                        if has_exclude
+                        else False
+                    )
+                    | (hl.is_defined(x.pae) & (x.pae > max_pae))
+                )
             )
         elif pae_cutoff_method == "filter_on_pairwise_pae_in_region":
             # Debug: Show PAE matrix before filtering (pLDDT filtering has already
@@ -1140,6 +1161,79 @@ def get_3d_residue(
 
             # Get the final region (last element of the scan result)
             dist_mat_expr = dist_mat_expr[-1]
+
+        elif pae_cutoff_method == "exclude_on_pairwise_pae_in_region":
+            # Like filter_on_pairwise_pae_in_region but keep all residues and set
+            # exclude_from_stats for those that would have been excluded (high PAE
+            # to any residue already in the passing set)
+            if debug:
+                new_outputs = debug_get_3d_residue(
+                    "pae_matrix_before_filter",
+                    dist_mat_expr,
+                    oe_expr,
+                    max_pae,
+                    min_plddt,
+                    pae_cutoff_method,
+                    plddt_cutoff_method,
+                    center_residue_index_expr,
+                    debug_min_max,
+                    debug_outputs_by_residue,
+                )
+                if new_outputs:
+                    for center_idx, step_outputs in new_outputs.items():
+                        if center_idx not in debug_outputs_by_residue:
+                            debug_outputs_by_residue[center_idx] = {}
+                        debug_outputs_by_residue[center_idx].update(step_outputs)
+
+            has_pae_array_field = "pae_array" in dist_mat_expr.dtype.element_type.fields
+            if not has_pae_array_field:
+                raise ValueError("PAE array data is not available in dist_mat_expr!")
+
+            scan_element_type = hl.tstruct(
+                residue=dist_mat_expr.dtype.element_type,
+                exclude_from_stats=hl.tbool,
+            )
+            scan_init = hl.empty_array(scan_element_type)
+            scan_result = dist_mat_expr.scan(
+                lambda acc, residue: (
+                    acc.append(
+                        hl.struct(
+                            residue=residue,
+                            exclude_from_stats=~(
+                                (residue.pae_array is None)
+                                | ~hl.any(
+                                    acc.filter(lambda x: ~x.exclude_from_stats).map(
+                                        lambda x: hl.is_defined(residue.pae_array)
+                                        & (
+                                            residue.pae_array[x.residue.residue_index]
+                                            > max_pae
+                                        )
+                                    )
+                                )
+                            ),
+                        )
+                    )
+                ),
+                scan_init,
+            )
+            # Last element of scan is the full list of (residue, exclude_from_stats)
+            final_list = scan_result[-1]
+            has_exclude_on_residue = (
+                "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
+            )
+            if has_exclude_on_residue:
+                dist_mat_expr = final_list.map(
+                    lambda x: x.residue.annotate(
+                        exclude_from_stats=x.exclude_from_stats
+                        | hl.or_else(x.residue.exclude_from_stats, False)
+                    )
+                )
+            else:
+                dist_mat_expr = final_list.map(
+                    lambda x: x.residue.annotate(
+                        exclude_from_stats=x.exclude_from_stats
+                    )
+                )
 
         else:
             raise ValueError(f"Unknown pae_cutoff_method: {pae_cutoff_method}")
@@ -1259,6 +1353,10 @@ def determine_regions_with_min_oe_upper(
           PAE(center, neighbor) > max_pae, keep others (filter individual residues).
         - "filter_on_pairwise_pae_in_region": Filter out residues whose maximum pairwise
           PAE to any residue in the region exceeds max_pae. Requires 2D pae_expr.
+        - "exclude_on_pairwise_pae_with_center": Like filter_on_pairwise_pae_with_center but residues
+          with high PAE to center are kept and excluded from stats only.
+        - "exclude_on_pairwise_pae_in_region": Like filter_on_pairwise_pae_in_region but residues with
+          high pairwise PAE in region are kept and excluded from stats only.
         Default is "truncate_on_pairwise_pae_with_center".
     :param min_plddt: Minimum allowed pLDDT for including residues in the region.
         Default is None.
@@ -1730,8 +1828,8 @@ def run_forward(
         ),
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    # ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
-    ht = ht.repartition(1, shuffle=True)
+    ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
+    # ht = ht.repartition(1, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
 
     # Collect debug output to print at the end
@@ -1788,102 +1886,75 @@ def run_forward(
         ht2 = ht2.filter(hl.is_defined(ht2.nll) & (ht2.exp >= min_exp_mis))
 
         # For each (uniprot, transcript), find argmin by NLL + count candidates.
+        start_struct = hl.struct(
+            min_idx=ht2.idx,
+            min_nll=ht2.nll,
+            min_nll_obs=ht2.obs,
+            min_nll_exp=ht2.exp,
+        )
+        empty_struct = hl.missing(start_struct.dtype)
         ht2 = (
             ht2.group_by("uniprot_id", "transcript_id")
             .aggregate(
                 m_candidates=hl.agg.count(),
                 **hl.agg.fold(
-                    hl.missing(
-                        hl.tstruct(
-                            min_idx=hl.tint,
-                            min_nll=hl.tfloat,
-                            min_nll_obs=hl.tint64,
-                            min_nll_exp=hl.tfloat,
-                        )
-                    ),
+                    empty_struct,
                     lambda accum: (
                         hl.case()
+                        .when(hl.is_missing(accum), start_struct)
                         .when(
-                            hl.is_missing(accum),
-                            hl.struct(
-                                min_idx=ht2.idx,
-                                min_nll=ht2.nll,
-                                min_nll_obs=ht2.obs,
-                                min_nll_exp=ht2.exp,
+                            hl.approx_equal(accum.min_nll, ht2.nll, tolerance=1e-10),
+                            hl.if_else(
+                                hl.approx_equal(
+                                    oe_upper_func(accum.min_nll_obs, accum.min_nll_exp),
+                                    oe_upper_func(ht2.obs, ht2.exp),
+                                    tolerance=1e-10,
+                                )
+                                | (
+                                    oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
+                                    > oe_upper_func(ht2.obs, ht2.exp)
+                                ),
+                                start_struct,
+                                accum,
                             ),
                         )
-                        .when(
-                            accum.min_nll > ht2.nll,
-                            hl.struct(
-                                min_idx=ht2.idx,
-                                min_nll=ht2.nll,
-                                min_nll_obs=ht2.obs,
-                                min_nll_exp=ht2.exp,
-                            ),
-                        )
-                        .when(
-                            (accum.min_nll == ht2.nll)
-                            & (
-                                oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
-                                > oe_upper_func(ht2.obs, ht2.exp)
-                            ),
-                            hl.struct(
-                                min_idx=ht2.idx,
-                                min_nll=ht2.nll,
-                                min_nll_obs=ht2.obs,
-                                min_nll_exp=ht2.exp,
-                            ),
-                        )
+                        .when(accum.min_nll > ht2.nll, start_struct)
                         .when(accum.min_nll < ht2.nll, accum)
-                        .when(
-                            (accum.min_nll == ht2.nll)
-                            & (
-                                oe_upper_func(accum.min_nll_obs, accum.min_nll_exp)
-                                < oe_upper_func(ht2.obs, ht2.exp)
-                            ),
-                            accum,  # Keep accum when it has lower OE upper
-                        )
-                        .default(
-                            accum
-                        )  # NLLs equal and OE upper equal or missing - keep first (accum)
+                        .default(accum)
                     ),
                     lambda accum1, accum2: (
                         hl.case()
                         .when(hl.is_missing(accum1), accum2)
                         .when(hl.is_missing(accum2), accum1)
                         .when(
-                            (accum1.min_nll > accum2.min_nll)
-                            | (
-                                (accum1.min_nll == accum2.min_nll)
-                                & (
+                            hl.approx_equal(
+                                accum1.min_nll, accum2.min_nll, tolerance=1e-10
+                            ),
+                            hl.if_else(
+                                hl.approx_equal(
+                                    oe_upper_func(
+                                        accum1.min_nll_obs, accum1.min_nll_exp
+                                    ),
+                                    oe_upper_func(
+                                        accum2.min_nll_obs, accum2.min_nll_exp
+                                    ),
+                                    tolerance=1e-10,
+                                )
+                                | (
                                     oe_upper_func(
                                         accum1.min_nll_obs, accum1.min_nll_exp
                                     )
                                     > oe_upper_func(
                                         accum2.min_nll_obs, accum2.min_nll_exp
                                     )
-                                )
+                                ),
+                                accum2,
+                                accum1,
                             ),
-                            accum2,  # accum2 has lower NLL, or same NLL with lower OE upper
                         )
-                        .when(
-                            (accum1.min_nll < accum2.min_nll)
-                            | (
-                                (accum1.min_nll == accum2.min_nll)
-                                & (
-                                    oe_upper_func(
-                                        accum1.min_nll_obs, accum1.min_nll_exp
-                                    )
-                                    < oe_upper_func(
-                                        accum2.min_nll_obs, accum2.min_nll_exp
-                                    )
-                                )
-                            ),
-                            accum1,  # accum1 has lower NLL, or same NLL with lower OE upper
-                        )
-                        .default(
-                            accum1
-                        )  # NLLs equal and OE upper equal or missing - keep first
+                        .when(accum1.min_nll > accum2.min_nll, accum2)
+                        .when(accum1.min_nll < accum2.min_nll, accum1)
+                        .default(accum1)
                     ),
                 ),
             )
@@ -2089,8 +2160,8 @@ def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
 
-    ###ht = ht.repartition(200, shuffle=True)
-    ht = ht.repartition(1, shuffle=True)
+    ht = ht.repartition(200, shuffle=True)
+    ###ht = ht.repartition(1, shuffle=True)
 
     ht = ht.checkpoint(hl.utils.new_temp_file("forward_explode", "ht"))
     round_num = 1

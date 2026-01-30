@@ -92,11 +92,17 @@ ALL_TESTS = {
         "plddt_cutoff_method": None,
         "pae_cutoff_method": "filter_on_pairwise_pae_in_region",
     },
-    "plddt_truncate": {
-        "max_pae": None,
-        "min_plddt": 70.0,
-        "plddt_cutoff_method": "truncate_at_first_low_plddt",
-        "pae_cutoff_method": None,
+    "pae_exclude_center": {
+        "max_pae": 15.0,
+        "min_plddt": None,
+        "plddt_cutoff_method": None,
+        "pae_cutoff_method": "exclude_on_pairwise_pae_with_center",
+    },
+    "pae_exclude_region": {
+        "max_pae": 15.0,
+        "min_plddt": None,
+        "plddt_cutoff_method": None,
+        "pae_cutoff_method": "exclude_on_pairwise_pae_in_region",
     },
     "plddt_remove": {
         "max_pae": None,
@@ -134,13 +140,36 @@ ALL_TESTS = {
         "plddt_cutoff_method": "exclude_low_plddt_from_stats",
         "pae_cutoff_method": "filter_on_pairwise_pae_in_region",
     },
+    "combined_pae_exclude_center_plddt_remove": {
+        "max_pae": 15.0,
+        "min_plddt": 70.0,
+        "plddt_cutoff_method": "remove_low_plddt_residues",
+        "pae_cutoff_method": "exclude_on_pairwise_pae_with_center",
+    },
+    "combined_pae_exclude_center_plddt_exclude": {
+        "max_pae": 15.0,
+        "min_plddt": 70.0,
+        "plddt_cutoff_method": "exclude_low_plddt_from_stats",
+        "pae_cutoff_method": "exclude_on_pairwise_pae_with_center",
+    },
+    "combined_pae_exclude_region_plddt_remove": {
+        "max_pae": 15.0,
+        "min_plddt": 70.0,
+        "plddt_cutoff_method": "remove_low_plddt_residues",
+        "pae_cutoff_method": "exclude_on_pairwise_pae_in_region",
+    },
+    "combined_pae_exclude_region_plddt_exclude": {
+        "max_pae": 15.0,
+        "min_plddt": 70.0,
+        "plddt_cutoff_method": "exclude_low_plddt_from_stats",
+        "pae_cutoff_method": "exclude_on_pairwise_pae_in_region",
+    },
 }
 
 # Define test groups.
 TEST_GROUPS = {
     "all": list(ALL_TESTS.keys()),
     "plddt_methods": [
-        "plddt_truncate",
         "plddt_remove",
         "plddt_exclude",
     ],
@@ -148,17 +177,23 @@ TEST_GROUPS = {
         "pae_truncate",
         "pae_filter_center",
         "pae_filter_region",
+        "pae_exclude_center",
+        "pae_exclude_region",
     ],
     "combined": [
         "combined_pae_region_plddt_remove",
         "combined_pae_truncate_plddt_exclude",
         "combined_pae_filter_center_plddt_exclude",
         "combined_pae_filter_region_plddt_exclude",
+        "combined_pae_exclude_center_plddt_remove",
+        "combined_pae_exclude_center_plddt_exclude",
+        "combined_pae_exclude_region_plddt_remove",
+        "combined_pae_exclude_region_plddt_exclude",
     ],
     "basic": [
         "no_filtering",
         "pae_truncate",
-        "plddt_truncate",
+        "plddt_remove",
     ],
 }
 
@@ -375,8 +410,8 @@ def create_test_data(local: bool = False):
     """Create small test datasets for testing PAE and pLDDT filtering parameters.
 
     This function creates minimal test datasets that can be used to verify:
-    - PAE cutoff methods (truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center, filter_on_pairwise_pae_in_region)
-    - pLDDT cutoff methods (truncate_at_first_low_plddt, remove_low_plddt_residues, exclude_low_plddt_from_stats)
+    - PAE cutoff methods (truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center, filter_on_pairwise_pae_in_region, exclude_on_pairwise_pae_with_center, exclude_on_pairwise_pae_in_region)
+    - pLDDT cutoff methods (remove_low_plddt_residues, exclude_low_plddt_from_stats)
 
     :param local: If True, write to local directory. If False, write to GCS.
     """

@@ -11,7 +11,7 @@ from gnomad_qc.resource_utils import (
 
 import gnomad_constraint.experimental.proemis3d.resources as proemis3d_res
 from gnomad_constraint.experimental.proemis3d.constants import MIN_EXP_MIS
-from gnomad_constraint.experimental.proemis3d.utils import (
+from gnomad_constraint.experimental.proemis3d.utils import (  # process_af2_structures,
     COLNAMES_TRANSLATIONS,
     convert_fasta_to_table,
     convert_gencode_transcripts_fasta_to_table,
@@ -24,7 +24,6 @@ from gnomad_constraint.experimental.proemis3d.utils import (
     generate_codon_oe_table,
     get_gencode_positions,
     join_by_sequence,
-    #process_af2_structures,
     remove_multi_frag_uniprots,
     run_forward,
     run_forward_no_catch_all,
@@ -267,11 +266,11 @@ def main(args):
         log="/proemis_3d.log",
         tmp_dir="gs://gnomad-tmp-4day",
     )
-    #from gnomad.resources.grch38.reference_data import vep_context
-    #ht = vep_context.ht()._filter_partitions(range(1))
-    #ht.count()
-    #hl.export_vcf(ht, "gs://gnomad-tmp-4day/vep_context_partition_1.vcf.bgz", tabix=True)
-    #return
+    # from gnomad.resources.grch38.reference_data import vep_context
+    # ht = vep_context.ht()._filter_partitions(range(1))
+    # ht.count()
+    # hl.export_vcf(ht, "gs://gnomad-tmp-4day/vep_context_partition_1.vcf.bgz", tabix=True)
+    # return
     version = args.version
     test = args.test
     overwrite = args.overwrite
@@ -310,7 +309,7 @@ def main(args):
         ht = ht.checkpoint(res.gencode_translation_ht.path, overwrite=overwrite)
         ht.show()
 
-    #if args.read_af2_sequences:
+    # if args.read_af2_sequences:
     #    logger.info(
     #        "Processing AlphaFold2 structures from a GCS bucket into a Hail Table."
     #    )
@@ -321,7 +320,7 @@ def main(args):
     #    ht = ht.checkpoint(res.af2_ht.path, overwrite=overwrite)
     #    ht.show()
 
-    #if args.compute_af2_distance_matrices:
+    # if args.compute_af2_distance_matrices:
     #    logger.info("Computing distance matrices for AlphaFold2 structures.")
     #    res = resources.compute_af2_distance_matrices
     #    res.check_resource_existence()
@@ -330,7 +329,7 @@ def main(args):
     #    ht = ht.checkpoint(res.af2_dist_ht.path, overwrite=overwrite)
     #    ht.show()
 
-    #if args.extract_af2_plddt:
+    # if args.extract_af2_plddt:
     #    logger.info("Extracting pLDDT scores from AlphaFold2 structures.")
     #    res = resources.extract_af2_plddt
     #    res.check_resource_existence()
@@ -339,7 +338,7 @@ def main(args):
     #    ht = ht.checkpoint(res.af2_plddt_ht.path, overwrite=overwrite)
     #    ht.show()
 
-    #if args.extract_af2_pae:
+    # if args.extract_af2_pae:
     #    logger.info("Extracting pAE scores from AlphaFold2 structures.")
     #    res = resources.extract_af2_pae
     #    res.check_resource_existence()
@@ -373,7 +372,11 @@ def main(args):
         ht = ht.checkpoint(res.gencode_pos_ht.path, overwrite=overwrite)
         ht.show()
 
-    if args.run_forward or args.run_forward_no_catch_all or args.run_forward_no_catch_all_standardized:
+    if (
+        args.run_forward
+        or args.run_forward_no_catch_all
+        or args.run_forward_no_catch_all_standardized
+    ):
         # if args.run_greedy or args.run_forward:
         # logger.info("Preparing to run greedy and/or forward algorithms.")
         # if args.run_greedy:
@@ -383,15 +386,29 @@ def main(args):
         #    res = resources.run_forward
         # res.check_resource_existence()
 
-        res = resources.run_forward
+        # res = resources.run_forward
 
         # Use new shuffle method for apply models to prevent shuffle errors.
-        hl._set_flags(use_new_shuffle="1")
+        # hl._set_flags(use_new_shuffle="1")
 
         # ht = res.obs_exp_ht.ht()
         # gencode_pos_ht = hl.read_table("gs://gnomad/v4.1/constraint/proemis3d/preprocessed_data/gencode_positions.ht")#res.gencode_pos_ht.ht()
         # af2_dist_ht = hl.read_table("gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_dist.ht") #res.af2_dist_ht.ht()
-        # test_transcripts = hl.set(["ENST00000644876", "ENST00000233146", "ENST00000371953", "ENST00000347132", "ENST00000357654"])
+        # genes_for_testing_ht = hl.import_table(
+        #    "gs://gnomad/v4.1/constraint/resources/gene_lists/tsv/genes_for_testing.txt"
+        # ).cache()
+        # test_transcripts = hl.set(genes_for_testing_ht.transcript_id.collect())
+        # test_transcripts = test_transcripts.union(
+        #    hl.set(
+        #        [
+        #            "ENST00000644876",
+        #            "ENST00000233146",
+        #            "ENST00000371953",
+        #            "ENST00000347132",
+        #            "ENST00000357654"
+        #        ]
+        #    )
+        # )
         # ht = ht.filter(test_transcripts.contains(ht.transcript))
         # gencode_pos_ht = gencode_pos_ht.filter(test_transcripts.contains(gencode_pos_ht.enst)).cache()
         # uniprot_ids = hl.set(gencode_pos_ht.aggregate(hl.agg.collect_as_set(gencode_pos_ht.uniprot_id)))
@@ -416,8 +433,8 @@ def main(args):
         #    )
         # elif version == "4.1":
         # ht = ht.group_by("locus", "transcript").aggregate(
-        #        obs=hl.agg.sum(ht.calibrate_mu.observed_variants[0]),
-        #        exp=hl.agg.sum(ht.expected_variants[0]),
+        #    obs=hl.agg.sum(ht.calibrate_mu.observed_variants[0]),
+        #    exp=hl.agg.sum(ht.expected_variants[0]),
         # )
         # else:
         #    raise ValueError(
@@ -425,29 +442,23 @@ def main(args):
         #    )
         # ht = generate_codon_oe_table(ht, gencode_pos_ht)
         # ht = ht.repartition(5000).checkpoint(hl.utils.new_temp_file("codon_oe", "ht"))
-        # ht = ht.repartition(1).checkpoint(
-        #    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/codon_oe.ht"
+        # ht = ht.repartition(200).checkpoint(
+        #    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/codon_oe.ht",
+        #    overwrite=True,
         # )
         # af2_ht = (
         #    af2_dist_ht
-        #    #.repartition(5000)
-        #    .repartition(50)
-        #    .repartition(1)
+        #    .repartition(200)
         #    .checkpoint(
-        #        "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/af2_dist.ht",
+        #        "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/af2_dist.ht",
         #        overwrite=True
         #    )
         # )
-        
-        
+
         af2_ht = hl.read_table(
             "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/af2_dist.ht"
         )
-        ###af2_ht = hl.read_table(
-        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/af2_dist.ht"
-        ###)
-        
-        
+
         # ht = determine_regions_with_min_oe_upper(
         #    af2_ht, ht, min_exp_mis=args.min_exp_mis
         # )
@@ -455,18 +466,10 @@ def main(args):
         # ht = ht.repartition(50).checkpoint(
         #    hl.utils.new_temp_file("sort_regions_by_oe", "ht")
         # )
-        # ht = hl.read_table("gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.ht")
-        # af2_ht = hl.read_table(
-        #    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/af2_dist.ht"
-        # )
-        
-        
+
         ht = hl.read_table(
             "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/codon_oe.ht"
         )
-        ###ht = hl.read_table(
-        ###    "gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/codon_oe.ht"
-        ###)
 
         plddt_out = ""
         plddt_ht_for_filtering = None
@@ -476,7 +479,7 @@ def main(args):
                 "gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_plddt.ht"
             )
             # print(plddt_ht.filter(plddt_ht.uniprot_id == "A0A024R2K8").collect())
-            
+
             # If plddt_cutoff_method is not specified, use old filtering approach
             if args.plddt_cutoff_method is None:
                 ht = ht.annotate(
@@ -491,7 +494,7 @@ def main(args):
             else:
                 # Use new pLDDT filtering method in get_3d_residue
                 plddt_ht_for_filtering = plddt_ht
-            
+
             # print(ht.filter(ht.uniprot_id == "A0A024R2K8").collect())
             plddt_out = f".plddt_cutoff_{args.plddt_cutoff}"
             # Add pLDDT cutoff method to output path if specified
@@ -504,7 +507,9 @@ def main(args):
             pae_ht = hl.read_table(
                 "gs://gnomad/v2.1.1/constraint/proemis3d/preprocessed_data/af2_pae.ht"
             )
-            pae_out = f".pae_cutoff_{args.pae_cutoff}.pae_method_{args.pae_cutoff_method}"
+            pae_out = (
+                f".pae_cutoff_{args.pae_cutoff}.pae_method_{args.pae_cutoff_method}"
+            )
 
         # if args.run_greedy:
         #    logger.info("Running greedy algorithm.")
@@ -528,26 +533,25 @@ def main(args):
             oe_upper_method="gamma",
             max_pae=args.pae_cutoff,
             pae_cutoff_method=args.pae_cutoff_method,
-            min_plddt=args.plddt_cutoff if args.plddt_cutoff_method is not None else None,
+            min_plddt=(
+                args.plddt_cutoff if args.plddt_cutoff_method is not None else None
+            ),
             plddt_cutoff_method=args.plddt_cutoff_method,
         )
 
-        
-        
-        
         ht = ht.repartition(200).checkpoint(
-            f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.{args.model_comparison_method}.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
-            #_read_if_exists=True,
+            f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/preprocessed_data/sort_regions_by_oe.{args.model_comparison_method}.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
+            # _read_if_exists=True,
             overwrite=True,
         )
-        ###ht = hl.read_table(
-        ###    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht"
-        ###)
-        ###ht = ht.repartition(1).checkpoint(
-        ###    f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
-        ###    _read_if_exists=True,
-        ###    # overwrite=True,
-        ###)
+        # ht = hl.read_table(
+        # f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht"
+        # )
+        # ht = ht.repartition(1).checkpoint(
+        # f"gs://gnomad/v4.1/constraint/proemis3d/test_gene_set_2_run/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
+        # _read_if_exists=True,
+        # overwrite=True,
+        # )
         ht.show(5)
 
         if args.run_forward:
@@ -667,13 +671,21 @@ def main(args):
         res.check_resource_existence()
 
         ht = create_missense_viewer_input_ht(
-            res.gencode_pos_ht.ht(), 
+            res.gencode_pos_ht.ht(),
             {
-                "gamma.aic": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.aic").ht(),
-                "gamma.aic_weight": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.aic_weight").ht(),
-                "gamma.lrt": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.lrt").ht(),
-                "gamma.aic.pae_15": proemis3d_res.get_forward_ht(name=f"oe_upper_gamma.pae_cutoff_15.0").ht(),
-            }
+                "gamma.aic": proemis3d_res.get_forward_ht(
+                    name=f"oe_upper_gamma.aic"
+                ).ht(),
+                "gamma.aic_weight": proemis3d_res.get_forward_ht(
+                    name=f"oe_upper_gamma.aic_weight"
+                ).ht(),
+                "gamma.lrt": proemis3d_res.get_forward_ht(
+                    name=f"oe_upper_gamma.lrt"
+                ).ht(),
+                "gamma.aic.pae_15": proemis3d_res.get_forward_ht(
+                    name=f"oe_upper_gamma.pae_cutoff_15.0"
+                ).ht(),
+            },
         )
         ht = ht.checkpoint(res.missense_viewer_input_ht.path, overwrite=overwrite)
         ht.show()
@@ -810,9 +822,8 @@ if __name__ == "__main__":
             "Strategy for handling residues with low pLDDT values. Options: "
             "'truncate_at_first_low_plddt' (remove all residues after first with "
             "low pLDDT), 'remove_low_plddt_residues' (remove only residues with "
-            "low pLDDT), 'mask_low_confidence_plddt' (mask low pLDDT residues "
-            "instead of removing them), 'exclude_low_plddt_from_stats' (keep low "
-            "pLDDT residues in regions but exclude from statistical calculations). "
+            "low pLDDT), 'exclude_low_plddt_from_stats' (keep low pLDDT residues "
+            "in regions but exclude from statistical calculations). "
             "Default is None (no pLDDT filtering in get_3d_residue, uses old "
             "filtering approach if --plddt-cutoff is specified)."
         ),
@@ -821,7 +832,6 @@ if __name__ == "__main__":
         choices=[
             "truncate_at_first_low_plddt",
             "remove_low_plddt_residues",
-            "mask_low_confidence_plddt",
             "exclude_low_plddt_from_stats",
         ],
     )
@@ -838,8 +848,10 @@ if __name__ == "__main__":
             "'truncate_on_pairwise_pae_with_center' (remove all residues after first with "
             "high PAE), 'filter_on_pairwise_pae_with_center' (remove only residues with "
             "high PAE), 'filter_on_pairwise_pae_in_region' (filter residues with high "
-            "pairwise PAE to any residue in region). Default is "
-            "'truncate_on_pairwise_pae_with_center'."
+            "pairwise PAE to any residue in region), 'exclude_on_pairwise_pae_with_center' (like filter "
+            "with center but keep residues and exclude from stats only), "
+            "'exclude_on_pairwise_pae_in_region' (like filter in region but keep residues and exclude "
+            "from stats only). Default is 'truncate_on_pairwise_pae_with_center'."
         ),
         type=str,
         default="truncate_on_pairwise_pae_with_center",
@@ -847,6 +859,8 @@ if __name__ == "__main__":
             "truncate_on_pairwise_pae_with_center",
             "filter_on_pairwise_pae_with_center",
             "filter_on_pairwise_pae_in_region",
+            "exclude_on_pairwise_pae_with_center",
+            "exclude_on_pairwise_pae_in_region",
             "remove_all_residues_after_first_over_cutoff",
             "remove_residues_after_first_high_pairwise_pae_with_current_residue",
             "remove_residues_with_high_pairwise_pae_with_current_residue",

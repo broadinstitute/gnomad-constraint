@@ -2,12 +2,14 @@
 Create small test datasets for testing PAE and pLDDT filtering parameters.
 
 This script creates minimal test datasets that can be used to verify:
-- PAE cutoff methods (truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center, filter_on_pairwise_pae_in_region)
+- PAE cutoff methods (truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center, filter_on_pairwise_pae_in_region, exclude_on_pairwise_pae_with_center, exclude_on_pairwise_pae_in_region)
 - pLDDT cutoff methods (truncate_at_first_low_plddt, remove_low_plddt_residues, exclude_low_plddt_from_stats)
 """
 
-import hail as hl
 import os
+import sys
+
+import hail as hl
 
 # Initialize Hail
 hl.init(tmp_dir="gs://gnomad-tmp-4day")
@@ -17,13 +19,14 @@ NUM_RESIDUES = 15  # Small protein with 15 residues
 TEST_UNIPROT_ID = "P12345"
 TEST_TRANSCRIPT_ID = "ENST00000123456"
 
+
 # Create distance matrix data
 # For each residue, create distances to all other residues
 # Structure: dist_mat is an array of structs with {dist: float32, residue_index: int32}
 # First, create a symmetric distance matrix
 def create_symmetric_dist_matrix(num_residues: int) -> dict:
     """Create a symmetric distance matrix where dist[i][j] = dist[j][i].
-    
+
     Self-distances (i==j) are always 0.0.
     """
     dist_matrix = {}
@@ -47,9 +50,10 @@ def create_symmetric_dist_matrix(num_residues: int) -> dict:
                 dist_matrix[i][j] = float(dist)
     return dist_matrix
 
+
 def create_dist_mat(num_residues: int, center_idx: int, dist_matrix: dict) -> list:
     """Create a distance matrix for a residue from the symmetric matrix.
-    
+
     Includes self-distance (0) and all other residues, in residue index order (not sorted).
     The distances are kept in their original order by residue_index.
     """
@@ -59,10 +63,14 @@ def create_dist_mat(num_residues: int, center_idx: int, dist_matrix: dict) -> li
         dist = dist_matrix[center_idx][i]
         # Verify self-distance is 0.0
         if i == center_idx and dist != 0.0:
-            raise ValueError(f"Self-distance for residue {center_idx} is {dist}, should be 0.0")
+            raise ValueError(
+                f"Self-distance for residue {center_idx} is {dist}, should be 0.0"
+            )
         # Verify non-self distances are > 0
         if i != center_idx and dist == 0.0:
-            raise ValueError(f"Non-self distance from {center_idx} to {i} is 0.0, should be > 0")
+            raise ValueError(
+                f"Non-self distance from {center_idx} to {i} is 0.0, should be > 0"
+            )
         dist_mat.append({"dist": float(dist), "residue_index": int(i)})
     # Do NOT sort - keep in residue index order
     return dist_mat
@@ -77,26 +85,35 @@ symmetric_dist_matrix = create_symmetric_dist_matrix(NUM_RESIDUES)
 af2_dicts = []
 for aa_idx in range(NUM_RESIDUES):
     dist_mat_list = create_dist_mat(NUM_RESIDUES, aa_idx, symmetric_dist_matrix)
-    af2_dicts.append({
-        "uniprot_id": TEST_UNIPROT_ID,
-        "aa_index": aa_idx,
-        "enst": TEST_TRANSCRIPT_ID,
-        "dist_mat": dist_mat_list,
-    })
+    af2_dicts.append(
+        {
+            "uniprot_id": TEST_UNIPROT_ID,
+            "aa_index": aa_idx,
+            "enst": TEST_TRANSCRIPT_ID,
+            "dist_mat": dist_mat_list,
+        }
+    )
 
 # Use hl.Table.parallelize to create from Python data
-af2_ht = hl.Table.parallelize([
-    hl.struct(
-        uniprot_id=d["uniprot_id"],
-        aa_index=d["aa_index"],
-        enst=d["enst"],
-        dist_mat=hl.array([
-            hl.struct(dist=hl.float32(x["dist"]), residue_index=hl.int32(x["residue_index"]))
-            for x in d["dist_mat"]
-        ])
-    )
-    for d in af2_dicts
-])
+af2_ht = hl.Table.parallelize(
+    [
+        hl.struct(
+            uniprot_id=d["uniprot_id"],
+            aa_index=d["aa_index"],
+            enst=d["enst"],
+            dist_mat=hl.array(
+                [
+                    hl.struct(
+                        dist=hl.float32(x["dist"]),
+                        residue_index=hl.int32(x["residue_index"]),
+                    )
+                    for x in d["dist_mat"]
+                ]
+            ),
+        )
+        for d in af2_dicts
+    ]
+)
 af2_ht = af2_ht.key_by("uniprot_id", "aa_index")
 
 # Create OE codon HT (Observed/Expected data)
@@ -109,29 +126,38 @@ for aa_idx in range(NUM_RESIDUES):
     # Some residues have low OE (constrained), some have high OE (tolerant)
     obs = 2 if aa_idx < 5 else 8  # First 5 residues are constrained
     exp = 10.0 + (aa_idx % 3) * 2.0
-    oe_array.append({
-        "obs": int(obs),
-        "exp": float(exp),
-    })
-
-# Structure: oe_by_transcript is array of {enst: str, oe: array<{obs: int64, exp: float64}>}
-oe_codon_ht = hl.Table.parallelize([
-    hl.struct(
-        uniprot_id=TEST_UNIPROT_ID,
-        oe_by_transcript=hl.array([
-            hl.struct(
-                enst=TEST_TRANSCRIPT_ID,
-                oe=hl.array([
-                    hl.struct(
-                        obs=hl.int64(oe_item["obs"]),
-                        exp=hl.float64(oe_item["exp"]),
-                    )
-                    for oe_item in oe_array
-                ])
-            )
-        ])
+    oe_array.append(
+        {
+            "obs": int(obs),
+            "exp": float(exp),
+        }
     )
-])
+
+# Structure: oe_by_transcript is array of {enst: str, oe: array<{obs:
+# int64, exp: float64}>}
+oe_codon_ht = hl.Table.parallelize(
+    [
+        hl.struct(
+            uniprot_id=TEST_UNIPROT_ID,
+            oe_by_transcript=hl.array(
+                [
+                    hl.struct(
+                        enst=TEST_TRANSCRIPT_ID,
+                        oe=hl.array(
+                            [
+                                hl.struct(
+                                    obs=hl.int64(oe_item["obs"]),
+                                    exp=hl.float64(oe_item["exp"]),
+                                )
+                                for oe_item in oe_array
+                            ]
+                        ),
+                    )
+                ]
+            ),
+        )
+    ]
+)
 oe_codon_ht = oe_codon_ht.key_by("uniprot_id")
 
 # Create PAE HT (Predicted Aligned Error data)
@@ -145,9 +171,10 @@ oe_codon_ht = oe_codon_ht.key_by("uniprot_id")
 # - Generally symmetric-ish (PAE[x][y] ≈ PAE[y][x] in many cases)
 # For testing: some residues will have high PAE (>15) to test filtering
 
+
 def create_pae_matrix(num_residues: int, dist_matrix: dict) -> dict:
     """Create a PAE matrix where PAE[i][j] is the error at residue i when aligned on residue j.
-    
+
     PAE should be:
     - Low (0-5) for residues close in sequence (likely same domain)
     - Medium (5-15) for residues at moderate sequence distance
@@ -163,31 +190,34 @@ def create_pae_matrix(num_residues: int, dist_matrix: dict) -> dict:
             else:
                 seq_dist = abs(i - j)
                 struct_dist = dist_matrix[i][j]
-                
+
                 # Base PAE increases with sequence distance (different domains)
                 # Residues far apart in sequence are more likely in different domains
                 base_pae = seq_dist * 0.8
-                
+
                 # Add 3D structure influence (but less than sequence distance)
                 # Residues far in 3D space also have higher PAE
-                struct_influence = (struct_dist - 5.0) * 0.1  # Scale 3D distance contribution
-                
+                struct_influence = (
+                    struct_dist - 5.0
+                ) * 0.1  # Scale 3D distance contribution
+
                 # Add some noise/variation
                 noise = ((i + j) % 7) * 0.3
-                
+
                 pae = base_pae + struct_influence + noise
-                
+
                 # Create test pattern: residues 0-4 have high PAE with residues 10-14
                 # (simulating different domains)
                 if (i < 5 and j >= 10) or (i >= 10 and j < 5):
                     pae = 20.0 + seq_dist * 0.5  # High PAE for cross-domain pairs
-                
+
                 # Ensure minimum PAE for non-self pairs
                 pae = max(1.0, pae)
-                
+
                 pae_matrix[i][j] = float(pae)
-    
+
     return pae_matrix
+
 
 # Create PAE matrix
 pae_matrix = create_pae_matrix(NUM_RESIDUES, symmetric_dist_matrix)
@@ -198,20 +228,24 @@ for aa_idx in range(NUM_RESIDUES):
     pae_array = []
     for other_idx in range(NUM_RESIDUES):
         pae_array.append(pae_matrix[aa_idx][other_idx])
-    pae_dicts.append({
-        "uniprot_id": TEST_UNIPROT_ID,
-        "aa_index": aa_idx,
-        "pae": pae_array,
-    })
-
-pae_ht = hl.Table.parallelize([
-    hl.struct(
-        uniprot_id=d["uniprot_id"],
-        aa_index=d["aa_index"],
-        pae=hl.array([hl.float32(x) for x in d["pae"]])
+    pae_dicts.append(
+        {
+            "uniprot_id": TEST_UNIPROT_ID,
+            "aa_index": aa_idx,
+            "pae": pae_array,
+        }
     )
-    for d in pae_dicts
-])
+
+pae_ht = hl.Table.parallelize(
+    [
+        hl.struct(
+            uniprot_id=d["uniprot_id"],
+            aa_index=d["aa_index"],
+            pae=hl.array([hl.float32(x) for x in d["pae"]]),
+        )
+        for d in pae_dicts
+    ]
+)
 pae_ht = pae_ht.key_by("uniprot_id", "aa_index")
 
 # Create pLDDT HT (per-residue confidence data)
@@ -226,25 +260,29 @@ for aa_idx in range(NUM_RESIDUES):
         plddt = 50.0 + (aa_idx % 3) * 5.0  # Low pLDDT (50-65)
     else:
         plddt = 80.0 + (aa_idx % 5) * 3.0  # High pLDDT (80-95)
-    plddt_dicts.append({
-        "uniprot_id": TEST_UNIPROT_ID,
-        "aa_index": aa_idx,
-        "plddt": float(plddt),
-    })
-
-plddt_ht = hl.Table.parallelize([
-    hl.struct(
-        uniprot_id=d["uniprot_id"],
-        aa_index=d["aa_index"],
-        plddt=hl.float32(d["plddt"])
+    plddt_dicts.append(
+        {
+            "uniprot_id": TEST_UNIPROT_ID,
+            "aa_index": aa_idx,
+            "plddt": float(plddt),
+        }
     )
-    for d in plddt_dicts
-])
+
+plddt_ht = hl.Table.parallelize(
+    [
+        hl.struct(
+            uniprot_id=d["uniprot_id"],
+            aa_index=d["aa_index"],
+            plddt=hl.float32(d["plddt"]),
+        )
+        for d in plddt_dicts
+    ]
+)
 plddt_ht = plddt_ht.key_by("uniprot_id", "aa_index")
 
 # Write test datasets
 # Use GCS path for cloud environments, or local path for local testing
-import sys
+
 if "--local" in sys.argv:
     output_dir = "test_data"
     os.makedirs(output_dir, exist_ok=True)
