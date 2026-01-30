@@ -20,9 +20,9 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `lof_hc_lc.oe_ci.lower`: Lower bound of 90% confidence interval (CI) for observed to expected (`oe`) ratio for high and low confidence pLoF variants
 - `lof_hc_lc.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for high and low confidence pLoF variants (lower values indicate more constrained)
 - `lof_hc_lc.oe_ci.upper_rank`: Transcript's rank of upper bound `oe` CI value for pLoF variants compared to other transcripts (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `lof_hc_lc.oe_ci.upper_bin_decile`: Decile bin of upper bound of 90% CI `oe` for pLoF variants for for given transcript (lower values indicate more constrained).  This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
+- `lof_hc_lc.oe_ci.upper_bin_decile`: Decile bin of upper bound of 90% CI `oe` for pLoF variants for given transcript (lower values indicate more constrained).  This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof_hc_lc.oe_ci.upper_bin_sextile`: Sextile bin of upper bound of 90% CI `oe` for pLoF variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `lof_hc_lc.z_score`: Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z scores indicate that the transcript is more intolerant of variation (more constrained)
+- `lof_hc_lc.z_score`: Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
 
 ## Loss-of-Function (High Confidence Only)
 
@@ -36,8 +36,8 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `lof.oe_ci.upper_rank`: Transcript's rank of LOEUF value compared to other transcripts (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof.oe_ci.upper_bin_decile`: Decile bin of LOEUF for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof.oe_ci.upper_bin_sextile`: Sextile bin of LOEUF for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `lof.z_score`: Z-score for pLoF variants in transcript. Higher (more positive) Z scores indicate that the transcript is more intolerant of variation (more constrained)
-- `pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% `oe` pLoF ratio;  computed from high confidence pLoF gnomAD data)
+- `lof.z_score`: Z-score for pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
+- `pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 - `pRec`: Probability that transcript falls into distribution of recessive genes (~71% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 - `pNull`: Probability that transcript falls into distribution of unconstrained genes (~100% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 
@@ -53,7 +53,7 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `mis.oe_ci.upper_rank`: Transcript's rank of upper bound `oe` CI value for missense variants compared to other transcripts (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `mis.oe_ci.upper_bin_decile`: Decile bin of upper bound `oe` CI for missense variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `mis.oe_ci.upper_bin_sextile`: Sextile bin of upper bound `oe` CI for missense variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `mis.z_score`: Z-score for missense variants in transcript. Higher (more positive) Z scores indicate that the transcript is more intolerant of variation (more constrained)
+- `mis.z_score`: Z-score for missense variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
 
 ## Synonymous
 
@@ -67,7 +67,7 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `syn.oe_ci.upper_rank`: Transcript's rank of upper bound `oe` CI value for synonymous variants compared to other transcripts (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `syn.oe_ci.upper_bin_decile`: Decile bin of upper bound `oe` CI for synonymous variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `syn.oe_ci.upper_bin_sextile`: Sextile bin of upper bound `oe` CI for synonymous variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `syn.z_score`: Z-score for synonymous variants in transcript. Higher (more positive) Z scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values of syn.z_score indicate likely data quality issues
+- `syn.z_score`: Z-score for synonymous variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values of syn.z_score indicate likely data quality issues.
 
 ## Constraint Flags
 
