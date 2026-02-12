@@ -749,6 +749,11 @@ def get_cumulative_oe(oe_expr):
     """
     Get the cumulative OE.
 
+    Each element at index i gets obs and exp set to the cumulative sum over
+    indices 0..i (so the region from the start up to and including that residue).
+    The first element (index 0) is given cumulative = its own obs/exp so that
+    every position has the same semantics for downstream min_exp_mis filtering.
+
     :param oe_expr: Array expression with observed and expected values.
     :return: Array expression with cumulative OE.
     """
@@ -763,7 +768,12 @@ def get_cumulative_oe(oe_expr):
                     obs=hl.or_else(i.obs, 0) + hl.or_else(j.obs, 0),
                     exp=hl.or_else(i.exp, 0.0) + hl.or_else(j.exp, 0.0),
                 ),
-                oe_expr[0],
+                # First element: use its own obs/exp as cumulative for the 1-residue prefix
+                # so every element has (cumulative_obs, cumulative_exp) semantics.
+                oe_expr[0].annotate(
+                    obs=hl.or_else(oe_expr[0].obs, 0),
+                    exp=hl.or_else(oe_expr[0].exp, 0.0),
+                ),
                 oe_expr[1:],
             )
         )
@@ -843,9 +853,15 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
     """
     Get the 3D residue with the lowest upper bound of the OE confidence interval.
 
-    :param oe_expr: Array expression with observed and expected values.
-    :param min_exp_mis: Minimum number of expected missense variants in a region to be
-        considered for constraint calculation. Default is None.
+    Expects oe_expr to have cumulative obs/exp (from get_cumulative_oe), so x.exp
+    at index i is the region total expected for residues 0..i. When min_exp_mis is set,
+    only positions with cumulative expected >= min_exp_mis are considered; the returned
+    region therefore has total expected >= min_exp_mis.
+
+    :param oe_expr: Array expression with cumulative observed and expected values.
+    :param min_exp_mis: Minimum total (cumulative) expected missense in a region to be
+        considered. Only regions with total expected >= min_exp_mis are candidates.
+        Default is None (no minimum).
     :return: Struct expression with the 3D residue with the lowest upper bound of the OE
         confidence interval.
     """
@@ -853,6 +869,8 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
     if min_exp_mis is None:
         filtered_oe_expr = oe_expr
     else:
+        # Only consider regions whose cumulative expected (region total) 
+        # is >= min_exp_mis.
         filtered_oe_expr = oe_expr.filter(lambda x: x.exp >= min_exp_mis)
         filtered_oe_expr = hl.or_missing(
             filtered_oe_expr.length() > 0, filtered_oe_expr
@@ -872,6 +890,250 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
     )
 
     return min_oe_upper_expr
+
+
+def _filter_dist_mat_remove_low_plddt(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    min_plddt: float,
+) -> hl.expr.ArrayExpression:
+    """
+    Filter dist_mat to residues with pLDDT >= min_plddt (or missing pLDDT).
+
+    :param dist_mat_expr: Array of structs with at least a `plddt` field.
+    :param min_plddt: Minimum pLDDT threshold; residues below are removed.
+    :return: Array with only residues passing the pLDDT filter.
+    """
+    return dist_mat_expr.filter(
+        lambda x: ~hl.is_defined(x.plddt) | (x.plddt >= min_plddt)
+    )
+
+
+def _annotate_dist_mat_exclude_low_plddt_from_stats(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    min_plddt: float,
+) -> hl.expr.ArrayExpression:
+    """
+    Annotate residues with pLDDT < min_plddt via exclude_from_stats and exclude_from_stats_plddt.
+
+    All residues are kept; low-pLDDT residues are marked for exclusion from stats only.
+
+    :param dist_mat_expr: Array of structs with at least a `plddt` field.
+    :param min_plddt: Minimum pLDDT threshold; residues below are marked excluded from stats.
+    :return: Array with each element annotated with exclude_from_stats and exclude_from_stats_plddt.
+    """
+    return dist_mat_expr.map(
+        lambda x: x.annotate(
+            exclude_from_stats=hl.is_defined(x.plddt) & (x.plddt < min_plddt),
+            exclude_from_stats_plddt=hl.is_defined(x.plddt) & (x.plddt < min_plddt),
+        )
+    )
+
+
+def _truncate_dist_mat_at_first_high_pae_with_center(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    max_pae: float,
+) -> hl.expr.ArrayExpression:
+    """
+    Truncate dist_mat at the first residue with PAE(center, neighbor) > max_pae.
+
+    :param dist_mat_expr: Array of structs with at least a `pae` field (center-to-residue PAE).
+    :param max_pae: Maximum PAE threshold; first residue above this truncates the array.
+    :return: Prefix of the array up to (excluding) the first high-PAE residue, or full array if none.
+    """
+    pae_cutoff_idx = hl.enumerate(dist_mat_expr).find(
+        lambda x: hl.is_defined(x[1].pae) & (x[1].pae > max_pae)
+    )
+    return hl.if_else(
+        hl.is_defined(pae_cutoff_idx),
+        dist_mat_expr[: pae_cutoff_idx[0]],
+        dist_mat_expr,
+    )
+
+
+def _filter_dist_mat_by_pae_with_center(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    max_pae: float,
+) -> hl.expr.ArrayExpression:
+    """
+    Filter dist_mat to residues with PAE(center, neighbor) <= max_pae (or missing PAE).
+
+    :param dist_mat_expr: Array of structs with at least a `pae` field (center-to-residue PAE).
+    :param max_pae: Maximum PAE threshold; residues above are removed.
+    :return: Array with only residues passing the PAE filter.
+    """
+    return dist_mat_expr.filter(
+        lambda x: ~hl.is_defined(x.pae) | (x.pae <= max_pae)
+    )
+
+
+def _annotate_dist_mat_exclude_pae_with_center(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    max_pae: float,
+) -> hl.expr.ArrayExpression:
+    """
+    Mark residues with PAE(center, neighbor) > max_pae via exclude_from_stats.
+
+    All residues are kept; high-PAE residues are marked for exclusion from stats (or ORed with
+    existing exclude_from_stats from e.g. pLDDT).
+
+    :param dist_mat_expr: Array of structs with at least a `pae` field; may have exclude_from_stats.
+    :param max_pae: Maximum PAE threshold; residues above are marked excluded from stats.
+    :return: Array with each element's exclude_from_stats set appropriately.
+    """
+    has_exclude = (
+        "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
+    )
+    return dist_mat_expr.map(
+        lambda x: x.annotate(
+            exclude_from_stats=(
+                hl.or_else(x.exclude_from_stats, False)
+                if has_exclude
+                else False
+            )
+            | (hl.is_defined(x.pae) & (x.pae > max_pae))
+        )
+    )
+
+
+def _residue_has_high_pae_to_region(
+    residue_expr: hl.expr.StructExpression,
+    region_array_expr: hl.expr.ArrayExpression,
+    max_pae: float,
+) -> hl.expr.BooleanExpression:
+    """
+    True if residue has PAE > max_pae to any element in region_array_expr.
+
+    Elements of region_array_expr must have a residue_index field (used to index
+    residue_expr.pae_array). Used by both filter and annotate PAE-in-region logic.
+    """
+    return hl.is_defined(residue_expr.pae_array) & hl.any(
+        region_array_expr.map(
+            lambda x: residue_expr.pae_array[x.residue_index] > max_pae
+        )
+    )
+
+
+def _filter_or_annotate_dist_mat_pae_in_region(
+    dist_mat_expr: hl.expr.ArrayExpression,
+    max_pae: float,
+    *,
+    debug: bool = False,
+    oe_expr: Optional[hl.expr.ArrayExpression] = None,
+    min_plddt: Optional[float] = None,
+    pae_cutoff_method: Optional[str] = None,
+    plddt_cutoff_method: Optional[str] = None,
+    center_residue_index_expr: Optional[hl.expr.Int32Expression] = None,
+    debug_min_max: Optional[dict] = None,
+    debug_outputs_by_residue: Optional[dict] = None,
+) -> hl.expr.ArrayExpression:
+    """
+    Apply PAE-in-region rule: exclude when PAE defined and > max_pae to any in-region residue.
+
+    When pae_cutoff_method is "filter_on_pairwise_pae_in_region": return only residues that pass.
+    When "exclude_on_pairwise_pae_in_region": keep all residues and set exclude_from_stats
+    (and optionally exclude_from_stats_plddt) on each; merge with existing exclude flags when present.
+
+    :param dist_mat_expr: Array of structs with residue_index and pae_array (pairwise PAE).
+    :param max_pae: Maximum PAE threshold.
+    :param pae_cutoff_method: One of filter_on_pairwise_pae_in_region, exclude_on_pairwise_pae_in_region; determines filter vs annotate.
+    :param debug: If True and debug kwargs provided, emit pae_matrix_before_filter debug output.
+    :param oe_expr: OE array; required when debug is True.
+    :param min_plddt: For debug output.
+    :param plddt_cutoff_method: For debug output.
+    :param center_residue_index_expr: Required when debug is True.
+    :param debug_min_max: For debug output.
+    :param debug_outputs_by_residue: Mutable dict for debug; optional.
+    :return: Array of residues (filter mode) or annotated residues (annotate mode).
+    :raises ValueError: If pae_array not in dist_mat element type.
+    """
+    if "pae_array" not in dist_mat_expr.dtype.element_type.fields:
+        raise ValueError("PAE array data is not available in dist_mat_expr!")
+
+    exclude_from_stats = pae_cutoff_method == "exclude_on_pairwise_pae_in_region"
+
+    if (
+        debug
+        and debug_outputs_by_residue is not None
+        and oe_expr is not None
+        and center_residue_index_expr is not None
+    ):
+        new_outputs = debug_get_3d_residue(
+            "pae_matrix_before_filter",
+            dist_mat_expr,
+            oe_expr,
+            max_pae,
+            min_plddt,
+            pae_cutoff_method,
+            plddt_cutoff_method,
+            center_residue_index_expr,
+            debug_min_max,
+            debug_outputs_by_residue,
+        )
+        if new_outputs:
+            for center_idx, step_outputs in new_outputs.items():
+                if center_idx not in debug_outputs_by_residue:
+                    debug_outputs_by_residue[center_idx] = {}
+                debug_outputs_by_residue[center_idx].update(step_outputs)
+
+    if not exclude_from_stats:
+        scanned = dist_mat_expr.scan(
+            lambda region, residue: hl.if_else(
+                _residue_has_high_pae_to_region(residue, region, max_pae),
+                region,
+                region.append(residue),
+            ),
+            hl.empty_array(dist_mat_expr.dtype.element_type),
+        )
+        return scanned[-1]
+
+    # Annotate mode: append every residue with exclude_from_stats (and optionally
+    # exclude_from_stats_plddt), merging with existing flags when present.
+    has_exclude_on_residue = (
+        "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
+    )
+    has_plddt_exclude = (
+        "exclude_from_stats_plddt" in dist_mat_expr.dtype.element_type.fields
+    )
+    element_type = dist_mat_expr.dtype.element_type
+    annotated_type = hl.tstruct(
+        **{
+            **{f: element_type[f] for f in element_type.fields},
+            "exclude_from_stats": hl.tbool,
+            **(
+                {"exclude_from_stats_plddt": hl.tbool}
+                if has_plddt_exclude
+                else {}
+            ),
+        }
+    )
+    scan_init = hl.empty_array(annotated_type)
+
+    def _scan_step(acc, residue):
+        in_region = acc.filter(lambda x: ~x.exclude_from_stats)
+        exclude_pae = _residue_has_high_pae_to_region(residue, in_region, max_pae)
+        if has_exclude_on_residue:
+            exclude_from_stats_val = exclude_pae | hl.or_else(
+                residue.exclude_from_stats, False
+            )
+        else:
+            exclude_from_stats_val = exclude_pae
+        
+        return acc.append(
+            residue.annotate(
+                exclude_from_stats=exclude_from_stats_val,
+                **(
+                    {
+                        "exclude_from_stats_plddt": hl.or_else(
+                            residue.exclude_from_stats_plddt, False
+                        )
+                    }
+                    if has_plddt_exclude
+                    else {}
+                ),
+            )
+        )
+
+    return dist_mat_expr.scan(_scan_step, scan_init)[-1]
 
 
 def get_3d_residue(
@@ -918,20 +1180,10 @@ def get_3d_residue(
         - "exclude_on_pairwise_pae_in_region": Like filter_on_pairwise_pae_in_region but residues with
           high pairwise PAE in region are kept and marked exclude_from_stats (NA in
           stats), not removed.
-        - "remove_all_residues_after_first_over_cutoff": Alias for
-          "truncate_on_pairwise_pae_with_center" (for backward compatibility).
-        - "remove_residues_after_first_high_pairwise_pae_with_current_residue": Alias for
-          "truncate_on_pairwise_pae_with_center" (for backward compatibility).
-        - "remove_residues_with_high_pairwise_pae_with_current_residue": Alias for
-          "filter_on_pairwise_pae_with_center" (for backward compatibility).
-        - "remove_residues_with_high_pairwise_pae_in_region": Alias for
-          "filter_on_pairwise_pae_in_region" (for backward compatibility).
         Default is "truncate_on_pairwise_pae_with_center".
     :param min_plddt: Minimum allowed pLDDT for including residues in the region.
         Default is None.
     :param plddt_cutoff_method: Strategy for handling residues with low pLDDT values. Options:
-        - "truncate_at_first_low_plddt": Remove all residues after the first one with
-          pLDDT < min_plddt (sequential cutoff).
         - "remove_low_plddt_residues": Remove only residues with pLDDT < min_plddt,
           keep others (filter individual residues).
         - "mask_low_confidence_plddt": Mask (set to missing) residues with pLDDT < min_plddt
@@ -957,8 +1209,7 @@ def get_3d_residue(
 
         debug_min_max = _debug_calculate_min_max_for_coloring(dist_mat_expr)
 
-    # Debug: Initial state (print UniProt/Transcript ID and OE table)
-    if debug:
+        # Debug: Initial state (print UniProt/Transcript ID and OE table)
         new_outputs = debug_get_3d_residue(
             "initial",
             dist_mat_expr,
@@ -978,8 +1229,7 @@ def get_3d_residue(
                     debug_outputs_by_residue[center_idx] = {}
                 debug_outputs_by_residue[center_idx].update(step_outputs)
 
-    # Debug: Show dist_mat_expr before sorting by nearest neighbor.
-    if debug:
+        # Debug: Show dist_mat_expr before sorting by nearest neighbor.
         new_outputs = debug_get_3d_residue(
             "before_sorting",
             dist_mat_expr,
@@ -1022,7 +1272,6 @@ def get_3d_residue(
                     debug_outputs_by_residue[center_idx] = {}
                 debug_outputs_by_residue[center_idx].update(step_outputs)
 
-    drop_fields = []
     # Apply pLDDT filtering FIRST (before PAE filtering)
     # This makes sense because pLDDT is a per-residue confidence score - if a residue
     # has low confidence, we should filter it out before doing pairwise PAE checks
@@ -1033,30 +1282,14 @@ def get_3d_residue(
         if not has_plddt_field:
             raise ValueError("pLDDT data is not available in dist_mat_expr!")
 
-        if plddt_cutoff_method == "truncate_at_first_low_plddt":
-            # Remove all residues after the first one with pLDDT < min_plddt
-            plddt_cutoff_idx = hl.enumerate(dist_mat_expr).find(
-                lambda x: hl.is_defined(x[1].plddt) & (x[1].plddt < min_plddt)
-            )
-            dist_mat_expr = hl.if_else(
-                hl.is_defined(plddt_cutoff_idx),
-                dist_mat_expr[: plddt_cutoff_idx[0]],
-                dist_mat_expr,
-            )
-
-        elif plddt_cutoff_method == "remove_low_plddt_residues":
-            # Remove only residues with pLDDT < min_plddt, keep others
-            dist_mat_expr = dist_mat_expr.filter(
-                lambda x: ~hl.is_defined(x.plddt) | (x.plddt >= min_plddt)
+        if plddt_cutoff_method == "remove_low_plddt_residues":
+            dist_mat_expr = _filter_dist_mat_remove_low_plddt(
+                dist_mat_expr, min_plddt
             )
 
         elif plddt_cutoff_method == "exclude_low_plddt_from_stats":
-            # Keep all residues but mark low confidence ones to exclude from stats
-            # Mark residues with exclude_from_stats flag but keep them in the array
-            dist_mat_expr = dist_mat_expr.map(
-                lambda x: x.annotate(
-                    exclude_from_stats=hl.is_defined(x.plddt) & (x.plddt < min_plddt)
-                )
+            dist_mat_expr = _annotate_dist_mat_exclude_low_plddt_from_stats(
+                dist_mat_expr, min_plddt
             )
 
         else:
@@ -1076,197 +1309,74 @@ def get_3d_residue(
             raise ValueError("PAE data is not available in dist_mat_expr!")
 
         if pae_cutoff_method == "truncate_on_pairwise_pae_with_center":
-            # Find first neighbor where PAE(center, neighbor) > max_pae
-            # Each residue has a 'pae' field which is PAE from center to that residue
-            pae_cutoff_idx = hl.enumerate(dist_mat_expr).find(
-                lambda x: hl.is_defined(x[1].pae) & (x[1].pae > max_pae)
-            )
-            dist_mat_expr = hl.if_else(
-                hl.is_defined(pae_cutoff_idx),
-                dist_mat_expr[: pae_cutoff_idx[0]],
-                dist_mat_expr,
+            dist_mat_expr = _truncate_dist_mat_at_first_high_pae_with_center(
+                dist_mat_expr, max_pae
             )
         elif pae_cutoff_method == "filter_on_pairwise_pae_with_center":
-            # Keep only neighbors with PAE(center, neighbor) <= max_pae
-            # Each residue has a 'pae' field which is PAE from center to that residue
-            dist_mat_expr = dist_mat_expr.filter(
-                lambda x: ~hl.is_defined(x.pae) | (x.pae <= max_pae)
+            dist_mat_expr = _filter_dist_mat_by_pae_with_center(
+                dist_mat_expr, max_pae
             )
         elif pae_cutoff_method == "exclude_on_pairwise_pae_with_center":
-            # Like filter_on_pairwise_pae_with_center but keep all residues and set
-            # exclude_from_stats for those with PAE(center, neighbor) > max_pae
-            has_exclude = (
-                "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
+            dist_mat_expr = _annotate_dist_mat_exclude_pae_with_center(
+                dist_mat_expr, max_pae
             )
-            dist_mat_expr = dist_mat_expr.map(
-                lambda x: x.annotate(
-                    exclude_from_stats=(
-                        hl.or_else(x.exclude_from_stats, False)
-                        if has_exclude
-                        else False
-                    )
-                    | (hl.is_defined(x.pae) & (x.pae > max_pae))
-                )
+        elif pae_cutoff_method in (
+            "filter_on_pairwise_pae_in_region",
+            "exclude_on_pairwise_pae_in_region",
+        ):
+            dist_mat_expr = _filter_or_annotate_dist_mat_pae_in_region(
+                dist_mat_expr,
+                max_pae,
+                debug=debug,
+                oe_expr=oe_expr,
+                min_plddt=min_plddt,
+                pae_cutoff_method=pae_cutoff_method,
+                plddt_cutoff_method=plddt_cutoff_method,
+                center_residue_index_expr=center_residue_index_expr,
+                debug_min_max=debug_min_max,
+                debug_outputs_by_residue=debug_outputs_by_residue,
             )
-        elif pae_cutoff_method == "filter_on_pairwise_pae_in_region":
-            # Debug: Show PAE matrix before filtering (pLDDT filtering has already
-            # been applied)
-            if debug:
-                new_outputs = debug_get_3d_residue(
-                    "pae_matrix_before_filter",
-                    dist_mat_expr,
-                    oe_expr,
-                    max_pae,
-                    min_plddt,
-                    pae_cutoff_method,
-                    plddt_cutoff_method,
-                    center_residue_index_expr,
-                    debug_min_max,
-                    debug_outputs_by_residue,
-                )
-                if new_outputs:
-                    # Merge new outputs into existing dict
-                    for center_idx, step_outputs in new_outputs.items():
-                        if center_idx not in debug_outputs_by_residue:
-                            debug_outputs_by_residue[center_idx] = {}
-                        debug_outputs_by_residue[center_idx].update(step_outputs)
-
-            # Build region by scanning: for each residue, check if its PAE to any residue
-            # already in the region exceeds max_pae. If not, add it to the region.
-            # Note: pLDDT filtering has already been applied, so we're only considering
-            # high-confidence residues (or all residues if exclude_low_plddt_from_stats was used)
-            # Check if pae_array field exists (for pairwise PAE)
-            has_pae_array_field = "pae_array" in dist_mat_expr.dtype.element_type.fields
-            if not has_pae_array_field:
-                raise ValueError("PAE array data is not available in dist_mat_expr!")
-            # Check PAE from new residue to each residue in region
-            # residue.pae_array[x.residue_index] gives PAE from residue to x
-            # Logic: add residue if (pae_array is None) OR (NOT any(PAE > max_pae to residues in region))
-            # This means: add if pae_array is None OR if all PAE values to residues in
-            # region are <= max_pae
-            dist_mat_expr = dist_mat_expr.scan(
-                lambda region, residue: hl.if_else(
-                    (residue.pae_array is None)
-                    | ~hl.any(
-                        region.map(
-                            lambda x: hl.is_defined(residue.pae_array)
-                            & (residue.pae_array[x.residue_index] > max_pae)
-                        )
-                    ),
-                    region.append(residue),
-                    region,
-                ),
-                hl.empty_array(dist_mat_expr.dtype.element_type),
-            )
-
-            # Get the final region (last element of the scan result)
-            dist_mat_expr = dist_mat_expr[-1]
-
-        elif pae_cutoff_method == "exclude_on_pairwise_pae_in_region":
-            # Like filter_on_pairwise_pae_in_region but keep all residues and set
-            # exclude_from_stats for those that would have been excluded (high PAE
-            # to any residue already in the passing set)
-            if debug:
-                new_outputs = debug_get_3d_residue(
-                    "pae_matrix_before_filter",
-                    dist_mat_expr,
-                    oe_expr,
-                    max_pae,
-                    min_plddt,
-                    pae_cutoff_method,
-                    plddt_cutoff_method,
-                    center_residue_index_expr,
-                    debug_min_max,
-                    debug_outputs_by_residue,
-                )
-                if new_outputs:
-                    for center_idx, step_outputs in new_outputs.items():
-                        if center_idx not in debug_outputs_by_residue:
-                            debug_outputs_by_residue[center_idx] = {}
-                        debug_outputs_by_residue[center_idx].update(step_outputs)
-
-            has_pae_array_field = "pae_array" in dist_mat_expr.dtype.element_type.fields
-            if not has_pae_array_field:
-                raise ValueError("PAE array data is not available in dist_mat_expr!")
-
-            scan_element_type = hl.tstruct(
-                residue=dist_mat_expr.dtype.element_type,
-                exclude_from_stats=hl.tbool,
-            )
-            scan_init = hl.empty_array(scan_element_type)
-            scan_result = dist_mat_expr.scan(
-                lambda acc, residue: (
-                    acc.append(
-                        hl.struct(
-                            residue=residue,
-                            exclude_from_stats=~(
-                                (residue.pae_array is None)
-                                | ~hl.any(
-                                    acc.filter(lambda x: ~x.exclude_from_stats).map(
-                                        lambda x: hl.is_defined(residue.pae_array)
-                                        & (
-                                            residue.pae_array[x.residue.residue_index]
-                                            > max_pae
-                                        )
-                                    )
-                                )
-                            ),
-                        )
-                    )
-                ),
-                scan_init,
-            )
-            # Last element of scan is the full list of (residue, exclude_from_stats)
-            final_list = scan_result[-1]
-            has_exclude_on_residue = (
-                "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
-            )
-            if has_exclude_on_residue:
-                dist_mat_expr = final_list.map(
-                    lambda x: x.residue.annotate(
-                        exclude_from_stats=x.exclude_from_stats
-                        | hl.or_else(x.residue.exclude_from_stats, False)
-                    )
-                )
-            else:
-                dist_mat_expr = final_list.map(
-                    lambda x: x.residue.annotate(
-                        exclude_from_stats=x.exclude_from_stats
-                    )
-                )
 
         else:
             raise ValueError(f"Unknown pae_cutoff_method: {pae_cutoff_method}")
 
-    # Save excluded_residues dict before dropping fields (if exclude_from_stats exists)
-    excluded_residues_dict_expr = None
+    # Attach per-residue obs/exp (from the OE array) to each dist_mat element for
+    # cumulative OE and OE upper calculations.
+    oe_expr = dist_mat_expr.map(lambda x: x.annotate(oe=oe_expr[x.residue_index]))
+
+    # Residues to exclude from candidate-region stats (pLDDT + PAE). Passed as
+    # excluded_residues_region. When present, we also mask oe to missing for excluded
+    # residues so they do not contribute to cumulative obs/exp or OE upper here.
+    excluded_residues_region_dict_expr = None
     if "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields:
-        # Create a dict mapping residue_index to exclude_from_stats flag
-        # Only include residues that are actually excluded (exclude_from_stats == True)
-        excluded_residues_dict_expr = hl.dict(
+        excluded_residues_region_dict_expr = hl.set(
             dist_mat_expr.filter(lambda x: x.exclude_from_stats).map(
-                lambda x: (x.residue_index, hl.bool(True))
+                lambda x: x.residue_index
             )
         )
-
-    dist_mat_expr = dist_mat_expr.map(lambda x: x.drop(*drop_fields))
-
-    # Annotate neighbor observed and expected, cumulative observed and expected, and
-    # upper bound of OE confidence interval.
-    if "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields:
-        oe_expr = dist_mat_expr.map(
-            lambda x: x.annotate(
-                **hl.or_missing(~x.exclude_from_stats, oe_expr[x.residue_index])
-            )
+        oe_expr = oe_expr.map(
+            lambda x: x.annotate(oe=hl.or_missing(~x.exclude_from_stats, x.oe))
         )
-    else:
-        oe_expr = dist_mat_expr.map(lambda x: x.annotate(**oe_expr[x.residue_index]))
 
+    # Flatten oe (obs, exp) onto the struct, then compute cumulative obs/exp and OE
+    # upper.
+    oe_expr = oe_expr.map(lambda x: x.drop("oe").annotate(**x.oe))
     oe_expr = get_cumulative_oe(oe_expr)
     oe_expr = calculate_oe_upper(oe_expr, alpha=alpha, oe_upper_method=oe_upper_method)
 
-    # Debug: Show OE calculations after calculate_oe_upper
+    # Get the 3D region with the lowest upper bound of the OE confidence interval for
+    # each residue.
+    min_moeuf_expr = get_min_oe_upper(oe_expr, min_exp_mis=min_exp_mis)
+
+    # Attach per-center exclusion dict (pLDDT + PAE) for run_forward.
+    # (pLDDT-only excluded_residues is now a row-level field, not per element.)
+    if excluded_residues_region_dict_expr is not None:
+        min_moeuf_expr = min_moeuf_expr.annotate(
+            excluded_residues_region=excluded_residues_region_dict_expr
+        )
+    
     if debug:
+        # Debug: Show OE calculations after calculate_oe_upper.
         new_outputs = debug_get_3d_residue(
             "after_calculate_oe_upper",
             dist_mat_expr,
@@ -1279,16 +1389,16 @@ def get_3d_residue(
             debug_min_max,
             debug_outputs_by_residue,
             oe_expr_after_calc=oe_expr,
+            min_exp_mis=min_exp_mis,
         )
         if new_outputs:
-            # Merge new outputs into existing dict
+            # Merge new outputs into existing dict.
             for center_idx, step_outputs in new_outputs.items():
                 if center_idx not in debug_outputs_by_residue:
                     debug_outputs_by_residue[center_idx] = {}
                 debug_outputs_by_residue[center_idx].update(step_outputs)
 
-    # Debug: Print all debug outputs grouped by residue
-    if debug:
+        # Debug: Print all debug outputs grouped by residue.
         result = debug_get_3d_residue(
             "final",
             dist_mat_expr,
@@ -1302,17 +1412,6 @@ def get_3d_residue(
             debug_outputs_by_residue,
         )
 
-    # Get the 3D region with the lowest upper bound of the OE confidence interval for
-    # each residue.
-    min_moeuf_expr = get_min_oe_upper(oe_expr, min_exp_mis=min_exp_mis)
-
-    # If excluded_residues dict was created, add it to the return value
-    if excluded_residues_dict_expr is not None:
-        min_moeuf_expr = min_moeuf_expr.annotate(
-            excluded_residues=excluded_residues_dict_expr
-        )
-
-    if debug:
         return min_moeuf_expr, result
 
     return min_moeuf_expr
@@ -1361,8 +1460,6 @@ def determine_regions_with_min_oe_upper(
     :param min_plddt: Minimum allowed pLDDT for including residues in the region.
         Default is None.
     :param plddt_cutoff_method: Strategy for handling residues with low pLDDT values. Options:
-        - "truncate_at_first_low_plddt": Remove all residues after the first one with
-          pLDDT < min_plddt (sequential cutoff).
         - "remove_low_plddt_residues": Remove only residues with pLDDT < min_plddt,
           keep others (filter individual residues).
         - "mask_low_confidence_plddt": Mask (set to missing) residues with pLDDT < min_plddt
@@ -1455,6 +1552,19 @@ def determine_regions_with_min_oe_upper(
             )
 
     ht = af2_ht.annotate(**ann_expr)
+
+    # Compute pLDDT exclusion dict once per row from the FULL dist_mat (all residues),
+    # before get_3d_residue applies per-center PAE truncation that could drop some.
+    # This ensures the null model excludes all low-pLDDT residues regardless of center.
+    if plddt_cutoff_method == "exclude_low_plddt_from_stats" and min_plddt is not None:
+        ht = ht.annotate(
+            excluded_residues=hl.set(
+                ht.dist_mat.filter(
+                    lambda x: hl.is_defined(x.plddt) & (x.plddt < min_plddt)
+                ).map(lambda x: x.residue_index)
+            )
+        )
+
     ht = ht.explode(ht.oe)
     # After explode, ht.oe is a struct with 'enst' and 'oe' (array)
     # Unpack the struct fields - this adds 'enst' and 'oe' (array) as top-level fields
@@ -1482,6 +1592,7 @@ def determine_regions_with_min_oe_upper(
 
     ht = ht.annotate(transcript_id=ht.enst, min_oe_upper=min_oe_upper_expr).drop("enst")
 
+    _has_excluded_res = "excluded_residues" in ht.row
     ht = ht.group_by("uniprot_id", "transcript_id").aggregate(
         oe=hl.agg.take(ht.oe, 1)[0],
         min_oe_upper=hl.agg.filter(
@@ -1490,6 +1601,9 @@ def determine_regions_with_min_oe_upper(
                 ht.min_oe_upper.annotate(residue_index=ht.aa_index).drop("dist")
             ),
         ),
+        # excluded_residues is pLDDT-only and identical across centers; take one copy.
+        **({"excluded_residues": hl.agg.take(ht.excluded_residues, 1)[0]}
+           if _has_excluded_res else {}),
     )
     # TODO: minimize on oe or oe_upper?
     ht = ht.annotate(
@@ -1497,31 +1611,32 @@ def determine_regions_with_min_oe_upper(
         min_oe_upper=hl.sorted(ht.min_oe_upper, key=lambda x: x.oe),
     )
 
-    # Compute valid_residues: the union of all residues from all candidate regions
-    # across all center residues. This represents residues that passed all filtering
-    # (pLDDT, PAE) and should be included in the null model.
+    # Compute valid_residues: residues that can receive region_index / obs / exp / is_null
+    # in the forward output (either in a selected region or in the null model).
     #
-    # Note: Since PAE is a matrix and filtering is center-specific, a residue excluded
-    # from candidate regions for one center may still be included for another center.
-    # Therefore, valid_residues includes any residue that appears in at least one
-    # candidate region from any center.
+    # We use only residues that appear in at least one candidate region (min_oe_upper.region).
+    # Residues that were hard-filtered (remove_low_plddt_residues,
+    # or PAE truncate/filter that removes them entirely) never appear in any candidate region,
+    # so they are excluded from valid_residues. That yields fewer rows in the forward output
+    # and a non-zero "% Assigned missing" when comparing to the unfiltered run.
     #
-    # Residues that were hard-filtered (e.g., by truncate_at_first_low_plddt or
-    # remove_low_plddt_residues) won't appear in any candidate region and thus won't
-    # appear here.
+    # Residues kept by exclude_* methods (exclude_low_plddt_from_stats, exclude_on_pairwise_pae_*)
+    # remain in the region (with exclude_from_stats), so they are annotated as 
+    # valid_residues on the HT.
     #
-    # Note: hl.array() on a set returns a sorted array.
-    ht = ht.annotate(
-        valid_residues=hl.array(hl.set(ht.min_oe_upper.flatmap(lambda x: x.region)))
-    )
-
     # For each candidate region, compute the null_region (residues remaining if this
     # candidate is selected). This is: valid_residues - candidate_region
+    valid_residues_expr = hl.array(
+        ht.min_oe_upper.aggregate(
+            lambda x: hl.agg.explode(lambda r: hl.agg.collect_as_set(r), x.region)
+        )
+    )
     ht = ht.annotate(
+        valid_residues=valid_residues_expr,
         min_oe_upper=ht.min_oe_upper.map(
             lambda x: x.annotate(
                 null_region=hl.array(
-                    hl.set(ht.valid_residues).difference(hl.set(x.region))
+                    hl.set(valid_residues_expr).difference(hl.set(x.region))
                 )
             )
         )
@@ -1681,19 +1796,15 @@ def prep_region_struct(region_expr, oe_expr, excluded_residues=None):
 
     :param region_expr: Region expression.
     :param oe_expr: OE expression.
-    :param excluded_residues: Optional dict mapping residue_index to exclude_from_stats flag.
+    :param excluded_residues: Optional set of residue indices to exclude from stats.
         If provided, excluded residues will be filtered out from statistical calculations.
     :return: Region struct expression.
     """
-    # Filter out excluded residues from stats if excluded_residues dict is provided
-    # We need to filter region_expr first, then annotate with OE
+    # Filter out excluded residues from stats if excluded_residues set is provided.
+    # We need to filter region_expr first, then annotate with OE.
     if excluded_residues is not None:
         region_expr_for_stats = region_expr.filter(
-            lambda res_idx: hl.if_else(
-                hl.is_defined(excluded_residues.get(res_idx)),
-                ~excluded_residues.get(res_idx),  # If in dict, exclude if True
-                True,  # If not in dict, include it
-            )
+            lambda res_idx: ~excluded_residues.contains(res_idx)
         )
     else:
         region_expr_for_stats = region_expr
@@ -1736,6 +1847,7 @@ def run_forward(
     bonferroni_per_round: bool = True,
     aic_weight_thresh: float = 0.80,
     debug: bool = False,
+    n_partitions: int = 2000,
 ):
     """
     Run the forward algorithm to find the most intolerant region.
@@ -1759,6 +1871,8 @@ def run_forward(
     :param bonferroni_per_round: Whether to adjust the alpha level by the number of
         candidates scanned this round. Default is True.
     :param aic_weight_thresh: Threshold for the Akaike weight. Default is 0.80.
+    :param n_partitions: Number of partitions for repartitioning after explode (default 200).
+        Use 1 for small test runs to avoid overhead.
     :return: Hail Table annotated with the observed and expected values for each residue.
     """
     if oe_upper_method not in ["gamma", "chisq"]:
@@ -1773,29 +1887,43 @@ def run_forward(
     # Use valid_residues from determine_regions_with_min_oe_upper if available,
     # otherwise compute from union of all residues in candidate regions.
     # This excludes residues that were hard-filtered (completely removed) by
-    # pLDDT methods (truncate_at_first_low_plddt, remove_low_plddt_residues) or
-    # PAE methods.
+    # pLDDT or PAE filtering.
     if "valid_residues" in ht.row:
         null_region = ht.valid_residues
     else:
-        # Fallback: compute from union of all regions
-        # Note: hl.array() on a set returns a sorted array
-        null_region = hl.array(hl.set(ht.min_oe_upper.flatmap(lambda x: x.region)))
+        # Fallback: compute from union of all regions.
+        null_region = hl.array(ht.min_oe_upper.flatmap(lambda x: hl.set(x.region)))
 
-    # Get excluded_residues dict if present (for pLDDT soft-exclusion method:
-    # exclude_low_plddt_from_stats). These residues remain in regions for assignment
-    # but are excluded from statistical calculations.
-    has_excluded_res = "excluded_residues" in ht.min_oe_upper.dtype.element_type.fields
-    excluded_residues_global = None
-    if has_excluded_res:
-        # Get excluded_residues from first region (should be same for all)
-        excluded_residues_global = ht.min_oe_upper[0].excluded_residues
+    # excluded_residues = for null model (pLDDT-only), stored once per row.
+    # excluded_residues_region = for candidate region stats (pLDDT + PAE), per element.
+    has_excluded_res = "excluded_residues" in ht.row
+    has_excluded_res_region = (
+        "excluded_residues_region" in ht.min_oe_upper.dtype.element_type.fields
+    )
 
     null_model = prep_region_struct(
-        null_region, ht.oe, excluded_residues=excluded_residues_global
+        null_region, 
+        ht.oe, 
+        excluded_residues=ht.excluded_residues if has_excluded_res else None,
     )
     null_region_length = null_region.length()
 
+    extra_region_fields = []
+    if has_excluded_res_region:
+        extra_region_fields.append("excluded_residues_region")
+   
+    # excluded_residues is row-level only (not on each region struct).
+    # Table of all residues with per-residue obs/exp (for final output: all residues,
+    # NA if unassigned).
+    all_residues_ht = ht.select(
+        oe_indexed=add_idx_to_array(ht.oe, "residue_index")
+    ).explode("oe_indexed")
+    all_residues_ht = all_residues_ht.transmute(
+        residue_index=all_residues_ht.oe_indexed.residue_index,
+        residue_obs=all_residues_ht.oe_indexed.obs,
+        residue_exp=all_residues_ht.oe_indexed.exp,
+    ).key_by("uniprot_id", "transcript_id", "residue_index")
+   
     ht = ht.select(
         "oe",
         num_residues=num_residues,
@@ -1806,7 +1934,7 @@ def run_forward(
                 lambda x: x.select(
                     "region",
                     "residue_index",
-                    *["excluded_residues"] if has_excluded_res else [],
+                    *extra_region_fields,
                 )
             ).filter(lambda x: x.region.length() < null_region_length)
         ),
@@ -1814,22 +1942,27 @@ def run_forward(
         selected_nll=0.0,
         best_aic=getAIC(null_model, null_model.nll),
         found_best=False,
+        **({"excluded_residues": ht.excluded_residues} if has_excluded_res else {}),
     )
 
     ht = ht.explode("regions")
+    region_idx_expr = ht.regions[0]
+    region_expr = ht.regions[1]
+    transmute_extra = {}
+    if has_excluded_res_region:
+        transmute_extra["excluded_residues_region"] = region_expr.get(
+            "excluded_residues_region"
+        )
+    # excluded_residues stays as row-level (retained from select), not from region 
+    # struct.
     ht = ht.transmute(
-        idx=ht.regions[0],
-        region=ht.regions[1].region,
-        center_residue_index=ht.regions[1].residue_index,
-        **(
-            {"excluded_residues": ht.regions[1].get("excluded_residues")}
-            if has_excluded_res
-            else {}
-        ),
+        idx=region_idx_expr,
+        region=region_expr.region,
+        center_residue_index=region_expr.residue_index,
+        **transmute_extra,
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "idx")
-    ht = ht.repartition(200, shuffle=True)  # ht = ht.repartition(50, shuffle=True)
-    # ht = ht.repartition(1, shuffle=True)
+    ht = ht.repartition(n_partitions, shuffle=True)
     ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_explode", "ht"))
 
     # Collect debug output to print at the end
@@ -1840,10 +1973,16 @@ def run_forward(
         # For each region in regions, update the list of selected by
         # removing the residues in the region from the "catch all remaining"
         # region, and adding the new region to the selected list.
+        # Candidate region: use full exclusions (pLDDT + PAE) when available.
+        region_excluded = (
+            ht.excluded_residues_region
+            if has_excluded_res_region
+            else (ht.excluded_residues if has_excluded_res else None)
+        )
         region_expr = prep_region_struct(
             ht.region,
             ht.oe,
-            excluded_residues=(ht.excluded_residues if has_excluded_res else None),
+            excluded_residues=region_excluded,
         )
         ht = ht.annotate(_region=region_expr).checkpoint(
             hl.utils.new_temp_file(f"forward_round_{round_num}.prep1", "ht")
@@ -1970,8 +2109,14 @@ def run_forward(
             hl.utils.new_temp_file(f"forward_round_{round_num}.scan3", "ht")
         )
 
-        best_region = ht2[ht.uniprot_id, ht.transcript_id].best_region
-        m_candidates = hl.or_else(ht2[ht.uniprot_id, ht.transcript_id].m_candidates, 1)
+        # Look up the best candidate for this (uniprot_id, transcript_id).
+        _ht2_row = ht2[ht.uniprot_id, ht.transcript_id]
+        ht = ht.annotate(
+            best_region=_ht2_row.best_region,
+            m_candidates=_ht2_row.m_candidates,
+        )
+        best_region = ht.best_region
+        m_candidates = hl.or_else(ht.m_candidates, 1)
 
         if debug:
             new_outputs = debug_run_forward(
@@ -2074,6 +2219,7 @@ def run_forward(
         # Keep only rows that still have remaining candidate regions or the idx==0.
         ht = ht.filter(hl.is_defined(ht.region) | (ht.idx == 0))
 
+        ht = ht.drop("best_region", "m_candidates")
         ht = ht.checkpoint(hl.utils.new_temp_file(f"forward_round_{round_num}", "ht"))
 
         if debug:
@@ -2097,12 +2243,14 @@ def run_forward(
     ht = ht.select(
         selected=add_idx_to_array(
             selected_expr.append(ht.null_model.annotate(is_null=True)), "region_index"
-        )
+        ),
     )
     ht = ht.explode("selected")
-    ht = ht.select(**ht.selected)
+    ht = ht.annotate(**ht.selected).drop("selected")
     ht = ht.annotate(region_length=hl.len(ht.region))
     ht = ht.explode("region")
+    
+    # obs, exp, oe, oe_upper are region-level (same for every residue in that region).
     chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
     ht = ht.annotate(
         residue_index=ht.region,
@@ -2112,6 +2260,22 @@ def run_forward(
     )
     ht = ht.key_by("uniprot_id", "transcript_id", "residue_index").select(
         "region_index", "obs", "exp", "oe", "oe_upper", "chisq", "p_value", "is_null"
+    )
+
+    # Left-join so all residues appear; unassigned residues get NA for region-level 
+    # fields.
+    ht = all_residues_ht.join(ht, how="left")
+    ht = ht.select(
+        "region_index",
+        "obs",
+        "exp",
+        "oe",
+        "oe_upper",
+        "chisq",
+        "p_value",
+        "is_null",
+        "residue_obs",
+        "residue_exp",
     )
 
     if debug:

@@ -3,7 +3,7 @@ Create small test datasets for testing PAE and pLDDT filtering parameters.
 
 This script creates minimal test datasets that can be used to verify:
 - PAE cutoff methods (truncate_on_pairwise_pae_with_center, filter_on_pairwise_pae_with_center, filter_on_pairwise_pae_in_region, exclude_on_pairwise_pae_with_center, exclude_on_pairwise_pae_in_region)
-- pLDDT cutoff methods (truncate_at_first_low_plddt, remove_low_plddt_residues, exclude_low_plddt_from_stats)
+- pLDDT cutoff methods (remove_low_plddt_residues, exclude_low_plddt_from_stats)
 """
 
 import os

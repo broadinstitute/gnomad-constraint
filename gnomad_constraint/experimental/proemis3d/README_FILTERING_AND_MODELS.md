@@ -57,43 +57,9 @@ After filtering, the forward algorithm uses model comparison to decide whether t
 
 ### pLDDT Filtering Methods
 
-There are **three** pLDDT filtering methods, each with different behavior:
+There are **two** pLDDT filtering methods, each with different behavior:
 
-#### 1. `truncate_at_first_low_plddt` (Hard Truncation)
-
-**Behavior**: Stops expanding the region at the first residue with pLDDT below the cutoff.
-
-**Use case**: When you believe low-confidence residues indicate a boundary (e.g., entering a disordered region).
-
-```
-Residues by distance from center:
-Position:   [C] [1] [2] [3] [4] [5] [6]
-pLDDT:       85  90  45  80  30  75  82
-                    ↑
-                First low pLDDT
-
-Result:     [C] [1] — TRUNCATED
-            Region = [C, 1]
-```
-
-**Effect on candidate regions**: Region expansion stops at the first low pLDDT residue.
-
-**Effect on null model**: The null model includes **ALL residues with pLDDT ≥ min_plddt**, regardless of whether they come before or after the truncation point. This ensures the null model represents all high-confidence residues, even if they are separated by low-confidence regions.
-
-**Example**:
-```
-Residues:     0    1    2    3    4    5    6    7    8    9   10   11   12   13   14
-pLDDT:       80   83   86   89   80   92   83   86   60   50   55   60   50   89   92
-                                                      ↑
-                                                  First low pLDDT (truncation point)
-
-Candidate region (center 0): [0, 1, 2, 3, 4, 5, 6, 7]  (stops at residue 8)
-Null model:                  [0, 1, 2, 3, 4, 5, 6, 7, 13, 14]  (all pLDDT ≥ 70)
-```
-
----
-
-#### 2. `remove_low_plddt_residues` (Hard Removal)
+#### 1. `remove_low_plddt_residues` (Hard Removal)
 
 **Behavior**: Removes only residues with low pLDDT; continues evaluating others.
 
@@ -114,7 +80,7 @@ Result:     [C] [1] [3] [5] [6]
 
 ---
 
-#### 3. `exclude_low_plddt_from_stats` (Soft Exclusion)
+#### 2. `exclude_low_plddt_from_stats` (Soft Exclusion)
 
 **Behavior**: Keeps all residues in the region for assignment purposes, but excludes low-confidence residues from statistical calculations (Obs, Exp, OE, NLL).
 
@@ -319,7 +285,6 @@ The **null region** represents the set of residues that would remain if a candid
 
 | Method | Valid Residues Definition |
 |--------|--------------------------|
-| `truncate_at_first_low_plddt` | **All residues with pLDDT ≥ min_plddt** (regardless of truncation point) |
 | `remove_low_plddt_residues` | All residues with pLDDT ≥ min_plddt (excluding removed ones) |
 | `exclude_low_plddt_from_stats` | All residues (low pLDDT included but excluded from stats) |
 | No pLDDT filtering | All residues (no pLDDT-based exclusion) |
@@ -337,21 +302,7 @@ The null region is constructed from `valid_residues`, which is the **union of al
 | `exclude_on_pairwise_pae_in_region` | **All residues remain in region and in null.** Residues with high pairwise PAE in region are kept but excluded from stats only (obs/exp NA). Valid residues = all residues (no removal). Null region = valid_residues − selected region. |
 | No PAE filtering | All residues that passed pLDDT filtering (if any) are included in null model. |
 
-**Key insight**: The null model includes only residues that appear in at least one candidate region. Since candidate regions are computed for multiple center residues, and PAE is a matrix (center-specific), a residue excluded from candidate regions for one center may still be included for another center. Therefore, residues are only excluded from the null model if they are excluded from candidate regions for **all** possible centers. This is why truncate methods rarely exclude residues from the null model—different centers have different truncation points.
-
-**Key insight for truncate methods**: While candidate regions stop expanding at the first low pLDDT residue, the null model includes **all** high-confidence residues throughout the protein. This ensures the null model represents the full set of reliable data, even if low-confidence regions separate high-confidence segments.
-
-**Example with `truncate_at_first_low_plddt`**:
-```
-Residues:     0    1    2    3    4    5    6    7    8    9   10   11   12   13   14
-pLDDT:       80   83   86   89   80   92   83   86   60   50   55   60   50   89   92
-                                                      ↑
-                                                  First low (truncation)
-
-Candidate region (center 0): [0, 1, 2, 3]  (stops at residue 8)
-Valid residues (pLDDT ≥ 70): [0, 1, 2, 3, 4, 5, 6, 7, 13, 14]
-Null region:                 [4, 5, 6, 7, 13, 14]  (valid - selected)
-```
+**Key insight**: The null model includes only residues that appear in at least one candidate region. Since candidate regions are computed for multiple center residues, and PAE is a matrix (center-specific), a residue excluded from candidate regions for one center may still be included for another center. Therefore, residues are only excluded from the null model if they are excluded from candidate regions for **all** possible centers.
 
 **Example with `truncate_on_pairwise_pae_with_center` (max_pae = 15)**:
 ```
@@ -566,7 +517,6 @@ p = P(χ²₁ ≥ 10) ≈ 0.0016
 
 | Method | Low pLDDT residues | Effect on region | Effect on null |
 |--------|-------------------|------------------|----------------|
-| `truncate_at_first_low_plddt` | Stop at first | Region ends at first low | All pLDDT ≥ min included (even after truncation) |
 | `remove_low_plddt_residues` | Remove only those | Gaps in region | Removed residues excluded |
 | `exclude_low_plddt_from_stats` | Keep but exclude from stats | Spatially contiguous | In null but excluded from stats |
 
@@ -604,17 +554,6 @@ pLDDT:       85   90   45   80   70   95   60   85   90   75
 ```
 
 ### Step 1: Apply pLDDT Filtering (min_plddt = 70)
-
-**Method: `truncate_at_first_low_plddt`**
-```
-Sorted by distance from center (residue 5):
-[5] [4] [6] [3] [7] [2] [8] [1] [9] [10]
- 70  80  95  45  60  90  85  85  90  75
-              ↑
-         First < 70 → TRUNCATE
-
-Candidate region for center 5: [5, 4, 6]
-```
 
 **Method: `remove_low_plddt_residues`**
 ```
@@ -758,7 +697,7 @@ python proemis_3d.py --run-forward \
 # pLDDT filtering only
 python proemis_3d.py --run-forward \
     --plddt-cutoff 70 \
-    --plddt-cutoff-method truncate_at_first_low_plddt
+    --plddt-cutoff-method remove_low_plddt_residues
 
 # PAE filtering only
 python proemis_3d.py --run-forward \

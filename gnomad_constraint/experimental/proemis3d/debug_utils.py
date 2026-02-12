@@ -191,21 +191,7 @@ def debug_print_pae_matrix_for_region(
         # remain but are excluded from PAE checks)
         low_plddt_residues = set()
         if min_plddt is not None and has_plddt_data and plddt_cutoff_method:
-            if plddt_cutoff_method == "truncate_at_first_low_plddt":
-                # Find first residue with low pLDDT and mark all after it
-                found_first_low = False
-                for residue in dist_mat:
-                    residue_idx = residue.residue_index
-                    if found_first_low:
-                        plddt_filtered_residues.add(residue_idx)
-                    elif (
-                        hasattr(residue, "plddt")
-                        and residue.plddt is not None
-                        and residue.plddt < min_plddt
-                    ):
-                        found_first_low = True
-                        # Don't add the first low one, but mark all subsequent ones
-            elif plddt_cutoff_method == "remove_low_plddt_residues":
+            if plddt_cutoff_method == "remove_low_plddt_residues":
                 # Mark residues with low pLDDT
                 for residue in dist_mat:
                     residue_idx = residue.residue_index
@@ -240,10 +226,7 @@ def debug_print_pae_matrix_for_region(
             # First, apply pLDDT filtering to get the residues that would remain after pLDDT filtering
             # (if pLDDT filtering removes residues)
             remaining_after_plddt = []
-            if plddt_cutoff_method in [
-                "truncate_at_first_low_plddt",
-                "remove_low_plddt_residues",
-            ]:
+            if plddt_cutoff_method == "remove_low_plddt_residues":
                 # Only consider residues that pass pLDDT filtering
                 for residue in dist_mat:
                     residue_idx = residue.residue_index
@@ -301,10 +284,7 @@ def debug_print_pae_matrix_for_region(
         else:
             # If no PAE array field, all residues that passed pLDDT filtering are in
             # the region
-            if plddt_cutoff_method in [
-                "truncate_at_first_low_plddt",
-                "remove_low_plddt_residues",
-            ]:
+            if plddt_cutoff_method == "remove_low_plddt_residues":
                 for residue in dist_mat:
                     residue_idx = residue.residue_index
                     if residue_idx not in plddt_filtered_residues:
@@ -776,13 +756,50 @@ def debug_print_oe_and_regions(
 
     output_string += f"{BOLD}=== {title} ==={RESET}\nUniProt ID: {uniprot_id}, Transcript ID: {transcript_id}\n"
 
-    # Collect data
-    debug_data = _ht_debug.select("oe", "min_oe_upper").collect()
+    # Collect data (include valid_residues when present so we can explain null coverage)
+    select_fields = ["oe", "min_oe_upper"]
+    if "valid_residues" in ht.row:
+        select_fields.append("valid_residues")
+    debug_data = _ht_debug.select(*select_fields).collect()
 
     if not debug_data:
         return output_string
 
     row = debug_data[0]
+
+    # Print valid_residues when available: only these residues get region/obs/exp/is_null in run_forward
+    if hasattr(row, "valid_residues") and row.valid_residues is not None:
+        vr = row.valid_residues
+        vr_set = set(vr)
+        n_valid = len(vr)
+        output_string += (
+            f"\n    {BOLD}=== Valid residues (null model pool) ==={RESET}\n"
+            f"    Only residues in this set receive region_index / obs / exp / is_null in the forward output.\n"
+            f"    Count: {n_valid}"
+        )
+        if n_valid > 0:
+            output_string += f"  Range: [{min(vr)}, {max(vr)}]"
+        output_string += "\n"
+        if n_valid > 0 and n_valid <= 50:
+            output_string += f"    Residues: {vr}\n"
+        # Residues in oe but not in valid_residues get a row (from left join) but NA for forward/null fields
+        if hasattr(row, "oe") and row.oe is not None:
+            oe_indices = {entry.residue_index for entry in row.oe}
+            missing = sorted(oe_indices - vr_set)
+            if missing:
+                n_missing = len(missing)
+                output_string += (
+                    f"    Residues in oe but not in valid_residues (get NA for forward/null): {n_missing} residues\n"
+                )
+                if n_missing <= 30:
+                    output_string += f"      Indices: {missing}\n"
+                else:
+                    output_string += f"      Range: [{min(missing)}, {max(missing)}]; e.g. {missing[:5]} ... {missing[-3:]}\n"
+            else:
+                output_string += "    All oe residues are in valid_residues.\n"
+        output_string += (
+            "    Residues missing from valid_residues (e.g. beyond PAE/pLDDT for all centers) get no value.\n\n"
+        )
 
     # Print min_oe_upper array (best region for each center residue)
     output_string += f"\n    {BOLD}=== Min OE Upper Array (best region for each center residue) ==={RESET}\n\n"
@@ -897,6 +914,7 @@ def debug_print_dist_mat_with_colors(
     max_dist: Optional[float] = None,
     plddt_cutoff_method: Optional[str] = None,
     pae_cutoff_method: Optional[str] = None,
+    min_exp_mis: Optional[int] = None,
 ) -> Dict[int, str]:
     """
     Generate colored debug output showing distance matrix with PAE values color-coded.
@@ -908,6 +926,9 @@ def debug_print_dist_mat_with_colors(
     :param min_plddt: Minimum allowed pLDDT value. If None, pLDDT won't be shown.
     :param oe_expr: Optional array expression with OE data (obs, exp, oe, oe_upper). If provided, will print
         observed, expected, cumulative observed, cumulative expected, cumulative O/E, and cumulative OE upper.
+    :param min_exp_mis: If set, "Minimum OE Upper" and "Region expected" use the same filter as the pipeline:
+        only positions with cumulative expected >= min_exp_mis are considered, so the printed region matches
+        what get_min_oe_upper would return.
     :return: Dictionary mapping center residue indices to their debug output strings.
         For the "Before sorting" full matrix case, returns a dict with key -1 and the full matrix output.
     """
@@ -1173,7 +1194,10 @@ def debug_print_dist_mat_with_colors(
         # Get OE data if available (should be parallel to dist_mat)
         oe_entries = row.oe_expr if has_oe_data else None
 
-        # Find minimum OE upper value and its index (if OE data is available)
+        # Find minimum OE upper value and its index (if OE data is available).
+        # Use the same filter as get_min_oe_upper: only consider positions with
+        # cumulative expected >= min_exp_mis when min_exp_mis is set, so the
+        # printed "Minimum OE Upper" / "Region expected" match the pipeline.
         min_oe_upper_idx = None
         min_oe_upper_val = None
         if has_oe_data and oe_entries:
@@ -1183,8 +1207,18 @@ def debug_print_dist_mat_with_colors(
                 for idx, entry in enumerate(oe_entries)
                 if hasattr(entry, "oe_upper") and entry.oe_upper is not None
             ]
+            if min_exp_mis is not None:
+                # Restrict to positions with cumulative expected >= min_exp_mis
+                # (same as get_min_oe_upper so debug matches pipeline)
+                valid_oe_entries = [
+                    (idx, entry)
+                    for idx, entry in valid_oe_entries
+                    if hasattr(entry, "exp")
+                    and entry.exp is not None
+                    and entry.exp >= min_exp_mis
+                ]
             if valid_oe_entries:
-                # Find the entry with minimum OE upper
+                # Find the entry with minimum OE upper among valid entries
                 min_entry = min(valid_oe_entries, key=lambda x: x[1].oe_upper)
                 min_oe_upper_idx = min_entry[0]
                 min_oe_upper_val = min_entry[1].oe_upper
@@ -1498,7 +1532,7 @@ def debug_print_dist_mat_with_colors(
                         )
                         # Apply pLDDT filtering if specified
                         if (
-                            plddt_cutoff_method == "truncate_at_first_low_plddt"
+                            plddt_cutoff_method == "remove_low_plddt_residues"
                             and min_plddt is not None
                         ):
                             # Filter by pLDDT from oe array or plddt_lookup
@@ -1528,63 +1562,6 @@ def debug_print_dist_mat_with_colors(
                                 and plddt_map[r] is not None
                                 and plddt_map[r] >= min_plddt
                             }
-                    # Fourth, handle pLDDT truncate methods specially
-                    elif (
-                        plddt_cutoff_method == "truncate_at_first_low_plddt"
-                        and min_plddt is not None
-                    ):
-                        # For truncate: get all residues with pLDDT >= min_plddt from plddt_lookup
-                        # (dist_mat only contains residues up to truncation point, but we want all high pLDDT residues)
-                        if (
-                            hasattr(row, "plddt_lookup")
-                            and row.plddt_lookup is not None
-                        ):
-                            # Build set of all residues with pLDDT >= min_plddt
-                            all_valid_residues = set()
-                            for entry in row.plddt_lookup:
-                                if (
-                                    hasattr(entry, "residue_index")
-                                    and hasattr(entry, "plddt")
-                                    and entry.plddt is not None
-                                    and entry.plddt >= min_plddt
-                                ):
-                                    all_valid_residues.add(entry.residue_index)
-                        elif hasattr(row, "oe") and row.oe is not None:
-                            # Fall back: use oe array and check pLDDT from dist_mat
-                            # Get all residues from oe
-                            all_residues_from_oe = set(
-                                entry.residue_index
-                                for entry in row.oe
-                                if hasattr(entry, "residue_index")
-                            )
-                            # Build pLDDT map from dist_mat
-                            plddt_map = {}
-                            for entry in row.dist_mat:
-                                if hasattr(entry, "residue_index") and hasattr(
-                                    entry, "plddt"
-                                ):
-                                    plddt_map[entry.residue_index] = entry.plddt
-
-                            # Filter: include residues with pLDDT >= min_plddt
-                            # For residues in dist_mat, check pLDDT
-                            # For residues not in dist_mat, they're likely after
-                            # truncation, so exclude them
-                            all_valid_residues = set()
-                            for res_idx in all_residues_from_oe:
-                                if res_idx in plddt_map:
-                                    if (
-                                        plddt_map[res_idx] is not None
-                                        and plddt_map[res_idx] >= min_plddt
-                                    ):
-                                        all_valid_residues.add(res_idx)
-                                # Skip residues not in dist_mat (they're after
-                                # truncation point)
-                        else:
-                            # Fall back to dist_mat (only residues up to truncation
-                            # point)
-                            all_valid_residues = set(
-                                entry.residue_index for entry in row.dist_mat
-                            )
                     elif hasattr(row, "oe") and row.oe is not None:
                         # For other methods: try to use oe array to get all residues
                         all_valid_residues = set(
@@ -1653,6 +1630,7 @@ def _debug_get_3d_residue(
     debug_outputs_by_residue: dict,
     step_name: str,
     oe_expr_after_calc: Optional[hl.expr.ArrayExpression] = None,
+    min_exp_mis: Optional[int] = None,
 ) -> Optional[dict]:
     """
     Handle all debug output for get_3d_residue.
@@ -1668,6 +1646,8 @@ def _debug_get_3d_residue(
     :param debug_outputs_by_residue: Dict with previously collected debug outputs (for "final" step).
     :param step_name: Name of the current step.
     :param oe_expr_after_calc: OE expression after calculate_oe_upper (optional).
+    :param min_exp_mis: Minimum cumulative expected for region (passed to debug print so "Minimum OE Upper"
+        and "Region expected" match get_min_oe_upper when filtering by min_exp_mis).
     :return: For intermediate steps, returns a new dict with structure {center_res_idx: {step_name: output_string}}.
              For "final" step, returns a formatted string (wrapped in a dict with key "final").
     """
@@ -1750,6 +1730,7 @@ def _debug_get_3d_residue(
             max_dist=debug_min_max["max_dist"] if debug_min_max else None,
             plddt_cutoff_method=plddt_cutoff_method,
             pae_cutoff_method=pae_cutoff_method,
+            min_exp_mis=min_exp_mis,
         )
         # Return new dict instead of mutating input
         result = {}
@@ -1831,8 +1812,11 @@ def debug_print_forward_round(
 
     # Collect data
     # Note: key fields (idx, uniprot_id, transcript_id) are automatically included in collect()
-    # Check if excluded_residues is available
+    # Check if excluded_residues / excluded_residues_region are available
     has_excluded_res_debug = "excluded_residues" in _ht_debug.row.dtype.fields
+    has_excluded_res_region_debug = (
+        "excluded_residues_region" in _ht_debug.row.dtype.fields
+    )
     debug_data = _ht_debug.select(
         "region",
         "selected",
@@ -1845,6 +1829,7 @@ def debug_print_forward_round(
         "oe",
         "center_residue_index",
         *["excluded_residues"] if has_excluded_res_debug else [],
+        *["excluded_residues_region"] if has_excluded_res_region_debug else [],
     ).collect()
 
     if not debug_data:
@@ -1905,28 +1890,18 @@ def debug_print_forward_round(
                 if hasattr(first_row, "oe") and first_row.oe:
                     obs_list = []
                     exp_list = []
-                    # Get excluded_residues if available
-                    excluded_residues_dict = None
+                    # Get excluded_residues set if available
+                    excluded_residues_set = None
                     if (
                         hasattr(first_row, "excluded_residues")
                         and first_row.excluded_residues is not None
                     ):
-                        excluded_residues_dict = first_row.excluded_residues
+                        excluded_residues_set = first_row.excluded_residues
                     for res_idx in row.null_model.region:
-                        # Check if this residue is excluded from stats
-                        is_excluded = False
-                        if excluded_residues_dict is not None:
-                            if hasattr(excluded_residues_dict, "get"):
-                                exclude_flag = excluded_residues_dict.get(res_idx)
-                                is_excluded = (
-                                    exclude_flag is True
-                                    if exclude_flag is not None
-                                    else False
-                                )
-                            elif isinstance(excluded_residues_dict, dict):
-                                is_excluded = (
-                                    excluded_residues_dict.get(res_idx, False) is True
-                                )
+                        is_excluded = (
+                            excluded_residues_set is not None
+                            and res_idx in excluded_residues_set
+                        )
 
                         if is_excluded:
                             obs_list.append("     NA")
@@ -2134,30 +2109,24 @@ def debug_print_forward_round(
                 if hasattr(row, "oe") and row.oe:
                     obs_list = []
                     exp_list = []
-                    # Get excluded_residues if available
-                    excluded_residues_dict = None
+                    # For candidate region: use excluded_residues_region (PAE+pLDDT) if
+                    # available, else excluded_residues (pLDDT-only for null)
+                    excluded_residues_set = None
                     if (
+                        hasattr(row, "excluded_residues_region")
+                        and row.excluded_residues_region is not None
+                    ):
+                        excluded_residues_set = row.excluded_residues_region
+                    elif (
                         hasattr(row, "excluded_residues")
                         and row.excluded_residues is not None
                     ):
-                        excluded_residues_dict = row.excluded_residues
+                        excluded_residues_set = row.excluded_residues
                     for res_idx in row._region.region:
-                        # Check if this residue is excluded from stats
-                        is_excluded = False
-                        if excluded_residues_dict is not None:
-                            # excluded_residues_dict is a dict-like structure
-                            # Check if res_idx is in the dict and if its value is True
-                            if hasattr(excluded_residues_dict, "get"):
-                                exclude_flag = excluded_residues_dict.get(res_idx)
-                                is_excluded = (
-                                    exclude_flag is True
-                                    if exclude_flag is not None
-                                    else False
-                                )
-                            elif isinstance(excluded_residues_dict, dict):
-                                is_excluded = (
-                                    excluded_residues_dict.get(res_idx, False) is True
-                                )
+                        is_excluded = (
+                            excluded_residues_set is not None
+                            and res_idx in excluded_residues_set
+                        )
 
                         if is_excluded:
                             obs_list.append("     NA")
@@ -2239,29 +2208,18 @@ def debug_print_forward_round(
                     if hasattr(row, "oe") and row.oe:
                         obs_list = []
                         exp_list = []
-                        # Get excluded_residues if available
-                        excluded_residues_dict = None
+                        # Get excluded_residues set if available
+                        excluded_residues_set = None
                         if (
                             hasattr(row, "excluded_residues")
                             and row.excluded_residues is not None
                         ):
-                            excluded_residues_dict = row.excluded_residues
+                            excluded_residues_set = row.excluded_residues
                         for res_idx in row._updated_null.region:
-                            # Check if this residue is excluded from stats
-                            is_excluded = False
-                            if excluded_residues_dict is not None:
-                                if hasattr(excluded_residues_dict, "get"):
-                                    exclude_flag = excluded_residues_dict.get(res_idx)
-                                    is_excluded = (
-                                        exclude_flag is True
-                                        if exclude_flag is not None
-                                        else False
-                                    )
-                                elif isinstance(excluded_residues_dict, dict):
-                                    is_excluded = (
-                                        excluded_residues_dict.get(res_idx, False)
-                                        is True
-                                    )
+                            is_excluded = (
+                                excluded_residues_set is not None
+                                and res_idx in excluded_residues_set
+                            )
 
                             if is_excluded:
                                 obs_list.append("     NA")
@@ -2363,18 +2321,26 @@ def _debug_run_forward_best_candidate(
             )
             _ht_debug_oe = _ht_debug.select("oe").collect()
             center_residue_idx = None
+            best_candidate_excluded_region = None
             if best_region_debug and best_region_debug[0].min_idx is not None:
-                _ht_center = (
-                    _ht_debug.filter(
-                        (_ht_debug.uniprot_id == uniprot_id)
-                        & (_ht_debug.transcript_id == transcript_id)
-                        & (_ht_debug.idx == best_region_debug[0].min_idx)
-                    )
-                    .select("center_residue_index")
-                    .collect()
+                _ht_best = _ht_debug.filter(
+                    (_ht_debug.uniprot_id == uniprot_id)
+                    & (_ht_debug.transcript_id == transcript_id)
+                    & (_ht_debug.idx == best_region_debug[0].min_idx)
                 )
+                _ht_center = _ht_best.select("center_residue_index").collect()
                 if _ht_center and len(_ht_center) > 0:
                     center_residue_idx = _ht_center[0].center_residue_index
+                if "excluded_residues_region" in _ht_debug.row.dtype.fields:
+                    _ht_excl = _ht_best.select("excluded_residues_region").collect()
+                    if (
+                        _ht_excl
+                        and len(_ht_excl) > 0
+                        and _ht_excl[0].excluded_residues_region is not None
+                    ):
+                        best_candidate_excluded_region = _ht_excl[
+                            0
+                        ].excluded_residues_region
             if best_region_debug:
                 br_row = best_region_debug[0]
                 output_string = f"\n    {BOLD}=== run_forward: Round {round_num} - Best Candidate ==={RESET}\n\n"
@@ -2444,8 +2410,16 @@ def _debug_run_forward_best_candidate(
                         ):
                             obs_list = []
                             exp_list = []
+                            excluded_region_set = best_candidate_excluded_region
                             for res_idx in br_row.best_region.region:
-                                if res_idx < len(_ht_debug_oe[0].oe):
+                                is_excluded = (
+                                    excluded_region_set is not None
+                                    and res_idx in excluded_region_set
+                                )
+                                if is_excluded:
+                                    obs_list.append("    NA")
+                                    exp_list.append("    NA")
+                                elif res_idx < len(_ht_debug_oe[0].oe):
                                     oe_entry = _ht_debug_oe[0].oe[res_idx]
                                     obs_val = (
                                         oe_entry.obs
@@ -2469,6 +2443,9 @@ def _debug_run_forward_best_candidate(
                                         if exp_val is not None
                                         else "    NA"
                                     )
+                                else:
+                                    obs_list.append("    NA")
+                                    exp_list.append("    NA")
                             output_string += f"            Observed ({len(obs_list):3d}):  {', '.join(obs_list)}\n"
                             output_string += f"            Expected ({len(exp_list):3d}):  {', '.join(exp_list)}\n"
                 result.append(output_string)
@@ -2491,14 +2468,18 @@ def _debug_run_forward_model_comparison(
     if _ht_debug.count() > 0:
         uniprot_id = _ht_debug.uniprot_id.collect()[0]
         transcript_id = _ht_debug.transcript_id.collect()[0]
-        _ht_debug = ht.filter(
+        _ht_debug_full = ht.filter(
             (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
         )
-        has_regions = _ht_debug.aggregate(hl.agg.any(hl.is_defined(_ht_debug.region)))
+        has_regions = _ht_debug_full.aggregate(
+            hl.agg.any(hl.is_defined(_ht_debug_full.region))
+        )
         if has_regions:
             _ht_debug2 = ht2.filter(
                 (ht2.uniprot_id == uniprot_id) & (ht2.transcript_id == transcript_id)
             )
+            # Use a single row for indexing ht2 to avoid zip length mismatch (N keys vs 1 row)
+            _ht_debug = _ht_debug_full.head(1)
             _best_region_debug = _ht_debug2[
                 (_ht_debug.uniprot_id, _ht_debug.transcript_id)
             ].best_region
@@ -2694,9 +2675,15 @@ def _debug_collect_candidates_before_update(ht: hl.Table) -> list:
             (ht.uniprot_id == uniprot_id_before)
             & (ht.transcript_id == transcript_id_before)
         )
+        has_excluded_region = (
+            "excluded_residues_region" in _ht_candidates_before.row.dtype.fields
+        )
         # Collect region (candidate regions) before they're removed, along with oe data
         candidates_before_filter = _ht_candidates_before.select(
-            "center_residue_index", "region", "oe"
+            "center_residue_index",
+            "region",
+            "oe",
+            *["excluded_residues_region"] if has_excluded_region else [],
         ).collect()
     return candidates_before_filter
 
@@ -2776,9 +2763,18 @@ def _debug_run_forward_after_update(
                             output_string += f"\n            {BOLD}Candidate {cand_idx + 1}{center_res_str}:{RESET}\n"
                             region_residues = cand_row.region
                             if hasattr(cand_row, "oe") and cand_row.oe:
+                                excluded_region = None
+                                if hasattr(cand_row, "excluded_residues_region") and cand_row.excluded_residues_region is not None:
+                                    excluded_region = cand_row.excluded_residues_region
                                 total_obs = 0
                                 total_exp = 0.0
                                 for res_idx in region_residues:
+                                    is_excluded = (
+                                        excluded_region is not None
+                                        and res_idx in excluded_region
+                                    )
+                                    if is_excluded:
+                                        continue
                                     if res_idx < len(cand_row.oe):
                                         oe_entry = cand_row.oe[res_idx]
                                         if (
@@ -2852,8 +2848,14 @@ def _debug_run_forward_final(ht) -> list:
         _ht_debug = ht.filter(
             (ht.uniprot_id == uniprot_id) & (ht.transcript_id == transcript_id)
         )
+        has_excluded_res = "excluded_residues" in _ht_debug.row.dtype.fields
         debug_data = _ht_debug.select(
-            "selected", "selected_nll", "best_aic", "null_model", "oe"
+            "selected",
+            "selected_nll",
+            "best_aic",
+            "null_model",
+            "oe",
+            *["excluded_residues"] if has_excluded_res else [],
         ).collect()
         if debug_data:
             row = debug_data[0]
@@ -2889,6 +2891,8 @@ def _debug_run_forward_final(ht) -> list:
                     if hasattr(region, "region") and region.region:
                         region_str = ", ".join([f"{r:7d}" for r in region.region])
                         output_string += f"            {BOLD}Residues ({len(region.region):3d}): {region_str}{RESET}\n"
+                        # Per-residue obs/exp for selected regions use global oe; per-candidate
+                        # excluded_residues_region is not stored in final state, so we do not mask.
                         if row.oe:
                             obs_list = []
                             exp_list = []
@@ -2917,6 +2921,9 @@ def _debug_run_forward_final(ht) -> list:
                                         if exp_val is not None
                                         else "    NA"
                                     )
+                                else:
+                                    obs_list.append("    NA")
+                                    exp_list.append("    NA")
                             output_string += f"            {BOLD}Observed ({len(obs_list):3d}): {', '.join(obs_list)}{RESET}\n"
                             output_string += f"            {BOLD}Expected ({len(exp_list):3d}): {', '.join(exp_list)}{RESET}\n"
             output_string += f"\n\n    {BOLD}Null Model (catch-all):{RESET}\n"
@@ -2933,10 +2940,20 @@ def _debug_run_forward_final(ht) -> list:
             if hasattr(row.null_model, "region") and row.null_model.region and row.oe:
                 region_str = ", ".join([f"{r:7d}" for r in row.null_model.region])
                 output_string += f"        {BOLD}Residues ({len(row.null_model.region):3d}): {region_str}{RESET}\n"
+                excluded_residues_set = None
+                if has_excluded_res and hasattr(row, "excluded_residues") and row.excluded_residues is not None:
+                    excluded_residues_set = row.excluded_residues
                 obs_list = []
                 exp_list = []
                 for res_idx in row.null_model.region:
-                    if res_idx < len(row.oe):
+                    is_excluded = (
+                        excluded_residues_set is not None
+                        and res_idx in excluded_residues_set
+                    )
+                    if is_excluded:
+                        obs_list.append("     NA")
+                        exp_list.append("     NA")
+                    elif res_idx < len(row.oe):
                         oe_entry = row.oe[res_idx]
                         obs_val = (
                             oe_entry.obs
@@ -3024,6 +3041,7 @@ def debug_get_3d_residue(
     debug_min_max: Optional[dict],
     debug_outputs_by_residue: dict,
     oe_expr_after_calc: Optional[hl.expr.ArrayExpression] = None,
+    min_exp_mis: Optional[int] = None,
 ) -> Optional[dict]:
     """
     Unified debug function for get_3d_residue.
@@ -3040,6 +3058,7 @@ def debug_get_3d_residue(
     :param debug_min_max: Dict with min/max values for consistent coloring
     :param debug_outputs_by_residue: Dict to store debug outputs
     :param oe_expr_after_calc: OE expression after calculate_oe_upper (optional)
+    :param min_exp_mis: Minimum cumulative expected for region (so debug "Minimum OE Upper" matches pipeline)
     """
     return _debug_get_3d_residue(
         dist_mat_expr,
@@ -3053,4 +3072,5 @@ def debug_get_3d_residue(
         debug_outputs_by_residue,
         stage,
         oe_expr_after_calc,
+        min_exp_mis,
     )

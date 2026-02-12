@@ -249,6 +249,86 @@ def test_determine_regions_with_min_oe_upper(
     return result, debug_output
 
 
+def format_per_residue_scores(result_ht) -> str:
+    """Format the run_forward result table as one line per residue (for test output).
+
+    Table has all residues; region-level fields (region_index, obs, exp, oe, etc.) are NA
+    for residues not assigned to a region. residue_obs and residue_exp are per-residue.
+    """
+    if result_ht is None:
+        return ""
+    count = result_ht.count()
+    if count == 0:
+        return ""
+    # Take first (uniprot_id, transcript_id) and collect all residues
+    first = result_ht.head(1)
+    if first.count() == 0:
+        return ""
+    uniprot_id = first.uniprot_id.collect()[0]
+    transcript_id = first.transcript_id.collect()[0]
+    rows = (
+        result_ht.filter(
+            (result_ht.uniprot_id == uniprot_id)
+            & (result_ht.transcript_id == transcript_id)
+        )
+        .collect()
+    )
+    if not rows:
+        return ""
+    # Sort by residue_index
+    rows = sorted(rows, key=lambda r: r.residue_index)
+    # Header: res, region, null, region-level (obs, exp, oe, oe_upper, chisq, p_value), residue-level (residue_obs, residue_exp)
+    lines = [
+        f"\n{BOLD}=== Per-residue scores (one line per residue) ==={RESET}\n",
+        f"    UniProt: {uniprot_id}  Transcript: {transcript_id}\n",
+        "    "
+        + f"{'res':>4} {'region':>6} {'null':>5} {'obs':>6} {'exp':>8} "
+        + f"{'oe':>8} {'oe_upper':>8} {'chisq':>8} {'p_value':>8} "
+        + f"{'res_obs':>8} {'res_exp':>8}\n",
+    ]
+    def _num(s, fmt=".2f"):
+        if s is None:
+            return "NA"
+        if isinstance(s, (list, tuple)):
+            s = s[0] if len(s) > 0 else None
+        if s is None:
+            return "NA"
+        # Hail collect can return Struct; extract numeric value if possible
+        if hasattr(s, "__iter__") and not isinstance(s, (str, bytes)):
+            try:
+                s = s[0] if len(s) > 0 else None
+            except (TypeError, IndexError):
+                pass
+        if s is None:
+            return "NA"
+        try:
+            return format(float(s), fmt)
+        except (TypeError, ValueError):
+            return "NA"
+
+    for r in rows:
+        obs = str(r.obs) if r.obs is not None else "NA"
+        exp = _num(r.exp)
+        oe = _num(r.oe)
+        oe_upper = _num(r.oe_upper)
+        chisq = _num(r.chisq)
+        p_value = _num(r.p_value, ".4f")
+        null = (
+            "T"
+            if r.is_null is True
+            else ("F" if r.is_null is False else "NA")
+        )
+        region_str = f"{r.region_index:6d}" if r.region_index is not None else "    NA"
+        res_obs = str(r.residue_obs) if getattr(r, "residue_obs", None) is not None else "NA"
+        res_exp = _num(getattr(r, "residue_exp", None))
+        lines.append(
+            f"    {r.residue_index:4d} {region_str} {null:>5} "
+            f"{obs:>6} {exp:>8} {oe:>8} {oe_upper:>8} {chisq:>8} {p_value:>8} "
+            f"{res_obs:>8} {res_exp:>8}\n"
+        )
+    return "".join(lines)
+
+
 def test_run_forward(
     regions_ht,
     min_exp_mis=16,
@@ -298,11 +378,16 @@ def test_run_forward(
         bonferroni_per_round=bonferroni_per_round,
         aic_weight_thresh=aic_weight_thresh,
         debug=True,
+        n_partitions=1,
     )
 
     if debug_output_run_forward:
         debug_output += debug_output_run_forward
         debug_output += "\n\n\n"
+
+    # Final printout: actual scores at every residue (one line per residue)
+    debug_output += format_per_residue_scores(result)
+    debug_output += "\n"
 
     return result, debug_output
 
@@ -682,20 +767,23 @@ def main(args):
         pae_ht = get_af2_pae_ht().ht()
         plddt_ht = get_af2_plddt_ht().ht()
 
+        # Checkpoint kwargs: reuse existing when present unless --force-rebuild
+        _ck = {"overwrite": True} if getattr(args, "force_rebuild", False) else {"_read_if_exists": True}
+
         # Filter to specified uniprot_id and transcript_id
         af2_ht = af2_dist_ht.filter(
             af2_dist_ht.uniprot_id == args.uniprot_id
         ).checkpoint(
             f"gs://gnomad-tmp-4day/proemis3d_test_data/af2_test.uniprot_id_{args.uniprot_id}.ht",
-            _read_if_exists=True,
+            **_ck,
         )
         pae_ht = pae_ht.filter(pae_ht.uniprot_id == args.uniprot_id).checkpoint(
             f"gs://gnomad-tmp-4day/proemis3d_test_data/pae_test.uniprot_id_{args.uniprot_id}.ht",
-            _read_if_exists=True,
+            **_ck,
         )
         plddt_ht = plddt_ht.filter(plddt_ht.uniprot_id == args.uniprot_id).checkpoint(
             f"gs://gnomad-tmp-4day/proemis3d_test_data/plddt_test.uniprot_id_{args.uniprot_id}.ht",
-            _read_if_exists=True,
+            **_ck,
         )
 
         # Filter gencode_pos_ht to specified uniprot_id and transcript_id
@@ -706,15 +794,18 @@ def main(args):
             & (gencode_pos_ht.enst == args.transcript_id)
         ).checkpoint(
             f"gs://gnomad-tmp-4day/proemis3d_test_data/gencode_pos_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
-            _read_if_exists=True,
+            **_ck,
         )
+
+        # Same as main pipeline: restrict to missense (if batch had this uncommented).
+        obs_exp_ht = obs_exp_ht.filter(obs_exp_ht.annotation == "missense_variant")
 
         # Filter obs_exp_ht to specified transcript_id.
         obs_exp_ht = obs_exp_ht.filter(
             obs_exp_ht.transcript == args.transcript_id
         ).checkpoint(
             f"gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.ht",
-            _read_if_exists=True,
+            **_ck,
         )
 
         # obs_exp_ht is keyed by (locus, alleles) and needs to be aggregated by (locus, transcript)
@@ -728,7 +819,7 @@ def main(args):
             )
             .checkpoint(
                 f"gs://gnomad-tmp-4day/proemis3d_test_data/obs_exp_test.transcript_id_{args.transcript_id}.agg.ht",
-                _read_if_exists=True,
+                **_ck,
             )
             .naive_coalesce(1)
         )
@@ -749,7 +840,7 @@ def main(args):
             oe_codon_ht.filter(hl.len(oe_codon_ht.oe_by_transcript) > 0)
             .checkpoint(
                 f"gs://gnomad-tmp-4day/proemis3d_test_data/oe_codon_test.uniprot_id_{args.uniprot_id}.transcript_id_{args.transcript_id}.ht",
-                _read_if_exists=True,
+                **_ck,
             )
             .naive_coalesce(1)
         )
@@ -896,6 +987,13 @@ if __name__ == "__main__":
         "--transcript-id",
         type=str,
         help="Transcript ID (ENST) to use instead of test data (requires --uniprot-id)",
+    )
+    parser.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="When using --uniprot-id/--transcript-id, always recompute and overwrite checkpointed "
+        "tables (af2, pae, plddt, gencode_pos, obs_exp, oe_codon). Default is to reuse existing "
+        "checkpoints when present (_read_if_exists=True).",
     )
     parser.add_argument(
         "--output-file",
