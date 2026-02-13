@@ -869,7 +869,7 @@ def get_min_oe_upper(oe_expr, min_exp_mis=None):
     if min_exp_mis is None:
         filtered_oe_expr = oe_expr
     else:
-        # Only consider regions whose cumulative expected (region total) 
+        # Only consider regions whose cumulative expected (region total)
         # is >= min_exp_mis.
         filtered_oe_expr = oe_expr.filter(lambda x: x.exp >= min_exp_mis)
         filtered_oe_expr = hl.or_missing(
@@ -961,9 +961,7 @@ def _filter_dist_mat_by_pae_with_center(
     :param max_pae: Maximum PAE threshold; residues above are removed.
     :return: Array with only residues passing the PAE filter.
     """
-    return dist_mat_expr.filter(
-        lambda x: ~hl.is_defined(x.pae) | (x.pae <= max_pae)
-    )
+    return dist_mat_expr.filter(lambda x: ~hl.is_defined(x.pae) | (x.pae <= max_pae))
 
 
 def _annotate_dist_mat_exclude_pae_with_center(
@@ -980,15 +978,11 @@ def _annotate_dist_mat_exclude_pae_with_center(
     :param max_pae: Maximum PAE threshold; residues above are marked excluded from stats.
     :return: Array with each element's exclude_from_stats set appropriately.
     """
-    has_exclude = (
-        "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
-    )
+    has_exclude = "exclude_from_stats" in dist_mat_expr.dtype.element_type.fields
     return dist_mat_expr.map(
         lambda x: x.annotate(
             exclude_from_stats=(
-                hl.or_else(x.exclude_from_stats, False)
-                if has_exclude
-                else False
+                hl.or_else(x.exclude_from_stats, False) if has_exclude else False
             )
             | (hl.is_defined(x.pae) & (x.pae > max_pae))
         )
@@ -1099,11 +1093,7 @@ def _filter_or_annotate_dist_mat_pae_in_region(
         **{
             **{f: element_type[f] for f in element_type.fields},
             "exclude_from_stats": hl.tbool,
-            **(
-                {"exclude_from_stats_plddt": hl.tbool}
-                if has_plddt_exclude
-                else {}
-            ),
+            **({"exclude_from_stats_plddt": hl.tbool} if has_plddt_exclude else {}),
         }
     )
     scan_init = hl.empty_array(annotated_type)
@@ -1117,7 +1107,7 @@ def _filter_or_annotate_dist_mat_pae_in_region(
             )
         else:
             exclude_from_stats_val = exclude_pae
-        
+
         return acc.append(
             residue.annotate(
                 exclude_from_stats=exclude_from_stats_val,
@@ -1283,9 +1273,7 @@ def get_3d_residue(
             raise ValueError("pLDDT data is not available in dist_mat_expr!")
 
         if plddt_cutoff_method == "remove_low_plddt_residues":
-            dist_mat_expr = _filter_dist_mat_remove_low_plddt(
-                dist_mat_expr, min_plddt
-            )
+            dist_mat_expr = _filter_dist_mat_remove_low_plddt(dist_mat_expr, min_plddt)
 
         elif plddt_cutoff_method == "exclude_low_plddt_from_stats":
             dist_mat_expr = _annotate_dist_mat_exclude_low_plddt_from_stats(
@@ -1313,9 +1301,7 @@ def get_3d_residue(
                 dist_mat_expr, max_pae
             )
         elif pae_cutoff_method == "filter_on_pairwise_pae_with_center":
-            dist_mat_expr = _filter_dist_mat_by_pae_with_center(
-                dist_mat_expr, max_pae
-            )
+            dist_mat_expr = _filter_dist_mat_by_pae_with_center(dist_mat_expr, max_pae)
         elif pae_cutoff_method == "exclude_on_pairwise_pae_with_center":
             dist_mat_expr = _annotate_dist_mat_exclude_pae_with_center(
                 dist_mat_expr, max_pae
@@ -1374,7 +1360,7 @@ def get_3d_residue(
         min_moeuf_expr = min_moeuf_expr.annotate(
             excluded_residues_region=excluded_residues_region_dict_expr
         )
-    
+
     if debug:
         # Debug: Show OE calculations after calculate_oe_upper.
         new_outputs = debug_get_3d_residue(
@@ -1551,7 +1537,7 @@ def determine_regions_with_min_oe_upper(
                 )
             )
 
-    ht = af2_ht.annotate(**ann_expr)
+    ht = af2_ht.annotate(**ann_expr).cache()
 
     # Compute pLDDT exclusion dict once per row from the FULL dist_mat (all residues),
     # before get_3d_residue applies per-center PAE truncation that could drop some.
@@ -1591,6 +1577,7 @@ def determine_regions_with_min_oe_upper(
         min_oe_upper_expr = min_oe_upper_expr[0]
 
     ht = ht.annotate(transcript_id=ht.enst, min_oe_upper=min_oe_upper_expr).drop("enst")
+    ht = ht.cache()
 
     _has_excluded_res = "excluded_residues" in ht.row
     ht = ht.group_by("uniprot_id", "transcript_id").aggregate(
@@ -1602,9 +1589,14 @@ def determine_regions_with_min_oe_upper(
             ),
         ),
         # excluded_residues is pLDDT-only and identical across centers; take one copy.
-        **({"excluded_residues": hl.agg.take(ht.excluded_residues, 1)[0]}
-           if _has_excluded_res else {}),
+        **(
+            {"excluded_residues": hl.agg.take(ht.excluded_residues, 1)[0]}
+            if _has_excluded_res
+            else {}
+        ),
     )
+    ht = ht.cache()
+
     # TODO: minimize on oe or oe_upper?
     ht = ht.annotate(
         oe=hl.enumerate(ht.oe).map(lambda x: x[1].annotate(residue_index=x[0])),
@@ -1621,7 +1613,7 @@ def determine_regions_with_min_oe_upper(
     # and a non-zero "% Assigned missing" when comparing to the unfiltered run.
     #
     # Residues kept by exclude_* methods (exclude_low_plddt_from_stats, exclude_on_pairwise_pae_*)
-    # remain in the region (with exclude_from_stats), so they are annotated as 
+    # remain in the region (with exclude_from_stats), so they are annotated as
     # valid_residues on the HT.
     #
     # For each candidate region, compute the null_region (residues remaining if this
@@ -1639,7 +1631,7 @@ def determine_regions_with_min_oe_upper(
                     hl.set(valid_residues_expr).difference(hl.set(x.region))
                 )
             )
-        )
+        ),
     )
 
     # Debug: Show OE and regions for first uniprot/transcript
@@ -1902,8 +1894,8 @@ def run_forward(
     )
 
     null_model = prep_region_struct(
-        null_region, 
-        ht.oe, 
+        null_region,
+        ht.oe,
         excluded_residues=ht.excluded_residues if has_excluded_res else None,
     )
     null_region_length = null_region.length()
@@ -1911,7 +1903,7 @@ def run_forward(
     extra_region_fields = []
     if has_excluded_res_region:
         extra_region_fields.append("excluded_residues_region")
-   
+
     # excluded_residues is row-level only (not on each region struct).
     # Table of all residues with per-residue obs/exp (for final output: all residues,
     # NA if unassigned).
@@ -1923,7 +1915,7 @@ def run_forward(
         residue_obs=all_residues_ht.oe_indexed.obs,
         residue_exp=all_residues_ht.oe_indexed.exp,
     ).key_by("uniprot_id", "transcript_id", "residue_index")
-   
+
     ht = ht.select(
         "oe",
         num_residues=num_residues,
@@ -1953,7 +1945,7 @@ def run_forward(
         transmute_extra["excluded_residues_region"] = region_expr.get(
             "excluded_residues_region"
         )
-    # excluded_residues stays as row-level (retained from select), not from region 
+    # excluded_residues stays as row-level (retained from select), not from region
     # struct.
     ht = ht.transmute(
         idx=region_idx_expr,
@@ -2249,7 +2241,7 @@ def run_forward(
     ht = ht.annotate(**ht.selected).drop("selected")
     ht = ht.annotate(region_length=hl.len(ht.region))
     ht = ht.explode("region")
-    
+
     # obs, exp, oe, oe_upper are region-level (same for every residue in that region).
     chisq_expr = calculate_oe_neq_1_chisq(ht.obs, ht.exp)
     ht = ht.annotate(
@@ -2262,7 +2254,7 @@ def run_forward(
         "region_index", "obs", "exp", "oe", "oe_upper", "chisq", "p_value", "is_null"
     )
 
-    # Left-join so all residues appear; unassigned residues get NA for region-level 
+    # Left-join so all residues appear; unassigned residues get NA for region-level
     # fields.
     ht = all_residues_ht.join(ht, how="left")
     ht = ht.select(

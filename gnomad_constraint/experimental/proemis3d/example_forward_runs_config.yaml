@@ -1,0 +1,15 @@
+# Example config for compare_forward_methods_report.py
+# List your forward HT paths and short labels (filtering + model comparison).
+# Paths can be local or gs:// (Hail will read them).
+#
+# Usage:
+#   python compare_forward_methods_report.py --config example_forward_runs_config.yaml --output report.md --csv summary.csv
+
+runs:
+  - path: "gs://your-bucket/forward.plddt_exclude.pae_filter_center.aic.ht"
+    label: "pLDDT exclude, PAE filter_center, AIC"
+  - path: "gs://your-bucket/forward.plddt_exclude.pae_filter_center.aic_weight.ht"
+    label: "pLDDT exclude, PAE filter_center, AIC weight 0.8"
+  - path: "gs://your-bucket/forward.plddt_exclude.pae_filter_center.lrt.ht"
+    label: "pLDDT exclude, PAE filter_center, LRT"
+  # Add more runs for other filtering combinations (plddt_remove, pae_truncate, etc.)
