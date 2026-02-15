@@ -3,6 +3,57 @@
 This script imports data for Proemis3D, including COSMIS scores, Varity data, MTR3D data,
 InterPro annotations, Kaplanis variants, Fu variants, ClinVar missense variants,
 constraint metrics, MTR data, RMC data, context data, and Genetics Gym missense scores.
+
+
+Information about the AlphaFold DB:
+
+As per the article, https://academic.oup.com/nar/article/52/D1/D368/7337620:
+
+"Data archiving for AlphaFold DB began with an initial release in July 2021, housing
+over 360 000 structures for 20 model organism proteomes with sequences derived from
+the ‘one sequence per gene’ reference proteomes provided in UniProt release 2021_02.
+In December 2021, most of the reviewed sequences in UniProt, i.e. the Swiss-Prot
+dataset, were incorporated from the UniProt release 2021_04. In January 2022,
+proteomes relevant to global health, derived from priority lists by the World Health
+Organization, were added, utilising sequences from UniProt release 2021_04 ‘one
+sequence per gene’ reference proteomes. By July 2022, most of the remaining sequences
+from UniProt release 2021_04 were included, featuring an additional TAR file on the
+AFDB download page, EMBL-EBI’s FTP and Google Cloud Datasets, containing predictions
+in MANE select (20).
+
+A November 2022 update rectified structures affected by a temporary numerical bug
+presented in the July release. This bug led to low accuracy predictions with
+correspondingly low pLDDT for ∼4% of the total structure predictions in the database.
+As part of this update, the coordinates for affected structures were updated (old
+coordinate files remain accessible as v3 files), and minor metadata adjustments were
+made in the mmCIF files for the remaining structures. We document every data version
+update in our changelog at https://ftp.ebi.ac.uk/pub/databases/alphafold/CHANGELOG.txt.
+
+As of September 2023, the EMBL-EBI’s FTP area hosts TAR files for proteomes of 48
+organisms, including model organisms and WHO pathogens of interest (Supplementary
+Table S1). The complete dataset is stored on Google Cloud Platform (GCP) and is
+accessed through a file access API. The metadata is indexed using Apache-Solr powering
+search API to facilitate data accessibility and searchability.
+
+The database provides access to over 214 million predicted structures, although some
+sequences might be outdated compared to UniProt due to less frequent data releases in
+the AlphaFold DB. Predictions of UniProt sequences are outputs of a single model run.
+In contrast, Swiss-Prot/proteomes entries represent the most confident prediction from
+runs of five models trained with different random seeds. The following sequences are
+not covered in the database: (i) those that are less than 16 amino acids, or (ii) >2700
+for SwissProt or proteome sequences and 1280 for other UniProt sequences, or (iii) those
+that contain non-standard amino acids, or (iv) are not in the UniProt ‘one sequence
+per gene’ FASTA file, or (v) viral proteins. These limitations are under discussion.
+
+The full dataset, housing all predictions, is accessible from Google Cloud Public
+Datasets under a CC-BY-4.0 license. This dataset, approximately 23 TiB in size, is
+available at the following Google Cloud Storage Bucket:
+gs://public-datasets-deepmind-alphafold-v4. We suggest that most users download only
+the subset of files relevant to their specific use case to optimise resources.
+However, if a complete dataset is required for local processing, as might be the case
+in an academic high-performance computing centre, it can be downloaded in roughly
+2.5 days using a 1 Gbps internet connection. Importantly, a Google account is
+necessary for the download."
 """
 
 import argparse

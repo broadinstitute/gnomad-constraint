@@ -104,71 +104,89 @@ COLNAMES_TRANSLATIONS = {
 Column names for the GENCODE translations Hail Table.
 """
 
+VAR_ANN_TMP_DIR = "gs://gnomad-tmp-4day/proemis3d/variant_annotations"
 VARIANT_LEVEL_ANNOTATION_CONFIG = {
     "context": {
         "ht": get_temp_context_preprocessed_ht(),
         "keys": ["locus", "alleles", "transcript_id"],
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/context.ht",
     },
     "gnomad_site": {
         "ht": browser_variant(),
         "keys": ["locus", "alleles"],
         "custom_select": process_gnomad_site_ht,
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/gnomad_site.ht",
     },
     "revel": {
         "ht": get_insilico_annotations_ht("revel"),
         "keys": ["locus", "alleles", "transcript_id"],
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/revel.ht",
     },
     "cadd": {
         "ht": get_insilico_annotations_ht("cadd"),
         "keys": ["locus", "alleles"],
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/cadd.ht",
     },
-    "phylop": {"ht": get_insilico_annotations_ht("phylop"), "keys": ["locus"]},
+    "phylop": {
+        "ht": get_insilico_annotations_ht("phylop"),
+        "keys": ["locus"],
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/phylop.ht",
+    },
     "genetics_gym": {
         "ht": get_processed_genetics_gym_missense_scores_ht(),
         "keys": ["locus", "alleles", "transcript_id", "uniprot_id"],
         "annotation_name": "genetics_gym_missense_scores",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/genetics_gym.ht",
     },
     "autism": {
         "ht": get_fu_variants_ht(),
         "keys": ["locus", "alleles"],
         "annotation_name": "autism",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/autism.ht",
     },
     "dd_denovo": {
         "ht": get_kaplanis_variants_ht(liftover_to_grch38=True, key_by_transcript=True),
         "keys": ["locus", "alleles", "gene_id", "transcript_id"],
         "annotation_name": "dd_denovo",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/dd_denovo.ht",
     },
     "dd_denovo_no_transcript": {
         "ht": get_kaplanis_variants_ht(liftover_to_grch38=True),
         "keys": ["locus", "alleles"],
         "annotation_name": "dd_denovo_no_transcript_match",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/dd_denovo_no_transcript.ht",
     },
     "gnomad_de_novo": {
         "ht": get_gnomad_de_novo_ht(),
         "keys": ["locus", "alleles"],
         "annotation_name": "gnomad_de_novo",
         "custom_select": process_gnomad_de_novo_ht,
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/gnomad_de_novo.ht",
     },
     "clinvar": {
         "ht": get_clinvar_missense_ht(),
         "keys": ["locus", "alleles", "gene_symbol"],
         "annotation_name": "clinvar",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/clinvar.ht",
     },
     "pext_base": {
         "ht": pext("base_level"),
         "keys": ["locus", "gene_id"],
         "annotation_name": "base_level_pext",
         "custom_select": process_pext_base_ht,
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/pext_base.ht",
     },
     "mtr": {
         "ht": get_mtr_ht(),
         "keys": ["locus", "alleles", "transcript_id"],
         "annotation_name": "mtr",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/mtr.ht",
     },
     "rmc": {
         "ht": get_temp_processed_rmc_ht(),
         "keys": ["locus", "transcript_id"],
         "annotation_name": "rmc",
+        "tmp_path": f"{VAR_ANN_TMP_DIR}/rmc.ht",
     },
 }
 """
@@ -1744,8 +1762,10 @@ def make_temp_annotation_ht(
     base_ht: hl.Table,
     annotation_ht: hl.Table,
     keys: List[str] = ["locus", "alleles"],
+    temp_path: Optional[str] = None,
     temp_path_prefix: str = "tmp_annotation_ht",
     annotation_name: Optional[str] = None,
+    overwrite: bool = False,
 ) -> hl.Table:
     """
     Make a temporary Hail Table with annotations from another Hail Table.
@@ -1753,8 +1773,11 @@ def make_temp_annotation_ht(
     :param base_ht: Base Hail Table to annotate.
     :param annotation_ht: Annotation Hail Table to index.
     :param keys: List of keys to index the annotation Hail Table with.
-    :param temp_path_prefix: Prefix for the temporary file path.
+    :param temp_path: Temporary file path.
+    :param temp_path_prefix: Prefix for the temporary file path if temp_path is not
+        provided.
     :param annotation_name: Name of the annotation to annotate the base Hail Table with.
+    :param overwrite: Whether to overwrite the temporary file if it exists.
     :return: Annotated Hail Table.
     """
     base_ht = base_ht.select(*[k for k in keys if k not in base_ht.key])
@@ -1766,12 +1789,19 @@ def make_temp_annotation_ht(
         annotation_expr = {annotation_name: annotation_expr}
 
     base_ht = base_ht.annotate(**annotation_expr)
-    base_ht = base_ht.checkpoint(hl.utils.new_temp_file(temp_path_prefix, "ht"))
+    temp_path = temp_path or hl.utils.new_temp_file(temp_path_prefix, "ht")
+    base_ht = base_ht.checkpoint(
+        temp_path,
+        overwrite=overwrite,
+        _read_if_exists=not overwrite,
+    )
 
     return base_ht
 
 
-def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
+def annotate_snvs_with_variant_level_data(
+    ht: hl.Table, overwrite_tmp_files: bool = True
+) -> hl.Table:
     """
     Annotate a per-SNV Hail Table with variant-level annotations from multiple sources.
 
@@ -1793,6 +1823,7 @@ def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
         - rmc
 
     :param ht: Input Hail Table.
+    :param overwrite_tmp_files: Whether to overwrite the temporary files if they exist.
     :return: Annotated Hail Table.
     """
     annotation_hts = {
@@ -1804,8 +1835,10 @@ def annotate_snvs_with_variant_level_data(ht: hl.Table) -> hl.Table:
                 else c["custom_select"](c["ht"].ht())
             ),
             keys=c["keys"],
+            temp_path=c.get("tmp_path"),
             temp_path_prefix=n,
             annotation_name=c.get("annotation_name"),
+            overwrite=overwrite_tmp_files,
         )[ht.key]
         for n, c in VARIANT_LEVEL_ANNOTATION_CONFIG.items()
     }
@@ -1927,15 +1960,15 @@ def create_per_snv_combined_ht(
     ht = ht.annotate(residue_ref=ht.aminoacid_ref)
 
     base_residue_ht = (
-        ht.key_by("transcript_id", "uniprot_id", "residue_index")
+        ht.key_by(
+            "transcript_id", "uniprot_id", "residue_index", "residue_ref", "residue_alt"
+        )
         .select(
             "gene_id",
             "gene_symbol",
             "canonical",
             "mane_select",
             "cds_length",
-            "residue_ref",
-            "residue_alt",
         )
         .distinct()
     ).cache()
@@ -1953,7 +1986,13 @@ def create_per_snv_combined_ht(
     residue_ht = make_temp_annotation_ht(
         ht,
         residue_ht,
-        keys=["transcript_id", "uniprot_id", "residue_index"],
+        keys=[
+            "transcript_id",
+            "uniprot_id",
+            "residue_index",
+            "residue_ref",
+            "residue_alt",
+        ],
         temp_path_prefix="residue",
     ).drop("residue_index")
     select_uniprot_transcript_ht = make_temp_annotation_ht(
@@ -1982,6 +2021,9 @@ def create_per_snv_combined_ht(
         "mane_select",
         "transcript_biotype",
         "most_severe_consequence",
+        "residue_index",
+        "residue_alt",
+        "residue_ref",
         "cds_len_mismatch",
         "cds_len_not_div_by_3",
         is_phaplo_gene=hl.set(get_phaplo().he()).contains(ht.gene_symbol),
