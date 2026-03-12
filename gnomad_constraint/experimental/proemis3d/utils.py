@@ -1876,22 +1876,31 @@ def run_forward(
 
     num_residues = ht.oe.length()
 
-    # Use valid_residues from determine_regions_with_min_oe_upper if available,
-    # otherwise compute from union of all residues in candidate regions.
-    # This excludes residues that were hard-filtered (completely removed) by
-    # pLDDT or PAE filtering.
-    if "valid_residues" in ht.row:
-        null_region = ht.valid_residues
-    else:
-        # Fallback: compute from union of all regions.
-        null_region = hl.array(ht.min_oe_upper.flatmap(lambda x: hl.set(x.region)))
-
     # excluded_residues = for null model (pLDDT-only), stored once per row.
     # excluded_residues_region = for candidate region stats (pLDDT + PAE), per element.
     has_excluded_res = "excluded_residues" in ht.row
     has_excluded_res_region = (
         "excluded_residues_region" in ht.min_oe_upper.dtype.element_type.fields
     )
+
+    ##if has_excluded_res:
+    ##    excluded_residues_set = hl.set(ht.excluded_residues)
+    ##if has_excluded_res_region:
+    ##    excluded_residues_set = excluded_residues_set | hl.set(
+    ##        ht.min_oe_upper.flatmap(lambda x: hl.set(x.excluded_residues_region))
+    ##    )
+
+    # Use valid_residues from determine_regions_with_min_oe_upper if available,
+    # otherwise compute from union of all residues in candidate regions.
+    # This excludes residues that were hard-filtered (completely removed) by
+    # pLDDT or PAE filtering.
+    if "valid_residues" in ht.row:
+        null_region = ht.valid_residues
+        #null_region = (
+        #    hl.range(0, num_residues).filter(lambda x: ~excluded_residues_set.contains(x))
+    else:
+        # Fallback: compute from union of all regions.
+        null_region = hl.array(ht.min_oe_upper.flatmap(lambda x: hl.set(x.region)))
 
     null_model = prep_region_struct(
         null_region,

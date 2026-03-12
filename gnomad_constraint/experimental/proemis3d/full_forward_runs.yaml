@@ -1,0 +1,13 @@
+runs:
+  - path: "gs://gnomad/v4.1/constraint/proemis3d/output/proemis3D_forward.oe_upper_gamma.aic.min_exp_mis_16.ht"
+    label: "AIC (no pLDDT/PAE)"
+  - path: "gs://gnomad/v4.1/constraint/proemis3d/output/proemis3D_forward.oe_upper_gamma.lrt.min_exp_mis_16.ht"
+    label: "LRT (no pLDDT/PAE)"
+  - path: "gs://gnomad/v4.1/constraint/proemis3d/output/proemis3D_forward.oe_upper_gamma.aic.min_exp_mis_16.plddt_cutoff_70.0.plddt_method_exclude_low_plddt_from_stats.ht"
+    label: "AIC, pLDDT exclude"
+  - path: "gs://gnomad/v4.1/constraint/proemis3d/output/proemis3D_forward.oe_upper_gamma.lrt.min_exp_mis_16.plddt_cutoff_70.0.plddt_method_exclude_low_plddt_from_stats.ht"
+    label: "LRT, pLDDT exclude"
+  - path: "gs://gnomad/v4.1/constraint/proemis3d/output/proemis3D_forward.oe_upper_gamma.aic.min_exp_mis_16.pae_cutoff_15.0.pae_method_filter_on_pairwise_pae_with_center.ht"
+    label: "AIC, PAE filter_center"
+  - path: "gs://gnomad/v4.1/constraint/proemis3d/output/proemis3D_forward.oe_upper_gamma.lrt.min_exp_mis_16.pae_cutoff_15.0.pae_method_filter_on_pairwise_pae_with_center.ht"
+    label: "LRT, PAE filter_center"

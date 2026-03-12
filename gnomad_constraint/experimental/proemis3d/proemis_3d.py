@@ -264,7 +264,7 @@ def main(args):
     """Execute the Proemis 3D pipeline."""
     hl.init(
         log="/proemis_3d.log",
-        tmp_dir="gs://gnomad-tmp-4day/proemis3d/forward_lrt",
+        tmp_dir="gs://gnomad-tmp-4day/proemis3d/full-plddt-exclude-aic",
     )
     # from gnomad.resources.grch38.reference_data import vep_context
     # ht = vep_context.ht()._filter_partitions(range(1))
@@ -507,16 +507,16 @@ def main(args):
             ht = determine_regions_with_min_oe_upper(
                 af2_ht,
                 ht,
-                pae_ht=None,  # pae_ht,
-                plddt_ht=None,  # plddt_ht_for_filtering,
+                pae_ht=pae_ht,
+                plddt_ht=plddt_ht_for_filtering,
                 min_exp_mis=args.min_exp_mis,
                 oe_upper_method="gamma",
                 max_pae=args.pae_cutoff,
                 pae_cutoff_method=args.pae_cutoff_method,
-                min_plddt=None,  # (
-                #    args.plddt_cutoff if args.plddt_cutoff_method is not None else None
-                # ),
-                plddt_cutoff_method=None,  # args.plddt_cutoff_method,
+                min_plddt=(
+                    args.plddt_cutoff if args.plddt_cutoff_method is not None else None
+                ),
+                plddt_cutoff_method=args.plddt_cutoff_method,
             )
             ht = ht.checkpoint(hl.utils.new_temp_file("sort_regions_by_oe", "ht"))
             ht = ht.repartition(5000).checkpoint(
@@ -539,6 +539,19 @@ def main(args):
             ht.show(5)
 
         if args.run_forward:
+            plddt_out = ""
+            if args.plddt_cutoff is not None:
+                plddt_out = f".plddt_cutoff_{args.plddt_cutoff}"
+                # Add pLDDT cutoff method to output path if specified
+                if args.plddt_cutoff_method is not None:
+                    plddt_out += f".plddt_method_{args.plddt_cutoff_method}"
+
+            pae_out = ""
+            if args.pae_cutoff is not None:
+                pae_out = (
+                    f".pae_cutoff_{args.pae_cutoff}.pae_method_{args.pae_cutoff_method}"
+                )
+
             ht = hl.read_table(
                 f"gs://gnomad/v4.1/constraint/proemis3d/preprocessed_data/sort_regions_by_oe.min_exp_mis_{args.min_exp_mis}{plddt_out}{pae_out}.gamma.ht",
             )
