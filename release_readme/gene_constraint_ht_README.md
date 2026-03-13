@@ -183,15 +183,15 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 - `pRec`: Probability that transcript falls into distribution of recessive genes (~71% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 - `pNull`: Probability that transcript falls into distribution of unconstrained genes (~100% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
-- `gen_anc_obs.global`: Array of observed values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_obs.afr`: Array of observed values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.amr`: Array of observed values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.eas`: Array of observed values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.nfe`: Array of observed values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.sas`: Array of observed values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.global`: Array of expected values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_exp.afr`: Array of expected values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.amr`: Array of expected values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.eas`: Array of expected values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.nfe`: Array of expected values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.sas`: Array of expected values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
+- `gen_anc_obs.global`: Array of observed high confidence pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `gen_anc_obs.afr`: Array of observed high confidence pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `gen_anc_obs.amr`: Array of observed high confidence pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `gen_anc_obs.eas`: Array of observed high confidence pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `gen_anc_obs.nfe`: Array of observed high confidence pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `gen_anc_obs.sas`: Array of observed high confidence pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
+- `gen_anc_exp.global`: Array of expected high confidence pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `gen_anc_exp.afr`: Array of expected high confidence pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `gen_anc_exp.amr`: Array of expected high confidence pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `gen_anc_exp.eas`: Array of expected high confidence pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `gen_anc_exp.nfe`: Array of expected high confidence pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `gen_anc_exp.sas`: Array of expected high confidence pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
