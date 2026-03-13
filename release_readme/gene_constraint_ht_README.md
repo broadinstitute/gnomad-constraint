@@ -2,6 +2,58 @@
 
 Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descriptions also apply to rows in Hail Tables, where a "." in the field name indicates a struct. All constraint metrics were calculated using the gnomAD v4.1.1 exomes.
 
+## Globals
+
+Pipeline parameters and metadata stored as globals on the Hail Table.
+
+- `version`: gnomAD constraint release version
+
+### `calculate_mu_params`
+
+Parameters used for the genome-based mutation rate calculation.
+
+- `calculate_mu_params.ac_cutoff`: Maximum allele count cutoff for variants included in the mutation rate calculation
+- `calculate_mu_params.min_cov`: Minimum mean genome coverage for a site to be included
+- `calculate_mu_params.max_cov`: Maximum mean genome coverage for a site to be included
+- `calculate_mu_params.gerp_lower_cutoff`: Minimum GERP score for a site to be included (default: -3.9885, the 5th percentile of the genome-wide distribution)
+- `calculate_mu_params.gerp_upper_cutoff`: Maximum GERP score for a site to be included (default: 2.6607, the 95th percentile of the genome-wide distribution)
+- `calculate_mu_params.downsampling_level`: Downsampling level used for the mutation rate calculation
+- `calculate_mu_params.most_severe_consequence`: List of most severe transcript consequences used as neutral sites for the mutation rate calculation
+
+### `build_models_params`
+
+Parameters used when building the plateau and coverage correction models.
+
+- `build_models_params.low_cov_cutoff`: Lower AN% cutoff; sites at or below this value are excluded from model training
+- `build_models_params.high_cov_cutoff`: AN% cutoff separating high-coverage (plateau model) from low-coverage (coverage correction model) training sites
+- `build_models_params.upper_cov_cutoff`: Upper AN% cutoff; sites above this value are excluded from the high-coverage (plateau) model training set but may still be included in the low-coverage model (null if no upper bound)
+
+### `apply_models_params`
+
+Parameters used when applying the models to compute expected variant counts.
+
+- `apply_models_params.low_cov_cutoff`: Lower AN% cutoff; sites at or below this value are excluded from expected variant calculations
+- `apply_models_params.high_cov_cutoff`: AN% cutoff separating high-coverage from low-coverage sites when applying the model
+
+### `downsamplings`
+
+Struct mapping each genetic ancestry group to an array of downsampling levels (as integers) corresponding to the indices in `gen_anc_obs` and `gen_anc_exp` arrays in the row fields.
+
+- `downsamplings.global`: Array of downsampling levels for the full gnomAD v4 exomes dataset
+- `downsamplings.afr`: Array of downsampling levels for the African/African American genetic ancestry group
+- `downsamplings.amr`: Array of downsampling levels for the Admixed American genetic ancestry group
+- `downsamplings.eas`: Array of downsampling levels for the East Asian genetic ancestry group
+- `downsamplings.nfe`: Array of downsampling levels for the non-Finnish European genetic ancestry group
+- `downsamplings.sas`: Array of downsampling levels for the South Asian genetic ancestry group
+
+### Other globals
+
+- `max_af`: Maximum alternate allele frequency cutoff used to define observed variants
+- `sd_raw_z`: Struct of standard deviations of raw Z-scores used to normalize `z_raw` → `z_score` for each constraint group
+  - `sd_raw_z.syn`: Standard deviation of raw Z-scores for synonymous variants
+  - `sd_raw_z.mis`: Standard deviation of raw Z-scores for missense variants
+  - `sd_raw_z.lof_hc_lc`: Standard deviation of raw Z-scores for high and low confidence pLoF variants
+  - `sd_raw_z.lof`: Standard deviation of raw Z-scores for high confidence pLoF variants
 ## Key Fields
 
 - `gene`: Gene name
@@ -15,10 +67,11 @@ Descriptions of columns in the gnomAD v4.1.1 gene constraint metrics tsv. Descri
 - `transcript_type`: Transcript biotype from [Gencode](https://www.gencodegenes.org/pages/biotypes.html)
 - `transcript_level`: Transcript level from [Gencode](https://www.gencodegenes.org/pages/data_format.html)
 - `chromosome`: Chromosome where gene is located
+- `start_position`: Start position of the transcript
+- `end_position`: End position of the transcript
 - `cds_length`: Length of the coding sequences (CDS) in the transcript
-transcript
 - `num_coding_exons`: Number of coding exons in the transcript
-- `gene_quality_metrics.exome_prop_bp_AN90`:  Proportion of coding bases in gene with median allele number percent (AN%) (percent of total possible AN observed at site) greater than 90%
+- `gene_quality_metrics.exome_prop_bp_AN90`:  Proportion of coding bases in gene with allele number percent (AN%) (percent of total possible AN observed at site) greater than 90%
 - `gene_quality_metrics.exome_mean_AS_MQ`: Mean value of AS_MQ (allele-specific root mean square of the mapping quality of reads across all samples) across gene
 - `gene_quality_metrics.exome_prop_segdup`: Proportion of coding bases in gene that overlap a segmental duplication
 - `gene_quality_metrics.exome_prop_LCR`: Proportion of coding bases in gene that overlap a low-complexity region
@@ -45,20 +98,20 @@ transcript
 - `syn.oe`: Observed to expected ratio for synonymous variants in transcript (`syn.obs` divided by `syn.exp`)
 - `syn.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for synonymous variants
 - `syn.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for synonymous variants
-- `syn.z_score`: Raw Z-score for synonymous variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values of syn.z_score indicate likely data quality issues.
-- `syn.z_score`: Z-score for synonymous variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values of syn.z_score indicate likely data quality issues.
-- `gen_anc_obs.global`: Array of observed values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_obs.afr`: Array of observed values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.amr`: Array of observed values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.eas`: Array of observed values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.nfe`: Array of observed values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.sas`: Array of observed values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.global`: Array of expected values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_exp.afr`: Array of expected values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.amr`: Array of expected values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.eas`: Array of expected values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.nfe`: Array of expected values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.sas`: Array of expected values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
+- `syn.z_raw`: Raw (unnormalized) Z-score for synonymous variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts. Extreme values indicate likely data quality issues.
+- `syn.z_score`: Normalized Z-score for synonymous variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values indicate likely data quality issues.
+- `syn.gen_anc_obs.global`: Array of observed synonymous variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `syn.gen_anc_obs.afr`: Array of observed synonymous variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `syn.gen_anc_obs.amr`: Array of observed synonymous variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `syn.gen_anc_obs.eas`: Array of observed synonymous variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `syn.gen_anc_obs.nfe`: Array of observed synonymous variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `syn.gen_anc_obs.sas`: Array of observed synonymous variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
+- `syn.gen_anc_exp.global`: Array of expected synonymous variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `syn.gen_anc_exp.afr`: Array of expected synonymous variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `syn.gen_anc_exp.amr`: Array of expected synonymous variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `syn.gen_anc_exp.eas`: Array of expected synonymous variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `syn.gen_anc_exp.nfe`: Array of expected synonymous variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `syn.gen_anc_exp.sas`: Array of expected synonymous variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
 
 ## Missense
 
@@ -69,20 +122,20 @@ transcript
 - `mis.oe`: Observed to expected ratio for missense variants in transcript (`mis.obs` divided by `mis.exp`)
 - `mis.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for missense variants
 - `mis.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for missense variants
-- `mis.z_score`: Raw Z-score for missense variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values of mis.z_score indicate likely data quality issues.
-- `mis.z_score`: Z-score for missense variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values of mis.z_score indicate likely data quality issues.
-- `gen_anc_obs.global`: Array of observed values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_obs.afr`: Array of observed values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.amr`: Array of observed values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.eas`: Array of observed values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.nfe`: Array of observed values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.sas`: Array of observed values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.global`: Array of expected values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_exp.afr`: Array of expected values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.amr`: Array of expected values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.eas`: Array of expected values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.nfe`: Array of expected values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.sas`: Array of expected values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
+- `mis.z_raw`: Raw (unnormalized) Z-score for missense variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts. Extreme values indicate likely data quality issues.
+- `mis.z_score`: Normalized Z-score for missense variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values indicate likely data quality issues.
+- `mis.gen_anc_obs.global`: Array of observed missense variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `mis.gen_anc_obs.afr`: Array of observed missense variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `mis.gen_anc_obs.amr`: Array of observed missense variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `mis.gen_anc_obs.eas`: Array of observed missense variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `mis.gen_anc_obs.nfe`: Array of observed missense variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `mis.gen_anc_obs.sas`: Array of observed missense variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
+- `mis.gen_anc_exp.global`: Array of expected missense variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `mis.gen_anc_exp.afr`: Array of expected missense variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `mis.gen_anc_exp.amr`: Array of expected missense variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `mis.gen_anc_exp.eas`: Array of expected missense variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `mis.gen_anc_exp.nfe`: Array of expected missense variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `mis.gen_anc_exp.sas`: Array of expected missense variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
 
 ## Loss-of-Function (High and Low Confidence)
 
@@ -97,20 +150,20 @@ transcript
 - `lof_hc_lc.oe_ci.upper_bin_percentile`: Transcript percentile associated with LOEUF score for transcript. For example, if the gene percentile is 85, then the transcript is more highly constrained against predicted loss-of-function variation than 85% of transcripts.
 - `lof_hc_lc.oe_ci.upper_bin_decile`: Decile bin of upper bound of 90% CI `oe` for pLoF variants for given transcript (lower values indicate more constrained).  This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof_hc_lc.oe_ci.upper_bin_sextile`: Sextile bin of upper bound of 90% CI `oe` for pLoF variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `lof_hc_lc.z_score`: Raw Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
-- `lof_hc_lc.z_score`: Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
-- `gen_anc_obs.global`: Array of observed values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_obs.afr`: Array of observed values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.amr`: Array of observed values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.eas`: Array of observed values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.nfe`: Array of observed values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_obs.sas`: Array of observed values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.global`: Array of expected values across different strata using the full gnomAD v4 exomes dataset (global). Indices in array are described in TODO: add global field here
-- `gen_anc_exp.afr`: Array of expected values across different strata using the African/African American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.amr`: Array of expected values across different strata using the Admixed American genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.eas`: Array of expected values across different strata using the East Asian genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.nfe`: Array of expected values across different strata using the non-Finnish European genetic ancestry group. Indices in array are described in TODO: add global field here
-- `gen_anc_exp.sas`: Array of expected values across different strata using the South Asian genetic ancestry group. Indices in array are described in TODO: add global field here
+- `lof_hc_lc.z_raw`: Raw (unnormalized) Z-score for high and low confidence pLoF variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts.
+- `lof_hc_lc.z_score`: Normalized Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
+- `lof_hc_lc.gen_anc_obs.global`: Array of observed HC+LC pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `lof_hc_lc.gen_anc_obs.afr`: Array of observed HC+LC pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `lof_hc_lc.gen_anc_obs.amr`: Array of observed HC+LC pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `lof_hc_lc.gen_anc_obs.eas`: Array of observed HC+LC pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `lof_hc_lc.gen_anc_obs.nfe`: Array of observed HC+LC pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `lof_hc_lc.gen_anc_obs.sas`: Array of observed HC+LC pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
+- `lof_hc_lc.gen_anc_exp.global`: Array of expected HC+LC pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `lof_hc_lc.gen_anc_exp.afr`: Array of expected HC+LC pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `lof_hc_lc.gen_anc_exp.amr`: Array of expected HC+LC pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `lof_hc_lc.gen_anc_exp.eas`: Array of expected HC+LC pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `lof_hc_lc.gen_anc_exp.nfe`: Array of expected HC+LC pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `lof_hc_lc.gen_anc_exp.sas`: Array of expected HC+LC pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
 
 ## Loss-of-Function (High Confidence Only)
 
@@ -122,11 +175,11 @@ transcript
 - `lof.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants
 - `lof.oe_ci.upper`: LOEUF: upper bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants (lower values indicate more constrained)
 - `lof.oe_ci.upper_rank`: Transcript's rank of LOEUF value compared to other transcripts (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `lof_hc_lc.oe_ci.upper_bin_percentile`: Transcript percentile associated with LOEUF score for transcript. For example, if the gene percentile is 85, then the transcript is more highly constrained against predicted loss-of-function variation than 85% of transcripts.
+- `lof.oe_ci.upper_bin_percentile`: Transcript percentile associated with LOEUF score for transcript. For example, if the gene percentile is 85, then the transcript is more highly constrained against predicted loss-of-function variation than 85% of transcripts.
 - `lof.oe_ci.upper_bin_decile`: Decile bin of LOEUF for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof.oe_ci.upper_bin_sextile`: Sextile bin of LOEUF for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
-- `lof.z_score`: Raw Z-score for pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
-- `lof.z_score`: Z-score for pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
+- `lof.z_raw`: Raw (unnormalized) Z-score for high confidence pLoF variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts.
+- `lof.z_score`: Normalized Z-score for high confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
 - `pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 - `pRec`: Probability that transcript falls into distribution of recessive genes (~71% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
 - `pNull`: Probability that transcript falls into distribution of unconstrained genes (~100% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
