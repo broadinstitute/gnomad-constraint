@@ -16,30 +16,40 @@ from gnomad.utils.constraint import (
     annotate_mutation_type,
     annotate_with_mu,
     apply_models,
-    apply_plateau_models,
     calculate_raw_z_score,
     calculate_raw_z_score_sd,
     calibration_model_group_expr,
     compute_pli,
     count_observed_and_possible_by_group,
-    coverage_correction_expr,
     get_constraint_flags,
     oe_confidence_interval,
-    single_variant_count_expr,
     single_variant_observed_and_possible_expr,
-    weighted_agg_sum_expr,
 )
 from gnomad.utils.filtering import add_filters_expr
 from gnomad.utils.vep import CSQ_CODING, filter_vep_transcript_csqs_expr
 from hail.utils.misc import divide_null, new_temp_file
-from numpy.lib import r_
 
-from gnomad_constraint.resources.resource_utils import (
-    AGGREGATE_SUM_FIELDS,
+from gnomad_constraint.resources.constants import (
+    ADJ_FREQ_META,
     CALIBRATION_GROUPING,
+    CONSTRAINT_GRANULARITIES,
     COVERAGE_CUTOFF,
+    GENCODE_FIELD_RENAMES,
     MU_GROUPING,
     MUTATION_TYPE_FIELDS,
+    PLI_EXPECTED_VALUES,
+    RELEASE_CG_RENAME,
+    RELEASE_CG_SELECT,
+    RELEASE_CI_FIELDS,
+    RELEASE_CI_FIELDS_WITH_RANK,
+    RELEASE_GROUP_NAMES,
+    RELEASE_GROUP_RENAMES,
+    RELEASE_GROUPS_WITH_PLI,
+    RELEASE_GROUPS_WITH_RANK,
+    RELEASE_KEY_ORDER,
+    RELEASE_LOF_FIELDS,
+    RELEASE_PIPELINE_PARAM_GLOBALS,
+    RELEASE_TOP_LEVEL_ANNOTATIONS,
 )
 
 logging.basicConfig(
@@ -89,15 +99,15 @@ def filter_freq_for_constraint(
     :return: Filtered frequency array and metadata.
     """
     freq_meta = hl.eval(freq_meta_expr)
-    meta_keep = [{"group": "adj"}]
+    meta_keep = [ADJ_FREQ_META]
 
     if gen_ancs is not None:
-        meta_keep += [{"group": "adj", gen_anc_label: pop} for pop in gen_ancs]
+        meta_keep += [{**ADJ_FREQ_META, gen_anc_label: pop} for pop in gen_ancs]
 
     if downsamplings is not None:
         downsampling_pops = ["global"] + (downsampling_gen_ancs or [])
         meta_keep += [
-            {"group": "adj", gen_anc_label: pop, "downsampling": str(ds)}
+            {**ADJ_FREQ_META, gen_anc_label: pop, "downsampling": str(ds)}
             for pop in downsampling_pops
             for ds in downsamplings
         ]
@@ -200,7 +210,7 @@ def get_annotations_for_computing_mu(
         gen_anc_label="pop",
     )
     downsampling_idx = genomes_freq_meta.index(
-        {"group": "adj", "pop": "global", "downsampling": str(downsampling_level)}
+        {**ADJ_FREQ_META, "pop": "global", "downsampling": str(downsampling_level)}
     )
 
     # Filter to autosomal sites (remove pseudoautosomal regions).
@@ -289,8 +299,8 @@ def get_exome_coverage_expr(
         an_meta = ht.an_globals.exomes.strata_meta
 
         # Get total AN count taking into account XX and XY samples for X and Y non-PAR.
-        xx_index = an_meta.index({"group": "adj", "sex": "XX"})
-        xy_index = an_meta.index({"group": "adj", "sex": "XY"})
+        xx_index = an_meta.index({**ADJ_FREQ_META, "sex": "XX"})
+        xy_index = an_meta.index({**ADJ_FREQ_META, "sex": "XY"})
         xx_an_sample_count = an_sample_count[xx_index]
         xy_an_sample_count = an_sample_count[xy_index]
         an_count = (
@@ -852,7 +862,6 @@ def aggregate_per_variant_expected_ht(
 
     ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
 
-    """
     # Check array lengths to determine if we need to batch.
     arrays = [
         f for f in aggregate_fields_to_sum if isinstance(ht[f], hl.ArrayExpression)
@@ -879,11 +888,13 @@ def aggregate_per_variant_expected_ht(
                 **{f: ht[f][start_idx:end_idx] for f in arrays}
             ).checkpoint(new_temp_file(f"batch_{i}", "ht"))
             batches.append(
-                _ht.group_by(*groupings).aggregate(
+                _ht.group_by(*groupings)
+                .aggregate(
                     **aggregate_expected_variants_expr(
-                        _ht,
-                        fields_to_sum=aggregate_fields_to_sum if i == 0 else arrays)
-                ).checkpoint(new_temp_file(f"batch_{i}.agg", "ht"))
+                        _ht, fields_to_sum=aggregate_fields_to_sum if i == 0 else arrays
+                    )
+                )
+                .checkpoint(new_temp_file(f"batch_{i}.agg", "ht"))
             )
         ht = batches[0]
         batches = [_ht[ht.key] for _ht in batches[1:]]
@@ -891,7 +902,6 @@ def aggregate_per_variant_expected_ht(
             **{f: hl.flatten([ht[f]] + [_ht[f] for _ht in batches]) for f in arrays}
         )
 
-    """
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
     return ht.naive_coalesce(1000)
 
@@ -954,7 +964,6 @@ def calculate_mu_by_downsampling(
     return annotate_mutation_type(ht)
 
 
-# TODO: I think we decided this isn't needed right? We can just use canonical.
 def mane_select_over_canonical_filter_expr(ht: hl.Table) -> hl.Table:
     """
     Filter to MANE Select over canonical transcripts.
@@ -962,6 +971,12 @@ def mane_select_over_canonical_filter_expr(ht: hl.Table) -> hl.Table:
     Filter to only ensembl transcripts of the specified transcript filter. If MANE
     select is specified, and a gene does not have a MANE select transcript, use
     canonical instead.
+
+    .. note::
+
+        In VEP 105 (used for gnomAD v4), all MANE Select transcripts are also
+        annotated as canonical. As a result, this function produces the same set of
+        transcripts as a simple canonical filter for v4 data.
 
     :param ht: Table with the MANE Select and canonical annotations.
     :return: Table filtered to MANE Select over canonical transcripts.
@@ -981,25 +996,117 @@ def mane_select_over_canonical_filter_expr(ht: hl.Table) -> hl.Table:
     )
 
 
+def get_transcript_filter_expr(
+    ht: hl.Table,
+    use_mane_select_over_canonical: bool = True,
+    mane_select_only: bool = False,
+) -> hl.expr.BooleanExpression:
+    """
+    Return a filter expression for selecting one representative transcript per gene.
+
+    :param ht: Table with ``transcript``, ``mane_select``, ``canonical``, and
+        ``gene_id`` annotations.
+    :param use_mane_select_over_canonical: When ``True`` (default), prefer MANE
+        Select transcripts, falling back to canonical for genes without a MANE
+        Select entry. When ``False``, use canonical transcripts only. Ignored when
+        ``mane_select_only`` is ``True``.
+    :param mane_select_only: When ``True``, restrict to ENST MANE Select transcripts
+        only, with no canonical fallback. Default is ``False``.
+    :return: Boolean expression that is ``True`` for the selected transcripts.
+    """
+    if mane_select_only:
+        return ht.transcript.startswith("ENST") & ht.mane_select
+    elif use_mane_select_over_canonical:
+        return mane_select_over_canonical_filter_expr(ht)
+    else:
+        return ht.transcript.startswith("ENST") & ht.canonical
+
+
 # TODO: Move to gnomad_methods?
+def get_rank_and_bins(
+    value_expr: hl.expr.Float64Expression,
+    bin_granularities: Optional[Dict[str, int]] = None,
+) -> hl.StructExpression:
+    """Rank rows by a numeric expression and assign bin labels.
+
+    Rows are ordered ascending by ``value_expr``. Each row is assigned a
+    0-based ``rank`` and a ``bin_{name}`` field for every entry in
+    ``bin_granularities``, computed as
+    ``hl.int(rank * multiplier / n_transcripts)``.
+
+    :param value_expr: Numeric expression to rank by (ascending).
+    :param bin_granularities: Mapping of bin name to multiplier. Each entry
+        produces a ``bin_{name}`` field. Default is
+        ``{"percentile": 100, "decile": 10, "sextile": 6}``.
+    :return: Struct with ``rank`` and ``bin_{name}`` fields for each entry in
+        ``bin_granularities``.
+    """
+    if bin_granularities is None:
+        bin_granularities = {"percentile": 100, "decile": 10, "sextile": 6}
+
+    ht = value_expr._indices.source
+    source_key = list(ht.key)
+    n_transcripts = ht.count()
+    ranked_ht = ht.select(_=value_expr).order_by("_").add_index("rank")
+    ranked_ht = ranked_ht.select(
+        *source_key,
+        "rank",
+        **{
+            f"bin_{name}": hl.int(ranked_ht.rank * multiplier / n_transcripts)
+            for name, multiplier in bin_granularities.items()
+        },
+    ).cache()
+
+    return ranked_ht.key_by(*source_key).cache()[ht.key]
+
+
 def add_oe_upper_rank_and_decile(
     ht: hl.Table,
     use_mane_select_over_canonical: bool = True,
+    mane_select_only: bool = False,
+    bin_granularities: Optional[Dict[str, int]] = None,
 ) -> hl.Table:
     """
     Compute the rank and decile of the oe upper confidence interval.
 
     :param ht: Table with the oe upper confidence interval.
-
-    :return: Struct containing the rank and decile of the oe upper confidence interval.
+    :param use_mane_select_over_canonical: Use MANE Select over canonical transcripts
+        for ranking, falling back to canonical when MANE Select is absent for a gene.
+        Default is True. Ignored when ``mane_select_only`` is True.
+    :param mane_select_only: Restrict ranking to ENST MANE Select transcripts only,
+        with no canonical fallback. Default is False.
+    :param bin_granularities: Mapping of bin name to multiplier used to assign each
+        transcript to a bin (``hl.int(rank * multiplier / n_transcripts)``). Each entry
+        produces a ``bin_{name}`` field. Default is
+        ``{"percentile": 100, "decile": 10, "sextile": 6}``.
+    :return: Input table with ``oe_ci_{ci}_rank`` fields added at the constraint-group
+        level (e.g., ``oe_ci_discretized_poisson_rank``, ``oe_ci_gamma_rank``), each
+        a struct with ``rank`` and ``bin_{name}`` fields for every entry in
+        ``bin_granularities``. Transcripts excluded from ranking have these fields set
+        to missing.
     """
-    total_count = ht.count()
-    if use_mane_select_over_canonical:
-        rank_filter_expr = mane_select_over_canonical_filter_expr(ht)
-    else:
-        rank_filter_expr = ht.transcript.startswith("ENST") & ht.canonical
+    # Add an integer index so re-keying after order_by is an O(1) lookup.
+    ht = ht.add_index("_idx").key_by("_idx").cache()
 
-    ms_ht = ht.filter(rank_filter_expr)
+    total_count = ht.count()
+    ms_ht = ht.filter(
+        get_transcript_filter_expr(ht, use_mane_select_over_canonical, mane_select_only)
+    )
+
+    # Extract only the first freq group (adj/all-samples) per constraint group for
+    # ranking.
+    ci_fields = ["discretized_poisson", "gamma"]
+    ms_ht = (
+        ms_ht.select(
+            oe_ci_upper=ms_ht.constraint_groups.map(
+                lambda x: hl.struct(
+                    **{ci: x.oe_info[0][f"oe_ci_{ci}"].upper for ci in ci_fields}
+                )
+            ),
+        )
+        .naive_coalesce(100)
+        .checkpoint(new_temp_file("oe_ci_upper.before_rank", "ht"))
+    )
     n_transcripts = ms_ht.count()
     logger.info(
         "Retaining %d out of %d transcripts to use for rank annotations.",
@@ -1007,97 +1114,98 @@ def add_oe_upper_rank_and_decile(
         total_count,
     )
 
-    """
-    ms_ht = ms_ht.select(
-        oe_ci_upper=ms_ht.constraint_groups.map(
-            lambda x: x.oe_info.map(
-                lambda y: hl.struct(
-                    upper_ci=y.oe_ci.upper,
-                    upper_ci_chisq=y.oe_ci_chisq.upper,
-                    upper_ci_gamma=y.oe_ci_gamma.upper,
-                )
-            )
-        ),
-    ).naive_coalesce(100).checkpoint(new_temp_file("oe_ci_upper.before_rank", "ht"))
-
+    # For each (constraint group, CI method), rank a minimal 2-column table and
+    # checkpoint it, then join all rank tables back in one pass.
     num_constraint_groups = hl.eval(ms_ht.constraint_group_meta.length())
-    num_freq_groups = hl.eval(ms_ht.exomes_freq_meta.length())
-    for i in range(num_constraint_groups):
-        for j in range(num_freq_groups):
-            ms_ht = ms_ht.annotate(upper_ci_rank1=hl.struct())
-            for k in ["upper_ci", "upper_ci_chisq", "upper_ci_gamma"]:
-                # Rank in ascending order.
-                ms_ht = ms_ht.order_by(ms_ht.oe_ci_upper[i][j][k])
-                _rank = hl.struct(**{f'{k}_rank': hl.scan.count()})
-                if "upper_ci_rank1" in ms_ht.row:
-                    _rank = ms_ht.upper_ci_rank1.annotate(**_rank)
-                ms_ht = ms_ht.annotate(upper_ci_rank1=_rank)
+    ms_ht = ms_ht.annotate(
+        oe_ci_upper=[
+            hl.struct(
+                **{
+                    ci: get_rank_and_bins(ms_ht.oe_ci_upper[i][ci], bin_granularities)
+                    for ci in ci_fields
+                }
+            )
+            for i in range(num_constraint_groups)
+        ]
+    ).cache()
 
-            _rank = ms_ht.upper_ci_rank1
-            if "upper_ci_rank2" in ms_ht.row:
-                _rank = ms_ht.upper_ci_rank2.append(_rank)
-            else:
-                _rank = [_rank]
-            ms_ht = ms_ht.annotate(upper_ci_rank2=_rank)
-            ms_ht = ms_ht.checkpoint(new_temp_file(f"constraint_group{i}.freq_groups{j}", "ht"))
-
-        _rank = ms_ht.upper_ci_rank2
-        if "upper_ci_rank3" in ms_ht.row:
-            _rank = ms_ht.upper_ci_rank3.append(_rank)
-        else:
-            _rank = [_rank]
-        ms_ht = ms_ht.annotate(upper_ci_rank3=_rank)
-
-    ms_ht = ms_ht.checkpoint(new_temp_file("oe_ci_upper.rank", "ht"))
-    """
-
-    ms_ht = hl.read_table(
-        "gs://gnomad-tmp-4day/oe_ci_upper.rank-664KaxZ6k3vyUFBpZIJaqh.ht"
+    # Annotate each constraint group with rank/bin fields at the group level (not
+    # inside oe_info, since all array elements must share the same struct schema).
+    # ht is already keyed by _idx, so ms_ht can be looked up directly.
+    ms_keyed = ms_ht[ht._idx]
+    ht = ht.annotate(
+        constraint_groups=hl.if_else(
+            hl.is_defined(ms_keyed.oe_ci_upper),
+            hl.map(
+                lambda g, r: g.annotate(
+                    **{f"oe_ci_{ci}_rank": r[ci] for ci in ci_fields}
+                ),
+                ht.constraint_groups,
+                ms_keyed.oe_ci_upper,
+            ),
+            ht.constraint_groups,
+        )
     )
 
-    # Map rank and bin annotations back to original Table.
-    ht = ht.annotate(upper_ci_rank3=ms_ht.key_by(*list(ht.key))[ht.key].upper_ci_rank3)
-    ht = ht.annotate(
-        constraint_groups=hl.enumerate(ht.constraint_groups).map(
-            lambda x: x[1].annotate(
-                oe_info=hl.enumerate(x[1].oe_info).map(
-                    lambda y: hl.bind(
-                        lambda r: y[1].annotate(
-                            **{
-                                f"oe_ci{k}": y[1][f"oe_ci{k}"].annotate(
-                                    **hl.or_missing(
-                                        hl.is_defined(r),
-                                        hl.struct(
-                                            upper_rank=r[f"upper_ci{k}_rank"],
-                                            upper_bin_percentile=hl.int(
-                                                r[f"upper_ci{k}_rank"]
-                                                * 100
-                                                / n_transcripts
-                                            ),
-                                            upper_bin_decile=hl.int(
-                                                r[f"upper_ci{k}_rank"]
-                                                * 10
-                                                / n_transcripts
-                                            ),
-                                            upper_bin_sextile=hl.int(
-                                                r[f"upper_ci{k}_rank"]
-                                                * 6
-                                                / n_transcripts
-                                            ),
-                                        ),
-                                    )
-                                )
-                                for k in ["", "_chisq", "_gamma"]
-                            }
-                        ),
-                        ht.upper_ci_rank3[x[0]][y[0]],
-                    )
-                )
-            )
-        )
-    ).drop("upper_ci_rank3")
-
     return ht
+
+
+def compute_oe_upper_percentile_thresholds(
+    ht: hl.Table,
+    percentiles: List[float],
+    metric_expr: hl.expr.Float64Expression,
+    outlier_expr: hl.expr.BooleanExpression,
+    use_mane_select_over_canonical: bool = True,
+    mane_select_only: bool = False,
+    quantile_k: int = 1000,
+) -> List[float]:
+    """
+    Compute OE upper CI percentile thresholds for a single metric expression.
+
+    Filters to a representative transcript set (controlled by
+    ``use_mane_select_over_canonical`` / ``mane_select_only``) and excludes
+    outlier transcripts, then computes approximate quantile thresholds at the
+    requested percentiles in a single aggregation pass.
+
+    :param ht: Constraint metrics Table (output of ``compute_constraint_metrics``).
+    :param percentiles: Percentile values (0–100) at which to compute thresholds.
+        Pass a combined list across multiple granularities and slice the result to
+        avoid repeated aggregation passes.
+    :param metric_expr: Float expression for the metric to threshold (e.g.,
+        ``ht.constraint_groups[i].oe_info[0].oe_ci_gamma.upper``). Must be
+        defined on ``ht``.
+    :param outlier_expr: Boolean expression that is ``True`` for transcripts to
+        exclude from the reference population (e.g., flagged transcripts).
+    :param use_mane_select_over_canonical: When ``True`` (default), prefer MANE
+        Select transcripts, falling back to canonical for genes without a MANE
+        Select entry. Ignored when ``mane_select_only`` is ``True``.
+    :param mane_select_only: When ``True``, restrict to ENST MANE Select
+        transcripts only, with no canonical fallback. Default is ``False``.
+    :param quantile_k: Accuracy parameter for
+        :func:`hail.expr.aggregators.approx_quantiles`. Default is 1000.
+    :return: List of float threshold values at the given percentiles.
+    """
+    mane_filter_expr = get_transcript_filter_expr(
+        ht, use_mane_select_over_canonical, mane_select_only
+    )
+
+    qs = [p / 100.0 for p in percentiles]
+    filt = mane_filter_expr & hl.is_defined(metric_expr) & ~outlier_expr
+
+    result = ht.aggregate(
+        hl.struct(
+            thresholds=hl.agg.filter(
+                filt, hl.agg.approx_quantiles(metric_expr, qs, k=quantile_k)
+            ),
+            n=hl.agg.count_where(filt),
+        )
+    )
+    logger.info(
+        "Computed percentile thresholds on %d transcripts.",
+        result.n,
+    )
+
+    return result.thresholds
 
 
 # TODO: Move to gnomad_methods?
@@ -1338,47 +1446,141 @@ def gamma_ci(
     )
 
 
-def chisq_ci(
+def calculate_oe_confidence_interval(
     obs: hl.expr.Int32Expression,
     exp: hl.expr.Float64Expression,
     alpha: float = 0.05,
 ) -> hl.expr.StructExpression:
-    """
-    Calculate the upper bound of the OE confidence interval using the chi-squared
-    distribution.
+    """Calculate the OE confidence interval using the Gamma distribution.
 
     :param obs: Observed count.
     :param exp: Expected count.
-    :param alpha: Significance level for the confidence interval. Default is 0.05.
-    :return: Upper bound of the OE confidence interval.
+    :param alpha: Significance level for the confidence interval. Default is
+        0.05.
+    :return: Struct with ``lower`` and ``upper`` bounds.
     """
-    return hl.struct(
-        lower=hl.qchisqtail(alpha, 2 * obs, lower_tail=True) / (2 * exp),
-        upper=hl.qchisqtail(1 - alpha, 2 * (obs + 1), lower_tail=True) / (2 * exp),
+    return gamma_ci(obs, exp, alpha)
+
+
+def _compute_coverage_metrics(
+    ht: hl.Table,
+    gencode_cds_ht: hl.Table,
+    an_coverage_threshold: int = 90,
+) -> hl.Table:
+    """Compute per-transcript proportion of CDS bases with adequate coverage.
+
+    Uses the ``exomes_coverage`` field from the preprocessed context table
+    (AN as a percentage of total alleles) to determine what fraction of CDS
+    bases per transcript meet the coverage threshold.
+
+    :param ht: Preprocessed context Hail Table with ``exomes_coverage`` (AN percent,
+        0-100) per position.
+    :param gencode_cds_ht: GENCODE CDS positions Table keyed by locus with
+        ``transcript_id`` array.
+    :param an_coverage_threshold: Minimum ``exomes_coverage`` value (0-100) for a
+        position to be considered adequately covered. Default is 90.
+    :return: Table keyed by ``transcript`` with ``prop_bp_AN90``.
+    """
+    # Deduplicate context table by locus (3 SNV alts per position share coverage).
+    ht = ht.key_by("locus").select("exomes_coverage").distinct()
+
+    # Join CDS positions with context coverage.
+    ht = gencode_cds_ht.annotate(
+        exomes_coverage=ht[gencode_cds_ht.locus].exomes_coverage
+    )
+    ht = ht.filter(hl.is_defined(ht.exomes_coverage))
+
+    # Explode by transcript and aggregate.
+    ht = ht.explode("transcript_id").cache()
+
+    return ht.group_by(transcript=ht.transcript_id).aggregate(
+        prop_bp_AN90=hl.agg.fraction(ht.exomes_coverage >= an_coverage_threshold),
     )
 
 
-def calculate_oe_confidence_interval(
-    obs, exp, alpha=0.05, oe_upper_method: str = "gamma"
-):
-    """
-    Calculate the upper bound of the OE confidence interval.
+def _compute_site_quality_metrics(
+    ht: hl.Table,
+    gencode_cds_ht: hl.Table,
+) -> hl.Table:
+    """Compute per-transcript mapping quality and region flag metrics.
 
-    :param oe_expr: Array expression with observed and expected values.
-    :param alpha: Significance level for the OE confidence interval. Default is 0.05.
-    :return: Array expression with upper bound of the OE confidence interval.
-    """
-    # Calculate upper bound of oe confidence interval.
-    if oe_upper_method not in ["gamma", "chisq"]:
-        raise ValueError(f"Invalid OE upper method: {oe_upper_method}")
+    Computes mean AS_MQ, proportion of sites in segmental duplications, and
+    proportion of sites in low-complexity regions from variant sites within
+    CDS regions.
 
-    oe_upper_func = gamma_ci if oe_upper_method == "gamma" else chisq_ci
-    return oe_upper_func(obs, exp, alpha)
+    :param ht: gnomAD exomes sites Hail Table.
+    :param gencode_cds_ht: GENCODE CDS positions Table keyed by locus with
+        ``transcript_id`` array.
+    :return: Table keyed by ``transcript`` with ``mean_AS_MQ``,
+        ``prop_segdup``, and ``prop_LCR``.
+    """
+    # Deduplicate sites by locus.
+    ht = ht.select("region_flags", AS_MQ=ht.info.AS_MQ)
+    ht = ht.key_by("locus").select("AS_MQ", "region_flags").distinct()
+
+    # Join with GENCODE CDS to get per-locus transcript IDs.
+    ht = ht.annotate(transcript_id=gencode_cds_ht[ht.locus].transcript_id)
+    ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id").cache()
+
+    return ht.group_by(transcript=ht.transcript_id).aggregate(
+        mean_AS_MQ=hl.agg.mean(ht.AS_MQ),
+        prop_segdup=hl.agg.fraction(ht.region_flags.segdup),
+        prop_LCR=hl.agg.fraction(ht.region_flags.lcr),
+    )
+
+
+def compute_gene_quality_metrics(
+    context_ht: hl.Table,
+    exomes_ht: hl.Table,
+    gencode_cds_ht: hl.Table,
+    an_coverage_threshold: int = 90,
+) -> hl.Table:
+    """Compute per-transcript gene quality metrics.
+
+    Combines coverage metrics from :func:`_compute_coverage_metrics` and
+    site quality metrics from :func:`_compute_site_quality_metrics` into a
+    single Table with release-ready fields:
+
+    - ``gene_quality_metrics``: struct with ``exome_prop_bp_AN90``,
+      ``exome_mean_AS_MQ``, ``exome_prop_segdup``, ``exome_prop_LCR``.
+    - ``gene_flags``: set of flag strings (``low_exome_mapping_quality``
+      when mean AS_MQ < 50, ``low_exome_coverage`` when
+      prop_bp_AN90 < 0.1).
+
+    :param context_ht: Preprocessed context Hail Table with
+        ``exomes_coverage`` (AN percent, 0-100) per position.
+    :param exomes_ht: gnomAD exomes sites Hail Table.
+    :param gencode_cds_ht: GENCODE CDS positions Table keyed by locus with
+        ``transcript_id`` array (output of
+        :func:`~gnomad_constraint.resources.resource_utils.get_gencode_cds_ht`).
+    :param an_coverage_threshold: Minimum ``exomes_coverage`` value (0-100)
+        for a position to be considered adequately covered. Default is 90.
+    :return: Table keyed by ``transcript`` with ``gene_quality_metrics``
+        and ``gene_flags``.
+    """
+    an90_ht = _compute_coverage_metrics(
+        context_ht, gencode_cds_ht, an_coverage_threshold
+    ).cache()
+    sites_ht = _compute_site_quality_metrics(exomes_ht, gencode_cds_ht).cache()
+
+    ht = an90_ht.annotate(**sites_ht[an90_ht.transcript])
+    ht = ht.select(
+        gene_quality_metrics=hl.struct(**{f"exome_{f}": ht[f] for f in ht.row_value}),
+        gene_flags=add_filters_expr(
+            {
+                "low_exome_mapping_quality": ht.mean_AS_MQ < 50,
+                "low_exome_coverage": ht.prop_bp_AN90 < 0.1,
+            }
+        ),
+    )
+
+    return ht.key_by("transcript")
 
 
 def compute_constraint_metrics(
     ht: hl.Table,
     gencode_ht: hl.Table,
+    gene_quality_metrics_ht: hl.Table,
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
     raw_z_outlier_threshold_lower_lof: float = -8.0,
@@ -1391,7 +1593,9 @@ def compute_constraint_metrics(
     Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
 
     .. note::
+
         The following annotations should be present in `ht`:
+
             - modifier
             - annotation
             - observed_variants
@@ -1429,6 +1633,9 @@ def compute_constraint_metrics(
         upper confidence interval. If a gene does not have a MANE Select transcript,
         the canonical transcript (if available) will be used instead. Default is True.
     :param gencode_ht: Table containing GENCODE annotations.
+    :param gene_quality_metrics_ht: Table keyed by transcript with
+        ``gene_quality_metrics`` and ``gene_flags`` fields (output of
+        :func:`compute_gene_quality_metrics`).
     :return: Table with pLI scores, observed:expected ratio, confidence interval of the
         observed:expected ratio, and z scores.
     """
@@ -1444,17 +1651,13 @@ def compute_constraint_metrics(
         exp = oe_info.expected_variants
         return oe_info.annotate(
             oe=divide_null(obs, exp),
-            oe_ci=oe_confidence_interval(obs, exp),
-            oe_ci_chisq=calculate_oe_confidence_interval(
-                obs, exp, oe_upper_method="chisq"
-            ),
+            oe_ci_discretized_poisson=oe_confidence_interval(obs, exp),
             oe_ci_gamma=calculate_oe_confidence_interval(
                 obs, exp, oe_upper_method="gamma"
             ),
             z_raw=calculate_raw_z_score(obs, exp),
         )
 
-    """
     # Annotate with the observed:expected ratio, 95% confidence interval around the
     # observed:expected ratio, and z scores for each constraint group.
     ht = ht.annotate(
@@ -1473,14 +1676,13 @@ def compute_constraint_metrics(
             raw_z_outlier_threshold_upper_syn,
         ),
     }
-    """
     meta = hl.eval(ht.constraint_group_meta)
     freq_meta = hl.eval(ht.exomes_freq_meta)
     syn_idx = meta.index({"csq_set": "syn"})
     mis_idx = meta.index({"csq_set": "mis"})
     lof_idx = meta.index({"lof": "hc"})
-    all_freq_idx = freq_meta.index({"group": "adj"})
-    """ht = ht.annotate(
+    all_freq_idx = freq_meta.index(ADJ_FREQ_META)
+    ht = ht.annotate(
         constraint_groups=[
             ht.constraint_groups[i].annotate(
                 flags=add_filters_expr(
@@ -1533,13 +1735,8 @@ def compute_constraint_metrics(
             ht.constraint_groups[syn_idx].flags
             | ht.constraint_groups[mis_idx].flags
             | ht.constraint_groups[lof_idx].flags
-        )
+        ),
     ).checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw.flags", "ht"))
-    """
-
-    ht = hl.read_table(
-        "gs://gnomad-tmp-4day/constraint_metrics.oe.oe_ci.z_raw.flags-D9jfiSqRyWZoPb6VmAzNZw.ht"
-    )
 
     # Add a rank and decile of the upper confidence interval for MANE Select or
     # canonical ensembl transcripts.
@@ -1547,9 +1744,43 @@ def compute_constraint_metrics(
         new_temp_file("constraint_metrics.oe.oe_ci.z_raw.flags.rank_and_decile", "ht")
     )
 
+    # Compute OE upper CI percentile thresholds and annotate bins.
+    # Look up constraint group indices for each metric from the global meta.
+    meta = hl.eval(ht.constraint_group_meta)
+    metric_group_idx = {
+        "syn": next(i for i, m in enumerate(meta) if m == {"csq_set": "syn"}),
+        "mis": next(i for i, m in enumerate(meta) if m == {"csq_set": "mis"}),
+        "lof": next(i for i, m in enumerate(meta) if m == {"lof": "hc"}),
+    }
+    outlier_expr = ht.constraint_flags.length() > 0
+
+    # Combine all granularity boundary quantiles for a single aggregate pass per metric.
+    all_qs = []
+    gran_slices: Dict[str, slice] = {}
+    for gran_name, bins in CONSTRAINT_GRANULARITIES.items():
+        n_bins = len(bins) + 1
+        start = len(all_qs)
+        all_qs.extend(b / n_bins * 100 for b in bins)
+        gran_slices[gran_name] = slice(start, len(all_qs))
+
+    # Call once per metric and assemble thresholds dict.
+    thresholds = {}
+    for metric, idx in metric_group_idx.items():
+        vals = compute_oe_upper_percentile_thresholds(
+            ht,
+            percentiles=all_qs,
+            metric_expr=ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper,
+            outlier_expr=outlier_expr,
+            mane_select_only=True,
+        )
+        for gran_name, sl in gran_slices.items():
+            thresholds[(gran_name, metric)] = list(vals[sl])
+
+    ht = annotate_constraint_percentile_bins(ht, thresholds, metric_group_idx)
+
     # Compute the observed:expected ratio.
     if expected_values is None:
-        expected_values = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
+        expected_values = PLI_EXPECTED_VALUES
 
     hc_lof_expr = ht.constraint_groups[lof_idx].oe_info[all_freq_idx]
     ht = ht.annotate(
@@ -1565,6 +1796,9 @@ def compute_constraint_metrics(
             "constraint_metrics.oe.oe_ci.z_raw.flags.rank_and_decile.pli", "ht"
         )
     )
+
+    # Add per-transcript gene quality metrics and flags.
+    ht = ht.annotate(**gene_quality_metrics_ht[ht.transcript])
 
     # Add transcript annotations from GENCODE.
     ht = add_gencode_transcript_annotations(ht, gencode_ht)
@@ -1605,3 +1839,321 @@ def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
     cutoff_upper = list(filter(lambda i: i[1] < 0.95, zipped))[-1][0]
 
     return cutoff_lower, cutoff_upper
+
+
+def _restructure_release_rows(
+    ht: hl.Table,
+    field_names: List[str],
+    all_freq_idx: int,
+    gen_anc_ds_indices: Dict[str, List[int]],
+) -> hl.Table:
+    """
+    Restructure ``constraint_groups`` into named top-level release fields.
+
+    For each constraint group, builds a flat release struct by:
+
+    - Flattening the adjusted-frequency ``oe_info`` entry onto the group
+      struct, keeping ``oe`` and ``z_raw`` under their original names and
+      overriding ``oe_ci`` with ``oe_ci_gamma``.
+    - Applying ``RELEASE_CG_RENAME`` to rename group-level and ``oe_info``
+      fields (e.g. ``mu_snp`` -> ``mu``, ``observed_variants`` -> ``obs``).
+    - When downsampling data is present, adding ``gen_anc_obs`` /
+      ``gen_anc_exp`` structs keyed by genetic ancestry with arrays of
+      values ordered by downsampling level.
+
+    Annotates the Table with one top-level field per group (applying
+    ``RELEASE_GROUP_RENAMES``, e.g. ``lof_hc`` -> ``lof``), trims the
+    ``oe_ci`` struct to ranked or unranked CI fields depending on the group,
+    and adds ``pLI`` / ``pNull`` / ``pRec`` for the LoF group. Finally
+    selects release row fields, re-keys, and filters out transcripts with
+    no possible variants in any group.
+
+    :param ht: Table with ``constraint_groups`` and associated annotations.
+    :param field_names: Internal name for each constraint group, derived
+        from ``constraint_group_meta``.
+    :param all_freq_idx: Index into ``oe_info`` for the adjusted allele
+        frequency group.
+    :param gen_anc_ds_indices: Mapping from genetic ancestry label to list
+        of ``oe_info`` indices for its downsampling entries. Empty dict when
+        no downsampling data is present.
+    :return: Table with named top-level constraint group structs, release
+        row fields selected, re-keyed, and filtered.
+    """
+    add_ds_fields = (
+        ["observed_variants", "expected_variants"] if gen_anc_ds_indices else []
+    )
+
+    cg_expr = ht.constraint_groups.map(
+        lambda cg: cg.annotate(
+            **cg.oe_info[all_freq_idx],
+            oe_ci=cg.oe_info[all_freq_idx].oe_ci_gamma,
+            # Per-genetic-ancestry downsampling obs/exp arrays, one value per
+            # downsampling level, keyed by genetic ancestry.
+            **{
+                f"gen_anc_{RELEASE_CG_RENAME[f]}": hl.struct(
+                    **{
+                        gen_anc: hl.array([cg.oe_info[j][f] for j in indices])
+                        for gen_anc, indices in gen_anc_ds_indices.items()
+                    }
+                )
+                for f in add_ds_fields
+            },
+        )
+    )
+    cg_select = (
+        RELEASE_CG_SELECT
+        if gen_anc_ds_indices
+        else [f for f in RELEASE_CG_SELECT if not f.startswith("gen_anc_")]
+    )
+    cg_expr = cg_expr.map(
+        lambda cg: cg.annotate(
+            **{RELEASE_CG_RENAME[k]: cg[k] for k in RELEASE_CG_RENAME}
+        ).select(*cg_select)
+    )
+
+    # Build a top-level release field for each constraint group, applying
+    # group renames (e.g. lof_hc -> lof), trimming oe_ci sub-fields, and
+    # adding pLI/pNull/pRec for the LoF group.
+    cg_fields = {
+        RELEASE_GROUP_RENAMES.get(name, name): cg_expr[i]
+        .annotate(
+            oe_ci=cg_expr[i].oe_ci.select(
+                *(
+                    RELEASE_CI_FIELDS_WITH_RANK
+                    if name in RELEASE_GROUPS_WITH_RANK
+                    else RELEASE_CI_FIELDS
+                )
+            ),
+            **{
+                k: ht[k]
+                for k in (RELEASE_LOF_FIELDS if name in RELEASE_GROUPS_WITH_PLI else [])
+            },
+        )
+        .select()
+        for i, name in enumerate(field_names)
+    }
+    ht = ht.annotate(**cg_fields)
+    ht = ht.select(*RELEASE_TOP_LEVEL_ANNOTATIONS, *RELEASE_GROUP_NAMES)
+
+    available_keys = [k for k in RELEASE_KEY_ORDER if k in ht.key]
+    if list(ht.key) != available_keys:
+        ht = ht.key_by(*available_keys)
+
+    ht = ht.filter(hl.any([ht[k].possible != 0 for k in RELEASE_GROUP_NAMES]))
+    return ht
+
+
+def _restructure_release_globals(
+    ht: hl.Table,
+    field_names: List[str],
+    freq_meta: List[Dict],
+    gen_anc_ds_indices: Dict[str, List[int]],
+    sd_raw_z_arr: List[float],
+    release_version: Optional[str],
+) -> hl.Table:
+    """
+    Restructure globals for public release.
+
+    Replaces internal globals with a clean release set:
+
+    - Pipeline parameter globals are renamed and stripped of internal-only
+      fields via ``RELEASE_PIPELINE_PARAM_GLOBALS``.
+    - ``sd_raw_z`` is converted from an ordered array (one entry per
+      constraint group) to a named struct keyed by release group name,
+      retaining only groups in ``RELEASE_GROUP_NAMES``.
+    - When downsampling data is present, a ``downsamplings`` struct is added
+      keyed by genetic ancestry, with arrays of integer downsampling levels
+      matching the order of ``gen_anc_obs`` / ``gen_anc_exp`` in the rows.
+    - ``max_af`` is preserved unchanged if present.
+    - ``version`` is set to ``release_version`` if provided, otherwise
+      carried over from the existing global.
+
+    :param ht: Table whose globals are being restructured.
+    :param field_names: Internal name for each constraint group (parallel to
+        ``sd_raw_z_arr``), used to map array positions to release group names.
+    :param freq_meta: Evaluated ``exomes_freq_meta`` global, used to extract
+        downsampling levels for each genetic ancestry.
+    :param gen_anc_ds_indices: Mapping from genetic ancestry label to list
+        of ``oe_info`` indices for its downsampling entries. Empty dict when
+        no downsampling data is present.
+    :param sd_raw_z_arr: Evaluated ``sd_raw_z`` global array, parallel to
+        ``field_names``.
+    :param release_version: Version string for the ``version`` global. When
+        *None*, the existing ``version`` global is retained if present.
+    :return: Table with release-formatted globals.
+    """
+    sd_raw_z_name_map = {n: RELEASE_GROUP_RENAMES.get(n, n) for n in field_names}
+    sd_raw_z_struct = hl.struct(
+        **{
+            sd_raw_z_name_map[field_names[i]]: sd_raw_z_arr[i]
+            for i in range(len(field_names))
+            if sd_raw_z_name_map[field_names[i]] in RELEASE_GROUP_NAMES
+        }
+    )
+
+    global_kwargs = {}
+    if release_version is not None:
+        global_kwargs["version"] = release_version
+    elif "version" in ht.globals:
+        global_kwargs["version"] = ht.globals.version
+
+    for src, dest, drop_fields in RELEASE_PIPELINE_PARAM_GLOBALS:
+        if src in ht.globals:
+            global_kwargs[dest] = ht.globals[src].drop(*drop_fields)
+
+    if gen_anc_ds_indices:
+        global_kwargs["downsamplings"] = hl.struct(
+            **{
+                gen_anc: [int(freq_meta[j]["downsampling"]) for j in indices]
+                for gen_anc, indices in gen_anc_ds_indices.items()
+            }
+        )
+
+    if "max_af" in ht.globals:
+        global_kwargs["max_af"] = ht.globals.max_af
+
+    global_kwargs["sd_raw_z"] = sd_raw_z_struct
+    return ht.select_globals(**global_kwargs)
+
+
+def prepare_release_ht(
+    ht: hl.Table,
+    release_version: Optional[str] = None,
+) -> hl.Table:
+    """
+    Prepare the constraint metrics Table for public release.
+
+    Computes shared metadata needed by both restructuring steps, then
+    delegates row and global restructuring to
+    :func:`_restructure_release_rows` and
+    :func:`_restructure_release_globals`.
+
+    The internal ``constraint_groups`` schema has:
+
+        - Group-level fields: ``mu_snp``, ``possible_variants``, ``z_score``.
+        - Per-frequency ``oe_info`` array (one entry per ``exomes_freq_meta``
+          element): ``observed_variants``, ``expected_variants``, ``oe``,
+          ``oe_ci_gamma``, ``z_raw``.
+
+    The release schema exposes one top-level struct per group
+    (``syn``, ``mis``, ``lof_hc_lc``, ``lof``; ``lof_hc`` is renamed to
+    ``lof``), with fields ``mu``, ``possible``, ``obs``, ``exp``, ``oe``,
+    ``oe_ci``, ``z_raw``, ``z_score``, and optionally ``gen_anc_obs`` /
+    ``gen_anc_exp`` when downsampling data is present.
+
+    :param ht: Internal constraint metrics Table (output of
+        ``compute_constraint_metrics``). Expected to already contain GENCODE
+        transcript annotations (``transcript_id_version``, ``level``, etc.)
+        and gene quality metric annotations (``gene_quality_metrics``,
+        ``gene_flags``).
+    :param release_version: Version string for the ``version`` global. When
+        *None*, the existing ``version`` global is retained if present.
+    :return: Release-formatted Table.
+    """
+    ht = ht.rename(GENCODE_FIELD_RENAMES)
+
+    constraint_meta = hl.eval(ht.constraint_group_meta)
+    freq_meta = hl.eval(ht.exomes_freq_meta)
+    all_freq_idx = freq_meta.index(ADJ_FREQ_META)
+
+    field_names = [
+        "_".join(f"{k}_{v}" for k, v in m.items()).replace("csq_set_", "")
+        for m in constraint_meta
+    ]
+    logger.info("Release constraint group field names: %s", field_names)
+
+    gen_anc_ds_indices: Dict[str, List[int]] = {}
+    if "downsamplings" in ht.globals:
+        for j, m in enumerate(freq_meta):
+            gen_anc = m.get("gen_anc")
+            if gen_anc is not None and "downsampling" in m:
+                gen_anc_ds_indices.setdefault(gen_anc, []).append(j)
+
+    # Evaluate sd_raw_z before the row select (globals persist through it).
+    sd_raw_z_arr = hl.eval(ht.sd_raw_z)
+
+    ht = _restructure_release_rows(ht, field_names, all_freq_idx, gen_anc_ds_indices)
+    ht = _restructure_release_globals(
+        ht, field_names, freq_meta, gen_anc_ds_indices, sd_raw_z_arr, release_version
+    )
+    return ht
+
+
+def flatten_release_ht(ht: hl.Table) -> hl.Table:
+    """
+    Flatten the release constraint metrics Table for TSV export.
+
+    Drops per-genetic-ancestry downsampling fields (``gen_anc_obs``,
+    ``gen_anc_exp``) when present and calls :meth:`~hail.Table.flatten`
+    to expand nested struct fields using ``.`` as the separator
+    (e.g. ``lof.obs``, ``lof.oe_ci.upper``).
+
+    :param ht: Release-format constraint metrics Table (output of
+        :func:`prepare_release_ht`).
+    :return: Flat Table suitable for :meth:`~hail.Table.export`.
+    """
+    # Drop struct/array fields not suitable for flat TSV export.
+    drop_fields = [f for f in ["gen_anc_obs", "gen_anc_exp"] if f in ht.row]
+    if drop_fields:
+        ht = ht.drop(*drop_fields)
+
+    return ht.flatten()
+
+
+def annotate_constraint_percentile_bins(
+    ht: hl.Table,
+    thresholds: Dict[Tuple[str, str], List[float]],
+    metric_group_idx: Dict[str, int],
+) -> hl.Table:
+    """
+    Annotate each transcript with its percentile bin for all metric/granularity combinations.
+
+    Annotates ``constraint_bins.{granularity}.{metric}`` for each combination.
+    Bin 0 is the most constrained (value below all thresholds); bin N equals
+    the number of boundaries the value exceeds.
+
+    :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
+    :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list
+        of threshold values, as produced by
+        :func:`compute_oe_upper_percentile_thresholds`.
+    :param metric_group_idx: Mapping of metric name to its index in
+        ``constraint_groups`` (e.g. ``{"lof": 5, "mis": 1, "syn": 0}``).
+    :return: Annotated Table with an added ``constraint_bins`` struct field.
+    """
+    logger.info(
+        "Annotating bins for %d (granularity, metric) combinations.",
+        len(thresholds),
+    )
+
+    metric_exprs = {
+        metric: ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
+        for metric, idx in metric_group_idx.items()
+    }
+    miss = hl.missing(hl.tint32)
+
+    def _bin_expr(
+        value_expr: hl.expr.Float64Expression,
+        threshold_list: List[float],
+    ) -> hl.expr.Int32Expression:
+        arr = hl.literal(threshold_list)
+        return hl.sum(arr.map(lambda t: hl.int(value_expr >= t)))
+
+    return ht.annotate(
+        constraint_bins=hl.struct(
+            **{
+                gran: hl.struct(
+                    **{
+                        metric: hl.if_else(
+                            hl.is_defined(metric_exprs[metric]),
+                            _bin_expr(metric_exprs[metric], thresholds[(gran, metric)]),
+                            miss,
+                        )
+                        for metric in metric_group_idx
+                    }
+                )
+                for gran in CONSTRAINT_GRANULARITIES
+            }
+        )
+    )
+
+    return ht.select(**flat)

@@ -28,7 +28,6 @@ from typing import List, Optional
 import hail as hl
 from gnomad.resources.grch38.gnomad import all_sites_an
 from gnomad.utils.constraint import (
-    annotate_with_mu,
     assemble_constraint_context_ht,
     build_models,
     explode_downsamplings_oe,
@@ -41,15 +40,23 @@ from gnomad_qc.resource_utils import (
 )
 
 import gnomad_constraint.resources.resource_utils as constraint_res
+from gnomad_constraint.resources.constants import (
+    CURRENT_VERSION,
+    CUSTOM_VEP_ANNOTATIONS,
+    VERSIONS,
+)
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
     calculate_gerp_cutoffs,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
+    compute_gene_quality_metrics,
     create_per_variant_expected_ht,
     create_training_set,
+    flatten_release_ht,
     prepare_ht_for_constraint_calculations,
+    prepare_release_ht,
     print_global_struct,
 )
 
@@ -330,6 +337,18 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[aggregate_per_variant_expected],
     )
+    compute_gene_quality_metrics_step = PipelineStepResourceCollection(
+        "--compute-gene-quality-metrics",
+        output_resources={
+            "gene_quality_metrics_ht": constraint_res.get_gene_quality_metrics_ht(
+                version=version
+            )
+        },
+        input_resources={
+            "gnomAD resources": {"exomes_sites_ht": input_hts["exomes_sites_ht"]},
+        },
+        pipeline_input_steps=[prepare_context],
+    )
     compute_constraint_metrics = PipelineStepResourceCollection(
         "--compute-constraint-metrics",
         output_resources={
@@ -337,19 +356,29 @@ def get_constraint_resources(
                 custom_vep_annotation, **common_params, path_post_fix=path_post_fix
             )
         },
-        pipeline_input_steps=[aggregate_by_constraint_groups],
+        pipeline_input_steps=[
+            aggregate_by_constraint_groups,
+            compute_gene_quality_metrics_step,
+        ],
     )
-    export_tsv = PipelineStepResourceCollection(
-        "--export-tsv",
+    prepare_release = PipelineStepResourceCollection(
+        "--prepare-release",
         output_resources={
-            "constraint_metrics_tsv": constraint_res.get_constraint_tsv_path(
-                **common_params, path_post_fix=path_post_fix
-            ),
-            "downsampling_constraint_metrics_tsv": (
-                constraint_res.get_downsampling_constraint_tsv_path(**common_params)
-            ),
+            "release_ht": constraint_res.get_release_constraint_ht(version=version),
         },
         pipeline_input_steps=[compute_constraint_metrics],
+    )
+    export_release_tsv = PipelineStepResourceCollection(
+        "--export-release-tsv",
+        output_resources={
+            "release_tsv": constraint_res.get_release_constraint_tsv_path(
+                version=version
+            ),
+            "release_downsampling_tsv": constraint_res.get_release_downsampling_tsv_path(
+                version=version
+            ),
+        },
+        pipeline_input_steps=[prepare_release],
     )
 
     # Add all steps to the constraint pipeline resource collection.
@@ -364,8 +393,10 @@ def get_constraint_resources(
             "apply_models_per_variant": apply_models_per_variant,
             "aggregate_per_variant_expected": aggregate_per_variant_expected,
             "aggregate_by_constraint_groups": aggregate_by_constraint_groups,
+            "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
             "compute_constraint_metrics": compute_constraint_metrics,
-            "export_tsv": export_tsv,
+            "prepare_release": prepare_release,
+            "export_release_tsv": export_release_tsv,
         }
     )
 
@@ -388,7 +419,7 @@ def main(args):
     skip_coverage_model = args.skip_coverage_model
     log10_coverage = args.use_logarithmic_coverage_model
 
-    if version not in constraint_res.VERSIONS:
+    if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
     if version == "2.1.1":
@@ -640,6 +671,20 @@ def main(args):
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
 
+        if args.compute_gene_quality_metrics:
+            logger.info("Computing per-transcript gene quality metrics...")
+            res = resources.compute_gene_quality_metrics
+            res.check_resource_existence()
+
+            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
+            gene_quality_ht = compute_gene_quality_metrics(
+                res.annotated_context_ht.ht(),
+                res.exomes_sites_ht.ht(),
+                gencode_cds_ht,
+            )
+            gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
+            logger.info("Done computing gene quality metrics.")
+
         if args.compute_constraint_metrics:
             logger.info(
                 "Computing constraint metrics, including pLI scores, z scores, oe"
@@ -653,6 +698,7 @@ def main(args):
             compute_constraint_metrics(
                 ht=ht,
                 gencode_ht=constraint_res.get_gencode_ht(version),
+                gene_quality_metrics_ht=res.gene_quality_metrics_ht.ht(),
                 expected_values={
                     "Null": args.expectation_null,
                     "Rec": args.expectation_rec,
@@ -663,36 +709,42 @@ def main(args):
                 raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
                 raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
                 raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
-                # ).select_globals(
-                #   "version", "apply_model_params", "constraint_meta", "sd_raw_z"
             ).write(res.constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 
-        if args.export_tsv:
-            res = resources.export_tsv
+        if args.prepare_release:
+            logger.info("Preparing constraint metrics Table for release...")
+            res = resources.prepare_release
             res.check_resource_existence()
-            logger.info("Exporting constraint tsv...")
 
-            ht = res.constraint_metrics_ht.ht()
-            # If downsamplings per genetic ancestry group are present, export
-            # downsamplings to a separate tsv and drop from the main metrics tsv.
-            if args.genetic_ancestry_groups:
+            constraint_ht = res.constraint_metrics_ht.ht()
+
+            release_ht = prepare_release_ht(
+                constraint_ht,
+                release_version=args.release_version,
+            )
+            release_ht.write(res.release_ht.path, overwrite=overwrite)
+            logger.info("Done preparing release Table.")
+
+        if args.export_release_tsv or args.export_release_downsampling_tsv:
+            res = resources.export_release_tsv
+            res.check_resource_existence()
+            release_ht = hl.read_table(res.release_ht.path)
+
+            if args.export_release_tsv:
+                logger.info("Exporting release TSV...")
+                flatten_release_ht(release_ht).export(res.release_tsv)
+                logger.info("Done exporting release TSV.")
+
+            if args.export_release_downsampling_tsv:
+                logger.info("Exporting release downsampling TSV...")
                 downsampling_ht = explode_downsamplings_oe(
-                    ht,
-                    downsampling_meta=hl.eval(ht.apply_model_params.downsampling_meta),
+                    release_ht,
+                    downsampling_meta=hl.eval(release_ht.downsamplings),
+                    metrics=["syn", "mis", "lof_hc_lc", "lof"],
                 )
-
-                # Drop downsampling annotations from the main metrics Table.
-                ht = ht.annotate(
-                    **{
-                        i: ht[i].drop(*["gen_anc_exp", "gen_anc_obs"])
-                        for i in ["lof_hc_lc", "lof", "syn", "mis"]
-                    }
-                )
-                # Export separate downsampling Table.
-                downsampling_ht.export(res.downsampling_constraint_metrics_tsv)
-            ht = ht.flatten()
-            ht.export(res.constraint_metrics_tsv)
+                downsampling_ht.export(res.release_downsampling_tsv)
+                logger.info("Done exporting release downsampling TSV.")
 
     finally:
         logger.info("Copying log to logging bucket...")
@@ -711,10 +763,10 @@ if __name__ == "__main__":
         "--version",
         help=(
             "Which version of the resource Tables will be used. Default is"
-            f" {constraint_res.CURRENT_VERSION}."
+            f" {CURRENT_VERSION}."
         ),
         type=str,
-        default=constraint_res.CURRENT_VERSION,
+        default=CURRENT_VERSION,
     )
     parser.add_argument(
         "--directory-post-fix",
@@ -1010,7 +1062,7 @@ if __name__ == "__main__":
         ),
         type=str,
         default="transcript_consequences",
-        choices=constraint_res.CUSTOM_VEP_ANNOTATIONS,
+        choices=CUSTOM_VEP_ANNOTATIONS,
     )
     aggregate_per_variant_expected_args._group_actions.append(cov_model_type)
 
@@ -1027,6 +1079,19 @@ if __name__ == "__main__":
         action="store_true",
     )
 
+    gene_quality_args = parser.add_argument_group(
+        "Compute gene quality metrics args",
+        "Arguments used for computing per-transcript gene quality metrics.",
+    )
+    gene_quality_args.add_argument(
+        "--compute-gene-quality-metrics",
+        help=(
+            "Compute per-transcript gene quality metrics (coverage, mapping quality,"
+            " segdup, LCR) from the preprocessed context Table and gnomAD exomes"
+            " sites Table."
+        ),
+        action="store_true",
+    )
     compute_constraint_args = parser.add_argument_group(
         "Computate constraint metrics args",
         "Arguments used for computing constraint metrics.",
@@ -1127,9 +1192,41 @@ if __name__ == "__main__":
         type=float,
         default=8.0,
     )
-    compute_constraint_args.add_argument(
-        "--export-tsv",
-        help="Export constraint metrics to tsv file.",
+    prepare_release_args = parser.add_argument_group(
+        "Prepare release args",
+        "Arguments used for preparing the constraint metrics Table for release.",
+    )
+    prepare_release_args.add_argument(
+        "--prepare-release",
+        help=(
+            "Prepare the constraint metrics Table for public release by restructuring "
+            "constraint groups into named top-level fields and consolidating globals."
+        ),
+        action="store_true",
+    )
+    prepare_release_args.add_argument(
+        "--release-version",
+        help=(
+            "Version string to set in the release Table globals. If not specified, "
+            "the existing version global is retained."
+        ),
+        type=str,
+        default=None,
+    )
+    prepare_release_args.add_argument(
+        "--export-release-tsv",
+        help=(
+            "Flatten the release Hail Table and export it as a TSV. Output paths are"
+            " determined by the release resource functions."
+        ),
+        action="store_true",
+    )
+    prepare_release_args.add_argument(
+        "--export-release-downsampling-tsv",
+        help=(
+            "Export per-genetic-ancestry downsampling observed and expected counts from"
+            " the release Hail Table as a TSV. Reads from the release HT path."
+        ),
         action="store_true",
     )
 
