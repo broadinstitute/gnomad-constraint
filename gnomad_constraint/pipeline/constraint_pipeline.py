@@ -23,10 +23,9 @@ The constraint pipeline consists of the following parts:
 
 import argparse
 import logging
-from typing import List, Optional
+from typing import List
 
 import hail as hl
-from gnomad.resources.grch38.gnomad import all_sites_an
 from gnomad.utils.constraint import (
     assemble_constraint_context_ht,
     build_models,
@@ -34,15 +33,13 @@ from gnomad.utils.constraint import (
 )
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad.utils.vep import update_loftee_end_trunc_filter
-from gnomad_qc.resource_utils import (
-    PipelineResourceCollection,
-    PipelineStepResourceCollection,
-)
+from gnomad_qc.resource_utils import PipelineResourceCollection
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
     CUSTOM_VEP_ANNOTATIONS,
+    RELEASE_KEY_ORDER,
     VERSIONS,
 )
 from gnomad_constraint.utils.constraint import (
@@ -205,204 +202,6 @@ def run_prepare_context(
     return ht
 
 
-def get_constraint_resources(
-    version: str,
-    custom_vep_annotation: str,
-    overwrite: bool,
-    test: bool,
-    models: List[str] = ["plateau", "coverage"],
-    directory_post_fix: Optional[str] = None,
-    path_post_fix: Optional[str] = None,
-) -> PipelineResourceCollection:
-    """
-    Get PipelineResourceCollection for all resources needed in the constraint pipeline.
-
-    :param version: Version of constraint resources to use.
-    :param custom_vep_annotation: Custom VEP annotation to use for applying models
-        resources.
-    :param overwrite: Whether to overwrite existing resources.
-    :param test: Whether to use test resources.
-    :param models: List of models to use. Default is ["plateau", "coverage"].
-    :param directory_post_fix: Post-fix to add to the directory path of the resources.
-    :param path_post_fix: Post-fix to add to the path of the resources.
-    :return: PipelineResourceCollection containing resources for all steps of the
-        constraint pipeline.
-    """
-    # Initialize constraint pipeline resource collection.
-    constraint_pipeline = PipelineResourceCollection(
-        pipeline_name="constraint",
-        overwrite=overwrite,
-    )
-
-    # Create resource collection for each step of the constraint pipeline.
-    context_res = constraint_res.get_vep_context_ht(version)
-    context_build = get_reference_genome(context_res.ht().locus).name
-
-    # Make dictionary for prepare_context input Tables.
-    input_hts = {
-        "context_ht": context_res,
-        "methylation_ht": constraint_res.get_methylation_ht(context_build),
-    }
-    for d in ["exomes", "genomes"]:
-        input_hts[f"{d}_coverage_ht"] = constraint_res.get_coverage_ht(d, version)
-        input_hts[f"{d}_sites_ht"] = constraint_res.get_sites_resource(d, version)
-        input_hts[f"{d}_an_ht"] = all_sites_an(d)
-
-    common_params = {
-        "version": version,
-        "test": test,
-        "directory_post_fix": directory_post_fix,
-    }
-
-    prepare_context = PipelineStepResourceCollection(
-        "--prepare-context-ht",
-        output_resources={
-            "annotated_context_ht": constraint_res.get_annotated_context_ht(
-                **common_params
-            )
-        },
-        input_resources={"gnomAD resources": input_hts},
-    )
-    preprocess_data = PipelineStepResourceCollection(
-        "preprocess data for downstream steps",
-        output_resources={
-            "temp_preprocess_data_ht": constraint_res.get_preprocessed_ht(
-                **common_params
-            ),
-        },
-        pipeline_input_steps=[prepare_context],
-    )
-    calculate_gerp_cutoffs = PipelineStepResourceCollection(
-        "--calculate-gerp-cutoffs",
-        output_resources={},
-        pipeline_input_steps=[prepare_context],
-    )
-    calculate_mutation_rate = PipelineStepResourceCollection(
-        "--calculate-mutation-rate",
-        output_resources={
-            "mutation_ht": constraint_res.get_mutation_ht(**common_params)
-        },
-        pipeline_input_steps=[preprocess_data],
-    )
-    create_training_set = PipelineStepResourceCollection(
-        "--create-training-set",
-        output_resources={
-            f"train_ht": constraint_res.get_training_dataset(
-                **common_params, path_post_fix=path_post_fix
-            ),
-            f"train_tsv": constraint_res.get_training_tsv_path(
-                **common_params, path_post_fix=path_post_fix
-            ),
-        },
-        pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
-    )
-    build_models = PipelineStepResourceCollection(
-        "--build-models",
-        output_resources={
-            f"model_{m}": constraint_res.get_models(
-                m, **common_params, path_post_fix=path_post_fix
-            )
-            for m in models
-        },
-        pipeline_input_steps=[create_training_set],
-    )
-    apply_models_per_variant = PipelineStepResourceCollection(
-        "--apply-models-per-variant",
-        output_resources={
-            "per_variant_apply_ht": constraint_res.get_per_variant_expected_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
-            )
-        },
-        pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
-    )
-    aggregate_per_variant_expected = PipelineStepResourceCollection(
-        "--aggregate-per-variant-expected",
-        output_resources={
-            f"apply_ht": constraint_res.get_aggregated_per_variant_expected(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
-            )
-        },
-        pipeline_input_steps=[
-            apply_models_per_variant,
-            calculate_mutation_rate,
-            build_models,
-        ],
-    )
-    aggregate_by_constraint_groups = PipelineStepResourceCollection(
-        "--aggregate-by-constraint-groups",
-        output_resources={
-            f"constraint_group_ht": constraint_res.get_constraint_group_ht(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
-            )
-        },
-        pipeline_input_steps=[aggregate_per_variant_expected],
-    )
-    compute_gene_quality_metrics_step = PipelineStepResourceCollection(
-        "--compute-gene-quality-metrics",
-        output_resources={
-            "gene_quality_metrics_ht": constraint_res.get_gene_quality_metrics_ht(
-                version=version
-            )
-        },
-        input_resources={
-            "gnomAD resources": {"exomes_sites_ht": input_hts["exomes_sites_ht"]},
-        },
-        pipeline_input_steps=[prepare_context],
-    )
-    compute_constraint_metrics = PipelineStepResourceCollection(
-        "--compute-constraint-metrics",
-        output_resources={
-            "constraint_metrics_ht": constraint_res.get_constraint_metrics_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
-            )
-        },
-        pipeline_input_steps=[
-            aggregate_by_constraint_groups,
-            compute_gene_quality_metrics_step,
-        ],
-    )
-    prepare_release = PipelineStepResourceCollection(
-        "--prepare-release",
-        output_resources={
-            "release_ht": constraint_res.get_release_constraint_ht(version=version),
-        },
-        pipeline_input_steps=[compute_constraint_metrics],
-    )
-    export_release_tsv = PipelineStepResourceCollection(
-        "--export-release-tsv",
-        output_resources={
-            "release_tsv": constraint_res.get_release_constraint_tsv_path(
-                version=version
-            ),
-            "release_downsampling_tsv": constraint_res.get_release_downsampling_tsv_path(
-                version=version
-            ),
-        },
-        pipeline_input_steps=[prepare_release],
-    )
-
-    # Add all steps to the constraint pipeline resource collection.
-    constraint_pipeline.add_steps(
-        {
-            "prepare_context": prepare_context,
-            "preprocess_data": preprocess_data,
-            "calculate_gerp_cutoffs": calculate_gerp_cutoffs,
-            "calculate_mutation_rate": calculate_mutation_rate,
-            "create_training_set": create_training_set,
-            "build_models": build_models,
-            "apply_models_per_variant": apply_models_per_variant,
-            "aggregate_per_variant_expected": aggregate_per_variant_expected,
-            "aggregate_by_constraint_groups": aggregate_by_constraint_groups,
-            "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
-            "compute_constraint_metrics": compute_constraint_metrics,
-            "prepare_release": prepare_release,
-            "export_release_tsv": export_release_tsv,
-        }
-    )
-
-    return constraint_pipeline
-
-
 def main(args):
     """Execute the constraint pipeline."""
     hl.init(
@@ -434,7 +233,7 @@ def main(args):
     models = ["plateau", "coverage"] if not skip_coverage_model else ["plateau"]
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
-    resources = get_constraint_resources(
+    resources = constraint_res.get_constraint_resources(
         version,
         custom_vep_annotation,
         overwrite,
@@ -598,21 +397,12 @@ def main(args):
             res.check_resource_existence()
 
             # Use new shuffle method to prevent shuffle errors.
-            # hl._set_flags(use_new_shuffle="1")
+            hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            # ht = res.per_variant_apply_ht.ht(read_args={"_n_partitions": 8000})
-            ht = aggregate_per_variant_expected_ht(
-                ht, include_mu_annotations_in_grouping=True
-            )
-            ht = ht.checkpoint(
-                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.per_variant_expected.aggregated_with_mu_annotations.coverage_corrected.with_downsamplings.ht",
-                overwrite=overwrite,
-            )
-            # hl._set_flags(use_new_shuffle=None)
-
             ht = aggregate_per_variant_expected_ht(ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
+            hl._set_flags(use_new_shuffle=None)
 
             logger.info(
                 "Done aggregating per-variant expected variant count by transcript, "
@@ -628,45 +418,11 @@ def main(args):
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
-            ht = hl.read_table(
-                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.per_variant_expected.aggregated_with_mu_annotations.coverage_corrected.with_downsamplings.ht"
-            )
-            aggregate_by_constraint_groups(
-                ht,
-                keys=tuple(
-                    [
-                        i
-                        for i in list(ht.key)
-                        if i
-                        in [
-                            "gene",
-                            "transcript",
-                            "canonical",
-                            "mane_select",
-                            "gene_id",
-                            "context",
-                            "ref",
-                            "alt",
-                            "methylation_level",
-                        ]
-                    ]
-                ),
-            ).write(
-                "gs://gnomad/v4.1/constraint_coverage_corrected/apply_models/transcript_consequences/gnomad.v4.1.constraint_group_with_mu_annotations.coverage_corrected.with_downsamplings.ht",
-                overwrite=overwrite,
-            )
 
             ht = res.apply_ht.ht()
             aggregate_by_constraint_groups(
                 ht,
-                keys=tuple(
-                    [
-                        i
-                        for i in list(ht.key)
-                        if i
-                        in ["gene", "transcript", "canonical", "mane_select", "gene_id"]
-                    ]
-                ),
+                keys=tuple([i for i in list(ht.key) if i in RELEASE_KEY_ORDER]),
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")

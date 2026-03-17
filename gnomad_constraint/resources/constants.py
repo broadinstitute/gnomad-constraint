@@ -48,6 +48,13 @@ Minimum median exome coverage differentiating high coverage sites from low cover
 Low coverage sites require an extra calibration when computing the proportion of expected variation.
 """
 
+CLASSIC_LOF_ANNOTATIONS = (
+    "stop_gained",
+    "splice_donor_variant",
+    "splice_acceptor_variant",
+)
+"""Classic loss-of-function VEP annotations."""
+
 MU_GROUPING = ("context", "ref", "alt", "methylation_level")
 """
 Annotations used to group variants for the mutation rate calculation.
@@ -60,6 +67,7 @@ Annotations used to group variants for the mutation rate calibration.
 
 AGGREGATE_SUM_FIELDS = (
     "mu_snp",
+    "mu",
     "observed_variants",
     "possible_variants",
     "predicted_proportion_observed",

@@ -31,7 +31,9 @@ from hail.utils.misc import divide_null, new_temp_file
 
 from gnomad_constraint.resources.constants import (
     ADJ_FREQ_META,
+    AGGREGATE_SUM_FIELDS,
     CALIBRATION_GROUPING,
+    CLASSIC_LOF_ANNOTATIONS,
     CONSTRAINT_GRANULARITIES,
     COVERAGE_CUTOFF,
     GENCODE_FIELD_RENAMES,
@@ -397,7 +399,6 @@ def get_exomes_observed_and_possible(
         exomes_freq=exomes_freq_expr,
         **hl.or_missing(
             hl.is_defined(exomes_coverage_expr),
-            # & hl.or_else(hl.len(exomes_filter_expr) == 0, True),
             single_variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
         ),
     )
@@ -806,17 +807,12 @@ def create_per_variant_expected_ht(
         )
     )
 
-    # TODO: Check that this is needed
-    # tmp_path = new_temp_file(prefix="constraint", extension="ht")
-    # ht.drop(*calibrate_mu_fields).write(tmp_path)
-
-    return ht.drop(*calibrate_mu_fields)  # hl.read_table(tmp_path, _n_partitions=2000)
+    return ht.drop(*calibrate_mu_fields)
 
 
 def aggregate_per_variant_expected_ht(
     ht,
     include_mu_annotations_in_grouping: bool = False,
-    max_array_size: int = 200,
 ):
     """
     Aggregate the per-variant expected Table.
@@ -830,7 +826,6 @@ def aggregate_per_variant_expected_ht(
     :param ht: Table returned by `create_per_variant_expected_ht`.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate
         key annotations in the grouping. Default is False.
-    :param max_array_size: Maximum array size before batching. Default is 500.
     :return: Table with the observed and expected counts.
     """
     groupings = [
@@ -841,68 +836,16 @@ def aggregate_per_variant_expected_ht(
             if g not in MU_GROUPING
         ],
     ]
-    aggregate_fields_to_sum = [
-        "mu_snp",
-        "mu",
-        "observed_variants",
-        "possible_variants",
-        "predicted_proportion_observed",
-        "coverage_correction",
-        "expected_variants",
-    ]
-
     if "calibrate_mu" in ht.row:
         ht = ht.annotate(**ht.calibrate_mu)
 
     ht = ht.filter(hl.set(CSQ_CODING).contains(ht.annotation))
-    ht = ht.key_by()
-    ht = ht.select(*groupings, *aggregate_fields_to_sum)
-    # ht = ht.naive_coalesce(1000).checkpoint(new_temp_file("pre_aggregation", "ht"))
+    ht = ht.key_by().select(*groupings, *AGGREGATE_SUM_FIELDS)
     ht = ht.checkpoint(new_temp_file("pre_aggregation", "ht"))
 
     ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
-
-    # Check array lengths to determine if we need to batch.
-    arrays = [
-        f for f in aggregate_fields_to_sum if isinstance(ht[f], hl.ArrayExpression)
-    ]
-    array_length = len(ht.filter(hl.is_defined(ht[arrays[0]]))[arrays[0]].take(1)[0])
-    logger.info(f"Array length: {array_length}")
-
-    if not array_length > max_array_size:
-        # No large arrays, use standard aggregation.
-        ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
-    else:
-        # Calculate number of batches needed.
-        num_batches = (array_length + max_array_size - 1) // max_array_size
-
-        batches = []
-        for i in range(num_batches):
-            start_idx = i * max_array_size
-            end_idx = min((i + 1) * max_array_size, array_length)
-            logger.info(
-                f"Processing batch {i+1}/{num_batches} (indices {start_idx}:{end_idx})"
-            )
-
-            _ht = ht.annotate(
-                **{f: ht[f][start_idx:end_idx] for f in arrays}
-            ).checkpoint(new_temp_file(f"batch_{i}", "ht"))
-            batches.append(
-                _ht.group_by(*groupings)
-                .aggregate(
-                    **aggregate_expected_variants_expr(
-                        _ht, fields_to_sum=aggregate_fields_to_sum if i == 0 else arrays
-                    )
-                )
-                .checkpoint(new_temp_file(f"batch_{i}.agg", "ht"))
-            )
-        ht = batches[0]
-        batches = [_ht[ht.key] for _ht in batches[1:]]
-        ht = ht.annotate(
-            **{f: hl.flatten([ht[f]] + [_ht[f] for _ht in batches]) for f in arrays}
-        )
-
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
+
     return ht.naive_coalesce(1000)
 
 
@@ -1212,11 +1155,7 @@ def compute_oe_upper_percentile_thresholds(
 def build_constraint_consequence_groups(
     csq_expr: hl.expr.ArrayExpression,
     lof_modifier_expr: hl.expr.StringExpression,
-    classic_lof_annotations: Tuple = (
-        "stop_gained",
-        "splice_donor_variant",
-        "splice_acceptor_variant",
-    ),
+    classic_lof_annotations: Tuple = CLASSIC_LOF_ANNOTATIONS,
     additional_groupings: Dict[str, Dict[str, hl.expr.BooleanExpression]] = None,
     additional_grouping_combinations: List[List[str]] = None,
 ) -> Tuple[List[hl.expr.BooleanExpression], List[Dict[str, str]]]:
@@ -1317,11 +1256,7 @@ def convert_multi_array_to_array_of_structs(
 def aggregate_by_constraint_groups(
     ht: hl.Table,
     keys: Tuple = ("gene", "transcript", "canonical"),
-    classic_lof_annotations: Tuple = (
-        "stop_gained",
-        "splice_donor_variant",
-        "splice_acceptor_variant",
-    ),
+    classic_lof_annotations: Tuple = CLASSIC_LOF_ANNOTATIONS,
     additional_groupings: Dict[str, Dict[str, hl.expr.BooleanExpression]] = None,
     additional_grouping_combinations: List[List[str]] = None,
 ) -> hl.Table:
@@ -1430,16 +1365,14 @@ def gamma_ci(
     :param alpha: Significance level for the confidence interval. Default is 0.05.
     :return: Upper bound of the OE confidence interval
     """
-    # Calculate shape and scale parameters for Gamma distribution
+    # Calculate shape and scale parameters for Gamma distribution.
     shape = obs + hl.literal(1.0)
-    scale = divide_null(
-        hl.literal(1.0), exp
-    )  # Use divide_null to handle division by zero
+    # Use divide_null to handle division by zero.
+    scale = divide_null(hl.literal(1.0), exp)
     p = hl.literal(1.0 - alpha)
 
-    # Use the built-in qgamma function from the custom Hail wheel
-    # divide_null will return null if exp is 0, making the result null as well
-
+    # Use the built-in qgamma function from the custom Hail wheel.
+    # divide_null will return null if exp is 0, making the result null as well.
     return hl.struct(
         lower=hl.qgamma(hl.literal(alpha), shape, scale),
         upper=hl.qgamma(p, shape, scale),
@@ -1577,110 +1510,54 @@ def compute_gene_quality_metrics(
     return ht.key_by("transcript")
 
 
-def compute_constraint_metrics(
+def _annotate_oe_ci_z(
     ht: hl.Table,
-    gencode_ht: hl.Table,
-    gene_quality_metrics_ht: hl.Table,
-    expected_values: Optional[Dict[str, float]] = None,
-    min_diff_convergence: float = 0.001,
-    raw_z_outlier_threshold_lower_lof: float = -8.0,
-    raw_z_outlier_threshold_lower_missense: float = -8.0,
-    raw_z_outlier_threshold_lower_syn: float = -8.0,
-    raw_z_outlier_threshold_upper_syn: float = 8.0,
-    use_mane_select_over_canonical: bool = True,
+    z_thresholds: Dict[str, Tuple[Optional[float], Optional[float]]],
 ) -> hl.Table:
     """
-    Compute the pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+    Annotate constraint groups with OE ratio, confidence intervals, z-scores, and flags.
 
-    .. note::
+    For each constraint group's ``oe_info`` entries, adds:
 
-        The following annotations should be present in `ht`:
+    - ``oe`` — observed / expected ratio.
+    - ``oe_ci_discretized_poisson`` — discretized Poisson CI.
+    - ``oe_ci_gamma`` — gamma-distribution CI.
+    - ``z_raw`` — raw z-score.
 
-            - modifier
-            - annotation
-            - observed_variants
-            - mu
-            - possible_variants
-            - expected_variants
-            - expected_variants_{pop} (if `pops` is specified)
-            - downsampling_counts_{pop} (if `pops` is specified)
+    Then adds per-group ``flags`` based on z-score outlier thresholds.
 
-    :param ht: Input Table with the number of expected variants (output of
-        `get_proportion_observed()`).
-    :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
-        'canonical').
-    :param classic_lof_annotations: Classic LoF Annotations used to filter the input
-        Table. Default is {"stop_gained", "splice_donor_variant",
-        "splice_acceptor_variant"}.
-    :param expected_values: Dictionary containing the expected values for 'Null',
-        'Rec', and 'LI' to use as starting values.
-    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
-        model convergence criteria as met. Default is 0.001.
-    :param raw_z_outlier_threshold_lower_lof: Value at which the raw z-score is
-        considered an outlier for lof variants. Values below this threshold will be
-        considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_lower_missense: Value at which the raw z-score is
-        considered an outlier for missense variants. Values below this threshold will
-        be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_lower_syn: Lower value at which the raw z-score is
-        considered an outlier for synonymous variants. Values below this threshold will
-        be considered outliers. Default is -8.0.
-    :param raw_z_outlier_threshold_upper_syn: Upper value at which the raw z-score is
-        considered an outlier for synonymous variants. Values above this threshold will
-        be considered outliers. Default is  8.0.
-    :param use_mane_select_over_canonical: Use MANE Select rather than canonical
-        transcripts for filtering the Table when determining ranks for the lof oe
-        upper confidence interval. If a gene does not have a MANE Select transcript,
-        the canonical transcript (if available) will be used instead. Default is True.
-    :param gencode_ht: Table containing GENCODE annotations.
-    :param gene_quality_metrics_ht: Table keyed by transcript with
-        ``gene_quality_metrics`` and ``gene_flags`` fields (output of
-        :func:`compute_gene_quality_metrics`).
-    :return: Table with pLI scores, observed:expected ratio, confidence interval of the
-        observed:expected ratio, and z scores.
+    :param ht: Table with ``constraint_groups`` array.
+    :param z_thresholds: Mapping from constraint category (``"lof"``, ``"mis"``,
+        ``"syn"``) to ``(lower, upper)`` raw z-score outlier thresholds.
+    :return: Table with OE, CI, z-score, and flag annotations.
     """
-
-    def _add_oe_ci_z(oe_info: hl.expr.StructExpression) -> hl.expr.StructExpression:
-        """
-        Add oe, oe_ci, and z_raw to the oe_info struct.
-
-        :param oe_info: Struct containing the observed and expected variants.
-        :return: Struct containing oe, oe_ci, and z_raw.
-        """
-        obs = oe_info.observed_variants
-        exp = oe_info.expected_variants
-        return oe_info.annotate(
-            oe=divide_null(obs, exp),
-            oe_ci_discretized_poisson=oe_confidence_interval(obs, exp),
-            oe_ci_gamma=calculate_oe_confidence_interval(
-                obs, exp, oe_upper_method="gamma"
-            ),
-            z_raw=calculate_raw_z_score(obs, exp),
-        )
-
-    # Annotate with the observed:expected ratio, 95% confidence interval around the
-    # observed:expected ratio, and z scores for each constraint group.
     ht = ht.annotate(
         constraint_groups=ht.constraint_groups.map(
             lambda x: x.annotate(
-                oe_info=x.oe_info.map(lambda oe_info: _add_oe_ci_z(oe_info))
+                oe_info=x.oe_info.map(
+                    lambda oe_info: oe_info.annotate(
+                        oe=divide_null(
+                            oe_info.observed_variants, oe_info.expected_variants
+                        ),
+                        oe_ci_discretized_poisson=oe_confidence_interval(
+                            oe_info.observed_variants, oe_info.expected_variants
+                        ),
+                        oe_ci_gamma=calculate_oe_confidence_interval(
+                            oe_info.observed_variants,
+                            oe_info.expected_variants,
+                            oe_upper_method="gamma",
+                        ),
+                        z_raw=calculate_raw_z_score(
+                            oe_info.observed_variants, oe_info.expected_variants
+                        ),
+                    )
+                )
             )
         )
     )
 
-    z_threshold = {
-        "lof": (raw_z_outlier_threshold_lower_lof, None),
-        "mis": (raw_z_outlier_threshold_lower_missense, None),
-        "syn": (
-            raw_z_outlier_threshold_lower_syn,
-            raw_z_outlier_threshold_upper_syn,
-        ),
-    }
     meta = hl.eval(ht.constraint_group_meta)
     freq_meta = hl.eval(ht.exomes_freq_meta)
-    syn_idx = meta.index({"csq_set": "syn"})
-    mis_idx = meta.index({"csq_set": "mis"})
-    lof_idx = meta.index({"lof": "hc"})
     all_freq_idx = freq_meta.index(ADJ_FREQ_META)
     ht = ht.annotate(
         constraint_groups=[
@@ -1689,11 +1566,11 @@ def compute_constraint_metrics(
                     get_constraint_flags(
                         ht.constraint_groups[i].oe_info[all_freq_idx].expected_variants,
                         ht.constraint_groups[i].oe_info[all_freq_idx].z_raw,
-                        z_threshold.get(
+                        z_thresholds.get(
                             "lof" if m.get("lof") else m.get("csq_set", "None"),
                             (None, None),
                         )[0],
-                        z_threshold.get(
+                        z_thresholds.get(
                             "lof" if m.get("lof") else m.get("csq_set", "None"),
                             (None, None),
                         )[1],
@@ -1703,9 +1580,29 @@ def compute_constraint_metrics(
             )
             for i, m in enumerate(meta)
         ]
-    ).checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw", "ht"))
+    )
 
-    # Add z-score 'sd' annotation to globals.
+    return ht
+
+
+def _compute_z_scores(ht: hl.Table) -> hl.Table:
+    """
+    Compute normalized z-scores and union per-group constraint flags.
+
+    Computes the standard deviation of raw z-scores (stored as a global), normalizes
+    each group's raw z-score by its standard deviation, and unions the syn, mis, and
+    lof flags into a single ``constraint_flags`` set.
+
+    :param ht: Table output by :func:`_annotate_oe_ci_z`.
+    :return: Table with ``z_score`` and ``constraint_flags`` annotations.
+    """
+    meta = hl.eval(ht.constraint_group_meta)
+    freq_meta = hl.eval(ht.exomes_freq_meta)
+    syn_idx = meta.index({"csq_set": "syn"})
+    mis_idx = meta.index({"csq_set": "mis"})
+    lof_idx = meta.index({"lof": "hc"})
+    all_freq_idx = freq_meta.index(ADJ_FREQ_META)
+
     ht = ht.annotate_globals(
         sd_raw_z=ht.aggregate(
             hl.agg.filter(
@@ -1722,7 +1619,6 @@ def compute_constraint_metrics(
         )
     )
 
-    # Compute z-score from raw z-score and standard deviations.
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, sd_raw_z: x.annotate(
@@ -1736,16 +1632,30 @@ def compute_constraint_metrics(
             | ht.constraint_groups[mis_idx].flags
             | ht.constraint_groups[lof_idx].flags
         ),
-    ).checkpoint(new_temp_file("constraint_metrics.oe.oe_ci.z_raw.flags", "ht"))
-
-    # Add a rank and decile of the upper confidence interval for MANE Select or
-    # canonical ensembl transcripts.
-    ht = add_oe_upper_rank_and_decile(ht, use_mane_select_over_canonical).checkpoint(
-        new_temp_file("constraint_metrics.oe.oe_ci.z_raw.flags.rank_and_decile", "ht")
     )
 
-    # Compute OE upper CI percentile thresholds and annotate bins.
-    # Look up constraint group indices for each metric from the global meta.
+    return ht
+
+
+def _compute_percentile_bins(
+    ht: hl.Table,
+    use_mane_select_over_canonical: bool = True,
+) -> hl.Table:
+    """
+    Add OE upper CI rank, decile, and percentile bin annotations.
+
+    Adds rank and decile annotations via :func:`add_oe_upper_rank_and_decile`,
+    then computes percentile thresholds across all granularities defined in
+    ``CONSTRAINT_GRANULARITIES`` and annotates bins via
+    :func:`annotate_constraint_percentile_bins`.
+
+    :param ht: Table output by :func:`_compute_z_scores`.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical
+        transcripts for filtering when determining ranks. Default is True.
+    :return: Table with rank, decile, and percentile bin annotations.
+    """
+    ht = add_oe_upper_rank_and_decile(ht, use_mane_select_over_canonical)
+
     meta = hl.eval(ht.constraint_group_meta)
     metric_group_idx = {
         "syn": next(i for i, m in enumerate(meta) if m == {"csq_set": "syn"}),
@@ -1754,7 +1664,6 @@ def compute_constraint_metrics(
     }
     outlier_expr = ht.constraint_flags.length() > 0
 
-    # Combine all granularity boundary quantiles for a single aggregate pass per metric.
     all_qs = []
     gran_slices: Dict[str, slice] = {}
     for gran_name, bins in CONSTRAINT_GRANULARITIES.items():
@@ -1763,7 +1672,6 @@ def compute_constraint_metrics(
         all_qs.extend(b / n_bins * 100 for b in bins)
         gran_slices[gran_name] = slice(start, len(all_qs))
 
-    # Call once per metric and assemble thresholds dict.
     thresholds = {}
     for metric, idx in metric_group_idx.items():
         vals = compute_oe_upper_percentile_thresholds(
@@ -1776,14 +1684,34 @@ def compute_constraint_metrics(
         for gran_name, sl in gran_slices.items():
             thresholds[(gran_name, metric)] = list(vals[sl])
 
-    ht = annotate_constraint_percentile_bins(ht, thresholds, metric_group_idx)
+    return annotate_constraint_percentile_bins(ht, thresholds, metric_group_idx)
 
-    # Compute the observed:expected ratio.
+
+def _compute_pli_scores(
+    ht: hl.Table,
+    expected_values: Optional[Dict[str, float]] = None,
+    min_diff_convergence: float = 0.001,
+) -> hl.Table:
+    """
+    Compute pLI, pNull, and pRec scores for the HC LoF constraint group.
+
+    :param ht: Table output by :func:`_compute_percentile_bins`.
+    :param expected_values: Dictionary containing the expected OE values for 'Null',
+        'Rec', and 'LI' to use as starting values. Default is ``PLI_EXPECTED_VALUES``.
+    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
+        model convergence criteria as met. Default is 0.001.
+    :return: Table with pLI, pNull, and pRec annotations.
+    """
     if expected_values is None:
         expected_values = PLI_EXPECTED_VALUES
 
+    meta = hl.eval(ht.constraint_group_meta)
+    freq_meta = hl.eval(ht.exomes_freq_meta)
+    lof_idx = meta.index({"lof": "hc"})
+    all_freq_idx = freq_meta.index(ADJ_FREQ_META)
+
     hc_lof_expr = ht.constraint_groups[lof_idx].oe_info[all_freq_idx]
-    ht = ht.annotate(
+    return ht.annotate(
         **compute_pli(
             ht,
             obs_expr=hc_lof_expr.observed_variants,
@@ -1791,11 +1719,88 @@ def compute_constraint_metrics(
             expected_values=expected_values,
             min_diff_convergence=min_diff_convergence,
         )
-    ).checkpoint(
-        new_temp_file(
-            "constraint_metrics.oe.oe_ci.z_raw.flags.rank_and_decile.pli", "ht"
-        )
     )
+
+
+def compute_constraint_metrics(
+    ht: hl.Table,
+    gencode_ht: hl.Table,
+    gene_quality_metrics_ht: hl.Table,
+    expected_values: Optional[Dict[str, float]] = None,
+    min_diff_convergence: float = 0.001,
+    raw_z_outlier_threshold_lower_lof: float = -8.0,
+    raw_z_outlier_threshold_lower_missense: float = -8.0,
+    raw_z_outlier_threshold_lower_syn: float = -8.0,
+    raw_z_outlier_threshold_upper_syn: float = 8.0,
+    use_mane_select_over_canonical: bool = True,
+) -> hl.Table:
+    """
+    Compute constraint metrics for synonymous, missense, and pLoF variants.
+
+    Orchestrates the following steps:
+
+    1. Annotate OE ratios, confidence intervals, raw z-scores, and per-group flags
+       (:func:`_annotate_oe_ci_z`).
+    2. Normalize z-scores and union constraint flags (:func:`_compute_z_scores`).
+    3. Add OE upper CI rank, decile, and percentile bins
+       (:func:`_compute_percentile_bins`).
+    4. Compute pLI / pNull / pRec scores (:func:`_compute_pli_scores`).
+    5. Annotate with gene quality metrics and GENCODE transcript annotations.
+
+    .. note::
+
+        The following annotations should be present in `ht`:
+
+            - modifier
+            - annotation
+            - observed_variants
+            - mu
+            - possible_variants
+            - expected_variants
+
+    :param ht: Input Table with the number of expected variants (output of
+        ``aggregate_by_constraint_groups``).
+    :param gencode_ht: Table containing GENCODE annotations.
+    :param gene_quality_metrics_ht: Table keyed by transcript with
+        ``gene_quality_metrics`` and ``gene_flags`` fields (output of
+        :func:`compute_gene_quality_metrics`).
+    :param expected_values: Dictionary containing the expected OE values for 'Null',
+        'Rec', and 'LI' to use as starting values.
+    :param min_diff_convergence: Minimum iteration change in LI to consider the EM
+        model convergence criteria as met. Default is 0.001.
+    :param raw_z_outlier_threshold_lower_lof: Lower raw z-score outlier threshold for
+        LoF variants. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_missense: Lower raw z-score outlier threshold
+        for missense variants. Default is -8.0.
+    :param raw_z_outlier_threshold_lower_syn: Lower raw z-score outlier threshold for
+        synonymous variants. Default is -8.0.
+    :param raw_z_outlier_threshold_upper_syn: Upper raw z-score outlier threshold for
+        synonymous variants. Default is 8.0.
+    :param use_mane_select_over_canonical: Use MANE Select rather than canonical
+        transcripts for filtering when determining ranks. Default is True.
+    :return: Table with pLI scores, OE ratios, confidence intervals, z-scores,
+        percentile bins, gene quality metrics, and GENCODE annotations.
+    """
+    z_thresholds = {
+        "lof": (raw_z_outlier_threshold_lower_lof, None),
+        "mis": (raw_z_outlier_threshold_lower_missense, None),
+        "syn": (
+            raw_z_outlier_threshold_lower_syn,
+            raw_z_outlier_threshold_upper_syn,
+        ),
+    }
+
+    ht = _annotate_oe_ci_z(ht, z_thresholds)
+    ht = ht.checkpoint(new_temp_file("constraint_metrics.oe_ci_z", "ht"))
+
+    ht = _compute_z_scores(ht)
+    ht = ht.checkpoint(new_temp_file("constraint_metrics.z_scores", "ht"))
+
+    ht = _compute_percentile_bins(ht, use_mane_select_over_canonical)
+    ht = ht.checkpoint(new_temp_file("constraint_metrics.percentile_bins", "ht"))
+
+    ht = _compute_pli_scores(ht, expected_values, min_diff_convergence)
+    ht = ht.checkpoint(new_temp_file("constraint_metrics.pli", "ht"))
 
     # Add per-transcript gene quality metrics and flags.
     ht = ht.annotate(**gene_quality_metrics_ht[ht.transcript])
@@ -2155,5 +2160,3 @@ def annotate_constraint_percentile_bins(
             }
         )
     )
-
-    return ht.select(**flat)
