@@ -29,8 +29,10 @@ import hail as hl
 from gnomad.utils.constraint import (
     assemble_constraint_context_ht,
     build_models,
+    calculate_gerp_cutoffs,
     explode_downsamplings_oe,
 )
+from gnomad.utils.file_utils import print_global_struct
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad.utils.vep import update_loftee_end_trunc_filter
 from gnomad_qc.resource_utils import PipelineResourceCollection
@@ -45,7 +47,6 @@ from gnomad_constraint.resources.constants import (
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
-    calculate_gerp_cutoffs,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     compute_gene_quality_metrics,
@@ -54,7 +55,6 @@ from gnomad_constraint.utils.constraint import (
     flatten_release_ht,
     prepare_ht_for_constraint_calculations,
     prepare_release_ht,
-    print_global_struct,
 )
 
 logging.basicConfig(

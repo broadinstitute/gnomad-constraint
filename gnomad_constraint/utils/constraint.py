@@ -1,32 +1,40 @@
 """Script containing utility functions used in the constraint pipeline."""
 
-import functools
 import logging
-import operator
 from typing import Dict, List, Optional, Tuple, Union
 
 import hail as hl
-import numpy as np
-from gnomad.assessment.summary_stats import generate_filter_combinations
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
 from gnomad.utils.constraint import (
     add_gencode_transcript_annotations,
-    aggregate_expected_variants_expr,
+    aggregate_constraint_metrics_expr,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
     apply_models,
+    build_constraint_consequence_groups,
+    calculate_gerp_cutoffs,
     calculate_raw_z_score,
     calculate_raw_z_score_sd,
     calibration_model_group_expr,
+    compute_oe_upper_percentile_thresholds,
     compute_pli,
     count_observed_and_possible_by_group,
     get_constraint_flags,
     oe_confidence_interval,
+    rank_and_assign_bins,
     single_variant_observed_and_possible_expr,
 )
+from gnomad.utils.file_utils import (
+    convert_multi_array_to_array_of_structs,
+    print_global_struct,
+)
 from gnomad.utils.filtering import add_filters_expr
-from gnomad.utils.vep import CSQ_CODING, filter_vep_transcript_csqs_expr
+from gnomad.utils.vep import (
+    CSQ_CODING,
+    filter_vep_transcript_csqs_expr,
+    mane_select_over_canonical_filter_expr,
+)
 from hail.utils.misc import divide_null, new_temp_file
 
 from gnomad_constraint.resources.constants import (
@@ -483,36 +491,6 @@ def get_build_calibration_model_annotation(
     return hl.or_missing(syn_csq_expr.length() > 0, build_expr)
 
 
-# TODO: We don't really need this, I just found int helpful to look over the
-#  chosen parameters.
-def print_global_struct(t: Union[hl.Table, hl.Struct, hl.StructExpression]) -> None:
-    """
-    Print the global struct.
-
-    :param t: Table with globals or globals struct to print.
-    :return: None
-    """
-    if isinstance(t, hl.Table):
-        t = t.globals
-    if isinstance(t, hl.StructExpression):
-        t = hl.eval(t)
-
-    def _get_pretty_print_globals(global_struct: hl.Struct, level: int = 1) -> str:
-        output = ""
-        level_tab = "".join(["    "] * level)
-        for k, v in global_struct.items():
-            if isinstance(v, hl.Struct):
-                v = f"\n{_get_pretty_print_globals(v, level + 1)}"
-
-            output += f"{level_tab}{k}: {v}\n"
-
-        return output
-
-    logger.info(
-        "\nThe following parameters were used: \n%s", _get_pretty_print_globals(t)
-    )
-
-
 def prepare_ht_for_constraint_calculations(
     ht: hl.Table,
     exome_coverage_metric: str = "median",
@@ -843,7 +821,7 @@ def aggregate_per_variant_expected_ht(
     ht = ht.key_by().select(*groupings, *AGGREGATE_SUM_FIELDS)
     ht = ht.checkpoint(new_temp_file("pre_aggregation", "ht"))
 
-    ht = ht.group_by(*groupings).aggregate(**aggregate_expected_variants_expr(ht))
+    ht = ht.group_by(*groupings).aggregate(**aggregate_constraint_metrics_expr(ht))
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
 
     return ht.naive_coalesce(1000)
@@ -907,38 +885,6 @@ def calculate_mu_by_downsampling(
     return annotate_mutation_type(ht)
 
 
-def mane_select_over_canonical_filter_expr(ht: hl.Table) -> hl.Table:
-    """
-    Filter to MANE Select over canonical transcripts.
-
-    Filter to only ensembl transcripts of the specified transcript filter. If MANE
-    select is specified, and a gene does not have a MANE select transcript, use
-    canonical instead.
-
-    .. note::
-
-        In VEP 105 (used for gnomAD v4), all MANE Select transcripts are also
-        annotated as canonical. As a result, this function produces the same set of
-        transcripts as a simple canonical filter for v4 data.
-
-    :param ht: Table with the MANE Select and canonical annotations.
-    :return: Table filtered to MANE Select over canonical transcripts.
-    """
-    genes = ht.group_by(ht.gene_id).aggregate(
-        mane_present=hl.agg.any(ht.mane_select),
-        canonical_present=hl.agg.any(ht.canonical),
-    )
-    genes = genes.annotate(
-        only_canonical=~(genes.mane_present) & (genes.canonical_present)
-    )
-    only_canonical_expr = genes[ht.gene_id].only_canonical
-    mane_present_expr = genes[ht.gene_id].mane_present
-
-    return (ht.transcript.startswith("ENST")) & (
-        (mane_present_expr & ht.mane_select) | (only_canonical_expr & ht.canonical)
-    )
-
-
 def get_transcript_filter_expr(
     ht: hl.Table,
     use_mane_select_over_canonical: bool = True,
@@ -946,6 +892,9 @@ def get_transcript_filter_expr(
 ) -> hl.expr.BooleanExpression:
     """
     Return a filter expression for selecting one representative transcript per gene.
+
+    Operates on an exploded, transcript-keyed table (one row per gene/transcript
+    pair) — not on VEP ``transcript_consequences`` arrays.
 
     :param ht: Table with ``transcript``, ``mane_select``, ``canonical``, and
         ``gene_id`` annotations.
@@ -960,47 +909,11 @@ def get_transcript_filter_expr(
     if mane_select_only:
         return ht.transcript.startswith("ENST") & ht.mane_select
     elif use_mane_select_over_canonical:
-        return mane_select_over_canonical_filter_expr(ht)
+        return mane_select_over_canonical_filter_expr(
+            ht.transcript, ht.mane_select, ht.canonical, ht.gene_id
+        )
     else:
         return ht.transcript.startswith("ENST") & ht.canonical
-
-
-# TODO: Move to gnomad_methods?
-def get_rank_and_bins(
-    value_expr: hl.expr.Float64Expression,
-    bin_granularities: Optional[Dict[str, int]] = None,
-) -> hl.StructExpression:
-    """Rank rows by a numeric expression and assign bin labels.
-
-    Rows are ordered ascending by ``value_expr``. Each row is assigned a
-    0-based ``rank`` and a ``bin_{name}`` field for every entry in
-    ``bin_granularities``, computed as
-    ``hl.int(rank * multiplier / n_transcripts)``.
-
-    :param value_expr: Numeric expression to rank by (ascending).
-    :param bin_granularities: Mapping of bin name to multiplier. Each entry
-        produces a ``bin_{name}`` field. Default is
-        ``{"percentile": 100, "decile": 10, "sextile": 6}``.
-    :return: Struct with ``rank`` and ``bin_{name}`` fields for each entry in
-        ``bin_granularities``.
-    """
-    if bin_granularities is None:
-        bin_granularities = {"percentile": 100, "decile": 10, "sextile": 6}
-
-    ht = value_expr._indices.source
-    source_key = list(ht.key)
-    n_transcripts = ht.count()
-    ranked_ht = ht.select(_=value_expr).order_by("_").add_index("rank")
-    ranked_ht = ranked_ht.select(
-        *source_key,
-        "rank",
-        **{
-            f"bin_{name}": hl.int(ranked_ht.rank * multiplier / n_transcripts)
-            for name, multiplier in bin_granularities.items()
-        },
-    ).cache()
-
-    return ranked_ht.key_by(*source_key).cache()[ht.key]
 
 
 def add_oe_upper_rank_and_decile(
@@ -1064,7 +977,9 @@ def add_oe_upper_rank_and_decile(
         oe_ci_upper=[
             hl.struct(
                 **{
-                    ci: get_rank_and_bins(ms_ht.oe_ci_upper[i][ci], bin_granularities)
+                    ci: rank_and_assign_bins(
+                        ms_ht.oe_ci_upper[i][ci], bin_granularities
+                    )
                     for ci in ci_fields
                 }
             )
@@ -1091,166 +1006,6 @@ def add_oe_upper_rank_and_decile(
     )
 
     return ht
-
-
-def compute_oe_upper_percentile_thresholds(
-    ht: hl.Table,
-    percentiles: List[float],
-    metric_expr: hl.expr.Float64Expression,
-    outlier_expr: hl.expr.BooleanExpression,
-    use_mane_select_over_canonical: bool = True,
-    mane_select_only: bool = False,
-    quantile_k: int = 1000,
-) -> List[float]:
-    """
-    Compute OE upper CI percentile thresholds for a single metric expression.
-
-    Filters to a representative transcript set (controlled by
-    ``use_mane_select_over_canonical`` / ``mane_select_only``) and excludes
-    outlier transcripts, then computes approximate quantile thresholds at the
-    requested percentiles in a single aggregation pass.
-
-    :param ht: Constraint metrics Table (output of ``compute_constraint_metrics``).
-    :param percentiles: Percentile values (0–100) at which to compute thresholds.
-        Pass a combined list across multiple granularities and slice the result to
-        avoid repeated aggregation passes.
-    :param metric_expr: Float expression for the metric to threshold (e.g.,
-        ``ht.constraint_groups[i].oe_info[0].oe_ci_gamma.upper``). Must be
-        defined on ``ht``.
-    :param outlier_expr: Boolean expression that is ``True`` for transcripts to
-        exclude from the reference population (e.g., flagged transcripts).
-    :param use_mane_select_over_canonical: When ``True`` (default), prefer MANE
-        Select transcripts, falling back to canonical for genes without a MANE
-        Select entry. Ignored when ``mane_select_only`` is ``True``.
-    :param mane_select_only: When ``True``, restrict to ENST MANE Select
-        transcripts only, with no canonical fallback. Default is ``False``.
-    :param quantile_k: Accuracy parameter for
-        :func:`hail.expr.aggregators.approx_quantiles`. Default is 1000.
-    :return: List of float threshold values at the given percentiles.
-    """
-    mane_filter_expr = get_transcript_filter_expr(
-        ht, use_mane_select_over_canonical, mane_select_only
-    )
-
-    qs = [p / 100.0 for p in percentiles]
-    filt = mane_filter_expr & hl.is_defined(metric_expr) & ~outlier_expr
-
-    result = ht.aggregate(
-        hl.struct(
-            thresholds=hl.agg.filter(
-                filt, hl.agg.approx_quantiles(metric_expr, qs, k=quantile_k)
-            ),
-            n=hl.agg.count_where(filt),
-        )
-    )
-    logger.info(
-        "Computed percentile thresholds on %d transcripts.",
-        result.n,
-    )
-
-    return result.thresholds
-
-
-# TODO: Move to gnomad_methods?
-def build_constraint_consequence_groups(
-    csq_expr: hl.expr.ArrayExpression,
-    lof_modifier_expr: hl.expr.StringExpression,
-    classic_lof_annotations: Tuple = CLASSIC_LOF_ANNOTATIONS,
-    additional_groupings: Dict[str, Dict[str, hl.expr.BooleanExpression]] = None,
-    additional_grouping_combinations: List[List[str]] = None,
-) -> Tuple[List[hl.expr.BooleanExpression], List[Dict[str, str]]]:
-    """
-    Build constraint consequence groups.
-
-    The function builds constraint groups based on the consequence expression and LoF
-    modifier expression. By default, the following groups are built:
-
-        - csq_set: synonymous_variant, missense_variant
-        - lof: classic, hc_lc, classic_hc_lc, hc
-
-    The resulting meta and cooresponding constraint group filters are:
-
-        - {"csq_set": "syn"}: synonymous_variant
-        - {"csq_set": "mis"}: missense_variant
-        - {"lof": "classic"}: classic LoF annotations
-        - {"lof": "hc_lc"}: LoFTEE HC or LC
-        - {"lof": "classic_hc_lc"}: classic LoF annotations with LoFTEE HC or LC
-        - {"lof": "hc"}: LoF annotations with LoFTEE HC
-
-    Additional groupings can be added to the constraint groups by specifying the
-    `additional_groupings` parameter, and grouping combinations can also be added
-    by specifying the `additional_grouping_combinations` parameter.
-
-    :param csq_expr: Consequence expression.
-    :param lof_modifier_expr: LoF modifier expression.
-    :param classic_lof_annotations: Classic LoF Annotations used to filter the input
-        Table. Default is {"stop_gained", "splice_donor_variant",
-        "splice_acceptor_variant"}.
-    :param additional_groupings: Additional groupings to add to the constraint groups.
-        Default is None.
-    :param additional_grouping_combinations: Additional grouping combinations to add to
-        the constraint groups. Default is None.
-    :return: Tuple containing the constraint group filters and the meta.
-    """
-    lof_classic_expr = hl.literal(set(classic_lof_annotations)).contains(csq_expr)
-    lof_hc_expr = lof_modifier_expr == "HC"
-    lof_hc_lc_expr = lof_hc_expr | (lof_modifier_expr == "LC")
-    mis_expr = csq_expr == "missense_variant"
-    annotation_dict = {
-        "csq_set": {"syn": csq_expr == "synonymous_variant", "mis": mis_expr},
-        "lof": {
-            # Filter to classic LoF annotations.
-            "classic": lof_classic_expr,
-            # Filter to LOFTEE HC or LC.
-            "hc_lc": lof_hc_lc_expr,
-            # Filter to classic LoF annotations with LOFTEE HC or LC.
-            "classic_hc_lc": lof_classic_expr & lof_hc_lc_expr,
-            # Filter to LoF annotations with LOFTEE HC.
-            "hc": lof_hc_expr,
-        },
-    }
-
-    annotation_dict.update(additional_groupings or {})
-    additional_grouping_combinations = additional_grouping_combinations or []
-
-    grouping_combinations = [["csq_set"], ["lof"]]
-    grouping_combinations.extend(additional_grouping_combinations)
-
-    meta = generate_filter_combinations(
-        grouping_combinations,
-        {k: list(v.keys()) for k, v in annotation_dict.items()},
-    )
-    constraint_group_filters = [
-        functools.reduce(operator.ior, [annotation_dict[k][v] for k, v in m.items()])
-        for m in meta
-    ]
-
-    return constraint_group_filters, meta
-
-
-# TODO: Move to gnomad_methods?
-def convert_multi_array_to_array_of_structs(
-    t: Union[hl.Table, hl.expr.StructExpression],
-    array_fields_to_combine: List[str],
-    new_array_field: str,
-) -> hl.Table:
-    """
-    Convert multiple arrays to an array of structs.
-
-    :param t: Table or Struct to convert.
-    :param array_fields_to_combine: Array fields to combine.
-    :param new_array_field: Name of the new array field.
-    :return: Table with the array fields combined into an array of structs named
-        `new_array_field`.
-    """
-    logger.warning("This function assumes that all arrays have the same length!")
-    return t.annotate(
-        **{
-            new_array_field: hl.range(t[array_fields_to_combine[0]].length()).map(
-                lambda i: hl.struct(**{f: t[f][i] for f in array_fields_to_combine})
-            )
-        }
-    ).drop(*array_fields_to_combine)
 
 
 def aggregate_by_constraint_groups(
@@ -1307,7 +1062,7 @@ def aggregate_by_constraint_groups(
     # expected_variants for each constraint group.
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
-            lambda f: hl.agg.filter(f, aggregate_expected_variants_expr(ht)),
+            lambda f: hl.agg.filter(f, aggregate_constraint_metrics_expr(ht)),
             ht.constraint_groups,
         )
     )
@@ -1348,51 +1103,6 @@ def aggregate_by_constraint_groups(
     ht = ht.annotate_globals(constraint_group_meta=meta)
 
     return ht
-
-
-def gamma_ci(
-    obs: hl.expr.Int32Expression,
-    exp: hl.expr.Float64Expression,
-    alpha: float = 0.05,
-) -> hl.expr.Float64Expression:
-    """
-    Calculate the upper bound of the OE confidence interval using the Gamma distribution.
-
-    This function uses the built-in qgamma function from the custom Hail wheel.
-
-    :param obs: Observed count
-    :param exp: Expected count
-    :param alpha: Significance level for the confidence interval. Default is 0.05.
-    :return: Upper bound of the OE confidence interval
-    """
-    # Calculate shape and scale parameters for Gamma distribution.
-    shape = obs + hl.literal(1.0)
-    # Use divide_null to handle division by zero.
-    scale = divide_null(hl.literal(1.0), exp)
-    p = hl.literal(1.0 - alpha)
-
-    # Use the built-in qgamma function from the custom Hail wheel.
-    # divide_null will return null if exp is 0, making the result null as well.
-    return hl.struct(
-        lower=hl.qgamma(hl.literal(alpha), shape, scale),
-        upper=hl.qgamma(p, shape, scale),
-    )
-
-
-def calculate_oe_confidence_interval(
-    obs: hl.expr.Int32Expression,
-    exp: hl.expr.Float64Expression,
-    alpha: float = 0.05,
-) -> hl.expr.StructExpression:
-    """Calculate the OE confidence interval using the Gamma distribution.
-
-    :param obs: Observed count.
-    :param exp: Expected count.
-    :param alpha: Significance level for the confidence interval. Default is
-        0.05.
-    :return: Struct with ``lower`` and ``upper`` bounds.
-    """
-    return gamma_ci(obs, exp, alpha)
 
 
 def _compute_coverage_metrics(
@@ -1540,12 +1250,14 @@ def _annotate_oe_ci_z(
                             oe_info.observed_variants, oe_info.expected_variants
                         ),
                         oe_ci_discretized_poisson=oe_confidence_interval(
-                            oe_info.observed_variants, oe_info.expected_variants
-                        ),
-                        oe_ci_gamma=calculate_oe_confidence_interval(
                             oe_info.observed_variants,
                             oe_info.expected_variants,
-                            oe_upper_method="gamma",
+                            method="poisson",
+                        ),
+                        oe_ci_gamma=oe_confidence_interval(
+                            oe_info.observed_variants,
+                            oe_info.expected_variants,
+                            method="gamma",
                         ),
                         z_raw=calculate_raw_z_score(
                             oe_info.observed_variants, oe_info.expected_variants
@@ -1664,13 +1376,13 @@ def _compute_percentile_bins(
     }
     outlier_expr = ht.constraint_flags.length() > 0
 
+    gran_percentiles: Dict[str, List[float]] = {}
     all_qs = []
-    gran_slices: Dict[str, slice] = {}
     for gran_name, bins in CONSTRAINT_GRANULARITIES.items():
         n_bins = len(bins) + 1
-        start = len(all_qs)
-        all_qs.extend(b / n_bins * 100 for b in bins)
-        gran_slices[gran_name] = slice(start, len(all_qs))
+        pcts = [b / n_bins * 100 for b in bins]
+        gran_percentiles[gran_name] = pcts
+        all_qs.extend(pcts)
 
     thresholds = {}
     for metric, idx in metric_group_idx.items():
@@ -1679,10 +1391,12 @@ def _compute_percentile_bins(
             percentiles=all_qs,
             metric_expr=ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper,
             outlier_expr=outlier_expr,
-            mane_select_only=True,
+            transcript_filter_expr=get_transcript_filter_expr(
+                ht, mane_select_only=True
+            ),
         )
-        for gran_name, sl in gran_slices.items():
-            thresholds[(gran_name, metric)] = list(vals[sl])
+        for gran_name, pcts in gran_percentiles.items():
+            thresholds[(gran_name, metric)] = [vals[p] for p in pcts]
 
     return annotate_constraint_percentile_bins(ht, thresholds, metric_group_idx)
 
@@ -1809,41 +1523,6 @@ def compute_constraint_metrics(
     ht = add_gencode_transcript_annotations(ht, gencode_ht)
 
     return ht
-
-
-# TODO: Move to gnomad_methods?
-def calculate_gerp_cutoffs(ht: hl.Table) -> Tuple[float, float]:
-    """
-    Find GERP cutoffs determined by the 5% and 95% percentiles.
-
-    :param ht: Input Table.
-    :return: Tuple containing values determining the 5-95th percentile of the GERP score.
-    """
-    # Aggregate histogram of GERP values from -12.3 to 6.17 (-12.3 to 6.17 is the range
-    # of GERP values where 6.17 is the most conserved).
-    summary_hist = ht.aggregate(hl.struct(gerp=hl.agg.hist(ht.gerp, -12.3, 6.17, 100)))
-
-    # Get cumulative sum of the hist array and add value of n_smaller to every value in
-    # the cumulative sum array.
-    cumulative_data = (
-        np.cumsum(summary_hist.gerp.bin_freq) + summary_hist.gerp.n_smaller
-    )
-
-    # Append final value to the cumulative sum array (value added is last value of the
-    # array plus n_larger).
-    np.append(cumulative_data, [cumulative_data[-1] + summary_hist.gerp.n_larger])
-
-    # Get zip of (bin_edge, value in cumulative sum array divided by max value in
-    # cumulative sum array).
-    zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
-
-    # Define lower and upper GERP cutoffs based on 5th and 95th percentiles.
-    cutoff_lower = list(filter(lambda i: i[1] > 0.05, zipped))[0][0]
-
-    zipped = zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data))
-    cutoff_upper = list(filter(lambda i: i[1] < 0.95, zipped))[-1][0]
-
-    return cutoff_lower, cutoff_upper
 
 
 def _restructure_release_rows(
