@@ -334,8 +334,10 @@ def get_annotations_for_computing_mu(
     # Filter so that the most severe annotation is 'intron_variant' or
     # 'intergenic_variant'.
     keep_expr &= hl.any(
-        most_severe_consequence_expr == c
-        for c in ["intron_variant", "intergenic_variant"]
+        [
+            most_severe_consequence_expr == c
+            for c in ["intron_variant", "intergenic_variant"]
+        ]
     )
 
     # Set up the criteria to keep high-quality sites, and sites found in less than or
@@ -1039,11 +1041,13 @@ def create_aggregated_expected_ht(
     # rate context. The additional_grouping includes VEP groupings (gene, transcript,
     # annotation, etc.) plus the apply_model fields needed for model application.
     vep_groupings = tuple(g for g in groupings if g not in MU_GROUPING)
+    mu_extra = tuple(f for f in MU_GROUPING if f not in ("context", "ref", "alt"))
     ht = count_observed_and_possible_by_group(
         ht,
         ht.possible_variants,
         ht.observed_variants,
         additional_grouping=vep_groupings
+        + mu_extra
         + ("exomes_coverage", "apply_model")
         + tuple(f for f in MUTATION_TYPE_FIELDS if f not in MU_GROUPING),
         partition_hint=partition_hint,
@@ -1053,6 +1057,15 @@ def create_aggregated_expected_ht(
     ht = annotate_with_mu(ht, mutation_ht)
     ht = _apply_constraint_models(ht, plateau_models, coverage_model, log10_coverage)
     ht = ht.checkpoint(new_temp_file("aggregated_apply_models", "ht"))
+
+    # Scale per-subgroup rate/factor fields by possible_variants so that summing
+    # across subgroups matches the per-variant path (which sums one copy per variant).
+    ht = ht.annotate(
+        mu_snp=ht.mu_snp * ht.possible_variants,
+        predicted_proportion_observed=ht.predicted_proportion_observed
+        * ht.possible_variants,
+        coverage_correction=ht.coverage_correction * ht.possible_variants,
+    )
 
     # Aggregate by VEP groupings only, summing model outputs across coverage and
     # context groups to produce the same schema as aggregate_per_variant_expected_ht.
@@ -1364,7 +1377,7 @@ def _compute_site_quality_metrics(
 
 
 def compute_gene_quality_metrics(
-    context_ht: hl.Table,
+    ht: hl.Table,
     exomes_ht: hl.Table,
     gencode_cds_ht: hl.Table,
     an_coverage_threshold: int = 90,
@@ -1381,8 +1394,8 @@ def compute_gene_quality_metrics(
       when mean AS_MQ < 50, ``low_exome_coverage`` when
       prop_bp_AN90 < 0.1).
 
-    :param context_ht: Preprocessed context Hail Table with
-        ``exomes_coverage`` (AN percent, 0-100) per position.
+    :param ht: Preprocessed constraint Hail Table with ``exomes_coverage``
+        field (output of :func:`prepare_ht_for_constraint_calculations`).
     :param exomes_ht: gnomAD exomes sites Hail Table.
     :param gencode_cds_ht: GENCODE CDS positions Table keyed by locus with
         ``transcript_id`` array (output of
@@ -1393,7 +1406,7 @@ def compute_gene_quality_metrics(
         and ``gene_flags``.
     """
     an90_ht = _compute_coverage_metrics(
-        context_ht, gencode_cds_ht, an_coverage_threshold
+        ht, gencode_cds_ht, an_coverage_threshold
     ).cache()
     sites_ht = _compute_site_quality_metrics(exomes_ht, gencode_cds_ht).cache()
 

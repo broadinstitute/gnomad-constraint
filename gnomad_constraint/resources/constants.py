@@ -13,6 +13,14 @@ VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1"]
 CURRENT_VERSION = "4.1.1"
 """Current default gnomAD constraint pipeline version."""
 
+SITES_VERSION_MAP = {
+    "2.1.1": "2.1.1",
+    "4.0": "4.0",
+    "4.1": "4.1",
+    "4.1.1": "4.1",
+}
+"""Map from constraint pipeline version to gnomAD sites release version."""
+
 DATA_TYPES = ["context", "exomes", "genomes"]
 """Data types used in the constraint pipeline."""
 

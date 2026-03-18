@@ -68,11 +68,12 @@ MU_GROUPING = ("context", "ref", "alt", "methylation_level")
 
 ```bash
 # Build a single zip with correct top-level package structure
+# Exclude non-Python files (.RData, renv/, images, notebooks) to keep zip small
 cd <gnomad-constraint root> && \
   rm -f /tmp/pyfiles.zip && \
-  zip -r /tmp/pyfiles.zip gnomad_constraint/ -x '*.pyc' '*__pycache__*' && \
+  zip -r /tmp/pyfiles.zip gnomad_constraint/ -x '*.pyc' '*__pycache__*' '*.RData' '*/renv/*' '*.DS_Store' '*.png' '*.pdf' '*.ipynb' && \
   cd <gnomad_qc root> && \
-  zip -r /tmp/pyfiles.zip gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store'
+  zip -r /tmp/pyfiles.zip gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store' '*.ipynb'
 
 # Submit to cluster (single zip = used directly, not repackaged)
 hailctl dataproc submit <CLUSTER> \

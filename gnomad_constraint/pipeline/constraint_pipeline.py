@@ -149,9 +149,17 @@ def main(args):
             res.check_resource_existence()
 
             gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
+            exomes_sites_ht = res.exomes_sites_ht.ht()
+            if test:
+                gencode_cds_ht = filter_for_test(
+                    gencode_cds_ht, use_gene_list=test_gene_list
+                )
+                exomes_sites_ht = filter_for_test(
+                    exomes_sites_ht, use_gene_list=test_gene_list
+                )
             gene_quality_ht = compute_gene_quality_metrics(
-                res.annotated_context_ht.ht(),
-                res.exomes_sites_ht.ht(),
+                res.temp_preprocess_data_ht.ht(),
+                exomes_sites_ht,
                 gencode_cds_ht,
             )
             gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)

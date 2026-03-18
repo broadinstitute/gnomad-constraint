@@ -28,6 +28,7 @@ from gnomad_constraint.resources.constants import (
     DATA_TYPES,
     EXTENSIONS,
     MODEL_TYPES,
+    SITES_VERSION_MAP,
     VERSIONS,
 )
 
@@ -105,15 +106,16 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     :return: Genome or exomes sites Table.
     """
     build = check_param_scope(version=version, data_type=data_type)
+    sites_version = SITES_VERSION_MAP[version]
     if build == "GRCh37":
-        return gnomad_grch37.public_release(data_type).versions[version]
+        return gnomad_grch37.public_release(data_type).versions[sites_version]
     elif int(version[0]) == 4:
         # Continue to use v3.1.2 for genomes as downsamplings are dropped in v4
         # versions.
         if data_type == "genomes":
             return gnomad_grch38.public_release(data_type).versions["3.1.2"]
         else:
-            return gnomad_grch38.public_release(data_type).versions[version]
+            return gnomad_grch38.public_release(data_type).versions[sites_version]
     else:
         raise ValueError(
             "The sites resource has not been defined for the specified version!"
@@ -384,7 +386,9 @@ def get_annotated_context_ht(**kwargs) -> TableResource:
 
     :return: TableResource of annotated context Table.
     """
-    return get_constraint_data("annotated_context", temp=True, **kwargs)
+    return get_constraint_data(
+        "annotated_context", sub_dir="preprocessed_data", **kwargs
+    )
 
 
 def get_preprocessed_ht(**kwargs) -> TableResource:
@@ -628,13 +632,13 @@ def get_adj_r_ht() -> hl.Table:
 
 def get_syn_adj_r_ht() -> hl.Table:
     """
-    Read the synonymous DNM adj_r per-context methylation genome 1kb autosome Table.
+    Read the aggregated synonymous DNM adj_r per-context methylation genome 1kb autosome Table.
 
-    :return: Table with syn_adj_r annotation keyed by locus.
+    :return: Table with adj_r dict annotation keyed by interval.
     """
     return hl.read_table(
         "gs://gnomad/v4.1/constraint/resources/annotations/ht/"
-        "adj_r_syn_dnm_per_context_methyl_genome_1kb_autosome.ht"
+        "adj_r_syn_dnm_per_context_methyl_genome_1kb_autosome.agg.ht"
     )
 
 
@@ -700,6 +704,16 @@ def get_constraint_resources(
             "temp_preprocess_data_ht": get_preprocessed_ht(**common_params),
         },
         pipeline_input_steps=[prepare_context],
+    )
+    compute_gene_quality_metrics_step = PipelineStepResourceCollection(
+        "--compute-gene-quality-metrics",
+        output_resources={
+            "gene_quality_metrics_ht": get_gene_quality_metrics_ht(version=version)
+        },
+        add_input_resources={
+            "gnomAD resources": {"exomes_sites_ht": input_hts["exomes_sites_ht"]},
+        },
+        pipeline_input_steps=[preprocess_data],
     )
     calculate_gerp_cutoffs = PipelineStepResourceCollection(
         "--calculate-gerp-cutoffs",
@@ -771,16 +785,6 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
-    compute_gene_quality_metrics_step = PipelineStepResourceCollection(
-        "--compute-gene-quality-metrics",
-        output_resources={
-            "gene_quality_metrics_ht": get_gene_quality_metrics_ht(version=version)
-        },
-        input_resources={
-            "gnomAD resources": {"exomes_sites_ht": input_hts["exomes_sites_ht"]},
-        },
-        pipeline_input_steps=[prepare_context],
-    )
     compute_constraint_metrics = PipelineStepResourceCollection(
         "--compute-constraint-metrics",
         output_resources={
@@ -815,8 +819,8 @@ def get_constraint_resources(
     constraint_pipeline.add_steps(
         {
             "prepare_context": prepare_context,
-            "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
             "preprocess_data": preprocess_data,
+            "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
             "calculate_gerp_cutoffs": calculate_gerp_cutoffs,
             "calculate_mutation_rate": calculate_mutation_rate,
             "create_training_set": create_training_set,
