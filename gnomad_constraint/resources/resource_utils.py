@@ -550,6 +550,59 @@ def get_checkpoint_path(name: str, **kwargs) -> TableResource:
     return get_constraint_data(name, sub_dir="checkpoint_files", test=True, **kwargs)
 
 
+def filter_for_test(
+    ht: hl.Table,
+    use_gene_list: bool = False,
+) -> hl.Table:
+    """
+    Filter ``ht`` to chr20, chrX, and chrY or a gene list for testing.
+
+    :param ht: Table to filter.
+    :param use_gene_list: Whether to use a gene list for testing instead of all of
+        chr20, chrX, and chrY for testing.
+    :return: Filtered Table for testing.
+    """
+    rg = get_reference_genome(ht.locus)
+    if use_gene_list:
+        if rg == "GRCh37":
+            keep_regions = [
+                "20:49505585-49547958",  # ADNP
+                "20:853296-896977",  # ANGPT4
+                "X:13752832-13787480",  # OFD1
+                "X:57313139-57515629",  # FAAH2
+                "Y:2803112-2850547",  # ZFY
+            ]
+        else:
+            keep_regions = [
+                "chr20:50888916-50931437",  # ADNP
+                "chr20:869900-916334",  # ANGPT4
+                "chrX:13734743-13777955",  # OFD1
+                "chrX:57286706-57489193",  # FAAH2
+                "chrY:2935281-2982506",  # ZFY
+            ]
+        keep = [hl.parse_locus_interval(c, reference_genome=rg) for c in keep_regions]
+    else:
+        keep = [
+            hl.parse_locus_interval(c, reference_genome=rg)
+            for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
+        ]
+        logger.info("Filtering the context HT to chr20, chrX, and chrY for testing...")
+
+    return hl.filter_intervals(ht, keep)
+
+
+def get_adj_r_ht() -> hl.Table:
+    """
+    Read the adj_r per-context methylation genome 1kb autosome aggregate Table.
+
+    :return: Table with adj_r annotation keyed by locus.
+    """
+    return hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/"
+        "adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
+    )
+
+
 def get_constraint_resources(
     version: str,
     custom_vep_annotation: str,

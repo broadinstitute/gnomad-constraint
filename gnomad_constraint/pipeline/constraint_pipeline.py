@@ -23,19 +23,15 @@ The constraint pipeline consists of the following parts:
 
 import argparse
 import logging
-from typing import List
 
 import hail as hl
 from gnomad.utils.constraint import (
-    assemble_constraint_context_ht,
     build_models,
     calculate_gerp_cutoffs,
     explode_downsamplings_oe,
 )
 from gnomad.utils.file_utils import print_global_struct
 from gnomad.utils.reference_genome import get_reference_genome
-from gnomad.utils.vep import update_loftee_end_trunc_filter
-from gnomad_qc.resource_utils import PipelineResourceCollection
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
@@ -44,6 +40,7 @@ from gnomad_constraint.resources.constants import (
     RELEASE_KEY_ORDER,
     VERSIONS,
 )
+from gnomad_constraint.resources.resource_utils import filter_for_test, get_adj_r_ht
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
@@ -53,6 +50,7 @@ from gnomad_constraint.utils.constraint import (
     create_per_variant_expected_ht,
     create_training_set,
     flatten_release_ht,
+    prepare_context_ht,
     prepare_ht_for_constraint_calculations,
     prepare_release_ht,
 )
@@ -63,143 +61,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
-
-
-def filter_for_test(
-    ht: hl.Table,
-    use_gene_list: bool = False,
-) -> hl.Table:
-    """
-    Filter `ht` to chr20, chrX, and chrY or a gene list for testing.
-
-    :param ht: Table to filter.
-    :param use_gene_list: Whether to use a gene list for testing instead of all of
-        chr20, chrX, and chrY for testing.
-    :return: Filtered Table for testing.
-    """
-    rg = get_reference_genome(ht.locus)
-    if use_gene_list:
-        if rg == "GRCh37":
-            keep_regions = [
-                "20:49505585-49547958",  # ADNP
-                "20:853296-896977",  # ANGPT4
-                "X:13752832-13787480",  # OFD1
-                "X:57313139-57515629",  # FAAH2
-                "Y:2803112-2850547",  # ZFY
-            ]
-        else:
-            keep_regions = [
-                "chr20:50888916-50931437",  # ADNP
-                "chr20:869900-916334",  # ANGPT4
-                "chrX:13734743-13777955",  # OFD1
-                "chrX:57286706-57489193",  # FAAH2
-                "chrY:2935281-2982506",  # ZFY
-            ]
-        keep = [hl.parse_locus_interval(c, reference_genome=rg) for c in keep_regions]
-    else:
-        keep = [
-            hl.parse_locus_interval(c, reference_genome=rg)
-            for c in [rg.contigs[19], rg.x_contigs[0], rg.y_contigs[0]]
-        ]
-        logger.info("Filtering the context HT to chr20, chrX, and chrY for testing...")
-
-    ht = hl.filter_intervals(ht, keep)
-
-    return ht
-
-
-def run_prepare_context(
-    resources: PipelineResourceCollection,
-    test: bool = False,
-    test_gene_list: bool = False,
-) -> hl.Table:
-    """
-    Annotate the context Table with coverage, AN, and frequency annotations.
-
-    Uses `assemble_constraint_context_ht` to annotate the context Table with annotations
-    that are used in downstream steps of the constraint pipeline.
-
-    :param resources: PipelineResourceCollection containing resources for the constraint
-        pipeline.
-    :param test: Whether to filter the context Table to only chr20, chrX, and chrY for
-        testing.
-    :param test_gene_list: Whether to filter the context Table to a gene list for
-        testing.
-    :return: Annotated context Table.
-    """
-    # We use naive_coalesce on the context Table because it has a large number of
-    # partitions which caused some issues with Hail 0.2.133. 5000 partitions was a
-    # number that worked well for the context Table in the past.
-    ht = resources.context_ht.ht().naive_coalesce(5000)
-
-    if test:
-        ht = filter_for_test(ht, use_gene_list=test_gene_list)
-
-    def _build_ht_dict(ht_name: str, keep: List[str] = None):
-        dts = ["exomes", "genomes"]
-        hts = {d: getattr(resources, f"{d}_{ht_name}_ht").ht() for d in dts}
-        return {d: t.select(*keep) for d, t in hts.items()} if keep else hts
-
-    # There was a bug in the GERP cutoffs used to filter transcripts with the
-    # "END_TRUNC" filter in the LOFTEE VEP plugin resulting in some transcripts
-    # being considered "HC" when they should have been "LC". We use the
-    # `update_loftee_end_trunc_filter` function to correct this issue.
-    ht = ht.annotate(
-        vep=ht.vep.annotate(
-            transcript_consequences=update_loftee_end_trunc_filter(
-                ht.vep.transcript_consequences
-            )
-        )
-    )
-    ht = assemble_constraint_context_ht(
-        ht,
-        coverage_hts=_build_ht_dict("coverage"),
-        an_hts=_build_ht_dict("an"),
-        freq_hts=_build_ht_dict("sites", ["freq"]),
-        filter_hts=_build_ht_dict("sites", ["filters"]),
-        methylation_ht=resources.methylation_ht.ht(),
-        gerp_ht=constraint_res.get_gerp_ht(get_reference_genome(ht.locus).name),
-        transformation_funcs=None,
-    )
-
-    # Add annotation for exome coverage and genomic region (autosome/PAR, X non-PAR,
-    # Y non-PAR).
-    genomic_region_expr = (
-        hl.case()
-        .when(ht.locus.in_autosome_or_par(), "autosome_or_par")
-        .when(ht.locus.in_x_nonpar(), "chrx_nonpar")
-        .when(ht.locus.in_y_nonpar(), "chry_nonpar")
-        .or_missing()
-    )
-
-    # Add annotation for SFS bin.
-    sfs_bin_cutoffs = [0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5]
-    af_expr = ht.freq.exomes[0].AF
-    sfs_bin_expr = hl.case().when(hl.is_missing(af_expr), 0)
-    for i, af in enumerate(sfs_bin_cutoffs):
-        sfs_bin_expr = sfs_bin_expr.when(af_expr <= af, i)
-
-    sfs_bin_expr = sfs_bin_expr.or_missing()
-
-    adj_r_ht = hl.read_table(
-        "gs://gnomad/v4.1/constraint/resources/annotations/ht/adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
-    )
-
-    ht = ht.annotate(
-        coverage=hl.struct(
-            exomes=ht.coverage.exomes.select("mean", "median_approx"),
-            genomes=ht.coverage.genomes.select("mean", "median_approx"),
-        ),
-        AN=hl.struct(
-            exomes=ht.AN.exomes[0],
-            genomes=ht.AN.genomes[0],
-        ),
-        genomic_region=genomic_region_expr,
-        adj_r=adj_r_ht[ht.locus].adj_r[ht.context],
-        sfs_bin=sfs_bin_expr,
-    )
-
-    return ht
 
 
 def main(args):
@@ -250,7 +111,28 @@ def main(args):
             )
             res = resources.prepare_context
             res.check_resource_existence()
-            ht = run_prepare_context(res, test=test, test_gene_list=test_gene_list)
+
+            # We use naive_coalesce on the context Table because it has a large
+            # number of partitions which caused issues with Hail 0.2.133.
+            ht = res.context_ht.ht().naive_coalesce(5000)
+            if test:
+                ht = filter_for_test(ht, use_gene_list=test_gene_list)
+
+            dts = ["exomes", "genomes"]
+            ht = prepare_context_ht(
+                ht,
+                coverage_hts={d: getattr(res, f"{d}_coverage_ht").ht() for d in dts},
+                an_hts={d: getattr(res, f"{d}_an_ht").ht() for d in dts},
+                freq_hts={
+                    d: getattr(res, f"{d}_sites_ht").ht().select("freq") for d in dts
+                },
+                filter_hts={
+                    d: getattr(res, f"{d}_sites_ht").ht().select("filters") for d in dts
+                },
+                methylation_ht=res.methylation_ht.ht(),
+                gerp_ht=constraint_res.get_gerp_ht(get_reference_genome(ht.locus).name),
+                adj_r_ht=get_adj_r_ht(),
+            )
             ht.write(res.annotated_context_ht.path, overwrite)
 
             logger.info("Done annotating the VEP context Table.")
@@ -422,7 +304,7 @@ def main(args):
             ht = res.apply_ht.ht()
             aggregate_by_constraint_groups(
                 ht,
-                keys=tuple([i for i in list(ht.key) if i in RELEASE_KEY_ORDER]),
+                keys=tuple(k for k in ht.key if k in RELEASE_KEY_ORDER),
             ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")

@@ -41,6 +41,13 @@ Population labels from gnomAD.
 Abbreviations stand for: global (all populations), African-American/African, Latino, East Asian, Non-Finnish European, and South Asian.
 """
 
+SFS_BIN_CUTOFFS = (0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5)
+"""Allele frequency upper bounds defining site frequency spectrum bins.
+
+Variants with missing frequency are assigned bin 0. Otherwise, each variant is
+assigned the index of the first cutoff its AF falls at or below.
+"""
+
 COVERAGE_CUTOFF = 40
 """
 Minimum median exome coverage differentiating high coverage sites from low coverage sites.

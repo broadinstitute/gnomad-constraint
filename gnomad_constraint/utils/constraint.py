@@ -13,6 +13,7 @@ from gnomad.utils.constraint import (
     annotate_mutation_type,
     annotate_with_mu,
     apply_models,
+    assemble_constraint_context_ht,
     build_constraint_consequence_groups,
     calculate_raw_z_score,
     calculate_raw_z_score_sd,
@@ -34,6 +35,7 @@ from gnomad.utils.vep import (
     CSQ_CODING,
     filter_vep_transcript_csqs_expr,
     mane_select_over_canonical_filter_expr,
+    update_loftee_end_trunc_filter,
 )
 from hail.utils.misc import divide_null, new_temp_file
 
@@ -60,6 +62,7 @@ from gnomad_constraint.resources.constants import (
     RELEASE_LOF_FIELDS,
     RELEASE_PIPELINE_PARAM_GLOBALS,
     RELEASE_TOP_LEVEL_ANNOTATIONS,
+    SFS_BIN_CUTOFFS,
 )
 
 logging.basicConfig(
@@ -68,6 +71,92 @@ logging.basicConfig(
 )
 logger = logging.getLogger("constraint_utils")
 logger.setLevel(logging.INFO)
+
+
+def prepare_context_ht(
+    ht: hl.Table,
+    coverage_hts: Dict[str, hl.Table],
+    an_hts: Dict[str, hl.Table],
+    freq_hts: Dict[str, hl.Table],
+    filter_hts: Dict[str, hl.Table],
+    methylation_ht: hl.Table,
+    gerp_ht: hl.Table,
+    adj_r_ht: hl.Table,
+    sfs_bin_cutoffs: Tuple[float, ...] = SFS_BIN_CUTOFFS,
+) -> hl.Table:
+    """
+    Annotate the context Table with coverage, AN, frequency, and constraint annotations.
+
+    Applies the LOFTEE END_TRUNC filter fix, assembles the constraint context
+    Table via :func:`assemble_constraint_context_ht`, then adds genomic region,
+    SFS bin, adj_r, and coverage/AN reshaping annotations.
+
+    :param ht: VEP context Table.
+    :param coverage_hts: Dict mapping data type ("exomes", "genomes") to coverage
+        Tables.
+    :param an_hts: Dict mapping data type to allele number Tables.
+    :param freq_hts: Dict mapping data type to frequency Tables (with ``freq``
+        field).
+    :param filter_hts: Dict mapping data type to filter Tables (with ``filters``
+        field).
+    :param methylation_ht: Methylation sites Table.
+    :param gerp_ht: GERP scores Table.
+    :param adj_r_ht: Table with adj_r annotation keyed by locus.
+    :param sfs_bin_cutoffs: Allele frequency upper bounds defining site frequency
+        spectrum bins. Default is ``SFS_BIN_CUTOFFS``.
+    :return: Annotated context Table.
+    """
+    # There was a bug in the GERP cutoffs used to filter transcripts with the
+    # "END_TRUNC" filter in the LOFTEE VEP plugin resulting in some transcripts
+    # being considered "HC" when they should have been "LC". We use the
+    # `update_loftee_end_trunc_filter` function to correct this issue.
+    ht = ht.annotate(
+        vep=ht.vep.annotate(
+            transcript_consequences=update_loftee_end_trunc_filter(
+                ht.vep.transcript_consequences
+            )
+        )
+    )
+    ht = assemble_constraint_context_ht(
+        ht,
+        coverage_hts=coverage_hts,
+        an_hts=an_hts,
+        freq_hts=freq_hts,
+        filter_hts=filter_hts,
+        methylation_ht=methylation_ht,
+        gerp_ht=gerp_ht,
+        transformation_funcs=None,
+    )
+
+    # Add annotation for genomic region (autosome/PAR, X non-PAR, Y non-PAR).
+    genomic_region_expr = (
+        hl.case()
+        .when(ht.locus.in_autosome_or_par(), "autosome_or_par")
+        .when(ht.locus.in_x_nonpar(), "chrx_nonpar")
+        .when(ht.locus.in_y_nonpar(), "chry_nonpar")
+        .or_missing()
+    )
+
+    # Add annotation for SFS bin.
+    af_expr = ht.freq.exomes[0].AF
+    sfs_bin_expr = hl.case().when(hl.is_missing(af_expr), 0)
+    for i, af in enumerate(sfs_bin_cutoffs):
+        sfs_bin_expr = sfs_bin_expr.when(af_expr <= af, i)
+    sfs_bin_expr = sfs_bin_expr.or_missing()
+
+    return ht.annotate(
+        coverage=hl.struct(
+            exomes=ht.coverage.exomes.select("mean", "median_approx"),
+            genomes=ht.coverage.genomes.select("mean", "median_approx"),
+        ),
+        AN=hl.struct(
+            exomes=ht.AN.exomes[0],
+            genomes=ht.AN.genomes[0],
+        ),
+        genomic_region=genomic_region_expr,
+        adj_r=adj_r_ht[ht.locus].adj_r[ht.context],
+        sfs_bin=sfs_bin_expr,
+    )
 
 
 # TODO: For now I am leaving this here instead of moving to gnomad_methods because
