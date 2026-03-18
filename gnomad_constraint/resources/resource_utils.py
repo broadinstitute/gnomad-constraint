@@ -465,6 +465,27 @@ def get_aggregated_per_variant_expected(
     )
 
 
+def get_aggregated_expected(
+    custom_vep_annotation: str = "transcript_consequences", **kwargs
+) -> TableResource:
+    """
+    Return TableResource for the aggregated expected variant counts Table.
+
+    This is the output of the aggregated model application path, where counts
+    are aggregated before applying models (as opposed to the per-variant path).
+
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :return: TableResource of the aggregated expected Table.
+    """
+    return get_constraint_data(
+        "aggregated_expected",
+        sub_dir="apply_models",
+        custom_vep_annotation=custom_vep_annotation,
+        **kwargs,
+    )
+
+
 def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResource:
     """
     Return TableResource of constraint group Table.
@@ -739,6 +760,15 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[aggregate_per_variant_expected],
     )
+    apply_models_aggregated = PipelineStepResourceCollection(
+        "--apply-models-aggregated",
+        output_resources={
+            "aggregated_expected_ht": get_aggregated_expected(
+                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+            )
+        },
+        pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
+    )
     compute_gene_quality_metrics_step = PipelineStepResourceCollection(
         "--compute-gene-quality-metrics",
         output_resources={
@@ -783,6 +813,7 @@ def get_constraint_resources(
     constraint_pipeline.add_steps(
         {
             "prepare_context": prepare_context,
+            "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
             "preprocess_data": preprocess_data,
             "calculate_gerp_cutoffs": calculate_gerp_cutoffs,
             "calculate_mutation_rate": calculate_mutation_rate,
@@ -791,7 +822,7 @@ def get_constraint_resources(
             "apply_models_per_variant": apply_models_per_variant,
             "aggregate_per_variant_expected": aggregate_per_variant_expected,
             "aggregate_by_constraint_groups": aggregate_by_constraint_groups,
-            "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
+            "apply_models_aggregated": apply_models_aggregated,
             "compute_constraint_metrics": compute_constraint_metrics,
             "prepare_release": prepare_release,
             "export_release_tsv": export_release_tsv,

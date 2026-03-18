@@ -51,6 +51,7 @@ from gnomad_constraint.utils.constraint import (
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     compute_gene_quality_metrics,
+    create_aggregated_expected_ht,
     create_per_variant_expected_ht,
     create_training_set,
     flatten_release_ht,
@@ -141,6 +142,20 @@ def main(args):
             ht.write(res.annotated_context_ht.path, overwrite)
 
             logger.info("Done annotating the VEP context Table.")
+
+        if args.compute_gene_quality_metrics:
+            logger.info("Computing per-transcript gene quality metrics...")
+            res = resources.compute_gene_quality_metrics
+            res.check_resource_existence()
+
+            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
+            gene_quality_ht = compute_gene_quality_metrics(
+                res.annotated_context_ht.ht(),
+                res.exomes_sites_ht.ht(),
+                gencode_cds_ht,
+            )
+            gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
+            logger.info("Done computing gene quality metrics.")
 
         if args.calculate_gerp_cutoffs:
             logger.warning(
@@ -296,37 +311,53 @@ def main(args):
                 "consequence annotations, and consequence modifier annotations."
             )
 
+        if args.apply_models_aggregated:
+            logger.info("Aggregating counts and applying models on aggregated data...")
+            res = resources.apply_models_aggregated
+            res.check_resource_existence()
+
+            hl._set_flags(use_new_shuffle="1")
+
+            ht = res.temp_preprocess_data_ht.ht()
+            print_global_struct(ht.apply_models_globals)
+            ht = create_aggregated_expected_ht(
+                ht,
+                res.mutation_ht.ht().select("mu_snp"),
+                res.model_plateau.he(),
+                coverage_model=(
+                    None if skip_coverage_model else res.model_coverage.he()
+                ),
+                log10_coverage=log10_coverage,
+                custom_vep_annotation=custom_vep_annotation,
+                use_mane_select=True,
+            )
+            ht.write(res.aggregated_expected_ht.path, overwrite=overwrite)
+            hl._set_flags(use_new_shuffle=None)
+
+            logger.info("Done with aggregated model application.")
+
         if args.aggregate_by_constraint_groups:
             logger.info(
                 "Aggregating observed and expected variant counts by constraint groups..."
             )
-            res = resources.aggregate_by_constraint_groups
-            res.check_resource_existence()
-
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
-            ht = res.apply_ht.ht()
+            if args.use_aggregated_expected:
+                res = resources.apply_models_aggregated
+                ht = res.aggregated_expected_ht.ht()
+            else:
+                res = resources.aggregate_by_constraint_groups
+                res.check_resource_existence()
+                ht = res.apply_ht.ht()
+
+            out_res = resources.aggregate_by_constraint_groups
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(k for k in ht.key if k in RELEASE_KEY_ORDER),
-            ).write(res.constraint_group_ht.path, overwrite=overwrite)
+            ).write(out_res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
-
-        if args.compute_gene_quality_metrics:
-            logger.info("Computing per-transcript gene quality metrics...")
-            res = resources.compute_gene_quality_metrics
-            res.check_resource_existence()
-
-            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
-            gene_quality_ht = compute_gene_quality_metrics(
-                res.annotated_context_ht.ht(),
-                res.exomes_sites_ht.ht(),
-                gencode_cds_ht,
-            )
-            gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
-            logger.info("Done computing gene quality metrics.")
 
         if args.compute_constraint_metrics:
             logger.info(
@@ -664,6 +695,17 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    parser.add_argument(
+        "--apply-models-aggregated",
+        help=(
+            "Apply plateau and coverage models and aggregate to constraint groups"
+            " in a single step, without writing per-variant intermediates. This is"
+            " an alternative to running --apply-models-per-variant,"
+            " --aggregate-per-variant-expected, and"
+            " --aggregate-by-constraint-groups separately."
+        ),
+        action="store_true",
+    )
 
     aggregate_per_variant_expected_args = parser.add_argument_group(
         "Aggregate per variant expected args",
@@ -718,6 +760,15 @@ if __name__ == "__main__":
         help=(
             "Aggregate the observed and expected variant counts by constraint groups"
             " to get the constraint metrics."
+        ),
+        action="store_true",
+    )
+    aggregate_by_constraint_groups_args.add_argument(
+        "--use-aggregated-expected",
+        help=(
+            "Read from the --apply-models-aggregated output instead of the"
+            " --aggregate-per-variant-expected output as input for"
+            " --aggregate-by-constraint-groups."
         ),
         action="store_true",
     )

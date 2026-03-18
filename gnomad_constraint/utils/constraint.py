@@ -800,37 +800,24 @@ def create_training_set(
     return ht
 
 
-def create_per_variant_expected_ht(
+def _prepare_ht_for_apply_models(
     ht: hl.Table,
-    mutation_ht: hl.Table,
-    plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
-    log10_coverage: bool = True,
-    filter_to_apply_variants: bool = True,
     custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
-) -> hl.Table:
+) -> Tuple[hl.Table, List[str]]:
     """
-    Create the per-variant expected Table.
+    Prepare a preprocessed Table for model application.
 
-    The input ``ht`` should be prepared using
-    ``prepare_ht_for_constraint_calculations``. The ``ht`` is filtered to include only
-    the rows that have an apply model annotation (if ``filter_to_apply_variants`` is
-    True). The Table is then annotated with the expected number of variants using
-    ``apply_models``. See the function ``apply_models`` for more information on the
-    expected annotations.
+    Promotes ``calibrate_mu`` fields, filters to rows with a defined apply model
+    annotation and positive possible variant count, and explodes VEP annotations
+    to per-transcript rows.
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
-    :param mutation_ht: Mutation rate Table.
-    :param plateau_models: Plateau models for the constraint calculations.
-    :param coverage_model: Coverage model for the constraint calculations.
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
-    :param filter_to_apply_variants: Whether to filter to only the rows with an apply
-        model annotation. Default is True.
     :param custom_vep_annotation: Custom VEP annotation to use. Default is
-        "transcript_consequences".
-    :param use_mane_select: Whether to include MANE Select as a group. Default is False.
-    :return: Per-variant expected Table.
+        ``"transcript_consequences"``.
+    :param use_mane_select: Whether to include MANE Select as a group. Default is
+        False.
+    :return: Tuple of (prepared Table, list of VEP grouping field names).
     """
     if custom_vep_annotation == "worst_csq_by_gene" and use_mane_select:
         raise ValueError(
@@ -840,19 +827,38 @@ def create_per_variant_expected_ht(
     include_canonical_group = custom_vep_annotation != "worst_csq_by_gene"
     include_mane_select_group = include_canonical_group and use_mane_select
 
-    calibrate_mu_fields = set(ht.calibrate_mu.keys())
     ht = ht.annotate(**ht.calibrate_mu)
+    ht = ht.filter(hl.is_defined(ht.apply_model) & (ht.possible_variants > 0))
 
-    if filter_to_apply_variants:
-        # TODO: From Konrad's script parser.add_argument('--skip_af_filter_upfront',
-        #  help='Skip AF filter up front (to be applied later to ensure that it is not
-        #  affecting population-specific constraint): not generally recommended',
-        #  action='store_true')
-        ht = ht.filter(hl.is_defined(ht.apply_model) & (ht.possible_variants > 0))
+    ht, groupings = annotate_exploded_vep_for_constraint_groupings(
+        ht=ht,
+        vep_annotation=custom_vep_annotation,
+        include_canonical_group=include_canonical_group,
+        include_mane_select_group=include_mane_select_group,
+    )
 
-    ht = annotate_with_mu(ht, mutation_ht)
+    return ht, groupings
 
-    ht = ht.annotate(
+
+def _apply_constraint_models(
+    ht: hl.Table,
+    plateau_models: hl.StructExpression,
+    coverage_model: Tuple[float, float],
+    log10_coverage: bool = True,
+) -> hl.Table:
+    """
+    Apply plateau and coverage models to a Table with ``mu_snp`` and ``apply_model``.
+
+    :param ht: Table with ``mu_snp``, ``possible_variants``, ``exomes_coverage``,
+        and ``apply_model`` fields.
+    :param plateau_models: Plateau models for the constraint calculations.
+    :param coverage_model: Coverage model for the constraint calculations.
+    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :return: Table annotated with model outputs (``mu``,
+        ``predicted_proportion_observed``, ``expected_variants``,
+        ``coverage_correction``).
+    """
+    return ht.annotate(
         **apply_models(
             ht.mu_snp,
             plateau_models.get(ht.apply_model.model_group),
@@ -864,20 +870,80 @@ def create_per_variant_expected_ht(
         )
     )
 
-    ht, groupings = annotate_exploded_vep_for_constraint_groupings(
-        ht=ht,
-        vep_annotation=custom_vep_annotation,
-        include_canonical_group=include_canonical_group,
-        include_mane_select_group=include_mane_select_group,
+
+def _annotate_apply_models_globals(
+    ht: hl.Table,
+    plateau_models: hl.StructExpression,
+    coverage_model: Tuple[float, float],
+    log10_coverage: bool,
+    groupings: List[str],
+) -> hl.Table:
+    """
+    Annotate the Table with model parameters in ``apply_models_globals``.
+
+    If the Table already has ``apply_models_globals``, the new fields are added
+    to the existing struct. Otherwise a new struct is created.
+
+    :param ht: Input Table.
+    :param plateau_models: Plateau models used.
+    :param coverage_model: Coverage model used.
+    :param log10_coverage: Whether log10 coverage was used.
+    :param groupings: List of grouping field names.
+    :return: Table with updated ``apply_models_globals`` global.
+    """
+    model_params = hl.struct(
+        plateau_models=plateau_models,
+        coverage_model=coverage_model,
+        log10_coverage=log10_coverage,
+        groupings=groupings,
+    )
+    if "apply_models_globals" in ht.globals:
+        ht = ht.annotate_globals(
+            apply_models_globals=ht.apply_models_globals.annotate(**model_params)
+        )
+    else:
+        ht = ht.annotate_globals(apply_models_globals=model_params)
+    return ht
+
+
+def create_per_variant_expected_ht(
+    ht: hl.Table,
+    mutation_ht: hl.Table,
+    plateau_models: hl.StructExpression,
+    coverage_model: Tuple[float, float],
+    log10_coverage: bool = True,
+    custom_vep_annotation: str = "transcript_consequences",
+    use_mane_select: bool = False,
+) -> hl.Table:
+    """
+    Create the per-variant expected Table.
+
+    The input ``ht`` should be prepared using
+    ``prepare_ht_for_constraint_calculations``. The ``ht`` is filtered to include only
+    the rows that have an apply model annotation. The Table is then annotated with the
+    expected number of variants using ``apply_models``. See the function
+    ``apply_models`` for more information on the expected annotations.
+
+    :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
+    :param mutation_ht: Mutation rate Table.
+    :param plateau_models: Plateau models for the constraint calculations.
+    :param coverage_model: Coverage model for the constraint calculations.
+    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param custom_vep_annotation: Custom VEP annotation to use. Default is
+        ``"transcript_consequences"``.
+    :param use_mane_select: Whether to include MANE Select as a group. Default is False.
+    :return: Per-variant expected Table.
+    """
+    calibrate_mu_fields = set(ht.calibrate_mu.keys())
+
+    ht, groupings = _prepare_ht_for_apply_models(
+        ht, custom_vep_annotation, use_mane_select
     )
 
-    ht = ht.annotate_globals(
-        apply_models_globals=ht.apply_models_globals.annotate(
-            plateau_models=plateau_models,
-            coverage_model=coverage_model,
-            log10_coverage=log10_coverage,
-            groupings=groupings,
-        )
+    ht = annotate_with_mu(ht, mutation_ht)
+    ht = _apply_constraint_models(ht, plateau_models, coverage_model, log10_coverage)
+    ht = _annotate_apply_models_globals(
+        ht, plateau_models, coverage_model, log10_coverage, groupings
     )
 
     return ht.drop(*calibrate_mu_fields)
@@ -918,6 +984,86 @@ def aggregate_per_variant_expected_ht(
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
 
     return ht.naive_coalesce(1000)
+
+
+def create_aggregated_expected_ht(
+    ht: hl.Table,
+    mutation_ht: hl.Table,
+    plateau_models: hl.StructExpression,
+    coverage_model: Tuple[float, float],
+    log10_coverage: bool = True,
+    custom_vep_annotation: str = "transcript_consequences",
+    use_mane_select: bool = False,
+    partition_hint: int = 100,
+) -> hl.Table:
+    """
+    Create aggregated expected variant counts by first aggregating, then applying models.
+
+    Unlike :func:`create_per_variant_expected_ht`, which applies models per-variant and
+    then aggregates, this function first aggregates observed and possible variant counts
+    by VEP groupings and coverage, then applies plateau and coverage models on the
+    aggregated counts. The output is compatible with
+    :func:`aggregate_by_constraint_groups`.
+
+    The steps are:
+
+        1. Explode VEP annotations to get per-transcript rows.
+        2. Aggregate observed and possible counts by VEP groupings, coverage, and
+           mutation rate context (using ``count_observed_and_possible_by_group``).
+        3. Annotate with mutation rate and apply plateau/coverage models on the
+           aggregated counts.
+        4. Aggregate by VEP groupings only (summing model outputs across coverage
+           and context groups).
+
+    :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
+    :param mutation_ht: Mutation rate Table.
+    :param plateau_models: Plateau models for the constraint calculations.
+    :param coverage_model: Coverage model for the constraint calculations.
+    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param custom_vep_annotation: Custom VEP annotation to use. Default is
+        ``"transcript_consequences"``.
+    :param use_mane_select: Whether to include MANE Select as a group. Default is
+        False.
+    :param partition_hint: Target number of partitions for aggregation. Default is 100.
+    :return: Table with aggregated expected variant counts, compatible with
+        ``aggregate_by_constraint_groups``.
+    """
+    ht, groupings = _prepare_ht_for_apply_models(
+        ht, custom_vep_annotation, use_mane_select
+    )
+
+    # Filter to coding consequences.
+    ht = ht.filter(hl.set(CSQ_CODING).contains(ht.annotation))
+
+    # Aggregate observed and possible counts by VEP groupings, coverage, and mutation
+    # rate context. The additional_grouping includes VEP groupings (gene, transcript,
+    # annotation, etc.) plus the apply_model fields needed for model application.
+    vep_groupings = tuple(g for g in groupings if g not in MU_GROUPING)
+    ht = count_observed_and_possible_by_group(
+        ht,
+        ht.possible_variants,
+        ht.observed_variants,
+        additional_grouping=vep_groupings
+        + ("exomes_coverage", "apply_model")
+        + tuple(f for f in MUTATION_TYPE_FIELDS if f not in MU_GROUPING),
+        partition_hint=partition_hint,
+    )
+
+    # Annotate with mutation rate and apply models on the aggregated counts.
+    ht = annotate_with_mu(ht, mutation_ht)
+    ht = _apply_constraint_models(ht, plateau_models, coverage_model, log10_coverage)
+    ht = ht.checkpoint(new_temp_file("aggregated_apply_models", "ht"))
+
+    # Aggregate by VEP groupings only, summing model outputs across coverage and
+    # context groups to produce the same schema as aggregate_per_variant_expected_ht.
+    ht = ht.key_by().select(*vep_groupings, *AGGREGATE_SUM_FIELDS)
+    ht = ht.group_by(*vep_groupings).aggregate(**aggregate_constraint_metrics_expr(ht))
+
+    ht = _annotate_apply_models_globals(
+        ht, plateau_models, coverage_model, log10_coverage, list(vep_groupings)
+    )
+
+    return ht
 
 
 # TODO: Move this up after review in this location.
