@@ -177,16 +177,19 @@ def filter_freq_for_constraint(
     Filter the frequency array for constraint calculations.
 
     The frequency array is filtered to include only adj frequencies for
-    the populations in `pops` and the downsamplings in `downsamplings`, for the
-    populations in `downsampling_pops`.
+    the genetic ancestry groups in ``gen_ancs`` and the downsamplings in
+    ``downsamplings``, for the genetic ancestry groups in
+    ``downsampling_gen_ancs``.
 
     No matter the input, the frequency array is always filtered to include the
     "adj" frequency for the full dataset.
 
-    If `downsamplings` is None, no downsamplings are included. If `downsamplings` is
-    provided, and `downsampling_pops` is None, only the "global" downsampling is
-    included. If `downsampling_pops` is provided, the downsamplings for the populations
-    in `downsampling_pops` are included as well as the "global" downsampling.
+    If ``downsamplings`` is None, no downsamplings are included. If
+    ``downsamplings`` is provided, and ``downsampling_gen_ancs`` is None, only
+    the "global" downsampling is included. If ``downsampling_gen_ancs`` is
+    provided, the downsamplings for the genetic ancestry groups in
+    ``downsampling_gen_ancs`` are included as well as the "global"
+    downsampling.
 
     :param freq_expr: Frequency array.
     :param freq_meta_expr: Frequency metadata array.
@@ -204,13 +207,13 @@ def filter_freq_for_constraint(
     meta_keep = [ADJ_FREQ_META]
 
     if gen_ancs is not None:
-        meta_keep += [{**ADJ_FREQ_META, gen_anc_label: pop} for pop in gen_ancs]
+        meta_keep += [{**ADJ_FREQ_META, gen_anc_label: gen_anc} for gen_anc in gen_ancs]
 
     if downsamplings is not None:
-        downsampling_pops = ["global"] + (downsampling_gen_ancs or [])
+        downsampling_gen_ancs = ["global"] + (downsampling_gen_ancs or [])
         meta_keep += [
-            {**ADJ_FREQ_META, gen_anc_label: pop, "downsampling": str(ds)}
-            for pop in downsampling_pops
+            {**ADJ_FREQ_META, gen_anc_label: gen_anc, "downsampling": str(ds)}
+            for gen_anc in downsampling_gen_ancs
             for ds in downsamplings
         ]
 
@@ -245,10 +248,10 @@ def get_annotations_for_computing_mu(
           requested genetic ancestries and downsampling level.
         - observed_variants: This annotation is an array, where each element
           corresponds to whether the variant is observed in the genomes dataset for the
-          frequency group at the corresponding index in the `genomes_freq` array.
-          Must PASS genome filters, have AC <= 'ac_cutoff' at the specified
-          `downsampling_level`, and have a genome mean coverage >= `min_cov`
-          and <= `max_cov`. The boolean value is stored as an integer (0 or 1).
+          frequency group at the corresponding index in the ``genomes_freq`` array.
+          Must PASS genome filters, have AC <= ``ac_cutoff`` at the specified
+          ``downsampling_level``, and have a genome mean coverage >= ``min_cov``
+          and <= ``max_cov``. The boolean value is stored as an integer (0 or 1).
         - possible_variants: Whether the variant is considered a possible variant in
           the genomes dataset. This includes variants not in the genome dataset (genome
           AF undefined), or also considered in the observed variant set. The boolean
@@ -260,7 +263,7 @@ def get_annotations_for_computing_mu(
         - Is autosomal.
         - Has a most severe transcript consequence of: "intron_variant" or
           "intergenic_variant".
-        - Is at a site with GERP > `gerp_lower_cutoff` and < `gerp_upper_cutoff`.
+        - Is at a site with GERP > ``gerp_lower_cutoff`` and < ``gerp_upper_cutoff``.
 
     The function also returns a struct of the mutation rate globals:
 
@@ -278,7 +281,7 @@ def get_annotations_for_computing_mu(
 
     .. note::
 
-        Values for `gerp_lower_cutoff` and `gerp_upper_cutoff` default to -3.9885 and
+        Values for ``gerp_lower_cutoff`` and ``gerp_upper_cutoff`` default to -3.9885 and
         2.6607, respectively. These values were precalculated on the GRCh37 context
         table and define the 5th and 95th percentiles.
 
@@ -303,6 +306,8 @@ def get_annotations_for_computing_mu(
     :return: Tuple containing the observed and possible variant annotations and the
         globals.
     """
+    # Always include the global downsampling; gen_ancs only controls which
+    # per-ancestry downsamplings are included.
     genomes_freq_expr, genomes_freq_meta = filter_freq_for_constraint(
         genomes_freq_expr,
         genomes_freq_meta,
@@ -327,9 +332,10 @@ def get_annotations_for_computing_mu(
     keep_expr &= (gerp_expr > gerp_lower_cutoff) & (gerp_expr < gerp_upper_cutoff)
 
     # Filter so that the most severe annotation is 'intron_variant' or
-    # 'intergenic_variant'
-    keep_expr &= (most_severe_consequence_expr == "intron_variant") | (
-        most_severe_consequence_expr == "intergenic_variant"
+    # 'intergenic_variant'.
+    keep_expr &= hl.any(
+        most_severe_consequence_expr == c
+        for c in ["intron_variant", "intergenic_variant"]
     )
 
     # Set up the criteria to keep high-quality sites, and sites found in less than or
@@ -370,16 +376,16 @@ def get_exome_coverage_expr(
     """
     Get the exome coverage expression based on the specified metric.
 
-    The requested `exome_coverage_metric` is extracted from the exome coverage
-    annotations in the input `ht`:
+    The requested ``exome_coverage_metric`` is extracted from the exome coverage
+    annotations in the input ``ht``:
 
         - "median": the expression returned is "median_approx" if it exists in
-          `ht.coverage.exomes`, otherwise "median".
-        - "AN": the expression returned is the exomes allele number (`ht.AN.exomes`).
+          ``ht.coverage.exomes``, otherwise "median".
+        - "AN": the expression returned is the exomes allele number (``ht.AN.exomes``).
         - "AN_percent": the expression returned is the percent of samples with a
-          non-missing genotype, which is the exomes allele number (`ht.AN.exomes`)
+          non-missing genotype, which is the exomes allele number (``ht.AN.exomes``)
           divided by the total number of alleles in the exomes dataset (pulled from
-          `ht.an_globals.exomes.strata_sample_count` * 2) multiplied by 100.
+          ``ht.an_globals.exomes.strata_sample_count`` * 2) multiplied by 100.
 
     :param ht: Input Table with exome coverage information.
     :param exome_coverage_metric: Metric to use for exome coverage. One of ["median",
@@ -409,7 +415,7 @@ def get_exome_coverage_expr(
             hl.case()
             .when(ht.locus.in_x_nonpar(), (xx_an_sample_count * 2) + xy_an_sample_count)
             .when(ht.locus.in_y_nonpar(), xy_an_sample_count)
-            .default(an_sample_count[0] * 2)
+            .default(an_sample_count[0] * 2)  # Index 0 is adj (all samples).
         )
 
         cov_expr = hl.int((ht.AN.exomes / an_count) * 100)
@@ -441,7 +447,7 @@ def get_exomes_observed_and_possible(
 
         - observed_variants: This annotation is an array, where each element corresponds
           to whether the variant is observed in the exomes dataset for the frequency
-          group at the corresponding index in the `exomes_freq` array and has an
+          group at the corresponding index in the ``exomes_freq`` array and has an
           AF <= 0.001. The boolean value is stored as an integer (0 or 1).
         - possible_variants: Whether the variant is considered a possible variant in the
           exomes dataset. This includes variants not in the exome dataset (exome AF
@@ -482,7 +488,7 @@ def get_exomes_observed_and_possible(
     logger.info("The following downsamplings will be used: %s", downsamplings)
 
     # Filter frequency array for computing the observed expression on all requested
-    # populations and downsamplings.
+    # genetic ancestry groups and downsamplings.
     exomes_freq_expr, exomes_freq_meta = filter_freq_for_constraint(
         exomes_freq_expr,
         exomes_freq_meta,
@@ -522,14 +528,14 @@ def get_build_calibration_model_annotation(
     high_cov_cutoff: int = COVERAGE_CUTOFF,
     upper_cov_cutoff: Optional[int] = None,
     skip_coverage_model: bool = False,
-) -> Tuple[hl.expr.StructExpression, hl.expr.StructExpression]:
+) -> hl.expr.StructExpression:
     """
-    Get the annotation and globals for building the calibration models.
+    Get the annotation for building the calibration models.
 
     The build model grouping is set to missing if the variant is not a
     "synonymous_variant" in a canonical or MANE Select transcript (depending on
-    `synonymous_transcript_filter_field`). Otherwise, it is a struct with the following
-    fields detailed in `calibration_model_group_expr`.
+    ``synonymous_transcript_filter_field``). Otherwise, it is a struct with the
+    following fields detailed in ``calibration_model_group_expr``.
 
     :param exomes_coverage_expr: Exome coverage expression.
     :param transcript_csq_expr: Transcript consequences expression.
@@ -545,7 +551,7 @@ def get_build_calibration_model_annotation(
         None.
     :param skip_coverage_model: Whether the coverage model should be skipped during the
         build models step. Default is False.
-    :return: Tuple containing the build model expression and the global parameters.
+    :return: Build model struct expression, or missing if no synonymous transcripts.
     """
     # Determine the canonical and mane_select parameters for
     # 'filter_vep_transcript_csqs_expr' based on 'synonymous_transcript_filter_field'.
@@ -610,10 +616,10 @@ def prepare_ht_for_constraint_calculations(
     required for the constraint calculations. Please see the following functions for
     more information on the annotations generated:
 
-        - `get_annotations_for_computing_mu`
-        - `get_exomes_observed_and_possible`
-        - `get_build_calibration_model_annotation`
-        - `get_apply_calibration_model_annotation`
+        - ``get_annotations_for_computing_mu``
+        - ``get_exomes_observed_and_possible``
+        - ``get_build_calibration_model_annotation``
+        - ``calibration_model_group_expr`` (for apply model annotations)
 
     :param ht: Annotated context Table.
     :param exome_coverage_metric: Metric to use for exome coverage. One of ["median",
@@ -643,13 +649,13 @@ def prepare_ht_for_constraint_calculations(
     :param build_model_upper_cov_cutoff: Upper coverage cutoff for the build models
         step. Default is None.
     :param apply_model_low_cov_cutoff: Low coverage cutoff for the apply models step.
-        Default is COVERAGE_CUTOFF.
+        Default is None.
     :param apply_model_high_cov_cutoff: High coverage cutoff for the apply models step.
         Default is COVERAGE_CUTOFF.
     :param skip_coverage_model: Whether the coverage model should be skipped during the
         build and apply models steps. Default is False.
     :param synonymous_transcript_filter_field: Field used to filter to variants with a
-        transcript consequence of "synonymous_variant". Default is "canonical".
+        transcript consequence of "synonymous_variant". Default is "mane_select".
     :return: Table with the computed annotations.
     """
     # Get the annotations relevant for computing the mutation rate.
@@ -744,17 +750,18 @@ def prepare_ht_for_constraint_calculations(
 def create_training_set(
     ht: hl.Table,
     mutation_ht: hl.Table,
-    partition_hint=100,
+    partition_hint: int = 100,
 ) -> hl.Table:
     """
     Create the training set for the constraint model.
 
-    The input `ht` should be prepared using `prepare_ht_for_constraint_calculations`.
-    The `ht` is filtered to include only the rows that have a build model annotation.
-    The observed and possible variants are counted by group and annotated with the
-    mutation rate. The Table is then checkpointed to avoid memory and shuffle issues.
+    The input ``ht`` should be prepared using
+    ``prepare_ht_for_constraint_calculations``. The ``ht`` is filtered to include only
+    the rows that have a build model annotation. The observed and possible variants are
+    counted by group and annotated with the mutation rate. The Table is then
+    checkpointed to avoid memory and shuffle issues.
 
-    :param ht: Table prepared using `prepare_ht_for_constraint_calculations`.
+    :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
     :param partition_hint: Partition hint for the Table. Default is 100.
     :return: Training set Table.
@@ -806,13 +813,14 @@ def create_per_variant_expected_ht(
     """
     Create the per-variant expected Table.
 
-    The input `ht` should be prepared using `prepare_ht_for_constraint_calculations`.
-    The `ht` is filtered to include only the rows that have an apply model annotation (
-    if `filter_to_apply_variants` is True). The Table is then annotated with the
-    expected number of variants using `apply_models`. See the function `apply_models`
-    for more information on the expected annotations.
+    The input ``ht`` should be prepared using
+    ``prepare_ht_for_constraint_calculations``. The ``ht`` is filtered to include only
+    the rows that have an apply model annotation (if ``filter_to_apply_variants`` is
+    True). The Table is then annotated with the expected number of variants using
+    ``apply_models``. See the function ``apply_models`` for more information on the
+    expected annotations.
 
-    :param ht: Table prepared using `prepare_ht_for_constraint_calculations`.
+    :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
     :param plateau_models: Plateau models for the constraint calculations.
     :param coverage_model: Coverage model for the constraint calculations.
@@ -820,22 +828,17 @@ def create_per_variant_expected_ht(
     :param filter_to_apply_variants: Whether to filter to only the rows with an apply
         model annotation. Default is True.
     :param custom_vep_annotation: Custom VEP annotation to use. Default is
+        "transcript_consequences".
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
     :return: Per-variant expected Table.
     """
-    include_canonical_group = False
-    include_mane_select_group = False
-    if custom_vep_annotation == "worst_csq_by_gene":
-        vep_annotation = "worst_csq_by_gene"
-        if use_mane_select:
-            raise ValueError(
-                "'mane_select' cannot be set to True when custom_vep_annotation is set"
-                " to 'worst_csq_by_gene'."
-            )
-    else:
-        vep_annotation = custom_vep_annotation
-        include_canonical_group = True
-        include_mane_select_group = use_mane_select
+    if custom_vep_annotation == "worst_csq_by_gene" and use_mane_select:
+        raise ValueError(
+            "'mane_select' cannot be set to True when custom_vep_annotation is set"
+            " to 'worst_csq_by_gene'."
+        )
+    include_canonical_group = custom_vep_annotation != "worst_csq_by_gene"
+    include_mane_select_group = include_canonical_group and use_mane_select
 
     calibrate_mu_fields = set(ht.calibrate_mu.keys())
     ht = ht.annotate(**ht.calibrate_mu)
@@ -863,7 +866,7 @@ def create_per_variant_expected_ht(
 
     ht, groupings = annotate_exploded_vep_for_constraint_groupings(
         ht=ht,
-        vep_annotation=vep_annotation,
+        vep_annotation=custom_vep_annotation,
         include_canonical_group=include_canonical_group,
         include_mane_select_group=include_mane_select_group,
     )
@@ -881,19 +884,17 @@ def create_per_variant_expected_ht(
 
 
 def aggregate_per_variant_expected_ht(
-    ht,
+    ht: hl.Table,
     include_mu_annotations_in_grouping: bool = False,
-):
+) -> hl.Table:
     """
     Aggregate the per-variant expected Table.
 
-    The input `ht` should be the Table returned by `create_per_variant_expected_ht`.
-    The Table is exploded by the VEP annotation and aggregated by "genomic_region",
-    "context", "ref", "alt", "methylation_level", groupings returned by
-    `annotate_exploded_vep_for_constraint_groupings` and fields in
-    `additional_grouping` to get the observed and expected counts.
+    The input ``ht`` should be the Table returned by ``create_per_variant_expected_ht``.
+    The Table is aggregated by the groupings stored in
+    ``apply_models_globals.groupings`` to get the observed and expected counts.
 
-    :param ht: Table returned by `create_per_variant_expected_ht`.
+    :param ht: Table returned by ``create_per_variant_expected_ht``.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate
         key annotations in the grouping. Default is False.
     :return: Table with the observed and expected counts.
@@ -933,13 +934,13 @@ def calculate_mu_by_downsampling(
         - ref - the reference allele.
         - alt - the alternate base.
         - methylation_level - methylation_level.
-        - downsampling_counts_{pop} - variant counts in downsamplings for populations
-          in `pops`.
+        - downsampling_counts_{gen_anc} - variant counts in downsamplings for genetic
+          ancestry groups in ``gen_ancs``.
         - mu_snp - SNP mutation rate.
-        - annotations added by `annotate_mutation_type`.
+        - annotations added by ``annotate_mutation_type``.
 
-    :param ht: Table returned by `prepare_ht_for_constraint_calculations`.
-    :param additional_grouping: Annotations other than 'context', 'ref', and 'alt'.
+    :param ht: Table returned by ``prepare_ht_for_constraint_calculations``.
+    :param additional_grouping: Annotations other than "context", "ref", and "alt".
         Default is ('methylation_level',).
     :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
     :return: Mutation rate Table.
@@ -1008,14 +1009,14 @@ def get_transcript_filter_expr(
         return ht.transcript.startswith("ENST") & ht.canonical
 
 
-def add_oe_upper_rank_and_decile(
+def add_oe_upper_rank_and_bins(
     ht: hl.Table,
     use_mane_select_over_canonical: bool = True,
     mane_select_only: bool = False,
     bin_granularities: Optional[Dict[str, int]] = None,
 ) -> hl.Table:
     """
-    Compute the rank and decile of the oe upper confidence interval.
+    Compute the rank and bins of the oe upper confidence interval.
 
     Thin wrapper around :func:`rank_array_element_metrics` that extracts the
     discretized Poisson and gamma upper CI values from each constraint group's
@@ -1056,15 +1057,17 @@ def aggregate_by_constraint_groups(
     ht: hl.Table,
     keys: Tuple = ("gene", "transcript", "canonical"),
     classic_lof_annotations: Tuple = CLASSIC_LOF_ANNOTATIONS,
-    additional_groupings: Dict[str, Dict[str, hl.expr.BooleanExpression]] = None,
-    additional_grouping_combinations: List[List[str]] = None,
+    additional_groupings: Optional[
+        Dict[str, Dict[str, hl.expr.BooleanExpression]]
+    ] = None,
+    additional_grouping_combinations: Optional[List[List[str]]] = None,
 ) -> hl.Table:
     """
-    Aggregate the observed and expected variant info for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
+    Aggregate observed and expected variant info for synonymous, missense, and pLoF variants.
 
     .. note::
 
-        The following annotations should be present in `ht`:
+        The following annotations should be present in ``ht``:
 
             - modifier
             - annotation
@@ -1073,8 +1076,8 @@ def aggregate_by_constraint_groups(
             - possible_variants
             - expected_variants
 
-    :param ht: Input Table with the number of expected variants (output of
-        `get_proportion_observed()`).
+    :param ht: Input Table with observed and expected variant counts (output of the
+        apply models step).
     :param keys: The keys of the output Table, defaults to ('gene', 'transcript',
         'canonical').
     :param classic_lof_annotations: Classic LoF Annotations used to filter the input
@@ -1143,8 +1146,6 @@ def aggregate_by_constraint_groups(
             )
         )
     )
-
-    ht = ht.annotate_globals(constraint_group_meta=meta)
 
     return ht
 
@@ -1273,10 +1274,10 @@ def _annotate_oe_ci_z(
 
     For each constraint group's ``oe_info`` entries, adds:
 
-    - ``oe`` — observed / expected ratio.
-    - ``oe_ci_discretized_poisson`` — discretized Poisson CI.
-    - ``oe_ci_gamma`` — gamma-distribution CI.
-    - ``z_raw`` — raw z-score.
+        - ``oe`` — observed / expected ratio.
+        - ``oe_ci_discretized_poisson`` — discretized Poisson CI.
+        - ``oe_ci_gamma`` — gamma-distribution CI.
+        - ``z_raw`` — raw z-score.
 
     Then adds per-group ``flags`` based on z-score outlier thresholds.
 
@@ -1398,9 +1399,9 @@ def _compute_percentile_bins(
     use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
     """
-    Add OE upper CI rank, decile, and percentile bin annotations.
+    Add OE upper CI rank and percentile bin annotations.
 
-    Adds rank and decile annotations via :func:`add_oe_upper_rank_and_decile`,
+    Adds rank and bin annotations via :func:`add_oe_upper_rank_and_bins`,
     then computes percentile thresholds across all granularities defined in
     ``CONSTRAINT_GRANULARITIES`` and annotates bins via
     :func:`annotate_constraint_percentile_bins`.
@@ -1410,7 +1411,7 @@ def _compute_percentile_bins(
         transcripts for filtering when determining ranks. Default is True.
     :return: Table with rank, decile, and percentile bin annotations.
     """
-    ht = add_oe_upper_rank_and_decile(ht, use_mane_select_over_canonical)
+    ht = add_oe_upper_rank_and_bins(ht, use_mane_select_over_canonical)
 
     meta = hl.eval(ht.constraint_group_meta)
     metric_group_idx = {
@@ -1507,17 +1508,12 @@ def compute_constraint_metrics(
 
     .. note::
 
-        The following annotations should be present in `ht`:
+        The input ``ht`` should be the output of
+        :func:`aggregate_by_constraint_groups`, which has a
+        ``constraint_groups`` array, ``constraint_group_meta``,
+        ``exomes_freq_meta``, and ``no_variants`` annotations.
 
-            - modifier
-            - annotation
-            - observed_variants
-            - mu
-            - possible_variants
-            - expected_variants
-
-    :param ht: Input Table with the number of expected variants (output of
-        ``aggregate_by_constraint_groups``).
+    :param ht: Table output by :func:`aggregate_by_constraint_groups`.
     :param gencode_ht: Table containing GENCODE annotations.
     :param gene_quality_metrics_ht: Table keyed by transcript with
         ``gene_quality_metrics`` and ``gene_flags`` fields (output of
@@ -1580,14 +1576,14 @@ def _restructure_release_rows(
 
     For each constraint group, builds a flat release struct by:
 
-    - Flattening the adjusted-frequency ``oe_info`` entry onto the group
-      struct, keeping ``oe`` and ``z_raw`` under their original names and
-      overriding ``oe_ci`` with ``oe_ci_gamma``.
-    - Applying ``RELEASE_CG_RENAME`` to rename group-level and ``oe_info``
-      fields (e.g. ``mu_snp`` -> ``mu``, ``observed_variants`` -> ``obs``).
-    - When downsampling data is present, adding ``gen_anc_obs`` /
-      ``gen_anc_exp`` structs keyed by genetic ancestry with arrays of
-      values ordered by downsampling level.
+        - Flattening the adjusted-frequency ``oe_info`` entry onto the group
+        struct, keeping ``oe`` and ``z_raw`` under their original names and
+        overriding ``oe_ci`` with ``oe_ci_gamma``.
+        - Applying ``RELEASE_CG_RENAME`` to rename group-level and ``oe_info``
+        fields (e.g. ``mu_snp`` -> ``mu``, ``observed_variants`` -> ``obs``).
+        - When downsampling data is present, adding ``gen_anc_obs`` /
+        ``gen_anc_exp`` structs keyed by genetic ancestry with arrays of
+        values ordered by downsampling level.
 
     Annotates the Table with one top-level field per group (applying
     ``RELEASE_GROUP_RENAMES``, e.g. ``lof_hc`` -> ``lof``), trims the
@@ -1657,7 +1653,7 @@ def _restructure_release_rows(
                 for k in (RELEASE_LOF_FIELDS if name in RELEASE_GROUPS_WITH_PLI else [])
             },
         )
-        .select()
+        .select()  # Drop intermediate fields, keep only annotated release fields.
         for i, name in enumerate(field_names)
     }
     ht = ht.annotate(**cg_fields)
@@ -1668,6 +1664,7 @@ def _restructure_release_rows(
         ht = ht.key_by(*available_keys)
 
     ht = ht.filter(hl.any([ht[k].possible != 0 for k in RELEASE_GROUP_NAMES]))
+
     return ht
 
 
@@ -1684,17 +1681,17 @@ def _restructure_release_globals(
 
     Replaces internal globals with a clean release set:
 
-    - Pipeline parameter globals are renamed and stripped of internal-only
-      fields via ``RELEASE_PIPELINE_PARAM_GLOBALS``.
-    - ``sd_raw_z`` is converted from an ordered array (one entry per
-      constraint group) to a named struct keyed by release group name,
-      retaining only groups in ``RELEASE_GROUP_NAMES``.
-    - When downsampling data is present, a ``downsamplings`` struct is added
-      keyed by genetic ancestry, with arrays of integer downsampling levels
-      matching the order of ``gen_anc_obs`` / ``gen_anc_exp`` in the rows.
-    - ``max_af`` is preserved unchanged if present.
-    - ``version`` is set to ``release_version`` if provided, otherwise
-      carried over from the existing global.
+        - Pipeline parameter globals are renamed and stripped of internal-only
+        fields via ``RELEASE_PIPELINE_PARAM_GLOBALS``.
+        - ``sd_raw_z`` is converted from an ordered array (one entry per
+        constraint group) to a named struct keyed by release group name,
+        retaining only groups in ``RELEASE_GROUP_NAMES``.
+        - When downsampling data is present, a ``downsamplings`` struct is added
+        keyed by genetic ancestry, with arrays of integer downsampling levels
+        matching the order of ``gen_anc_obs`` / ``gen_anc_exp`` in the rows.
+        - ``max_af`` is preserved unchanged if present.
+        - ``version`` is set to ``release_version`` if provided, otherwise
+        carried over from the existing global.
 
     :param ht: Table whose globals are being restructured.
     :param field_names: Internal name for each constraint group (parallel to
