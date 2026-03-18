@@ -1,29 +1,29 @@
 """Script containing utility functions used in the constraint pipeline."""
 
 import logging
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import hail as hl
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
 from gnomad.utils.constraint import (
     add_gencode_transcript_annotations,
     aggregate_constraint_metrics_expr,
+    annotate_bins_by_threshold,
     annotate_exploded_vep_for_constraint_groupings,
     annotate_mutation_type,
     annotate_with_mu,
     apply_models,
     build_constraint_consequence_groups,
-    calculate_gerp_cutoffs,
     calculate_raw_z_score,
     calculate_raw_z_score_sd,
     calibration_model_group_expr,
-    compute_oe_upper_percentile_thresholds,
+    compute_percentile_thresholds,
     compute_pli,
     count_observed_and_possible_by_group,
     get_constraint_flags,
     oe_confidence_interval,
-    rank_and_assign_bins,
-    single_variant_observed_and_possible_expr,
+    rank_array_element_metrics,
+    variant_observed_and_possible_expr,
 )
 from gnomad.utils.file_utils import (
     convert_multi_array_to_array_of_structs,
@@ -252,7 +252,7 @@ def get_annotations_for_computing_mu(
     obs_pos_expr = hl.struct(
         genomes_freq=genomes_freq_expr,
         **hl.or_missing(
-            keep_expr, single_variant_observed_and_possible_expr(genomes_freq_expr)
+            keep_expr, variant_observed_and_possible_expr(genomes_freq_expr)
         ),
     )
     obs_pos_globals = hl.struct(
@@ -407,7 +407,7 @@ def get_exomes_observed_and_possible(
         exomes_freq=exomes_freq_expr,
         **hl.or_missing(
             hl.is_defined(exomes_coverage_expr),
-            single_variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
+            variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
         ),
     )
     obs_pos_globals = hl.struct(
@@ -925,6 +925,10 @@ def add_oe_upper_rank_and_decile(
     """
     Compute the rank and decile of the oe upper confidence interval.
 
+    Thin wrapper around :func:`rank_array_element_metrics` that extracts the
+    discretized Poisson and gamma upper CI values from each constraint group's
+    first oe_info element.
+
     :param ht: Table with the oe upper confidence interval.
     :param use_mane_select_over_canonical: Use MANE Select over canonical transcripts
         for ranking, falling back to canonical when MANE Select is absent for a gene.
@@ -941,71 +945,19 @@ def add_oe_upper_rank_and_decile(
         ``bin_granularities``. Transcripts excluded from ranking have these fields set
         to missing.
     """
-    # Add an integer index so re-keying after order_by is an O(1) lookup.
-    ht = ht.add_index("_idx").key_by("_idx").cache()
-
-    total_count = ht.count()
-    ms_ht = ht.filter(
-        get_transcript_filter_expr(ht, use_mane_select_over_canonical, mane_select_only)
-    )
-
-    # Extract only the first freq group (adj/all-samples) per constraint group for
-    # ranking.
     ci_fields = ["discretized_poisson", "gamma"]
-    ms_ht = (
-        ms_ht.select(
-            oe_ci_upper=ms_ht.constraint_groups.map(
-                lambda x: hl.struct(
-                    **{ci: x.oe_info[0][f"oe_ci_{ci}"].upper for ci in ci_fields}
-                )
-            ),
-        )
-        .naive_coalesce(100)
-        .checkpoint(new_temp_file("oe_ci_upper.before_rank", "ht"))
-    )
-    n_transcripts = ms_ht.count()
-    logger.info(
-        "Retaining %d out of %d transcripts to use for rank annotations.",
-        n_transcripts,
-        total_count,
-    )
 
-    # For each (constraint group, CI method), rank a minimal 2-column table and
-    # checkpoint it, then join all rank tables back in one pass.
-    num_constraint_groups = hl.eval(ms_ht.constraint_group_meta.length())
-    ms_ht = ms_ht.annotate(
-        oe_ci_upper=[
-            hl.struct(
-                **{
-                    ci: rank_and_assign_bins(
-                        ms_ht.oe_ci_upper[i][ci], bin_granularities
-                    )
-                    for ci in ci_fields
-                }
-            )
-            for i in range(num_constraint_groups)
-        ]
-    ).cache()
-
-    # Annotate each constraint group with rank/bin fields at the group level (not
-    # inside oe_info, since all array elements must share the same struct schema).
-    # ht is already keyed by _idx, so ms_ht can be looked up directly.
-    ms_keyed = ms_ht[ht._idx]
-    ht = ht.annotate(
-        constraint_groups=hl.if_else(
-            hl.is_defined(ms_keyed.oe_ci_upper),
-            hl.map(
-                lambda g, r: g.annotate(
-                    **{f"oe_ci_{ci}_rank": r[ci] for ci in ci_fields}
-                ),
-                ht.constraint_groups,
-                ms_keyed.oe_ci_upper,
-            ),
-            ht.constraint_groups,
-        )
+    return rank_array_element_metrics(
+        ht,
+        array_field="constraint_groups",
+        element_value_fn=lambda x: {
+            f"oe_ci_{ci}": x.oe_info[0][f"oe_ci_{ci}"].upper for ci in ci_fields
+        },
+        filter_fn=lambda t: get_transcript_filter_expr(
+            t, use_mane_select_over_canonical, mane_select_only
+        ),
+        bin_granularities=bin_granularities,
     )
-
-    return ht
 
 
 def aggregate_by_constraint_groups(
@@ -1386,7 +1338,7 @@ def _compute_percentile_bins(
 
     thresholds = {}
     for metric, idx in metric_group_idx.items():
-        vals = compute_oe_upper_percentile_thresholds(
+        vals = compute_percentile_thresholds(
             ht,
             percentiles=all_qs,
             metric_expr=ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper,
@@ -1792,6 +1744,9 @@ def annotate_constraint_percentile_bins(
     """
     Annotate each transcript with its percentile bin for all metric/granularity combinations.
 
+    Thin wrapper around :func:`annotate_bins_by_threshold` that extracts the
+    gamma upper CI value from each constraint group's first oe_info element.
+
     Annotates ``constraint_bins.{granularity}.{metric}`` for each combination.
     Bin 0 is the most constrained (value below all thresholds); bin N equals
     the number of boundaries the value exceeds.
@@ -1799,7 +1754,7 @@ def annotate_constraint_percentile_bins(
     :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
     :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list
         of threshold values, as produced by
-        :func:`compute_oe_upper_percentile_thresholds`.
+        :func:`compute_percentile_thresholds`.
     :param metric_group_idx: Mapping of metric name to its index in
         ``constraint_groups`` (e.g. ``{"lof": 5, "mis": 1, "syn": 0}``).
     :return: Annotated Table with an added ``constraint_bins`` struct field.
@@ -1813,29 +1768,10 @@ def annotate_constraint_percentile_bins(
         metric: ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
         for metric, idx in metric_group_idx.items()
     }
-    miss = hl.missing(hl.tint32)
 
-    def _bin_expr(
-        value_expr: hl.expr.Float64Expression,
-        threshold_list: List[float],
-    ) -> hl.expr.Int32Expression:
-        arr = hl.literal(threshold_list)
-        return hl.sum(arr.map(lambda t: hl.int(value_expr >= t)))
-
-    return ht.annotate(
-        constraint_bins=hl.struct(
-            **{
-                gran: hl.struct(
-                    **{
-                        metric: hl.if_else(
-                            hl.is_defined(metric_exprs[metric]),
-                            _bin_expr(metric_exprs[metric], thresholds[(gran, metric)]),
-                            miss,
-                        )
-                        for metric in metric_group_idx
-                    }
-                )
-                for gran in CONSTRAINT_GRANULARITIES
-            }
-        )
+    return annotate_bins_by_threshold(
+        ht,
+        metric_exprs=metric_exprs,
+        thresholds=thresholds,
+        granularities=list(CONSTRAINT_GRANULARITIES),
     )
