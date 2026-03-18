@@ -7,10 +7,10 @@
 EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 """Valid file extensions for constraint pipeline resources."""
 
-VERSIONS = ["2.1.1", "4.0", "4.1"]
+VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1"]
 """Supported gnomAD constraint pipeline versions."""
 
-CURRENT_VERSION = "4.1"
+CURRENT_VERSION = "4.1.1"
 """Current default gnomAD constraint pipeline version."""
 
 DATA_TYPES = ["context", "exomes", "genomes"]
