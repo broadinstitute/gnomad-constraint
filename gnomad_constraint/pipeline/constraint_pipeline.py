@@ -40,7 +40,11 @@ from gnomad_constraint.resources.constants import (
     RELEASE_KEY_ORDER,
     VERSIONS,
 )
-from gnomad_constraint.resources.resource_utils import filter_for_test, get_adj_r_ht
+from gnomad_constraint.resources.resource_utils import (
+    filter_for_test,
+    get_adj_r_ht,
+    get_syn_adj_r_ht,
+)
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
@@ -132,6 +136,7 @@ def main(args):
                 methylation_ht=res.methylation_ht.ht(),
                 gerp_ht=constraint_res.get_gerp_ht(get_reference_genome(ht.locus).name),
                 adj_r_ht=get_adj_r_ht(),
+                syn_adj_r_ht=get_syn_adj_r_ht(),
             )
             ht.write(res.annotated_context_ht.path, overwrite)
 

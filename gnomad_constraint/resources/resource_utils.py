@@ -603,6 +603,18 @@ def get_adj_r_ht() -> hl.Table:
     )
 
 
+def get_syn_adj_r_ht() -> hl.Table:
+    """
+    Read the synonymous DNM adj_r per-context methylation genome 1kb autosome Table.
+
+    :return: Table with syn_adj_r annotation keyed by locus.
+    """
+    return hl.read_table(
+        "gs://gnomad/v4.1/constraint/resources/annotations/ht/"
+        "adj_r_syn_dnm_per_context_methyl_genome_1kb_autosome.ht"
+    )
+
+
 def get_constraint_resources(
     version: str,
     custom_vep_annotation: str,

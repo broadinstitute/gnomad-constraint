@@ -82,6 +82,7 @@ def prepare_context_ht(
     methylation_ht: hl.Table,
     gerp_ht: hl.Table,
     adj_r_ht: hl.Table,
+    syn_adj_r_ht: hl.Table,
     sfs_bin_cutoffs: Tuple[float, ...] = SFS_BIN_CUTOFFS,
 ) -> hl.Table:
     """
@@ -89,7 +90,7 @@ def prepare_context_ht(
 
     Applies the LOFTEE END_TRUNC filter fix, assembles the constraint context
     Table via :func:`assemble_constraint_context_ht`, then adds genomic region,
-    SFS bin, adj_r, and coverage/AN reshaping annotations.
+    SFS bin, adj_r, syn_adj_r, and coverage/AN reshaping annotations.
 
     :param ht: VEP context Table.
     :param coverage_hts: Dict mapping data type ("exomes", "genomes") to coverage
@@ -102,6 +103,7 @@ def prepare_context_ht(
     :param methylation_ht: Methylation sites Table.
     :param gerp_ht: GERP scores Table.
     :param adj_r_ht: Table with adj_r annotation keyed by locus.
+    :param syn_adj_r_ht: Table with synonymous DNM adj_r annotation keyed by locus.
     :param sfs_bin_cutoffs: Allele frequency upper bounds defining site frequency
         spectrum bins. Default is ``SFS_BIN_CUTOFFS``.
     :return: Annotated context Table.
@@ -155,6 +157,7 @@ def prepare_context_ht(
         ),
         genomic_region=genomic_region_expr,
         adj_r=adj_r_ht[ht.locus].adj_r[ht.context],
+        syn_adj_r=syn_adj_r_ht[ht.locus].adj_r[ht.context],
         sfs_bin=sfs_bin_expr,
     )
 
