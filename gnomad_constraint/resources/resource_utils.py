@@ -587,6 +587,7 @@ def filter_for_test(
     if use_gene_list:
         if rg == "GRCh37":
             keep_regions = [
+                "1:55505149-55530526",  # PCSK9
                 "20:49505585-49547958",  # ADNP
                 "20:853296-896977",  # ANGPT4
                 "X:13752832-13787480",  # OFD1
@@ -595,6 +596,7 @@ def filter_for_test(
             ]
         else:
             keep_regions = [
+                "chr1:55039447-55064852",  # PCSK9
                 "chr20:50888916-50931437",  # ADNP
                 "chr20:869900-916334",  # ANGPT4
                 "chrX:13734743-13777955",  # OFD1
