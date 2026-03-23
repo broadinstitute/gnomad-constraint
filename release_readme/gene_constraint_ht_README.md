@@ -34,8 +34,8 @@ Parameters used when applying the models to compute expected variant counts.
 
 - `apply_models_params.low_cov_cutoff`: Lower AN% cutoff; sites at or below this value are excluded from expected variant calculations
 - `apply_models_params.high_cov_cutoff`: AN% cutoff separating high-coverage from low-coverage sites when applying the model
-- `apply_models_params.plateau_models`: Dictionary mapping (CpG context, genomic region) pairs to plateau model coefficients used for expected variant count calculations at high-coverage sites
-- `apply_models_params.coverage_model`: Array of coverage correction model coefficients used for expected variant count calculations at low-coverage sites
+- `apply_models_params.plateau_models`: Dictionary mapping (CpG context, genomic region) pairs to linear regression coefficients. Plateau models relate per-context mutation rates to the proportion of possible synonymous sites at which a variant was observed at high-coverage sites (AN% ≥ 90%). Separate models were fit for CpG transitions vs. all other sites (transversions and non-CpG transitions) and for each genomic region (autosomes/PAR, chrX non-PAR, and chrY non-PAR)
+- `apply_models_params.coverage_model`: Array of coverage correction model coefficients used for expected variant count calculations at low-coverage sites (AN% between 20% and 90%)
 - `apply_models_params.log10_coverage`: Boolean indicating whether log10 transformation was applied to coverage values in the coverage correction model
 
 ### `downsamplings`
