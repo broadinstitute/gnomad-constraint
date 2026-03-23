@@ -34,6 +34,9 @@ Parameters used when applying the models to compute expected variant counts.
 
 - `apply_models_params.low_cov_cutoff`: Lower AN% cutoff; sites at or below this value are excluded from expected variant calculations
 - `apply_models_params.high_cov_cutoff`: AN% cutoff separating high-coverage from low-coverage sites when applying the model
+- `apply_models_params.plateau_models`: Dictionary mapping (CpG context, genomic region) pairs to plateau model coefficients used for expected variant count calculations at high-coverage sites
+- `apply_models_params.coverage_model`: Array of coverage correction model coefficients used for expected variant count calculations at low-coverage sites
+- `apply_models_params.log10_coverage`: Boolean indicating whether log10 transformation was applied to coverage values in the coverage correction model
 
 ### `downsamplings`
 
