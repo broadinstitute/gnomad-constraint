@@ -72,13 +72,13 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `cds_length`: Length of the coding sequences (CDS) in the transcript
 - `num_coding_exons`: Number of coding exons in the transcript
 - `gene_quality_metrics.exome_prop_bp_AN90`:  Proportion of coding bases in gene with allele number percent (AN%) (percent of total possible AN observed at site) greater than 90%
-- `gene_quality_metrics.exome_mean_AS_MQ`: Mean value of AS_MQ (allele-specific root mean square of the mapping quality of reads across all samples) across gene
+- `gene_quality_metrics.exome_mean_AS_MQ`: Mean AS_MQ (allele-specific root mean square of the mapping quality of reads) across SNV sites in the coding sequence of the gene
 - `gene_quality_metrics.exome_prop_segdup`: Proportion of coding bases in gene that overlap a segmental duplication
 - `gene_quality_metrics.exome_prop_LCR`: Proportion of coding bases in gene that overlap a low-complexity region
 
 ## Flags
 - `gene_flags`: Quality flags for gene based on gnomAD v4 exome data. One of:
-  - `low_exome_coverage`: Proportion of coding base pairs in gene with median AN% is less than 10%
+  - `low_exome_coverage`: Less than 10% of coding base pairs in gene have allele number percent (AN%) greater than or equal to 90%
   - `low_exome_mapping_quality`: Mean value of AS_MQ across gene is less than 50.
 - `constraint_flags`: Reason transcript is considered an outlier for constraint metrics. One of:
   - `no_variants`: Zero observed synonymous, missense, pLoF variants
@@ -152,6 +152,9 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `lof_hc_lc.oe_ci.upper_bin_sextile`: Sextile bin of upper bound of 90% CI `oe` for pLoF variants for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof_hc_lc.z_raw`: Raw (unnormalized) Z-score for high and low confidence pLoF variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts.
 - `lof_hc_lc.z_score`: Normalized Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
+- `lof_hc_lc.pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% oe pLoF ratio; computed from high and low confidence pLoF gnomAD data)
+- `lof_hc_lc.pRec`: Probability that transcript falls into distribution of recessive genes (~71% oe pLoF ratio; computed from high and low confidence pLoF gnomAD data)
+- `lof_hc_lc.pNull`: Probability that transcript falls into distribution of unconstrained genes (~100% oe pLoF ratio; computed from high and low confidence pLoF gnomAD data)
 - `lof_hc_lc.gen_anc_obs.global`: Array of observed HC+LC pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
 - `lof_hc_lc.gen_anc_obs.afr`: Array of observed HC+LC pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
 - `lof_hc_lc.gen_anc_obs.amr`: Array of observed HC+LC pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
@@ -180,18 +183,18 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `lof.oe_ci.upper_bin_sextile`: Sextile bin of LOEUF for given transcript (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof.z_raw`: Raw (unnormalized) Z-score for high confidence pLoF variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts.
 - `lof.z_score`: Normalized Z-score for high confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
-- `pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
-- `pRec`: Probability that transcript falls into distribution of recessive genes (~71% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
-- `pNull`: Probability that transcript falls into distribution of unconstrained genes (~100% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
-- `gen_anc_obs.global`: Array of observed high confidence pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
-- `gen_anc_obs.afr`: Array of observed high confidence pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
-- `gen_anc_obs.amr`: Array of observed high confidence pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
-- `gen_anc_obs.eas`: Array of observed high confidence pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
-- `gen_anc_obs.nfe`: Array of observed high confidence pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
-- `gen_anc_obs.sas`: Array of observed high confidence pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
-- `gen_anc_exp.global`: Array of expected high confidence pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
-- `gen_anc_exp.afr`: Array of expected high confidence pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
-- `gen_anc_exp.amr`: Array of expected high confidence pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
-- `gen_anc_exp.eas`: Array of expected high confidence pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
-- `gen_anc_exp.nfe`: Array of expected high confidence pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
-- `gen_anc_exp.sas`: Array of expected high confidence pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
+- `lof.pLI`: Probability of loss-of-function intolerance; probability that transcript falls into distribution of haploinsufficient genes (~21% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
+- `lof.pRec`: Probability that transcript falls into distribution of recessive genes (~71% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
+- `lof.pNull`: Probability that transcript falls into distribution of unconstrained genes (~100% `oe` pLoF ratio; computed from high confidence pLoF gnomAD data)
+- `lof.gen_anc_obs.global`: Array of observed high confidence pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `lof.gen_anc_obs.afr`: Array of observed high confidence pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `lof.gen_anc_obs.amr`: Array of observed high confidence pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `lof.gen_anc_obs.eas`: Array of observed high confidence pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `lof.gen_anc_obs.nfe`: Array of observed high confidence pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `lof.gen_anc_obs.sas`: Array of observed high confidence pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
+- `lof.gen_anc_exp.global`: Array of expected high confidence pLoF variant counts at each downsampling level for the full gnomAD v4 exomes dataset; index i corresponds to `downsamplings.global[i]`
+- `lof.gen_anc_exp.afr`: Array of expected high confidence pLoF variant counts at each downsampling level for the African/African American genetic ancestry group; index i corresponds to `downsamplings.afr[i]`
+- `lof.gen_anc_exp.amr`: Array of expected high confidence pLoF variant counts at each downsampling level for the Admixed American genetic ancestry group; index i corresponds to `downsamplings.amr[i]`
+- `lof.gen_anc_exp.eas`: Array of expected high confidence pLoF variant counts at each downsampling level for the East Asian genetic ancestry group; index i corresponds to `downsamplings.eas[i]`
+- `lof.gen_anc_exp.nfe`: Array of expected high confidence pLoF variant counts at each downsampling level for the non-Finnish European genetic ancestry group; index i corresponds to `downsamplings.nfe[i]`
+- `lof.gen_anc_exp.sas`: Array of expected high confidence pLoF variant counts at each downsampling level for the South Asian genetic ancestry group; index i corresponds to `downsamplings.sas[i]`
