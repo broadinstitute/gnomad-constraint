@@ -121,6 +121,28 @@ GENCODE_FIELD_RENAMES = {
 """GENCODE field renames applied when preparing the release Table."""
 
 # ---------------------------------------------------------------------------
+# Constraint percentile threshold computation and annotation
+# ---------------------------------------------------------------------------
+
+PLI_EXPECTED_VALUES = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
+"""Expected o/e values for the pLI model (null, recessive, loss-of-function intolerant)."""
+
+CONSTRAINT_METRICS = ["lof", "mis", "syn"]
+"""Constraint metrics for which percentile thresholds are computed."""
+
+CONSTRAINT_GRANULARITIES = {
+    "percentile": list(range(1, 100)),
+    "decile": list(range(1, 10)),
+    "sextile": list(range(1, 6)),
+}
+"""
+Granularities for percentile binning.
+
+Keys are granularity names; values are boundary bin labels (1-indexed).
+Quantile probabilities are bin / (max_bin + 1).
+"""
+
+# ---------------------------------------------------------------------------
 # Release format constants
 # ---------------------------------------------------------------------------
 
@@ -215,28 +237,3 @@ RELEASE_CG_SELECT = [
     "gen_anc_exp",
 ]
 """Fields selected from the release constraint-group struct, in display order."""
-
-# ---------------------------------------------------------------------------
-# Constraint percentile threshold computation and annotation
-# ---------------------------------------------------------------------------
-
-CONSTRAINT_SCORE_CAP = 2.0
-"""OE upper CI value above which scores are considered unconstrained and capped."""
-
-PLI_EXPECTED_VALUES = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
-"""Expected o/e values for the pLI model (null, recessive, loss-of-function intolerant)."""
-
-CONSTRAINT_METRICS = ["lof", "mis", "syn"]
-"""Constraint metrics for which percentile thresholds are computed."""
-
-CONSTRAINT_GRANULARITIES = {
-    "percentile": list(range(1, 100)),
-    "decile": list(range(1, 10)),
-    "sextile": list(range(1, 6)),
-}
-"""
-Granularities for percentile binning.
-
-Keys are granularity names; values are boundary bin labels (1-indexed).
-Quantile probabilities are bin / (max_bin + 1).
-"""

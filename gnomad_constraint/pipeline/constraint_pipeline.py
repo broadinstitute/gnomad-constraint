@@ -25,6 +25,7 @@ import argparse
 import logging
 
 import hail as hl
+from gnomad.resources.grch38.reference_data import lcr_intervals, seg_dup_intervals
 from gnomad.utils.constraint import (
     build_models,
     calculate_gerp_cutoffs,
@@ -143,28 +144,6 @@ def main(args):
 
             logger.info("Done annotating the VEP context Table.")
 
-        if args.compute_gene_quality_metrics:
-            logger.info("Computing per-transcript gene quality metrics...")
-            res = resources.compute_gene_quality_metrics
-            res.check_resource_existence()
-
-            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
-            exomes_sites_ht = res.exomes_sites_ht.ht()
-            if test:
-                gencode_cds_ht = filter_for_test(
-                    gencode_cds_ht, use_gene_list=test_gene_list
-                )
-                exomes_sites_ht = filter_for_test(
-                    exomes_sites_ht, use_gene_list=test_gene_list
-                )
-            gene_quality_ht = compute_gene_quality_metrics(
-                res.temp_preprocess_data_ht.ht(),
-                exomes_sites_ht,
-                gencode_cds_ht,
-            )
-            gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
-            logger.info("Done computing gene quality metrics.")
-
         if args.calculate_gerp_cutoffs:
             logger.warning(
                 "Calculating new GERP cutoffs to be used instead of"
@@ -211,6 +190,30 @@ def main(args):
             ht.write(res.temp_preprocess_data_ht.path, overwrite=overwrite)
 
             logger.info("Done preprocessing the context Table.")
+
+        if args.compute_gene_quality_metrics:
+            logger.info("Computing per-transcript gene quality metrics...")
+            res = resources.compute_gene_quality_metrics
+            res.check_resource_existence()
+
+            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
+            exomes_sites_ht = res.exomes_sites_ht.ht()
+            if test:
+                gencode_cds_ht = filter_for_test(
+                    gencode_cds_ht, use_gene_list=test_gene_list
+                )
+                exomes_sites_ht = filter_for_test(
+                    exomes_sites_ht, use_gene_list=test_gene_list
+                )
+            gene_quality_ht = compute_gene_quality_metrics(
+                res.temp_preprocess_data_ht.ht(),
+                exomes_sites_ht,
+                gencode_cds_ht,
+                seg_dup_intervals.ht(),
+                lcr_intervals.ht(),
+            )
+            gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
+            logger.info("Done computing gene quality metrics.")
 
         if args.calculate_mutation_rate:
             logger.info("Calculating mutation rate...")
@@ -404,14 +407,14 @@ def main(args):
             release_ht = prepare_release_ht(
                 constraint_ht,
                 release_version=args.release_version,
-            )
+            ).naive_coalesce(1000)
             release_ht.write(res.release_ht.path, overwrite=overwrite)
             logger.info("Done preparing release Table.")
 
         if args.export_release_tsv or args.export_release_downsampling_tsv:
             res = resources.export_release_tsv
             res.check_resource_existence()
-            release_ht = hl.read_table(res.release_ht.path)
+            release_ht = res.release_ht.ht()
 
             if args.export_release_tsv:
                 logger.info("Exporting release TSV...")
