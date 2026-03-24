@@ -10,7 +10,7 @@ Table containing per-base mutation rates estimated from intronic and intergenic 
 
 ### `calculate_mu_params`
 
-Parameters used when computing the mutation rate. Only autosomal sites with VEP most severe consequence in `most_severe_consequence` and GERP scores between `gerp_lower_cutoff` and `gerp_upper_cutoff` are included. Sites must also have genome mean coverage between `min_cov` and `max_cov`, and observed variants must have AC <= `ac_cutoff` at the specified `downsampling_level`.
+Parameters used when computing the mutation rate. Only autosomal sites with Ensembl VEP most severe consequence in `most_severe_consequence` and GERP scores between `gerp_lower_cutoff` and `gerp_upper_cutoff` are included. Sites must also have genome mean coverage between `min_cov` and `max_cov`, and observed variants must have AC <= `ac_cutoff` at the specified `downsampling_level`.
 
 | Global | Description |
 | :--- | :--- |
@@ -20,7 +20,7 @@ Parameters used when computing the mutation rate. Only autosomal sites with VEP 
 | **calculate_mu_params.gerp_lower_cutoff** | Minimum GERP score for a site to be included. Default of -3.9885 is the 5th percentile of the genome-wide GERP score distribution, precalculated on the GRCh37 context Table. |
 | **calculate_mu_params.gerp_upper_cutoff** | Maximum GERP score for a site to be included. Default of 2.6607 is the 95th percentile of the genome-wide GERP score distribution, precalculated on the GRCh37 context Table. |
 | **calculate_mu_params.downsampling_level** | Number of genome samples in the downsampling used to compute `mu` (default: 1000). |
-| **calculate_mu_params.most_severe_consequence** | VEP most severe consequences used to identify neutral sites for the mutation rate calculation (intronic and intergenic variants). |
+| **calculate_mu_params.most_severe_consequence** | Ensembl VEP most severe consequences used to identify neutral sites for the mutation rate calculation (intronic and intergenic variants). |
 
 ## Key fields
 
