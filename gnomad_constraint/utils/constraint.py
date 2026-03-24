@@ -1,7 +1,7 @@
 """Script containing utility functions used in the constraint pipeline."""
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import hail as hl
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
@@ -2179,6 +2179,52 @@ def prepare_release_ht(
         ht, field_names, freq_meta, gen_anc_ds_indices, sd_raw_z_arr, release_version
     )
     return ht
+
+
+def prepare_release_mutation_ht(
+    ht: hl.Table,
+    release_version: Optional[str] = None,
+) -> hl.Table:
+    """
+    Prepare the mutation rate Table for public release.
+
+    Selects the per-context mutation rate (``mu_snp`` renamed to ``mu``),
+    trinucleotide-class flags (``cpg``, ``transition``, ``mutation_type``),
+    and restructures the globals to drop internal pipeline bookkeeping
+    fields.
+
+    :param ht: Mutation rate Table produced by
+        :func:`calculate_mu_by_downsampling`.
+    :param release_version: Version string for the ``version`` global.
+        When *None*, the existing ``version`` global is retained if
+        present.
+    :return: Release-formatted mutation rate Table.
+    """
+    # Keep only the scalar mutation rate and the trinucleotide-class flags.
+    ht = ht.select(
+        mu=ht.mu_snp,
+        cpg=ht.cpg,
+        transition=ht.transition,
+        mutation_type=ht.mutation_type,
+    )
+
+    # Restructure globals.
+    global_kwargs: Dict[str, Any] = {}
+    if release_version is not None:
+        global_kwargs["version"] = release_version
+    elif "version" in ht.globals:
+        global_kwargs["version"] = ht.globals.version
+
+    # Rename calculate_mu_globals → calculate_mu_params, dropping
+    # internal-only sub-fields (freq_meta, genetic_ancestry_groups,
+    # downsampling_idx). Only keep calculate_mu_globals; the other
+    # pipeline globals (build_models, apply_models) are not relevant
+    # to the mutation rate release.
+    src, dest, drop_fields = RELEASE_PIPELINE_PARAM_GLOBALS[0]
+    if src in ht.globals:
+        global_kwargs[dest] = ht.globals[src].drop(*drop_fields)
+
+    return ht.select_globals(**global_kwargs)
 
 
 def flatten_release_ht(ht: hl.Table) -> hl.Table:

@@ -60,6 +60,7 @@ from gnomad_constraint.utils.constraint import (
     prepare_context_ht,
     prepare_ht_for_constraint_calculations,
     prepare_release_ht,
+    prepare_release_mutation_ht,
 )
 
 logging.basicConfig(
@@ -411,6 +412,22 @@ def main(args):
             ).naive_coalesce(1000)
             release_ht.write(res.release_ht.path, overwrite=overwrite)
             logger.info("Done preparing release Table.")
+
+        if args.prepare_release_mutation_rate:
+            logger.info("Preparing mutation rate Table for release...")
+            res = resources.prepare_release_mutation_rate
+            res.check_resource_existence()
+
+            mutation_ht = res.mutation_ht.ht()
+            release_mutation_ht = prepare_release_mutation_ht(
+                mutation_ht,
+                release_version=args.release_version,
+            )
+            release_mutation_ht.write(res.release_mutation_ht.path, overwrite=overwrite)
+
+            logger.info("Exporting release mutation rate TSV...")
+            release_mutation_ht.export(res.release_mutation_tsv)
+            logger.info("Done preparing and exporting release mutation rate Table.")
 
         if args.export_release_tsv or args.export_release_downsampling_tsv:
             res = resources.export_release_tsv
@@ -922,6 +939,15 @@ if __name__ == "__main__":
         ),
         type=str,
         default=None,
+    )
+    prepare_release_args.add_argument(
+        "--prepare-release-mutation-rate",
+        help=(
+            "Prepare the mutation rate Table for public release by selecting"
+            " the scalar mutation rate (mu), trinucleotide-class flags, and"
+            " restructuring globals. Also exports a TSV."
+        ),
+        action="store_true",
     )
     prepare_release_args.add_argument(
         "--export-release-tsv",

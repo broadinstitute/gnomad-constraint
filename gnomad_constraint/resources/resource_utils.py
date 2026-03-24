@@ -354,6 +354,19 @@ def get_release_mutation_ht(version: str = CURRENT_VERSION) -> TableResource:
     return TableResource(f"{root}/release/gnomad.v{version}.mutation_rate.ht")
 
 
+def get_release_mutation_tsv_path(version: str = CURRENT_VERSION) -> str:
+    """
+    Return path for the release mutation rate TSV.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :return: Path of the release mutation rate TSV.
+    """
+    check_param_scope(version=version)
+    root = get_constraint_root(version=version)
+    return f"{root}/release/gnomad.v{version}.mutation_rate.tsv"
+
+
 def get_release_constraint_ht(version: str = CURRENT_VERSION) -> TableResource:
     """
     Return TableResource for the release constraint metrics Table.
@@ -817,6 +830,14 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[compute_constraint_metrics],
     )
+    prepare_release_mutation_rate = PipelineStepResourceCollection(
+        "--prepare-release-mutation-rate",
+        output_resources={
+            "release_mutation_ht": get_release_mutation_ht(version=version),
+            "release_mutation_tsv": get_release_mutation_tsv_path(version=version),
+        },
+        pipeline_input_steps=[calculate_mutation_rate],
+    )
     export_release_tsv = PipelineStepResourceCollection(
         "--export-release-tsv",
         output_resources={
@@ -845,6 +866,7 @@ def get_constraint_resources(
             "apply_models_aggregated": apply_models_aggregated,
             "compute_constraint_metrics": compute_constraint_metrics,
             "prepare_release": prepare_release,
+            "prepare_release_mutation_rate": prepare_release_mutation_rate,
             "export_release_tsv": export_release_tsv,
         }
     )
