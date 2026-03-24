@@ -57,7 +57,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
   - `sd_raw_z.mis`: Standard deviation of raw Z-scores for missense variants
   - `sd_raw_z.lof_hc_lc`: Standard deviation of raw Z-scores for high and low confidence pLoF variants
   - `sd_raw_z.lof`: Standard deviation of raw Z-scores for high confidence pLoF variants
-  - `percentile_thresholds`: Pre-computed OE upper confidence interval thresholds used to assign constraint percentile bins. Structured as `percentile_thresholds.{metric}.{granularity}`, where metric is one of `lof`, `mis`, or `syn`, and granularity is one of `percentile` (99 thresholds), `decile` (9 thresholds), or `sextile` (5 thresholds). Each value is an `array<float64>` of gamma OE upper CI cutpoints, computed via approximate quantiles over MANE Select transcripts (excluding outliers). A transcript is assigned to bin k if its OE upper CI falls at or below the k-th threshold. For example, `percentile_thresholds.lof.decile` contains 9 values dividing LoF-constrained genes into 10 equal-frequency bins.
+  - `loeuf_percentile_thresholds`: Pre-computed OE upper confidence interval thresholds used to assign constraint percentile bins. Structured as `loeuf_percentile_thresholds.{granularity}`, where granularity is one of `percentile` (99 thresholds), `decile` (9 thresholds), or `sextile` (5 thresholds). Each value is an `array<float64>` of gamma OE upper CI cutpoints, computed via approximate quantiles over MANE Select transcripts (excluding outliers). A transcript is assigned to bin k if its OE upper CI falls at or below the k-th threshold. For example, `oeuf_percentile_thresholds.decile` contains 9 values dividing LoF-constrained genes into 10 equal-frequency bins.
   
 ## Key Fields
 
