@@ -56,6 +56,7 @@ from gnomad_constraint.utils.constraint import (
     create_per_variant_expected_ht,
     create_training_set,
     flatten_release_ht,
+    lof_bin_thresholds_to_ht,
     prepare_context_ht,
     prepare_ht_for_constraint_calculations,
     prepare_release_ht,
@@ -420,6 +421,10 @@ def main(args):
                 logger.info("Exporting release TSV...")
                 flatten_release_ht(release_ht).export(res.release_tsv)
                 logger.info("Done exporting release TSV.")
+
+                logger.info("Exporting LoF OE CI upper bin thresholds TSV...")
+                lof_bin_thresholds_to_ht(release_ht).export(res.lof_threshold_tsv)
+                logger.info("Done exporting LoF threshold TSV.")
 
             if args.export_release_downsampling_tsv:
                 logger.info("Exporting release downsampling TSV...")

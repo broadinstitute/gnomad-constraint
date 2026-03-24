@@ -188,7 +188,7 @@ RELEASE_RANK_FIELDS = [
 RELEASE_CI_FIELDS_WITH_RANK = RELEASE_CI_FIELDS + RELEASE_RANK_FIELDS
 """CI fields including rank annotations, used for groups in RELEASE_GROUPS_WITH_RANK."""
 
-RELEASE_GROUPS_WITH_RANK = ["lof_hc", "lof_hc_lc"]
+RELEASE_GROUPS_WITH_RANK = ["lof_hc"]
 """Constraint groups for which rank and bin annotations are included."""
 
 RELEASE_GROUPS_WITH_PLI = ["lof_hc", "lof_hc_lc"]

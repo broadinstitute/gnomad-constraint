@@ -2092,10 +2092,12 @@ def _restructure_release_globals(
 
     global_kwargs["sd_raw_z"] = sd_raw_z_struct
 
-    # Carry through the OE upper CI threshold values used for percentile/
-    # decile/sextile bin assignment, if computed.
+    # Carry through only the LoF OE upper CI threshold values used for
+    # percentile/decile/sextile bin assignment, renamed for clarity.
     if "percentile_thresholds" in ht.globals:
-        global_kwargs["percentile_thresholds"] = ht.globals.percentile_thresholds
+        global_kwargs["loeuf_percentile_thresholds"] = (
+            ht.globals.percentile_thresholds.lof
+        )
 
     return ht.select_globals(**global_kwargs)
 
@@ -2197,7 +2199,37 @@ def flatten_release_ht(ht: hl.Table) -> hl.Table:
     if drop_fields:
         ht = ht.drop(*drop_fields)
 
+    # Reorder key fields to match RELEASE_KEY_ORDER before flattening so
+    # the TSV columns appear in the expected order (flatten drops the key
+    # and may emit fields in internal storage order rather than key order).
+    key_fields = list(ht.key)
+    other_fields = [f for f in ht.row if f not in ht.key]
+    ht = ht.key_by().select(*key_fields, *other_fields)
+
     return ht.flatten()
+
+
+def lof_bin_thresholds_to_ht(release_ht: hl.Table) -> hl.Table:
+    """
+    Convert the LoF OE CI upper bin thresholds global into a flat Table.
+
+    Creates a Table with one row per (granularity, bin) pair, suitable for
+    TSV export.
+
+    :param release_ht: Release-format constraint metrics Table with a
+        ``loeuf_percentile_thresholds`` global.
+    :return: Unkeyed Table with ``granularity``, ``bin``, and ``threshold``
+        fields.
+    """
+    thresholds = hl.eval(release_ht.globals.loeuf_percentile_thresholds)
+    rows = []
+    for gran in thresholds:
+        for i, val in enumerate(thresholds[gran]):
+            rows.append(hl.Struct(granularity=gran, bin=i + 1, threshold=val))
+    return hl.Table.parallelize(
+        rows,
+        hl.tstruct(granularity=hl.tstr, bin=hl.tint32, threshold=hl.tfloat64),
+    )
 
 
 def annotate_constraint_percentile_bins(

@@ -540,6 +540,19 @@ def get_gene_quality_metrics_ht(version: str = CURRENT_VERSION) -> TableResource
     return TableResource(f"{root}/metrics/gnomad.v{version}.gene_quality_metrics.ht")
 
 
+def get_lof_threshold_tsv_path(version: str = CURRENT_VERSION) -> str:
+    """
+    Return path for the LoF OE CI upper bin thresholds TSV.
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :return: Path of the LoF threshold TSV.
+    """
+    check_param_scope(version=version)
+    root = get_constraint_root(version=version)
+    return f"{root}/release/gnomad.v{version}.loeuf_percentile_thresholds.tsv"
+
+
 def get_release_downsampling_tsv_path(version: str = CURRENT_VERSION) -> str:
     """
     Return path for the release per-genetic-ancestry downsampling TSV.
@@ -811,6 +824,7 @@ def get_constraint_resources(
             "release_downsampling_tsv": get_release_downsampling_tsv_path(
                 version=version
             ),
+            "lof_threshold_tsv": get_lof_threshold_tsv_path(version=version),
         },
         pipeline_input_steps=[prepare_release],
     )
