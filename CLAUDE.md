@@ -1,4 +1,4 @@
-# gnomad-constraint Project Reference
+# gnomad-constraint Claude Reference
 
 ## Project Overview
 
@@ -44,8 +44,8 @@ Use **Sphinx-style** (`:param:`, `:return:`) docstrings following the gnomad_met
 ## Key Constants (`resource_utils.py`)
 
 ```python
-VERSIONS = ["2.1.1", "4.0", "4.1"]
-CURRENT_VERSION = "4.1"
+VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1"]
+CURRENT_VERSION = "4.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
@@ -130,6 +130,7 @@ Step 7 computes matched pLoF o/e per missense percentile bin. It computes adj_r-
 - **gnomad** (gnomad_methods) — shared gnomAD utilities
 - **gnomad_qc** — gnomAD QC pipeline resources
 
+
 ## Known Gotchas
 
 - **MU_GROUPING not exported**: `gnomad_constraint.resources.resource_utils` does NOT export `MU_GROUPING`. It must be defined locally as `("context", "ref", "alt", "methylation_level")`.
@@ -147,6 +148,13 @@ Step 7 computes matched pLoF o/e per missense percentile bin. It computes adj_r-
 - **Use `naive_coalesce()` after aggressive filters**: When filtering a large table down to a small subset (e.g., LOFTEE HC LoF from all variants), most partitions become empty. This causes shuffle skew in downstream `group_by` aggregations. Call `naive_coalesce(200)` after the filter to rebalance.
 - **Per-SNV table `calibrate_mu` struct**: The per-variant expected table (`gnomad.v4.1.per_variant_expected.coverage_corrected.with_downsamplings.ht`) stores transcript-level fields (`gene`, `transcript`, `canonical`, `modifier`, `observed_variants`, `expected_variants`, `possible_variants`) inside a `calibrate_mu` struct. Flatten it with `ht = ht.annotate(**ht.calibrate_mu)` before accessing those fields.
 - **Log full row field lists for debugging**: When debugging schema issues, log `list(ht.row)` (all fields), not `list(ht.row)[:20]` (truncated). Important fields like `calibrate_mu` may be beyond the first 20.
+- **`order_by` destroys the key — use `add_index` to rekey cheaply**: After `ht.order_by(expr)`, the table is unkeyed. To rejoin ranked results back to the original table, call `ht.add_index("_rank_idx")` before ordering, then `rank_ht.key_by("_rank_idx")` after. Rejoining via an integer index is an O(1) lookup vs a full key scan.
+- **`hl.scan.count()` for rank assignment**: After `order_by`, annotate with `hl.scan.count()` to assign 0-based ascending ranks in a single pass: `ht = ht.order_by(ht.val).annotate(rank=hl.scan.count())`.
+- **Checkpoint small select-then-order tables, not the full wide table**: When computing ranks for many `(group, field)` combinations, select only the columns needed (`ht.select("_rank_idx", _val=expr)`), order, rank, checkpoint, and join results back in one pass. Avoids checkpointing the full wide table once per iteration.
+- **`.count()` after checkpoint is free**: `count()` on a checkpointed table reads already-materialized metadata rather than re-executing the query. Place `count()` after a checkpoint to avoid computing the table twice.
+- **Python list comprehensions over Hail arrays for indexed access**: When you need to index a Hail array with a known Python integer (e.g., `ht.constraint_groups[i]`), use a Python list comprehension rather than `hl.enumerate` + lambda. This also allows Python-time dict lookups like `rank_hts[(i, key)]` inside the expression.
+- **`hl.Table.parallelize` to reconstruct a small HT from collected data**: `hl.Table.parallelize(hl.eval(ht.my_array_global), schema=ht.my_array_global.dtype.element_type).key_by(...)` reconstructs a small Hail Table from a global array without re-running any jobs.
+- **Hail array elements must share the same struct schema**: All elements of a Hail array field must have identical types. You cannot annotate only `array[0]` with extra fields while leaving `array[1+]` unchanged — Hail will reject the mixed schema. Instead, promote such metadata to the parent struct level (e.g., add a `{field}_rank` struct directly on the constraint group rather than inside `oe_info[0]`).
 
 ## Dataproc Submission
 
@@ -154,11 +162,12 @@ Step 7 computes matched pLoF o/e per missense percentile bin. It computes adj_r-
 
 ```bash
 # Build a single zip with correct top-level package structure
+# Exclude non-Python files (.RData, renv/, images, notebooks) to keep zip small
 cd <gnomad-constraint root> && \
   rm -f /tmp/pyfiles.zip && \
-  zip -r /tmp/pyfiles.zip gnomad_constraint/ -x '*.pyc' '*__pycache__*' && \
+  zip -r /tmp/pyfiles.zip gnomad_constraint/ -x '*.pyc' '*__pycache__*' '*.RData' '*/renv/*' '*.DS_Store' '*.png' '*.pdf' '*.ipynb' && \
   cd <gnomad_qc root> && \
-  zip -r /tmp/pyfiles.zip gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store'
+  zip -r /tmp/pyfiles.zip gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store' '*.ipynb'
 
 # Submit to cluster (single zip = used directly, not repackaged)
 hailctl dataproc submit <CLUSTER> \

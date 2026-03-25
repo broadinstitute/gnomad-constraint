@@ -815,8 +815,7 @@ def chisq_upper_ci(
     alpha: float = 0.05,
 ) -> hl.expr.Float64Expression:
     """
-    Calculate the upper bound of the OE confidence interval using the chi-squared
-    distribution.
+    Calculate the upper bound of the OE confidence interval using the chi-squared distribution.
 
     :param obs: Observed count.
     :param exp: Expected count.
@@ -995,7 +994,7 @@ def _residue_has_high_pae_to_region(
     max_pae: float,
 ) -> hl.expr.BooleanExpression:
     """
-    True if residue has PAE > max_pae to any element in region_array_expr.
+    Return True if residue has PAE > max_pae to any element in region_array_expr.
 
     Elements of region_array_expr must have a residue_index field (used to index
     residue_expr.pae_array). Used by both filter and annotate PAE-in-region logic.
@@ -1883,12 +1882,12 @@ def run_forward(
         "excluded_residues_region" in ht.min_oe_upper.dtype.element_type.fields
     )
 
-    ##if has_excluded_res:
+    # if has_excluded_res:
     ##    excluded_residues_set = hl.set(ht.excluded_residues)
-    ##if has_excluded_res_region:
-    ##    excluded_residues_set = excluded_residues_set | hl.set(
+    # if has_excluded_res_region:
+    # excluded_residues_set = excluded_residues_set | hl.set(
     ##        ht.min_oe_upper.flatmap(lambda x: hl.set(x.excluded_residues_region))
-    ##    )
+    # )
 
     # Use valid_residues from determine_regions_with_min_oe_upper if available,
     # otherwise compute from union of all residues in candidate regions.
@@ -1896,7 +1895,7 @@ def run_forward(
     # pLDDT or PAE filtering.
     if "valid_residues" in ht.row:
         null_region = ht.valid_residues
-        #null_region = (
+        # null_region = (
         #    hl.range(0, num_residues).filter(lambda x: ~excluded_residues_set.contains(x))
     else:
         # Fallback: compute from union of all regions.
@@ -2298,6 +2297,7 @@ def _write_debug_output(debug_output_file: str, debug_output_str: str):
 
 
 def run_forward_no_catch_all(ht, min_exp_mis=MIN_EXP_MIS):
+    """Run forward algorithm keeping no catch-all."""
     num_residues = ht.oe.length()
 
     # keep a full set for set ops; no growing catch-all
@@ -2562,6 +2562,7 @@ def run_forward_no_catch_all_standardized(
     alpha: float = 1.0,  # weight for standardized min distance
     beta: float = 1.0,  # weight for standardized ΔOE
 ):
+    """Run forward algorithm keeping no catch-all, standardize."""
     """
     num_residues = ht.oe.length()
 
