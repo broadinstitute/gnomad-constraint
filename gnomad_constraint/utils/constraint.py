@@ -572,13 +572,13 @@ def apply_models(
                 cov_corr_expr=cov_corr_expr,
                 possible_variants_expr=poss_expr,
                 cpg_expr=ht.cpg,
-                pop=pop,
+                gen_anc=pop,
             )
         )
 
         # Store which downsamplings are obtained for each pop in a
         # downsampling_meta dictionary.
-        ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, pop=pop))
+        ds = hl.eval(get_downsampling_freq_indices(ht.freq_meta, gen_anc=pop))
         key_names = {key for _, meta_dict in ds for key in meta_dict.keys()}
         genetic_ancestry_label = "gen_anc" if "gen_anc" in key_names else "pop"
         downsampling_meta[pop] = [
@@ -993,7 +993,7 @@ def compute_constraint_metrics(
             ann: oe_aggregation_expr(
                 ht,
                 filter_expr,
-                pops=() if ann == "mis_pphen" else pops,
+                gen_ancs=() if ann == "mis_pphen" else pops,
                 exclude_mu_sum=True if ann == "mis_pphen" else False,
             )
             for ann, filter_expr in annotation_dict.items()
