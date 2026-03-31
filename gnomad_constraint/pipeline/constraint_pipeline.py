@@ -515,9 +515,10 @@ def main(args):
 
                 logger.info("Building %s plateau and coverage models...", r)
                 coverage_model, plateau_models = build_models(
-                    ht=training_ht,
+                    coverage_ht=training_ht,
                     coverage_expr=training_ht[coverage_metric],
                     weighted=args.use_weights,
+                    gen_ancs=pops,
                     high_cov_definition=args.high_cov_definition,
                     upper_cov_cutoff=args.upper_cov_cutoff,
                     skip_coverage_model=True if args.skip_coverage_model else False,
