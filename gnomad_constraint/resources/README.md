@@ -485,9 +485,9 @@ Pipeline-parameter globals (as §9) plus:
   - `oe_ci_discretized_poisson_rank: struct` and `oe_ci_gamma_rank: struct` —
     rank/bin annotations for the `upper` bound of each CI:
     - `upper_rank: int64` — 0-based ascending rank within the group.
-    - `upper_bin_percentile: int32` — percentile bin (1–99).
-    - `upper_bin_decile: int32` — decile bin (1–9).
-    - `upper_bin_sextile: int32` — sextile bin (1–5).
+    - `upper_bin_percentile: int32` — percentile bin (0–99).
+    - `upper_bin_decile: int32` — decile bin (0–9).
+    - `upper_bin_sextile: int32` — sextile bin (0–5).
 - `no_variants: bool` — as §9.
 - `constraint_flags: set<str>` — transcript-level QC flags
   (`no_variants`, `not_in_gencode`, `outlier_*`, etc.).
@@ -610,9 +610,9 @@ Each constraint group is exposed as a named struct (group names from
   - `lof` uses the Gamma CI (the LOEUF), and **additionally** carries rank
     fields on `oe_ci` (the only group in `RELEASE_GROUPS_WITH_RANK`):
     - `upper_rank: int64` — 0-based rank by `oe_ci.upper` ascending.
-    - `upper_bin_percentile: int32` — percentile bin (1–99).
-    - `upper_bin_decile: int32` — decile bin (1–9; LOEUF decile).
-    - `upper_bin_sextile: int32` — sextile bin (1–5).
+    - `upper_bin_percentile: int32` — percentile bin (0–99).
+    - `upper_bin_decile: int32` — decile bin (0–9; LOEUF decile).
+    - `upper_bin_sextile: int32` — sextile bin (0–5).
 - `gen_anc_obs: struct{global, afr, amr, eas, nfe, sas}` — per-genetic-ancestry
   observed counts. Each field is `array<int64>` parallel to
   `downsamplings.<group>`.
