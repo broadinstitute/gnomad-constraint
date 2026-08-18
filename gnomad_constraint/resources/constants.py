@@ -7,7 +7,7 @@
 EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 """Valid file extensions for constraint pipeline resources."""
 
-VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1"]
+VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1", "4.1.2"]
 """Supported gnomAD constraint pipeline versions."""
 
 CURRENT_VERSION = "4.1.1"
@@ -18,6 +18,7 @@ SITES_VERSION_MAP = {
     "4.0": "4.0",
     "4.1": "4.1",
     "4.1.1": "4.1",
+    "4.1.2": "4.1",
 }
 """Map from constraint pipeline version to gnomAD sites release version."""
 

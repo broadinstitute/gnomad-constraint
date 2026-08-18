@@ -51,6 +51,7 @@ from gnomad_constraint.utils.constraint import (
     aggregate_per_variant_expected_ht,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
+    compute_constraint_percentile_bins,
     compute_gene_quality_metrics,
     create_aggregated_expected_ht,
     create_per_variant_expected_ht,
@@ -110,6 +111,7 @@ def main(args):
         models,
         directory_post_fix,
         path_post_fix,
+        skip_pre_rank_metrics=args.skip_pre_rank_metrics,
     )
 
     try:
@@ -380,22 +382,36 @@ def main(args):
             res = resources.compute_constraint_metrics
             res.check_resource_existence()
 
-            # Compute constraint metrics.
-            ht = res.constraint_group_ht.ht(read_args={"_n_partitions": 10000})
-            compute_constraint_metrics(
-                ht=ht,
-                gencode_ht=constraint_res.get_gencode_ht(version),
-                gene_quality_metrics_ht=res.gene_quality_metrics_ht.ht(),
-                expected_values={
-                    "Null": args.expectation_null,
-                    "Rec": args.expectation_rec,
-                    "LI": args.expectation_li,
-                },
-                min_diff_convergence=args.min_diff_convergence,
-                raw_z_outlier_threshold_lower_lof=args.raw_z_outlier_threshold_lower_lof,
-                raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
-                raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
-                raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
+            # Compute constraint metrics, excluding rank and bin annotations.
+            if args.skip_pre_rank_metrics:
+                logger.info(
+                    "Skipping metrics computation, reusing %s.",
+                    res.pre_rank_constraint_metrics_ht.path,
+                )
+            else:
+                ht = res.constraint_group_ht.ht(read_args={"_n_partitions": 10000})
+                compute_constraint_metrics(
+                    ht=ht,
+                    gencode_ht=constraint_res.get_gencode_ht(version),
+                    gene_quality_metrics_ht=res.gene_quality_metrics_ht.ht(),
+                    expected_values={
+                        "Null": args.expectation_null,
+                        "Rec": args.expectation_rec,
+                        "LI": args.expectation_li,
+                    },
+                    min_diff_convergence=args.min_diff_convergence,
+                    raw_z_outlier_threshold_lower_lof=args.raw_z_outlier_threshold_lower_lof,
+                    raw_z_outlier_threshold_lower_missense=args.raw_z_outlier_threshold_lower_missense,
+                    raw_z_outlier_threshold_lower_syn=args.raw_z_outlier_threshold_lower_syn,
+                    raw_z_outlier_threshold_upper_syn=args.raw_z_outlier_threshold_upper_syn,
+                ).write(res.pre_rank_constraint_metrics_ht.path, overwrite=overwrite)
+
+            # Add rank and bin annotations as a separate phase so they can be
+            # recomputed without rerunning the metrics above.
+            logger.info("Adding rank and percentile bin annotations...")
+            compute_constraint_percentile_bins(
+                res.pre_rank_constraint_metrics_ht.ht(),
+                use_mane_select_over_canonical=args.use_mane_select_over_canonical,
             ).write(res.constraint_metrics_ht.path, overwrite=overwrite)
             logger.info("Done with computing constraint metrics.")
 
@@ -839,6 +855,25 @@ if __name__ == "__main__":
         ),
         type=int,
         default=1000,
+    )
+    compute_constraint_args.add_argument(
+        "--skip-pre-rank-metrics",
+        help=(
+            "Skip computing the constraint metrics and reuse the existing pre-rank"
+            " Table, recomputing only the rank and percentile bin annotations. Used to"
+            " reissue a release with corrected ranks without rerunning the pipeline."
+        ),
+        action="store_true",
+    )
+    compute_constraint_args.add_argument(
+        "--use-mane-select-over-canonical",
+        help=(
+            "Use MANE Select rather than canonical transcripts when determining which"
+            " transcripts to rank, falling back to canonical for genes without a MANE"
+            " Select transcript."
+        ),
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
     compute_constraint_args.add_argument(
         "--min-diff-convergence",

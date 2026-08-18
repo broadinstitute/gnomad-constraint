@@ -537,6 +537,28 @@ def get_constraint_metrics_dataset(
     )
 
 
+def get_pre_rank_constraint_metrics_dataset(
+    custom_vep_annotation: str = "transcript_consequences", **kwargs
+) -> TableResource:
+    """
+    Return TableResource of constraint metrics before rank and bin annotations are added.
+
+    This is the output of :func:`compute_constraint_metrics` and the input to
+    :func:`compute_constraint_percentile_bins`. Keeping it as its own dataset
+    allows the ranking to be recomputed without rerunning the metrics.
+
+    :param custom_vep_annotation: The VEP annotation used to customize the constraint
+        model (one of "transcript_consequences" or "worst_csq_by_gene").
+    :return: TableResource of constraint metrics without rank annotations.
+    """
+    return get_constraint_data(
+        "constraint_metrics_pre_rank",
+        sub_dir="metrics",
+        custom_vep_annotation=custom_vep_annotation,
+        **kwargs,
+    )
+
+
 def get_gene_quality_metrics_ht(version: str = CURRENT_VERSION) -> TableResource:
     """
     Return TableResource of per-transcript gene quality metrics.
@@ -676,6 +698,7 @@ def get_constraint_resources(
     models: List[str] = ["plateau", "coverage"],
     directory_post_fix: Optional[str] = None,
     path_post_fix: Optional[str] = None,
+    skip_pre_rank_metrics: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -811,18 +834,49 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
-    compute_constraint_metrics = PipelineStepResourceCollection(
-        "--compute-constraint-metrics",
-        output_resources={
-            "constraint_metrics_ht": get_constraint_metrics_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
-            )
-        },
-        pipeline_input_steps=[
-            aggregate_by_constraint_groups,
-            compute_gene_quality_metrics_step,
-        ],
-    )
+    if skip_pre_rank_metrics:
+        # Only the ranking is rerun, over an existing pre-rank Table. The
+        # upstream metrics inputs are not read, and the pre-rank Table becomes
+        # an input rather than an output.
+        compute_constraint_metrics = PipelineStepResourceCollection(
+            "--compute-constraint-metrics --skip-pre-rank-metrics",
+            input_resources={
+                "pre-rank constraint metrics": {
+                    "pre_rank_constraint_metrics_ht": (
+                        get_pre_rank_constraint_metrics_dataset(
+                            custom_vep_annotation,
+                            **common_params,
+                            path_post_fix=path_post_fix,
+                        )
+                    )
+                }
+            },
+            output_resources={
+                "constraint_metrics_ht": get_constraint_metrics_dataset(
+                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                ),
+            },
+        )
+    else:
+        compute_constraint_metrics = PipelineStepResourceCollection(
+            "--compute-constraint-metrics",
+            output_resources={
+                "pre_rank_constraint_metrics_ht": (
+                    get_pre_rank_constraint_metrics_dataset(
+                        custom_vep_annotation,
+                        **common_params,
+                        path_post_fix=path_post_fix,
+                    )
+                ),
+                "constraint_metrics_ht": get_constraint_metrics_dataset(
+                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                ),
+            },
+            pipeline_input_steps=[
+                aggregate_by_constraint_groups,
+                compute_gene_quality_metrics_step,
+            ],
+        )
     prepare_release = PipelineStepResourceCollection(
         "--prepare-release",
         output_resources={

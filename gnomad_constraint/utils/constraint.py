@@ -1651,7 +1651,7 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     return ht
 
 
-def _compute_percentile_bins(
+def compute_constraint_percentile_bins(
     ht: hl.Table,
     use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
@@ -1663,7 +1663,7 @@ def _compute_percentile_bins(
     ``CONSTRAINT_GRANULARITIES`` and annotates bins via
     :func:`annotate_constraint_percentile_bins`.
 
-    :param ht: Table output by :func:`_compute_z_scores`.
+    :param ht: Table output by :func:`compute_constraint_metrics`.
     :param use_mane_select_over_canonical: Use MANE Select rather than canonical
         transcripts for filtering when determining ranks. Default is True.
     :return: Table with rank, decile, and percentile bin annotations.
@@ -1744,7 +1744,7 @@ def _compute_pli_scores(
     """
     Compute pLI, pNull, and pRec scores for the HC LoF constraint group.
 
-    :param ht: Table output by :func:`_compute_percentile_bins`.
+    :param ht: Table output by :func:`_compute_z_scores`.
     :param expected_values: Dictionary containing the expected OE values for 'Null',
         'Rec', and 'LI' to use as starting values. Default is ``PLI_EXPECTED_VALUES``.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
@@ -1790,7 +1790,6 @@ def compute_constraint_metrics(
     raw_z_outlier_threshold_lower_missense: float = -8.0,
     raw_z_outlier_threshold_lower_syn: float = -8.0,
     raw_z_outlier_threshold_upper_syn: float = 8.0,
-    use_mane_select_over_canonical: bool = True,
 ) -> hl.Table:
     """
     Compute constraint metrics for synonymous, missense, and pLoF variants.
@@ -1800,10 +1799,13 @@ def compute_constraint_metrics(
     1. Annotate OE ratios, confidence intervals, raw z-scores, and per-group flags
        (:func:`_annotate_oe_ci_z`).
     2. Normalize z-scores and union constraint flags (:func:`_compute_z_scores`).
-    3. Add OE upper CI rank, decile, and percentile bins
-       (:func:`_compute_percentile_bins`).
-    4. Compute pLI / pNull / pRec scores (:func:`_compute_pli_scores`).
-    5. Annotate with gene quality metrics and GENCODE transcript annotations.
+    3. Compute pLI / pNull / pRec scores (:func:`_compute_pli_scores`).
+    4. Annotate with gene quality metrics and GENCODE transcript annotations.
+
+    Rank, decile, and percentile bin annotations are *not* added here. They are
+    applied separately by :func:`compute_constraint_percentile_bins`, which
+    takes the output of this function. Keeping them in a separate phase means
+    the ranking can be recomputed without rerunning the metrics.
 
     .. note::
 
@@ -1829,10 +1831,8 @@ def compute_constraint_metrics(
         synonymous variants. Default is -8.0.
     :param raw_z_outlier_threshold_upper_syn: Upper raw z-score outlier threshold for
         synonymous variants. Default is 8.0.
-    :param use_mane_select_over_canonical: Use MANE Select rather than canonical
-        transcripts for filtering when determining ranks. Default is True.
     :return: Table with pLI scores, OE ratios, confidence intervals, z-scores,
-        percentile bins, gene quality metrics, and GENCODE annotations.
+        gene quality metrics, and GENCODE annotations.
     """
     # Map each consequence category to its (lower, upper) raw z-score
     # outlier bounds. LoF and missense are one-sided (only lower bound);
@@ -1856,12 +1856,6 @@ def compute_constraint_metrics(
     # and union per-group flags into a single constraint_flags set.
     ht = _compute_z_scores(ht)
     ht = ht.checkpoint(new_temp_file("constraint_metrics.z_scores", "ht"))
-
-    # Rank transcripts by gamma OE upper CI and assign
-    # percentile/decile/sextile bins. Thresholds are computed on MANE
-    # Select transcripts and stored as globals.
-    ht = _compute_percentile_bins(ht, use_mane_select_over_canonical)
-    ht = ht.checkpoint(new_temp_file("constraint_metrics.percentile_bins", "ht"))
 
     # Run the EM algorithm to compute pLI/pNull/pRec from HC LoF
     # observed vs expected counts.
