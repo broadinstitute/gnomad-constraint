@@ -34,7 +34,7 @@ from gnomad.utils.filtering import add_filters_expr
 from gnomad.utils.vep import (
     CSQ_CODING,
     filter_vep_transcript_csqs_expr,
-    mane_select_over_canonical_filter_expr,
+    get_mane_select_over_canonical_filter_expr,
     update_loftee_end_trunc_filter,
 )
 from hail.utils.misc import divide_null, new_temp_file
@@ -1176,7 +1176,7 @@ def get_transcript_filter_expr(
     if mane_select_only:
         return ht.transcript.startswith("ENST") & ht.mane_select
     elif use_mane_select_over_canonical:
-        return mane_select_over_canonical_filter_expr(
+        return get_mane_select_over_canonical_filter_expr(
             ht.transcript, ht.mane_select, ht.canonical, ht.gene_id
         )
     else:
