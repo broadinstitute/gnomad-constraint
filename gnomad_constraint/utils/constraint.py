@@ -439,6 +439,8 @@ def get_exomes_observed_and_possible(
     gen_ancs: Optional[List[str]] = None,
     include_downsamplings: bool = False,
     max_af: float = 0.001,
+    include_sfs_bins: bool = False,
+    sfs_bin_cutoffs: Tuple[float, ...] = SFS_BIN_CUTOFFS,
 ) -> Tuple[hl.expr.StructExpression, hl.expr.StructExpression]:
     """
     Get the observed and possible variants for the exomes dataset.
@@ -459,6 +461,22 @@ def get_exomes_observed_and_possible(
     The observed and possible variant annotations are set to missing if the exome
     coverage is undefined or the variant does not pass the exome filters.
 
+    If ``include_sfs_bins`` is True, one element per site frequency spectrum (SFS) bin
+    is appended to ``observed_variants``: 1 if the variant's full-exome adj AF falls in
+    that bin, else 0. Bin 0 holds variants that are not observed (AF missing or 0,
+    including sites that fail the exome filters), and bin ``i`` holds variants with AF
+    in ``(sfs_bin_cutoffs[i - 1], sfs_bin_cutoffs[i]]``. ``max_af`` does not apply to
+    these elements, and variants with AF above the last cutoff are in no bin.
+    ``possible_variants`` is unchanged, so the proportion observed for a bin is the
+    probability that a possible variant falls in that bin, and the downstream plateau
+    models, expected counts, and obs/exp are computed per bin like the other frequency
+    elements. Because ``possible_variants`` only counts variants with AF <=
+    ``max_af``, ``max_af`` must be at least the last cutoff. The bin entries are
+    appended to ``exomes_freq_meta`` as
+    ``{"group": "adj", "sfs_bin": "<bin>"}``. Elements for the frequency groups are
+    kept as missing (rather than the whole array) when the variant is not in the
+    exomes dataset, so groups with no observed variants sum to 0 instead of missing.
+
     The function also returns a struct with the global parameters for the observed and
     possible variant annotations:
 
@@ -478,6 +496,10 @@ def get_exomes_observed_and_possible(
         possible variant annotations. Default is False.
     :param max_af: Maximum allele frequency to consider a variant as observed. Default
         is 0.001.
+    :param include_sfs_bins: Whether to append one observed element per SFS bin.
+        Default is False.
+    :param sfs_bin_cutoffs: Allele frequency upper bounds defining the SFS bins.
+        Default is ``SFS_BIN_CUTOFFS``.
     :return: Tuple containing the observed and possible variant annotations and the
         globals.
     """
@@ -503,12 +525,47 @@ def get_exomes_observed_and_possible(
     # set the observed and possible variant annotations to missing. Otherwise, set the
     # observed and possible variant annotations based on the frequency array.
     exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
+    obs_pos = variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af)
+
+    if include_sfs_bins:
+        # `possible_variants` only counts variants with AF <= max_af, so the SFS bins
+        # need max_af to cover the last bin.
+        if max_af < sfs_bin_cutoffs[-1]:
+            raise ValueError(
+                f"include_sfs_bins requires max_af >= {sfs_bin_cutoffs[-1]} (the last"
+                f" SFS bin cutoff) so common variants count as possible; got {max_af}."
+            )
+
+        # Assign the full-exome adj AF to an SFS bin; unobserved (missing or zero AF)
+        # variants are in bin 0.
+        af_expr = exomes_freq_expr[exomes_freq_meta.index(ADJ_FREQ_META)].AF
+        sfs_bin_expr = hl.case().when(hl.is_missing(af_expr), 0)
+        for i, af in enumerate(sfs_bin_cutoffs):
+            sfs_bin_expr = sfs_bin_expr.when(af_expr <= af, i)
+        sfs_bin_expr = sfs_bin_expr.or_missing()
+
+        # Keep missingness per element so the SFS bin elements are defined even when
+        # the variant is not in the exomes dataset.
+        obs_expr = obs_pos.observed_variants
+        obs_pos = obs_pos.annotate(
+            observed_variants=hl.range(len(exomes_freq_meta))
+            .map(lambda i: obs_expr[i])
+            .extend(
+                hl.array(
+                    [
+                        hl.int(hl.or_else(sfs_bin_expr == b, False))
+                        for b in range(len(sfs_bin_cutoffs))
+                    ]
+                )
+            )
+        )
+        exomes_freq_meta = exomes_freq_meta + [
+            {**ADJ_FREQ_META, "sfs_bin": str(b)} for b in range(len(sfs_bin_cutoffs))
+        ]
+
     obs_pos_expr = hl.struct(
         exomes_freq=exomes_freq_expr,
-        **hl.or_missing(
-            hl.is_defined(exomes_coverage_expr),
-            variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
-        ),
+        **hl.or_missing(hl.is_defined(exomes_coverage_expr), obs_pos),
     )
     obs_pos_globals = hl.struct(
         exomes_freq_meta=exomes_freq_meta,
@@ -603,6 +660,7 @@ def prepare_ht_for_constraint_calculations(
     calculate_mutation_rate_gerp_upper_cutoff: float = 2.6607,
     calculate_mutation_rate_ac_cutoff: int = 5,
     max_af: float = 0.001,
+    include_sfs_bins: bool = False,
     build_model_low_cov_cutoff: Optional[int] = None,
     build_model_high_cov_cutoff: int = COVERAGE_CUTOFF,
     build_model_upper_cov_cutoff: Optional[int] = None,
@@ -644,6 +702,9 @@ def prepare_ht_for_constraint_calculations(
         included in the mutation rate calculation. Default is 5.
     :param max_af: Maximum allele frequency to consider a variant as observed. Default
         is 0.001.
+    :param include_sfs_bins: Whether to append one observed element per site
+        frequency spectrum bin (see ``get_exomes_observed_and_possible``). Default is
+        False.
     :param build_model_low_cov_cutoff: Low coverage cutoff for the build models step.
         Default is None.
     :param build_model_high_cov_cutoff: High coverage cutoff for the build models step.
@@ -688,6 +749,7 @@ def prepare_ht_for_constraint_calculations(
         gen_ancs=gen_ancs,
         include_downsamplings=include_downsamplings,
         max_af=max_af,
+        include_sfs_bins=include_sfs_bins,
     )
 
     # Get the annotations relevant for building the calibration models.
@@ -1580,6 +1642,9 @@ def _annotate_oe_ci_z(
         - ``oe_ci_gamma`` — gamma-distribution CI.
         - ``z_raw`` — raw z-score.
 
+    If ``oe_info`` has ``adj_r_expected``, also adds a parallel ``adj_r_oe_info`` array
+    with the same metrics computed against ``adj_r_expected``.
+
     Then adds per-group ``flags`` based on z-score outlier thresholds.
 
     :param ht: Table with ``constraint_groups`` array.
@@ -1621,6 +1686,39 @@ def _annotate_oe_ci_z(
             )
         )
     )
+
+    # When adj_r-scaled expected counts were summed, add the same metrics computed
+    # against them as a parallel `adj_r_oe_info` array.
+    oe_info_type = ht.constraint_groups.dtype.element_type["oe_info"].element_type
+    if "adj_r_expected" in oe_info_type:
+        ht = ht.annotate(
+            constraint_groups=ht.constraint_groups.map(
+                lambda x: x.annotate(
+                    adj_r_oe_info=x.oe_info.map(
+                        lambda oe_info: hl.struct(
+                            observed_variants=oe_info.observed_variants,
+                            expected_variants=oe_info.adj_r_expected,
+                            oe=divide_null(
+                                oe_info.observed_variants, oe_info.adj_r_expected
+                            ),
+                            oe_ci_discretized_poisson=oe_confidence_interval(
+                                oe_info.observed_variants,
+                                oe_info.adj_r_expected,
+                                method="poisson",
+                            ),
+                            oe_ci_gamma=oe_confidence_interval(
+                                oe_info.observed_variants,
+                                oe_info.adj_r_expected,
+                                method="gamma",
+                            ),
+                            z_raw=calculate_raw_z_score(
+                                oe_info.observed_variants, oe_info.adj_r_expected
+                            ),
+                        )
+                    )
+                )
+            )
+        )
 
     # Add per-group flags based on the adj-frequency z-score. Each group
     # gets flags like "no_exp_{csq}" (expected == 0) or "z_raw_{csq}"

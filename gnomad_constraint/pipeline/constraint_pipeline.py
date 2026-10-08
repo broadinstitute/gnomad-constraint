@@ -283,6 +283,7 @@ def main(args):
                 calculate_mutation_rate_gerp_lower_cutoff=args.calculate_mutation_rate_gerp_lower_cutoff,
                 calculate_mutation_rate_gerp_upper_cutoff=args.calculate_mutation_rate_gerp_upper_cutoff,
                 max_af=args.max_af,
+                include_sfs_bins=args.include_sfs_bins,
                 build_model_low_cov_cutoff=args.pipeline_low_coverage_filter,
                 build_model_high_cov_cutoff=args.build_model_high_cov_definition,
                 build_model_upper_cov_cutoff=args.build_model_upper_cov_cutoff,
@@ -753,6 +754,17 @@ if __name__ == "__main__":
     preprocess_args.add_argument(
         "--include-downsamplings",
         help="Include downsamplings in the constraint pipeline.",
+        action="store_true",
+    )
+    preprocess_args.add_argument(
+        "--include-sfs-bins",
+        help=(
+            "Append one observed element per site frequency spectrum bin of the"
+            " full-exome AF (SFS_BIN_CUTOFFS) so plateau models, expected counts, and"
+            " obs/exp are also computed per SFS bin. Requires --max-af 0.5 (the last"
+            " SFS bin cutoff) so common variants count as possible. Use with"
+            " --path-post-fix to keep the outputs separate."
+        ),
         action="store_true",
     )
     preprocess_args.add_argument(
