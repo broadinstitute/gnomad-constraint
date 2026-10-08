@@ -951,9 +951,59 @@ def create_per_variant_expected_ht(
     return ht.drop(*calibrate_mu_fields)
 
 
+def annotate_lof_filters(
+    ht: hl.Table,
+    misannot_ht: hl.Table,
+    loftee2_ht: hl.Table,
+    misannot_cutoffs: Optional[Dict[str, float]] = None,
+) -> Tuple[hl.Table, List[str]]:
+    """
+    Annotate per-variant LoF filter flags used to build additional constraint groups.
+
+    Adds the following boolean annotations (missing values are set to False):
+
+        - ``loftee1_{LC,HC}``: LOFTEE ``modifier`` is LC or HC.
+        - ``loftee2_{relaxed,strict}``: LOFTEE2 classification.
+        - ``misannot_Pposterior_{name}``: LoF misannotation posterior probability is
+          below the cutoff for each entry in ``misannot_cutoffs``.
+
+    :param ht: Per-variant expected Table with ``locus``, ``alleles``,
+        ``transcript``, and ``modifier`` annotations.
+    :param misannot_ht: Table with ``misannot_Pposterior`` keyed by locus, alleles, and
+        transcript.
+    :param loftee2_ht: Table with ``loftee2_relaxed`` and ``loftee2_strict`` keyed by
+        locus, alleles, and transcript.
+    :param misannot_cutoffs: Mapping of annotation name suffix to misannotation
+        posterior probability cutoff. Default is ``{"99_5": 0.995}``.
+    :return: Tuple of the annotated Table and the list of added annotation names.
+    """
+    if misannot_cutoffs is None:
+        misannot_cutoffs = {"99_5": 0.995}
+
+    misannot = misannot_ht[ht.locus, ht.alleles, ht.transcript]
+    loftee2 = loftee2_ht[ht.locus, ht.alleles, ht.transcript]
+    ann_expr = {
+        **{f"loftee1_{l}": hl.or_else(ht.modifier == l, False) for l in ["LC", "HC"]},
+        **{
+            f"loftee2_{l}": hl.or_else(loftee2[f"loftee2_{l}"], False)
+            for l in ["relaxed", "strict"]
+        },
+        **{
+            f"misannot_Pposterior_{n}": hl.or_else(
+                misannot.misannot_Pposterior < c, False
+            )
+            for n, c in misannot_cutoffs.items()
+        },
+    }
+
+    return ht.annotate(**ann_expr), list(ann_expr)
+
+
 def aggregate_per_variant_expected_ht(
     ht: hl.Table,
     include_mu_annotations_in_grouping: bool = False,
+    additional_grouping_fields: Tuple[str, ...] = (),
+    additional_fields_to_sum: Tuple[str, ...] = (),
 ) -> hl.Table:
     """
     Aggregate the per-variant expected Table.
@@ -965,6 +1015,11 @@ def aggregate_per_variant_expected_ht(
     :param ht: Table returned by ``create_per_variant_expected_ht``.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate
         key annotations in the grouping. Default is False.
+    :param additional_grouping_fields: Additional row fields of ``ht`` to group by,
+        e.g. the LoF filter annotations added by ``annotate_lof_filters``. Default is
+        ().
+    :param additional_fields_to_sum: Additional row fields of ``ht`` to sum (or
+        array sum), e.g. ``adj_r_expected``. Default is ().
     :return: Table with the observed and expected counts.
     """
     # Build the grouping key: optionally include mutation rate annotations
@@ -978,7 +1033,9 @@ def aggregate_per_variant_expected_ht(
             for g in hl.eval(ht.apply_models_globals.groupings)
             if g not in MU_GROUPING
         ],
+        *additional_grouping_fields,
     ]
+    fields_to_sum = [*AGGREGATE_SUM_FIELDS, *additional_fields_to_sum]
 
     # The per-variant table from create_per_variant_expected_ht nests
     # transcript-level fields (gene, transcript, canonical, annotation, etc.)
@@ -993,12 +1050,14 @@ def aggregate_per_variant_expected_ht(
 
     # Narrow to just the grouping keys and the fields we need to sum,
     # dropping everything else to minimize shuffle size.
-    ht = ht.key_by().select(*groupings, *AGGREGATE_SUM_FIELDS)
+    ht = ht.key_by().select(*groupings, *fields_to_sum)
     ht = ht.checkpoint(new_temp_file("pre_aggregation", "ht"))
 
     # Sum observed_variants, expected_variants, possible_variants, mu_snp,
     # etc. within each (transcript, consequence, ...) group.
-    ht = ht.group_by(*groupings).aggregate(**aggregate_constraint_metrics_expr(ht))
+    ht = ht.group_by(*groupings).aggregate(
+        **aggregate_constraint_metrics_expr(ht, fields_to_sum=fields_to_sum)
+    )
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
 
     return ht.naive_coalesce(1000)
@@ -1236,6 +1295,7 @@ def aggregate_by_constraint_groups(
         Dict[str, Dict[str, hl.expr.BooleanExpression]]
     ] = None,
     additional_grouping_combinations: Optional[List[List[str]]] = None,
+    additional_fields_to_sum: Tuple[str, ...] = (),
 ) -> hl.Table:
     """
     Aggregate observed and expected variant info for synonymous, missense, and pLoF variants.
@@ -1262,6 +1322,9 @@ def aggregate_by_constraint_groups(
         Default is None.
     :param additional_grouping_combinations: Additional grouping combinations to add to
         the constraint groups. Default is None.
+    :param additional_fields_to_sum: Additional row fields of ``ht`` to sum (or array
+        sum) within each constraint group, e.g. ``adj_r_expected``. Array fields are
+        added to ``oe_info``. Default is ().
     :return: Table with the aggregated observed and expected variant info for synonymous
         variants, missense variants, and pLoF variants.
     """
@@ -1284,7 +1347,13 @@ def aggregate_by_constraint_groups(
     # expected_variants for each constraint group.
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
-            lambda f: hl.agg.filter(f, aggregate_constraint_metrics_expr(ht)),
+            lambda f: hl.agg.filter(
+                f,
+                aggregate_constraint_metrics_expr(
+                    ht,
+                    fields_to_sum=[*AGGREGATE_SUM_FIELDS, *additional_fields_to_sum],
+                ),
+            ),
             ht.constraint_groups,
         )
     )

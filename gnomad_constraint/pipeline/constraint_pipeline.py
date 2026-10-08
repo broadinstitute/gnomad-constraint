@@ -44,11 +44,14 @@ from gnomad_constraint.resources.constants import (
 from gnomad_constraint.resources.resource_utils import (
     filter_for_test,
     get_adj_r_ht,
+    get_loftee2_ht,
+    get_misannot_ht,
     get_syn_adj_r_ht,
 )
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
+    annotate_lof_filters,
     calculate_mu_by_downsampling,
     compute_constraint_metrics,
     compute_constraint_percentile_bins,
@@ -70,6 +73,102 @@ logging.basicConfig(
 )
 logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
+
+ADJ_R_SUM_FIELDS = ("adj_r", "adj_r_expected")
+"""Fields summed per group in addition to the standard expected/observed fields."""
+
+MISANNOT_NA_GENES = [
+    "CUL3",
+    "ARID1B",
+    "TNPO3",
+    "SRCAP",
+    "BAX",
+    "MIB1",
+    "SH2B3",
+    "KCNA1",
+    "ODC1",
+    "KDM5B",
+    "ARID1A",
+    "DNMT3A",
+    "PIWIL1",
+    "NARS1",
+    "HRK",
+    "SPRY2",
+    "CCDC115",
+    "SMAD6",
+    "TCF12",
+    "BCAS3",
+    "MALL",
+    "G3BP1",
+    "PHIP",
+    "GIGYF1",
+    "RASA2",
+    "DYRK1A",
+    "SKI",
+    "SIK3",
+    "CTNNB1",
+    "TET2",
+    "ROBO1",
+    "PPM1D",
+    "ASXL1",
+    "PTEN",
+    "SFT2D3",
+    "FOXG1",
+    "CHEK2",
+    "PURA",
+    "MMP23B",
+    "ZNF724",
+    "CGB7",
+    "NF1",
+    "PRRC2A",
+    "C1orf167",
+    "ZNF492",
+    "RBM12",
+    "TRNP1",
+    "SALL3",
+    "ZNF234",
+]
+"""Genes whose LOFTEE HC/LC variants are kept in the ``*_na_genes`` misannotation groups."""
+
+
+def get_lof_filter_groupings(ht: hl.Table) -> tuple:
+    """
+    Build the additional LoF constraint groupings from the LoF filter annotations.
+
+    :param ht: Aggregated expected Table with the annotations added by
+        ``annotate_lof_filters``.
+    :return: Tuple of (additional groupings, additional grouping combinations) for
+        ``aggregate_by_constraint_groups``.
+    """
+    groupings = {
+        "loftee1": {f"loftee1_{l}": ht[f"loftee1_{l}"] for l in ["LC", "HC"]},
+        "loftee2": {f"loftee2_{l}": ht[f"loftee2_{l}"] for l in ["relaxed", "strict"]},
+        "misannot_Pposterior": {},
+    }
+    for p in ["99_5"]:
+        misannot_expr = ht[f"misannot_Pposterior_{p}"]
+        hc_lc_expr = hl.set({"HC", "LC"}).contains(ht.modifier)
+        hc_expr = ht.modifier == "HC"
+        na_genes_expr = hl.set(MISANNOT_NA_GENES).contains(ht.gene)
+        groupings["misannot_Pposterior"].update(
+            {
+                f"misannot_Pposterior_{p}": misannot_expr,
+                f"misannot_Pposterior_{p}_HC_LC": (
+                    misannot_expr | (hl.is_missing(misannot_expr) & hc_lc_expr)
+                ),
+                f"misannot_Pposterior_{p}_HC": (
+                    misannot_expr | (hl.is_missing(misannot_expr) & hc_expr)
+                ),
+                f"misannot_Pposterior_{p}_HC_LC_na_genes": (
+                    misannot_expr | (na_genes_expr & hc_lc_expr)
+                ),
+                f"misannot_Pposterior_{p}_HC_na_genes": (
+                    misannot_expr | (na_genes_expr & hc_expr)
+                ),
+            }
+        )
+
+    return groupings, [["loftee1"], ["loftee2"], ["misannot_Pposterior"]]
 
 
 def main(args):
@@ -317,7 +416,20 @@ def main(args):
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = aggregate_per_variant_expected_ht(ht)
+
+            # Add the LoF filter flags and adj_r-scaled expected counts used for the
+            # additional LoF constraint groups.
+            ht, lof_filter_fields = annotate_lof_filters(
+                ht, get_misannot_ht(), get_loftee2_ht()
+            )
+            ht = ht.annotate(
+                adj_r_expected=ht.expected_variants * hl.or_else(ht.adj_r, 1.0)
+            )
+            ht = aggregate_per_variant_expected_ht(
+                ht,
+                additional_grouping_fields=tuple(lof_filter_fields),
+                additional_fields_to_sum=ADJ_R_SUM_FIELDS,
+            )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
 
@@ -366,10 +478,21 @@ def main(args):
                 res.check_resource_existence()
                 ht = res.apply_ht.ht()
 
+            # Add the LoF filter constraint groups when the LoF filter annotations
+            # were added in --aggregate-per-variant-expected.
+            additional_groupings, additional_grouping_combinations = (
+                get_lof_filter_groupings(ht) if "loftee1_HC" in ht.row else (None, None)
+            )
+
             out_res = resources.aggregate_by_constraint_groups
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(k for k in ht.key if k in RELEASE_KEY_ORDER),
+                additional_groupings=additional_groupings,
+                additional_grouping_combinations=additional_grouping_combinations,
+                additional_fields_to_sum=tuple(
+                    f for f in ADJ_R_SUM_FIELDS if f in ht.row
+                ),
             ).write(out_res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")

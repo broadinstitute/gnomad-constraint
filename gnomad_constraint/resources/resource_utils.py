@@ -690,6 +690,30 @@ def get_syn_adj_r_ht() -> hl.Table:
     )
 
 
+def get_misannot_ht() -> hl.Table:
+    """
+    Read the LoF misannotation posterior probability Table.
+
+    :return: Table with ``misannot_Pposterior`` keyed by locus, alleles, and
+        transcript_id.
+    """
+    return hl.read_table(
+        "gs://gkr-loftee2/resources/ht/split10_gnomAD_LoF_Ppost_misannot.filters.ht"
+    )
+
+
+def get_loftee2_ht() -> hl.Table:
+    """
+    Read the LOFTEE2 classified variants Table.
+
+    :return: Table with ``loftee2_relaxed`` and ``loftee2_strict`` keyed by locus,
+        alleles, and transcript_id.
+    """
+    return hl.read_table(
+        "gs://gkr-loftee2/resources/ht/loftee2_alpha_classified_variants.ht"
+    )
+
+
 def get_constraint_resources(
     version: str,
     custom_vep_annotation: str,
