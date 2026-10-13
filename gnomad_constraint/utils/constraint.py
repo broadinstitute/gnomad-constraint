@@ -62,7 +62,9 @@ from gnomad_constraint.resources.constants import (
     RELEASE_LOF_FIELDS,
     RELEASE_PIPELINE_PARAM_GLOBALS,
     RELEASE_TOP_LEVEL_ANNOTATIONS,
+    RELEASE_UNADJ_FIELDS,
     SFS_BIN_CUTOFFS,
+    UNADJ_EXPECTED_FIELD,
 )
 
 logging.basicConfig(
@@ -951,9 +953,67 @@ def create_per_variant_expected_ht(
     return ht.drop(*calibrate_mu_fields)
 
 
+def annotate_regional_rr_expected(
+    ht: hl.Table,
+    rr_ht: Optional[hl.Table] = None,
+    rr_ht_path: Optional[str] = None,
+) -> hl.Table:
+    """
+    Apply the regional mutation rate adjustment (rr) to per-variant expected counts.
+
+    The adjustment is applied after model calibration: the plateau and coverage
+    models are not re-applied or re-fit. For each row the following annotations are
+    added:
+
+        - ``regional_rr``: rr of the 1kb window containing the variant for the
+          variant's strand-collapsed trinucleotide context (``rr_ht[locus].adj_r``
+          looked up by ``context``). Rows without a window in ``rr_ht``, or when
+          ``rr_ht`` is None, get an rr of 1.0.
+        - ``unadj_expected``: the expected variant count array before the rr
+          adjustment.
+        - ``expected_variants``: ``unadj_expected * regional_rr``. All frequency
+          elements of the array are scaled by the same rr.
+
+    The ``mu_snp``, ``mu``, ``predicted_proportion_observed``, and
+    ``coverage_correction`` annotations are not modified.
+
+    A ``regional_rr_globals`` global is added with ``applied``, ``rr_ht_path``, and
+    (when ``rr_ht`` has an ``rr_globals`` global) ``rr_params``.
+
+    :param ht: Per-variant expected Table keyed by ``locus`` and ``alleles`` with
+        ``context`` and ``expected_variants`` annotations.
+    :param rr_ht: Optional regional rr Table keyed by ``interval`` with an ``adj_r``
+        dict mapping trinucleotide context to rr. Default is None.
+    :param rr_ht_path: Optional path of ``rr_ht``, recorded in the globals. Default is
+        None.
+    :return: Table with the rr-adjusted expected variant counts.
+    """
+    path_expr = hl.missing(hl.tstr) if rr_ht_path is None else hl.str(rr_ht_path)
+    if rr_ht is None:
+        rr_expr = hl.float64(1.0)
+        rr_globals = hl.struct(applied=False, rr_ht_path=path_expr)
+    else:
+        rr_expr = hl.or_else(rr_ht.select("adj_r")[ht.locus].adj_r.get(ht.context), 1.0)
+        rr_globals = hl.struct(applied=True, rr_ht_path=path_expr)
+        if "rr_globals" in rr_ht.globals:
+            rr_globals = rr_globals.annotate(rr_params=rr_ht.index_globals().rr_globals)
+
+    ht = ht.annotate(regional_rr=rr_expr)
+    ht = ht.annotate(
+        **{UNADJ_EXPECTED_FIELD: ht.expected_variants},
+        expected_variants=ht.expected_variants * ht.regional_rr,
+    )
+
+    return ht.annotate_globals(regional_rr_globals=rr_globals)
+
+
 def aggregate_per_variant_expected_ht(
     ht: hl.Table,
     include_mu_annotations_in_grouping: bool = False,
+    additional_fields_to_sum: Tuple[str, ...] = (),
+    apply_regional_rr: bool = False,
+    rr_ht: Optional[hl.Table] = None,
+    rr_ht_path: Optional[str] = None,
 ) -> hl.Table:
     """
     Aggregate the per-variant expected Table.
@@ -962,9 +1022,22 @@ def aggregate_per_variant_expected_ht(
     The Table is aggregated by the groupings stored in
     ``apply_models_globals.groupings`` to get the observed and expected counts.
 
+    If ``apply_regional_rr`` is True, the regional rr adjustment is applied to the
+    coding rows before aggregation using :func:`annotate_regional_rr_expected`, and
+    ``unadj_expected`` is summed alongside the rr-adjusted ``expected_variants``.
+
     :param ht: Table returned by ``create_per_variant_expected_ht``.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate
         key annotations in the grouping. Default is False.
+    :param additional_fields_to_sum: Additional row fields of ``ht`` to sum (or
+        array sum), e.g. ``unadj_expected``. Default is ().
+    :param apply_regional_rr: Whether to annotate the regional rr adjustment (and
+        ``unadj_expected``) before aggregating. When True and ``rr_ht`` is None, an
+        rr of 1.0 is used so the output schema is unchanged. Default is False.
+    :param rr_ht: Optional regional rr Table. See
+        :func:`annotate_regional_rr_expected`. Default is None.
+    :param rr_ht_path: Optional path of ``rr_ht``, recorded in the globals. Default is
+        None.
     :return: Table with the observed and expected counts.
     """
     # Build the grouping key: optionally include mutation rate annotations
@@ -979,6 +1052,9 @@ def aggregate_per_variant_expected_ht(
             if g not in MU_GROUPING
         ],
     ]
+    fields_to_sum = [*AGGREGATE_SUM_FIELDS, *additional_fields_to_sum]
+    if apply_regional_rr and UNADJ_EXPECTED_FIELD not in fields_to_sum:
+        fields_to_sum.append(UNADJ_EXPECTED_FIELD)
 
     # The per-variant table from create_per_variant_expected_ht nests
     # transcript-level fields (gene, transcript, canonical, annotation, etc.)
@@ -991,14 +1067,22 @@ def aggregate_per_variant_expected_ht(
     # non-coding VEP annotations to improve computation time and memory.
     ht = ht.filter(hl.set(CSQ_CODING).contains(ht.annotation))
 
+    # Apply the regional rr adjustment to the coding rows only (post-calibration;
+    # the models are not re-applied). The interval join is ordered on locus, so it
+    # does not shuffle.
+    if apply_regional_rr:
+        ht = annotate_regional_rr_expected(ht, rr_ht, rr_ht_path)
+
     # Narrow to just the grouping keys and the fields we need to sum,
     # dropping everything else to minimize shuffle size.
-    ht = ht.key_by().select(*groupings, *AGGREGATE_SUM_FIELDS)
+    ht = ht.key_by().select(*groupings, *fields_to_sum)
     ht = ht.checkpoint(new_temp_file("pre_aggregation", "ht"))
 
     # Sum observed_variants, expected_variants, possible_variants, mu_snp,
     # etc. within each (transcript, consequence, ...) group.
-    ht = ht.group_by(*groupings).aggregate(**aggregate_constraint_metrics_expr(ht))
+    ht = ht.group_by(*groupings).aggregate(
+        **aggregate_constraint_metrics_expr(ht, fields_to_sum=fields_to_sum)
+    )
     ht = ht.checkpoint(new_temp_file("post_aggregation", "ht"))
 
     return ht.naive_coalesce(1000)
@@ -1236,6 +1320,7 @@ def aggregate_by_constraint_groups(
         Dict[str, Dict[str, hl.expr.BooleanExpression]]
     ] = None,
     additional_grouping_combinations: Optional[List[List[str]]] = None,
+    additional_fields_to_sum: Tuple[str, ...] = (),
 ) -> hl.Table:
     """
     Aggregate observed and expected variant info for synonymous, missense, and pLoF variants.
@@ -1262,6 +1347,9 @@ def aggregate_by_constraint_groups(
         Default is None.
     :param additional_grouping_combinations: Additional grouping combinations to add to
         the constraint groups. Default is None.
+    :param additional_fields_to_sum: Additional row fields of ``ht`` to sum (or array
+        sum) within each constraint group, e.g. ``unadj_expected``. Array fields are
+        added to ``oe_info``. Default is ().
     :return: Table with the aggregated observed and expected variant info for synonymous
         variants, missense variants, and pLoF variants.
     """
@@ -1284,7 +1372,13 @@ def aggregate_by_constraint_groups(
     # expected_variants for each constraint group.
     ht = ht.group_by(*keys).aggregate(
         constraint_groups=hl.agg.array_agg(
-            lambda f: hl.agg.filter(f, aggregate_constraint_metrics_expr(ht)),
+            lambda f: hl.agg.filter(
+                f,
+                aggregate_constraint_metrics_expr(
+                    ht,
+                    fields_to_sum=[*AGGREGATE_SUM_FIELDS, *additional_fields_to_sum],
+                ),
+            ),
             ht.constraint_groups,
         )
     )
@@ -1497,6 +1591,34 @@ def compute_gene_quality_metrics(
     return ht.key_by("transcript")
 
 
+def _parallel_oe_info_expr(
+    oe_info: hl.expr.StructExpression,
+    expected_field: str,
+) -> hl.expr.StructExpression:
+    """
+    Get OE ratio, confidence intervals, and raw z-score against an alternate expected.
+
+    :param oe_info: Element of a constraint group's ``oe_info`` array, with
+        ``observed_variants`` and ``expected_field`` fields.
+    :param expected_field: Name of the alternate expected variant count field in
+        ``oe_info`` (e.g. ``unadj_expected``).
+    :return: Struct with ``observed_variants``, ``expected_variants``, ``oe``,
+        ``oe_ci_discretized_poisson``, ``oe_ci_gamma``, and ``z_raw``.
+    """
+    obs_expr = oe_info.observed_variants
+    exp_expr = oe_info[expected_field]
+    return hl.struct(
+        observed_variants=obs_expr,
+        expected_variants=exp_expr,
+        oe=divide_null(obs_expr, exp_expr),
+        oe_ci_discretized_poisson=oe_confidence_interval(
+            obs_expr, exp_expr, method="poisson"
+        ),
+        oe_ci_gamma=oe_confidence_interval(obs_expr, exp_expr, method="gamma"),
+        z_raw=calculate_raw_z_score(obs_expr, exp_expr),
+    )
+
+
 def _annotate_oe_ci_z(
     ht: hl.Table,
     z_thresholds: Dict[str, Tuple[Optional[float], Optional[float]]],
@@ -1513,11 +1635,18 @@ def _annotate_oe_ci_z(
 
     Then adds per-group ``flags`` based on z-score outlier thresholds.
 
+    If ``oe_info`` has ``unadj_expected`` (expected counts without the regional rr
+    adjustment), also adds a parallel ``unadj_oe_info`` array with the same metrics
+    computed against ``unadj_expected`` and per-group ``unadj_flags``.
+
     :param ht: Table with ``constraint_groups`` array.
     :param z_thresholds: Mapping from constraint category (``"lof"``, ``"mis"``,
         ``"syn"``) to ``(lower, upper)`` raw z-score outlier thresholds.
     :return: Table with OE, CI, z-score, and flag annotations.
     """
+    oe_info_type = ht.constraint_groups.dtype.element_type["oe_info"].element_type
+    has_unadj = UNADJ_EXPECTED_FIELD in oe_info_type
+
     # For every constraint group (syn, mis, lof_hc, lof_hc_lc) and every
     # frequency slice within each group (adj, per-genetic-ancestry
     # downsamplings), compute:
@@ -1553,6 +1682,21 @@ def _annotate_oe_ci_z(
         )
     )
 
+    # When expected counts without the regional rr adjustment were summed, add
+    # the same metrics computed against them as a parallel `unadj_oe_info` array.
+    if has_unadj:
+        ht = ht.annotate(
+            constraint_groups=ht.constraint_groups.map(
+                lambda x: x.annotate(
+                    unadj_oe_info=x.oe_info.map(
+                        lambda oe_info: _parallel_oe_info_expr(
+                            oe_info, UNADJ_EXPECTED_FIELD
+                        )
+                    )
+                )
+            )
+        )
+
     # Add per-group flags based on the adj-frequency z-score. Each group
     # gets flags like "no_exp_{csq}" (expected == 0) or "z_raw_{csq}"
     # (raw z-score outside the outlier thresholds). The z_thresholds dict
@@ -1561,24 +1705,42 @@ def _annotate_oe_ci_z(
     meta = hl.eval(ht.constraint_group_meta)
     freq_meta = hl.eval(ht.exomes_freq_meta)
     all_freq_idx = freq_meta.index(ADJ_FREQ_META)
+
+    def _flags_expr(
+        oe_info_expr: hl.expr.StructExpression, m: Dict[str, str]
+    ) -> hl.expr.SetExpression:
+        """
+        Get the outlier flags for one constraint group's adj-frequency oe_info.
+
+        :param oe_info_expr: Adj-frequency ``oe_info`` (or ``unadj_oe_info``) entry.
+        :param m: Constraint group metadata.
+        :return: Set of flags.
+        """
+        csq = "lof" if m.get("lof") else m.get("csq_set", "None")
+        lower, upper = z_thresholds.get(csq, (None, None))
+        return add_filters_expr(
+            get_constraint_flags(
+                oe_info_expr.expected_variants,
+                oe_info_expr.z_raw,
+                lower,
+                upper,
+                flag_postfix="lof" if m.get("lof") else m.get("csq_set", None),
+            )
+        )
+
     ht = ht.annotate(
         constraint_groups=[
             ht.constraint_groups[i].annotate(
-                flags=add_filters_expr(
-                    get_constraint_flags(
-                        ht.constraint_groups[i].oe_info[all_freq_idx].expected_variants,
-                        ht.constraint_groups[i].oe_info[all_freq_idx].z_raw,
-                        z_thresholds.get(
-                            "lof" if m.get("lof") else m.get("csq_set", "None"),
-                            (None, None),
-                        )[0],
-                        z_thresholds.get(
-                            "lof" if m.get("lof") else m.get("csq_set", "None"),
-                            (None, None),
-                        )[1],
-                        flag_postfix="lof" if m.get("lof") else m.get("csq_set", None),
-                    )
-                )
+                flags=_flags_expr(ht.constraint_groups[i].oe_info[all_freq_idx], m),
+                **(
+                    {
+                        "unadj_flags": _flags_expr(
+                            ht.constraint_groups[i].unadj_oe_info[all_freq_idx], m
+                        )
+                    }
+                    if has_unadj
+                    else {}
+                ),
             )
             for i, m in enumerate(meta)
         ]
@@ -1594,6 +1756,10 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     Computes the standard deviation of raw z-scores (stored as a global), normalizes
     each group's raw z-score by its standard deviation, and unions the syn, mis, and
     lof flags into a single ``constraint_flags`` set.
+
+    If ``unadj_oe_info`` is present (see :func:`_annotate_oe_ci_z`), the same is done
+    for the unadjusted raw z-scores (``sd_raw_z_unadj`` global and per-group
+    ``unadj_z_score``), using the per-group ``unadj_flags``.
 
     :param ht: Table output by :func:`_annotate_oe_ci_z`.
     :return: Table with ``z_score`` and ``constraint_flags`` annotations.
@@ -1628,6 +1794,35 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
             )
         )
     )
+
+    # When unadjusted (no regional rr) metrics are present, compute their SD
+    # and normalized z-score the same way, using the unadjusted flags.
+    has_unadj = "unadj_oe_info" in ht.constraint_groups.dtype.element_type
+    if has_unadj:
+        ht = ht.annotate_globals(
+            sd_raw_z_unadj=ht.aggregate(
+                hl.agg.filter(
+                    ~ht.no_variants,
+                    [
+                        calculate_raw_z_score_sd(
+                            ht.constraint_groups[i].unadj_oe_info[all_freq_idx].z_raw,
+                            ht.constraint_groups[i].unadj_flags,
+                            mirror_neg_raw_z=m.get("csq_set") != "syn",
+                        )
+                        for i, m in enumerate(meta)
+                    ],
+                )
+            )
+        )
+        ht = ht.annotate(
+            constraint_groups=hl.map(
+                lambda x, sd_raw_z: x.annotate(
+                    unadj_z_score=x.unadj_oe_info[all_freq_idx].z_raw / sd_raw_z
+                ),
+                ht.constraint_groups,
+                ht.sd_raw_z_unadj,
+            )
+        )
 
     # Normalize each group's raw z-score by its SD to produce the final
     # z_score. Also union the per-group flags from syn, mis, and lof_hc
@@ -1922,6 +2117,26 @@ def _restructure_release_rows(
     add_ds_fields = (
         ["observed_variants", "expected_variants"] if gen_anc_ds_indices else []
     )
+    has_unadj = "unadj_oe_info" in ht.constraint_groups.dtype.element_type
+
+    def _unadj_struct_expr(cg: hl.expr.StructExpression) -> Dict[str, Any]:
+        """
+        Get the release ``unadj`` struct (metrics without the regional rr).
+
+        :param cg: Constraint group struct.
+        :return: Dictionary with an ``unadj`` struct, or empty if not present.
+        """
+        if not has_unadj:
+            return {}
+        u = cg.unadj_oe_info[all_freq_idx]
+        unadj = {
+            "exp": u.expected_variants,
+            "oe": u.oe,
+            "oe_ci": u.oe_ci_gamma.select(*RELEASE_CI_FIELDS),
+            "z_raw": u.z_raw,
+            "z_score": cg.unadj_z_score,
+        }
+        return {"unadj": hl.struct(**{f: unadj[f] for f in RELEASE_UNADJ_FIELDS})}
 
     # Flatten the internal constraint_groups array structure into a
     # release-friendly form. For each group:
@@ -1945,17 +2160,20 @@ def _restructure_release_rows(
                 )
                 for f in add_ds_fields
             },
+            **_unadj_struct_expr(cg),
         )
     )
 
     # Apply field renames (mu_snp -> mu, observed_variants -> obs, etc.)
     # and select only the fields included in the release schema. Drop
-    # gen_anc_* fields when there are no downsamplings.
-    cg_select = (
-        RELEASE_CG_SELECT
-        if gen_anc_ds_indices
-        else [f for f in RELEASE_CG_SELECT if not f.startswith("gen_anc_")]
-    )
+    # gen_anc_* fields when there are no downsamplings and the unadj struct when
+    # the regional rr adjustment metrics are not present.
+    cg_select = [
+        f
+        for f in RELEASE_CG_SELECT
+        if (gen_anc_ds_indices or not f.startswith("gen_anc_"))
+        and (has_unadj or f != "unadj")
+    ]
     cg_expr = cg_expr.map(
         lambda cg: cg.annotate(
             **{RELEASE_CG_RENAME[k]: cg[k] for k in RELEASE_CG_RENAME}
@@ -2013,6 +2231,7 @@ def _restructure_release_globals(
     gen_anc_ds_indices: Dict[str, List[int]],
     sd_raw_z_arr: List[float],
     release_version: Optional[str],
+    sd_raw_z_unadj_arr: Optional[List[float]] = None,
 ) -> hl.Table:
     """
     Restructure globals for public release.
@@ -2043,6 +2262,9 @@ def _restructure_release_globals(
         ``field_names``.
     :param release_version: Version string for the ``version`` global. When
         *None*, the existing ``version`` global is retained if present.
+    :param sd_raw_z_unadj_arr: Optional evaluated ``sd_raw_z_unadj`` global array
+        (raw z-score SDs without the regional rr adjustment), parallel to
+        ``field_names``. Default is None.
     :return: Table with release-formatted globals.
     """
     # Convert sd_raw_z from a positional array (parallel to
@@ -2051,13 +2273,23 @@ def _restructure_release_globals(
     # remapped via RELEASE_GROUP_RENAMES; groups not in RELEASE_GROUP_NAMES
     # are dropped.
     sd_raw_z_name_map = {n: RELEASE_GROUP_RENAMES.get(n, n) for n in field_names}
-    sd_raw_z_struct = hl.struct(
-        **{
-            sd_raw_z_name_map[field_names[i]]: sd_raw_z_arr[i]
-            for i in range(len(field_names))
-            if sd_raw_z_name_map[field_names[i]] in RELEASE_GROUP_NAMES
-        }
-    )
+
+    def _sd_struct(sd_arr: List[float]) -> hl.expr.StructExpression:
+        """
+        Convert a positional SD array into a struct keyed by release group name.
+
+        :param sd_arr: SD array parallel to ``field_names``.
+        :return: Struct of SDs keyed by release group name.
+        """
+        return hl.struct(
+            **{
+                sd_raw_z_name_map[field_names[i]]: sd_arr[i]
+                for i in range(len(field_names))
+                if sd_raw_z_name_map[field_names[i]] in RELEASE_GROUP_NAMES
+            }
+        )
+
+    sd_raw_z_struct = _sd_struct(sd_raw_z_arr)
 
     # Build the release globals dict. select_globals at the end replaces
     # all internal globals with just these.
@@ -2091,6 +2323,8 @@ def _restructure_release_globals(
         global_kwargs["max_af"] = ht.globals.max_af
 
     global_kwargs["sd_raw_z"] = sd_raw_z_struct
+    if sd_raw_z_unadj_arr is not None:
+        global_kwargs["sd_raw_z_unadj"] = _sd_struct(sd_raw_z_unadj_arr)
 
     # Carry through only the LoF OE upper CI threshold values used for
     # percentile/decile/sextile bin assignment, renamed for clarity.
@@ -2167,6 +2401,9 @@ def prepare_release_ht(
     # passed as Python values to the globals restructuring step. Must be
     # evaluated before _restructure_release_rows drops the internal globals.
     sd_raw_z_arr = hl.eval(ht.sd_raw_z)
+    sd_raw_z_unadj_arr = (
+        hl.eval(ht.sd_raw_z_unadj) if "sd_raw_z_unadj" in ht.globals else None
+    )
 
     # Restructure rows: flatten constraint_groups array into named
     # top-level structs (syn, mis, lof, lof_hc_lc) with release field names.
@@ -2176,7 +2413,13 @@ def prepare_release_ht(
     # release globals (version, pipeline params, sd_raw_z, downsamplings,
     # percentile_thresholds).
     ht = _restructure_release_globals(
-        ht, field_names, freq_meta, gen_anc_ds_indices, sd_raw_z_arr, release_version
+        ht,
+        field_names,
+        freq_meta,
+        gen_anc_ds_indices,
+        sd_raw_z_arr,
+        release_version,
+        sd_raw_z_unadj_arr=sd_raw_z_unadj_arr,
     )
     return ht
 

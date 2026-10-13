@@ -1,7 +1,7 @@
 """Resource utility functions and resource definitions for the constraint pipeline."""
 
 import logging
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import gnomad.resources.grch37.gnomad as gnomad_grch37
 import gnomad.resources.grch37.reference_data as ref_grch37
@@ -28,6 +28,7 @@ from gnomad_constraint.resources.constants import (
     DATA_TYPES,
     EXTENSIONS,
     MODEL_TYPES,
+    RR_BONFERRONI_CUTOFF,
     SITES_VERSION_MAP,
     VERSIONS,
 )
@@ -246,6 +247,7 @@ def get_constraint_root(
     post_fix: Optional[str] = None,
     temp: bool = False,
     sub_dir: Optional[str] = None,
+    output_root: Optional[str] = None,
 ) -> str:
     """
     Return path to constraint root folder.
@@ -255,6 +257,10 @@ def get_constraint_root(
     :param post_fix: Postfix to append to the path. Default is None.
     :param temp: Whether to use a temp path. Default is False.
     :param sub_dir: Subdirectory to append to the path. Default is None.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root (e.g. "gs://gnomad-tmp/rp"). When set, the root is
+        "{output_root}/gnomad_v{version}" ("{output_root}/gnomad_v{version}_testing"
+        if ``test`` is True). Default is None.
     :return: Root path to constraint resources folder.
     """
     post_fix = post_fix or ""
@@ -267,6 +273,12 @@ def get_constraint_root(
 
     constraint_dir = f"constraint{post_fix}{sub_dir}"
 
+    if output_root:
+        test_post_fix = "_testing" if test else ""
+        return (
+            f"{output_root.rstrip('/')}/gnomad_v{version}{test_post_fix}/"
+            f"{constraint_dir}"
+        )
     if test:
         return f"gs://gnomad-tmp/gnomad_v{version}_testing/{constraint_dir}"
     if temp:
@@ -285,6 +297,7 @@ def get_constraint_data(
     extension: str = "ht",
     path_post_fix: Optional[str] = None,
     temp: bool = False,
+    output_root: Optional[str] = None,
 ) -> Union[TableResource, str, ExpressionResource]:
     """
     Return path, TableResource, or ExpressionResource of requested constraint data.
@@ -301,6 +314,9 @@ def get_constraint_data(
         None.
     :param extension: File extension. Default is "ht".
     :param path_post_fix: Postfix to append to the file name. Default is None.
+    :param temp: Whether to use a temp path. Default is False.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root. See :func:`get_constraint_root`. Default is None.
     :return: Path, TableResource, or ExpressionResource of the constraint data.
     """
     check_param_scope(
@@ -321,6 +337,7 @@ def get_constraint_data(
         post_fix=directory_post_fix,
         sub_dir=sub_dir,
         temp=temp,
+        output_root=output_root,
     )
     path = f"{root_dir}/gnomad.v{version}.{name}{path_post_fix}.{extension}"
 
@@ -367,29 +384,51 @@ def get_release_mutation_tsv_path(version: str = CURRENT_VERSION) -> str:
     return f"{root}/release/gnomad.v{version}.mutation_rate.tsv"
 
 
-def get_release_constraint_ht(version: str = CURRENT_VERSION) -> TableResource:
+def get_release_constraint_ht(
+    version: str = CURRENT_VERSION,
+    output_root: Optional[str] = None,
+    test: bool = False,
+) -> TableResource:
     """
     Return TableResource for the release constraint metrics Table.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root. See :func:`get_constraint_root`. Default is None.
+    :param test: Whether to use the test root. Only used when ``output_root`` is
+        set, since the production release paths are not test-aware. Default is
+        False.
     :return: TableResource of the release constraint metrics Table.
     """
     check_param_scope(version=version)
-    root = get_constraint_root(version=version)
+    root = get_constraint_root(
+        version=version, test=test and bool(output_root), output_root=output_root
+    )
     return TableResource(f"{root}/release/gnomad.v{version}.constraint_metrics.ht")
 
 
-def get_release_constraint_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_release_constraint_tsv_path(
+    version: str = CURRENT_VERSION,
+    output_root: Optional[str] = None,
+    test: bool = False,
+) -> str:
     """
     Return path for the release constraint metrics TSV.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root. See :func:`get_constraint_root`. Default is None.
+    :param test: Whether to use the test root. Only used when ``output_root`` is
+        set, since the production release paths are not test-aware. Default is
+        False.
     :return: Path of the release constraint metrics TSV.
     """
     check_param_scope(version=version)
-    root = get_constraint_root(version=version)
+    root = get_constraint_root(
+        version=version, test=test and bool(output_root), output_root=output_root
+    )
     return f"{root}/release/gnomad.v{version}.constraint_metrics.tsv.bgz"
 
 
@@ -553,30 +592,343 @@ def get_gene_quality_metrics_ht(version: str = CURRENT_VERSION) -> TableResource
     return TableResource(f"{root}/metrics/gnomad.v{version}.gene_quality_metrics.ht")
 
 
-def get_lof_threshold_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_lof_threshold_tsv_path(
+    version: str = CURRENT_VERSION,
+    output_root: Optional[str] = None,
+    test: bool = False,
+) -> str:
     """
     Return path for the LoF OE CI upper bin thresholds TSV.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root. See :func:`get_constraint_root`. Default is None.
+    :param test: Whether to use the test root. Only used when ``output_root`` is
+        set, since the production release paths are not test-aware. Default is
+        False.
     :return: Path of the LoF threshold TSV.
     """
     check_param_scope(version=version)
-    root = get_constraint_root(version=version)
+    root = get_constraint_root(
+        version=version, test=test and bool(output_root), output_root=output_root
+    )
     return f"{root}/release/gnomad.v{version}.loeuf_percentile_thresholds.tsv"
 
 
-def get_release_downsampling_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_release_downsampling_tsv_path(
+    version: str = CURRENT_VERSION,
+    output_root: Optional[str] = None,
+    test: bool = False,
+) -> str:
     """
     Return path for the release per-genetic-ancestry downsampling TSV.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root. See :func:`get_constraint_root`. Default is None.
+    :param test: Whether to use the test root. Only used when ``output_root`` is
+        set, since the production release paths are not test-aware. Default is
+        False.
     :return: Path of the release downsampling TSV.
     """
     check_param_scope(version=version)
-    root = get_constraint_root(version=version)
+    root = get_constraint_root(
+        version=version, test=test and bool(output_root), output_root=output_root
+    )
     return f"{root}/release/gnomad.v{version}.constraint_metrics.downsampling.tsv.bgz"
+
+
+def get_dnm_cohort_resources() -> Dict[str, Union[str, TableResource]]:
+    """
+    Return the de novo mutation (DNM) cohort resources used to train the rr models.
+
+    Text file cohorts are returned as paths and Hail Table cohorts as
+    TableResources. Cohorts on GRCh37 are lifted over to GRCh38 when loaded (see
+    :func:`~gnomad_constraint.utils.regional_rate.load_dnm_cohort`).
+
+    :return: Dictionary keyed by cohort name with the cohort's resource as value.
+    """
+    rmc_ref = "gs://regional_missense_constraint/resources/{build}/reference_data"
+    return {
+        "decode_psychencode": (
+            "gs://gnomad-nc-constraint-v31-paper/misc/DNM_decode_psychencode.flip2hl.txt"
+        ),
+        "ddd_asd": TableResource(
+            f"{rmc_ref.format(build='GRCh38')}/ht/ndd_de_novo_min_rep.ht"
+        ),
+        "gnomad_v4.1": TableResource(
+            "gs://gcp-public-data--gnomad/release/4.1/ht/exomes/"
+            "gnomad.exomes.v4.1.de_novo.high_quality_coding.ht"
+        ),
+        "chd_2017": f"{rmc_ref.format(build='GRCh37')}/CHD_2017_denovos.txt",
+        "ofc_2020": f"{rmc_ref.format(build='GRCh37')}/OFC_2020_denovos.txt",
+        "ee_2014": f"{rmc_ref.format(build='GRCh37')}/EE_2014_denovos.txt",
+        "cdh_2021": f"{rmc_ref.format(build='GRCh37')}/CDH_2021_denovos.txt",
+    }
+
+
+def get_published_genomic_features_path() -> str:
+    """
+    Return the path to the published Gnocchi 1kb regional genomic feature matrix.
+
+    The matrix covers chr1-22 and has an ``element_id`` column ("chr-start-end",
+    BED coordinates) followed by ``GENOMIC_FEATURE_COLUMNS``.
+
+    :return: Path to the published feature matrix.
+    """
+    return "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
+
+
+def get_genomic_feature_tracks_dir(
+    version: str = CURRENT_VERSION,
+    test: bool = False,
+    output_root: Optional[str] = None,
+) -> str:
+    """
+    Return the directory holding the source tracks used to build genomic features.
+
+    The directory is expected to contain the extracted contents of
+    ``gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13.tar.gz`` (window
+    BEDs, flank and midpoint BEDs, ``hg38.chrom.sizes``, and the feature source
+    tracks).
+
+    :param version: One of the release versions (`VERSIONS`). Default is
+        `CURRENT_VERSION`.
+    :param test: Whether to use the test root. Default is False.
+    :param output_root: Optional bucket path to use as the root instead of the
+        production root. See :func:`get_constraint_root`. Default is None.
+    :return: Path of the source track directory.
+    """
+    check_param_scope(version=version)
+    root = get_constraint_root(
+        version=version, test=test, sub_dir="regional_rate", output_root=output_root
+    )
+    return f"{root}/genomic_features13_tracks"
+
+
+def _get_rr_name(
+    name: str,
+    corrected_window_coords: bool = False,
+    cutoff: Optional[str] = None,
+    xy_masked: bool = False,
+    calibrated: bool = False,
+    out_of_fold: bool = False,
+) -> str:
+    """
+    Build the file name stem for a regional rr resource.
+
+    :param name: Base name of the resource.
+    :param corrected_window_coords: Whether the 1kb windows use the corrected
+        (1-based, BED-equivalent) coordinates instead of the legacy coordinates.
+        Default is False.
+    :param cutoff: Optional feature selection cutoff token. Default is None.
+    :param xy_masked: Whether chrX/chrY features were masked. Default is False.
+    :param calibrated: Whether rr safeguards (clipping and normalization) were
+        applied. Default is False.
+    :param out_of_fold: Whether rr was computed from the chromosome-split models.
+        Default is False.
+    :return: File name stem.
+    """
+    parts = [name]
+    if corrected_window_coords:
+        parts.append("corrected_coords")
+    if cutoff is not None:
+        parts.append(f"fs_{cutoff}")
+    if xy_masked:
+        parts.append("xy_masked")
+    if calibrated:
+        parts.append("calibrated")
+    if out_of_fold:
+        parts.append("out_of_fold")
+
+    return ".".join(parts)
+
+
+def get_syn_dnm_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the combined, deduplicated synonymous DNM Table.
+
+    :return: TableResource of the synonymous DNM Table.
+    """
+    return get_constraint_data("syn_dnm", sub_dir="regional_rate", **kwargs)
+
+
+def get_syn_dnm_tsv_path(**kwargs) -> str:
+    """
+    Return the TSV path of the combined, deduplicated synonymous DNM Table.
+
+    :return: Path of the synonymous DNM TSV.
+    """
+    return get_constraint_data(
+        "syn_dnm", sub_dir="regional_rate", extension="tsv.bgz", **kwargs
+    )
+
+
+def get_xy_features_tsv_path(**kwargs) -> str:
+    """
+    Return the TSV path of the chrX/chrY 1kb regional genomic feature matrix.
+
+    :return: Path of the chrX/chrY feature matrix TSV.
+    """
+    return get_constraint_data(
+        "genomic_features13_xy_1kb",
+        sub_dir="regional_rate",
+        extension="tsv.bgz",
+        **kwargs,
+    )
+
+
+def get_genomic_features_ht(
+    corrected_window_coords: bool = False, **kwargs
+) -> TableResource:
+    """
+    Return TableResource of the 1kb regional genomic feature Table keyed by interval.
+
+    :param corrected_window_coords: Whether the windows use the corrected
+        coordinates. Default is False.
+    :return: TableResource of the genomic feature Table.
+    """
+    return get_constraint_data(
+        _get_rr_name("genomic_features13_1kb", corrected_window_coords),
+        sub_dir="regional_rate",
+        **kwargs,
+    )
+
+
+def get_rr_training_ht(
+    corrected_window_coords: bool = False, **kwargs
+) -> TableResource:
+    """
+    Return TableResource of the rr training Table (DNM and background sites).
+
+    :param corrected_window_coords: Whether the features were annotated using the
+        corrected window coordinates. Default is False.
+    :return: TableResource of the rr training Table.
+    """
+    return get_constraint_data(
+        _get_rr_name("rr_training", corrected_window_coords),
+        sub_dir="regional_rate",
+        **kwargs,
+    )
+
+
+def get_rr_feature_screen_tsv_path(
+    corrected_window_coords: bool = False, **kwargs
+) -> str:
+    """
+    Return the TSV path of the univariate rr feature screen results.
+
+    :param corrected_window_coords: Whether the features were annotated using the
+        corrected window coordinates. Default is False.
+    :return: Path of the feature screen TSV.
+    """
+    return get_constraint_data(
+        _get_rr_name("rr_feature_screen", corrected_window_coords),
+        sub_dir="regional_rate",
+        extension="tsv",
+        **kwargs,
+    )
+
+
+def get_rr_models_ht(corrected_window_coords: bool = False, **kwargs) -> TableResource:
+    """
+    Return TableResource of the per-context rr model parameters.
+
+    :param corrected_window_coords: Whether the features were annotated using the
+        corrected window coordinates. Default is False.
+    :return: TableResource of the rr model Table.
+    """
+    return get_constraint_data(
+        _get_rr_name("rr_models", corrected_window_coords),
+        sub_dir="regional_rate",
+        **kwargs,
+    )
+
+
+def get_rr_cv_metrics_tsv_path(corrected_window_coords: bool = False, **kwargs) -> str:
+    """
+    Return the TSV path of the held-out (chromosome-split) rr model metrics.
+
+    :param corrected_window_coords: Whether the features were annotated using the
+        corrected window coordinates. Default is False.
+    :return: Path of the held-out metrics TSV.
+    """
+    return get_constraint_data(
+        _get_rr_name("rr_cv_metrics", corrected_window_coords),
+        sub_dir="regional_rate",
+        extension="tsv",
+        **kwargs,
+    )
+
+
+def get_rr_ht(
+    cutoff: str = RR_BONFERRONI_CUTOFF,
+    corrected_window_coords: bool = False,
+    xy_masked: bool = False,
+    calibrated: bool = False,
+    out_of_fold: bool = False,
+    **kwargs,
+) -> TableResource:
+    """
+    Return TableResource of the per-window, per-context regional rr Table.
+
+    The Table is keyed by ``interval`` (1kb windows) and has an ``adj_r`` dict
+    mapping each strand-collapsed trinucleotide context to its rr.
+
+    :param cutoff: Feature selection cutoff token. Default is
+        ``RR_BONFERRONI_CUTOFF``.
+    :param corrected_window_coords: Whether the windows use the corrected
+        coordinates. Default is False.
+    :param xy_masked: Whether chrX/chrY features were masked. Default is False.
+    :param calibrated: Whether rr safeguards (clipping and normalization) were
+        applied. Default is False.
+    :param out_of_fold: Whether rr was computed from the chromosome-split models.
+        Default is False.
+    :return: TableResource of the rr Table.
+    """
+    return get_constraint_data(
+        _get_rr_name(
+            "syn_dnm_rr_1kb",
+            corrected_window_coords,
+            cutoff,
+            xy_masked,
+            calibrated,
+            out_of_fold,
+        ),
+        sub_dir="regional_rate",
+        **kwargs,
+    )
+
+
+def get_rr_cutoff_evaluation_tsv_path(
+    corrected_window_coords: bool = False,
+    xy_masked: bool = False,
+    calibrated: bool = False,
+    **kwargs,
+) -> str:
+    """
+    Return the TSV path of the rr feature selection cutoff evaluation.
+
+    :param corrected_window_coords: Whether the windows use the corrected
+        coordinates. Default is False.
+    :param xy_masked: Whether chrX/chrY features were masked. Default is False.
+    :param calibrated: Whether rr safeguards (clipping and normalization) were
+        applied. Default is False.
+    :return: Path of the cutoff evaluation TSV.
+    """
+    return get_constraint_data(
+        _get_rr_name(
+            "rr_cutoff_evaluation",
+            corrected_window_coords,
+            xy_masked=xy_masked,
+            calibrated=calibrated,
+        ),
+        sub_dir="regional_rate",
+        extension="tsv",
+        **kwargs,
+    )
 
 
 def get_logging_path(name: str, **kwargs) -> str:
@@ -676,9 +1028,17 @@ def get_constraint_resources(
     models: List[str] = ["plateau", "coverage"],
     directory_post_fix: Optional[str] = None,
     path_post_fix: Optional[str] = None,
+    output_root: Optional[str] = None,
+    regional_rr_ht: Optional[TableResource] = None,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
+
+    When ``output_root`` is set, only the outputs of the post-calibration steps
+    (``--aggregate-per-variant-expected`` onward, including release and export) are
+    written under ``output_root``. The outputs of the upstream steps (context
+    preparation through ``--apply-models-per-variant``) resolve to their production
+    paths without ``path_post_fix`` so they can be used as read-only inputs.
 
     :param version: Version of constraint resources to use.
     :param custom_vep_annotation: Custom VEP annotation to use for applying models
@@ -688,6 +1048,12 @@ def get_constraint_resources(
     :param models: List of models to use. Default is ["plateau", "coverage"].
     :param directory_post_fix: Post-fix to add to the directory path of the resources.
     :param path_post_fix: Post-fix to add to the path of the resources.
+    :param output_root: Optional bucket path to use as the root of the
+        post-calibration step outputs instead of the production root. See
+        :func:`get_constraint_root`. Default is None.
+    :param regional_rr_ht: Optional regional rr Table resource (keyed by interval
+        with an ``adj_r`` dict) used by ``--aggregate-per-variant-expected``.
+        Default is None.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -711,11 +1077,21 @@ def get_constraint_resources(
         input_hts[f"{d}_sites_ht"] = get_sites_resource(d, version)
         input_hts[f"{d}_an_ht"] = all_sites_an(d)
 
+    # With an output root, upstream outputs are read-only production inputs.
     common_params = {
+        "version": version,
+        "test": test and not output_root,
+        "directory_post_fix": directory_post_fix,
+    }
+    upstream_path_post_fix = None if output_root else path_post_fix
+    downstream_params = {
         "version": version,
         "test": test,
         "directory_post_fix": directory_post_fix,
+        "path_post_fix": path_post_fix,
+        "output_root": output_root,
     }
+    release_params = {"version": version, "output_root": output_root, "test": test}
 
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
@@ -755,10 +1131,10 @@ def get_constraint_resources(
         "--create-training-set",
         output_resources={
             "train_ht": get_training_dataset(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=upstream_path_post_fix
             ),
             "train_tsv": get_training_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=upstream_path_post_fix
             ),
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
@@ -766,7 +1142,9 @@ def get_constraint_resources(
     build_models = PipelineStepResourceCollection(
         "--build-models",
         output_resources={
-            f"model_{m}": get_models(m, **common_params, path_post_fix=path_post_fix)
+            f"model_{m}": get_models(
+                m, **common_params, path_post_fix=upstream_path_post_fix
+            )
             for m in models
         },
         pipeline_input_steps=[create_training_set],
@@ -775,7 +1153,9 @@ def get_constraint_resources(
         "--apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": get_per_variant_expected_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                custom_vep_annotation,
+                **common_params,
+                path_post_fix=upstream_path_post_fix,
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -784,7 +1164,7 @@ def get_constraint_resources(
         "--aggregate-per-variant-expected",
         output_resources={
             "apply_ht": get_aggregated_per_variant_expected(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                custom_vep_annotation, **downstream_params
             )
         },
         pipeline_input_steps=[
@@ -792,12 +1172,21 @@ def get_constraint_resources(
             calculate_mutation_rate,
             build_models,
         ],
+        add_input_resources=(
+            {
+                "regional_rate_pipeline.py --compute-rr": {
+                    "regional_rr_ht": regional_rr_ht
+                }
+            }
+            if regional_rr_ht is not None
+            else None
+        ),
     )
     aggregate_by_constraint_groups = PipelineStepResourceCollection(
         "--aggregate-by-constraint-groups",
         output_resources={
             "constraint_group_ht": get_constraint_group_ht(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                custom_vep_annotation, **downstream_params
             )
         },
         pipeline_input_steps=[aggregate_per_variant_expected],
@@ -806,7 +1195,9 @@ def get_constraint_resources(
         "--apply-models-aggregated",
         output_resources={
             "aggregated_expected_ht": get_aggregated_expected(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                custom_vep_annotation,
+                **common_params,
+                path_post_fix=upstream_path_post_fix,
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -815,7 +1206,7 @@ def get_constraint_resources(
         "--compute-constraint-metrics",
         output_resources={
             "constraint_metrics_ht": get_constraint_metrics_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                custom_vep_annotation, **downstream_params
             )
         },
         pipeline_input_steps=[
@@ -826,7 +1217,7 @@ def get_constraint_resources(
     prepare_release = PipelineStepResourceCollection(
         "--prepare-release",
         output_resources={
-            "release_ht": get_release_constraint_ht(version=version),
+            "release_ht": get_release_constraint_ht(**release_params),
         },
         pipeline_input_steps=[compute_constraint_metrics],
     )
@@ -841,11 +1232,11 @@ def get_constraint_resources(
     export_release_tsv = PipelineStepResourceCollection(
         "--export-release-tsv",
         output_resources={
-            "release_tsv": get_release_constraint_tsv_path(version=version),
+            "release_tsv": get_release_constraint_tsv_path(**release_params),
             "release_downsampling_tsv": get_release_downsampling_tsv_path(
-                version=version
+                **release_params
             ),
-            "lof_threshold_tsv": get_lof_threshold_tsv_path(version=version),
+            "lof_threshold_tsv": get_lof_threshold_tsv_path(**release_params),
         },
         pipeline_input_steps=[prepare_release],
     )
@@ -872,3 +1263,287 @@ def get_constraint_resources(
     )
 
     return constraint_pipeline
+
+
+def get_prepare_syn_dnms_resources(
+    version: str,
+    overwrite: bool,
+    test: bool,
+    directory_post_fix: Optional[str] = None,
+    path_post_fix: Optional[str] = None,
+    output_root: Optional[str] = None,
+) -> PipelineResourceCollection:
+    """
+    Get PipelineResourceCollection for the synonymous DNM preparation pipeline.
+
+    :param version: Version of constraint resources to use.
+    :param overwrite: Whether to overwrite existing resources.
+    :param test: Whether to use test resources.
+    :param directory_post_fix: Post-fix to add to the directory path of the outputs.
+        Default is None.
+    :param path_post_fix: Post-fix to add to the path of the outputs. Default is
+        None.
+    :param output_root: Optional bucket path to use as the root of the outputs
+        instead of the production root. See :func:`get_constraint_root`. Default is
+        None.
+    :return: PipelineResourceCollection containing resources for all steps of the
+        synonymous DNM preparation pipeline.
+    """
+    syn_dnm_pipeline = PipelineResourceCollection(
+        pipeline_name="prepare_syn_dnms",
+        overwrite=overwrite,
+    )
+    out_params = {
+        "version": version,
+        "test": test,
+        "directory_post_fix": directory_post_fix,
+        "path_post_fix": path_post_fix,
+        "output_root": output_root,
+    }
+
+    prepare_syn_dnms = PipelineStepResourceCollection(
+        "--prepare-syn-dnms",
+        output_resources={
+            "syn_dnm_ht": get_syn_dnm_ht(**out_params),
+            "syn_dnm_tsv": get_syn_dnm_tsv_path(**out_params),
+        },
+        input_resources={
+            "DNM cohorts": get_dnm_cohort_resources(),
+            "constraint_pipeline.py --prepare-context-ht": {
+                "annotated_context_ht": get_annotated_context_ht(version=version)
+            },
+        },
+    )
+    syn_dnm_pipeline.add_steps({"prepare_syn_dnms": prepare_syn_dnms})
+
+    return syn_dnm_pipeline
+
+
+def get_build_xy_features_resources(
+    version: str,
+    overwrite: bool,
+    test: bool,
+    directory_post_fix: Optional[str] = None,
+    path_post_fix: Optional[str] = None,
+    output_root: Optional[str] = None,
+    tracks_dir: Optional[str] = None,
+) -> PipelineResourceCollection:
+    """
+    Get PipelineResourceCollection for the chrX/chrY genomic feature builder.
+
+    :param version: Version of constraint resources to use.
+    :param overwrite: Whether to overwrite existing resources.
+    :param test: Whether to use test resources.
+    :param directory_post_fix: Post-fix to add to the directory path of the outputs.
+        Default is None.
+    :param path_post_fix: Post-fix to add to the path of the outputs. Default is
+        None.
+    :param output_root: Optional bucket path to use as the root of the outputs
+        instead of the production root. See :func:`get_constraint_root`. Default is
+        None.
+    :param tracks_dir: Optional directory holding the genomic feature source tracks.
+        Default is the directory returned by :func:`get_genomic_feature_tracks_dir`.
+    :return: PipelineResourceCollection containing resources for all steps of the
+        chrX/chrY genomic feature builder.
+    """
+    xy_features_pipeline = PipelineResourceCollection(
+        pipeline_name="build_xy_features",
+        overwrite=overwrite,
+    )
+    out_params = {
+        "version": version,
+        "test": test,
+        "directory_post_fix": directory_post_fix,
+        "path_post_fix": path_post_fix,
+        "output_root": output_root,
+    }
+    tracks_dir = tracks_dir or get_genomic_feature_tracks_dir(
+        version=version, test=test, output_root=output_root
+    )
+
+    build_xy_features = PipelineStepResourceCollection(
+        "--build-xy-features",
+        output_resources={"xy_features_tsv": get_xy_features_tsv_path(**out_params)},
+        input_resources={
+            "genomic_features13.tar.gz source tracks": {
+                "chrom_sizes": f"{tracks_dir}/hg38.chrom.sizes",
+            },
+        },
+    )
+    xy_features_pipeline.add_steps({"build_xy_features": build_xy_features})
+
+    return xy_features_pipeline
+
+
+def get_regional_rate_resources(
+    version: str,
+    overwrite: bool,
+    test: bool,
+    directory_post_fix: Optional[str] = None,
+    path_post_fix: Optional[str] = None,
+    output_root: Optional[str] = None,
+    corrected_window_coords: bool = False,
+    xy_masked: bool = False,
+    calibrated: bool = False,
+    out_of_fold: bool = False,
+    cutoffs: List[str] = [RR_BONFERRONI_CUTOFF],
+    include_xy_features: bool = False,
+    extra_features_paths: Optional[List[str]] = None,
+    loeuf_ht: Optional[TableResource] = None,
+) -> PipelineResourceCollection:
+    """
+    Get PipelineResourceCollection for all resources needed in the regional rate pipeline.
+
+    The annotated context Table and per-variant expected Table are read-only
+    production inputs from the constraint pipeline (the rr adjustment is applied
+    after model calibration and never re-calibrates the constraint models).
+
+    :param version: Version of constraint resources to use.
+    :param overwrite: Whether to overwrite existing resources.
+    :param test: Whether to use test resources.
+    :param directory_post_fix: Post-fix to add to the directory path of the outputs.
+        Default is None.
+    :param path_post_fix: Post-fix to add to the path of the outputs. Default is
+        None.
+    :param output_root: Optional bucket path to use as the root of the outputs
+        instead of the production root. See :func:`get_constraint_root`. Default is
+        None.
+    :param corrected_window_coords: Whether the 1kb windows use the corrected
+        coordinates. Default is False.
+    :param xy_masked: Whether chrX/chrY features are masked when computing rr.
+        Default is False.
+    :param calibrated: Whether rr safeguards (clipping and normalization) are
+        applied when computing rr. Default is False.
+    :param out_of_fold: Whether rr is also computed from the chromosome-split models.
+        Default is False.
+    :param cutoffs: Feature selection cutoff tokens to compute rr for. Default is
+        [``RR_BONFERRONI_CUTOFF``].
+    :param include_xy_features: Whether the chrX/chrY feature matrix (output of
+        ``build_xy_features.py``) is imported with the published feature matrix.
+        Default is False.
+    :param extra_features_paths: Optional additional feature matrix paths to import.
+        Default is None.
+    :param loeuf_ht: Optional release constraint Table resource used to bin
+        transcripts by LOEUF decile when evaluating cutoffs. Default is None.
+    :return: PipelineResourceCollection containing resources for all steps of the
+        regional rate pipeline.
+    """
+    rr_pipeline = PipelineResourceCollection(
+        pipeline_name="regional_rate",
+        overwrite=overwrite,
+    )
+    out_params = {
+        "version": version,
+        "test": test,
+        "directory_post_fix": directory_post_fix,
+        "path_post_fix": path_post_fix,
+        "output_root": output_root,
+    }
+    coords_params = {**out_params, "corrected_window_coords": corrected_window_coords}
+
+    feature_paths = {"published_features": get_published_genomic_features_path()}
+    if include_xy_features:
+        feature_paths["xy_features"] = get_xy_features_tsv_path(**out_params)
+    for i, path in enumerate(extra_features_paths or []):
+        feature_paths[f"extra_features_{i}"] = path
+
+    # Read-only production inputs from the constraint pipeline.
+    constraint_inputs = {
+        "annotated_context_ht": get_annotated_context_ht(version=version),
+        "per_variant_expected_ht": get_per_variant_expected_dataset(version=version),
+    }
+
+    import_genomic_features = PipelineStepResourceCollection(
+        "--import-genomic-features",
+        output_resources={
+            "genomic_features_ht": get_genomic_features_ht(**coords_params)
+        },
+        input_resources={"genomic feature matrices": feature_paths},
+    )
+    prepare_syn_dnms = PipelineStepResourceCollection(
+        "prepare_syn_dnms.py --prepare-syn-dnms",
+        output_resources={"syn_dnm_ht": get_syn_dnm_ht(**out_params)},
+    )
+    create_rr_training_set = PipelineStepResourceCollection(
+        "--create-rr-training-set",
+        output_resources={"rr_training_ht": get_rr_training_ht(**coords_params)},
+        pipeline_input_steps=[import_genomic_features, prepare_syn_dnms],
+        add_input_resources={
+            "constraint_pipeline.py --prepare-context-ht": {
+                "annotated_context_ht": constraint_inputs["annotated_context_ht"]
+            },
+            "gnomAD resources": {
+                "exomes_sites_ht": get_sites_resource("exomes", version)
+            },
+        },
+    )
+    train_rr_models = PipelineStepResourceCollection(
+        "--train-rr-models",
+        output_resources={
+            "rr_models_ht": get_rr_models_ht(**coords_params),
+            "rr_feature_screen_tsv": get_rr_feature_screen_tsv_path(**coords_params),
+            "rr_cv_metrics_tsv": get_rr_cv_metrics_tsv_path(**coords_params),
+        },
+        pipeline_input_steps=[create_rr_training_set],
+    )
+    rr_params = {**coords_params, "xy_masked": xy_masked}
+    rr_hts = {
+        f"rr_ht_{c}": get_rr_ht(cutoff=c, calibrated=calibrated, **rr_params)
+        for c in cutoffs
+    }
+    if out_of_fold:
+        rr_hts.update(
+            {
+                f"rr_oof_ht_{c}": get_rr_ht(
+                    cutoff=c, calibrated=calibrated, out_of_fold=True, **rr_params
+                )
+                for c in cutoffs
+            }
+        )
+    compute_rr = PipelineStepResourceCollection(
+        "--compute-rr",
+        output_resources=rr_hts,
+        pipeline_input_steps=[import_genomic_features, train_rr_models],
+        add_input_resources={
+            "constraint_pipeline.py --apply-models-per-variant": {
+                "per_variant_expected_ht": constraint_inputs["per_variant_expected_ht"]
+            },
+        },
+    )
+    evaluate_inputs = {
+        "per_variant_expected_ht": constraint_inputs["per_variant_expected_ht"]
+    }
+    if loeuf_ht is not None:
+        evaluate_inputs["loeuf_ht"] = loeuf_ht
+    evaluate_rr_cutoffs = PipelineStepResourceCollection(
+        "--evaluate-rr-cutoffs",
+        output_resources={
+            "rr_cutoff_evaluation_tsv": get_rr_cutoff_evaluation_tsv_path(
+                xy_masked=xy_masked, calibrated=calibrated, **coords_params
+            )
+        },
+        input_resources={
+            "--compute-rr --out-of-fold": {
+                f"rr_oof_ht_{c}": get_rr_ht(
+                    cutoff=c, calibrated=calibrated, out_of_fold=True, **rr_params
+                )
+                for c in cutoffs
+            },
+            "--train-rr-models --cv-chrom-split": {
+                "rr_cv_metrics_tsv": get_rr_cv_metrics_tsv_path(**coords_params)
+            },
+            "constraint pipeline": evaluate_inputs,
+        },
+    )
+
+    rr_pipeline.add_steps(
+        {
+            "import_genomic_features": import_genomic_features,
+            "create_rr_training_set": create_rr_training_set,
+            "train_rr_models": train_rr_models,
+            "compute_rr": compute_rr,
+            "evaluate_rr_cutoffs": evaluate_rr_cutoffs,
+        }
+    )
+
+    return rr_pipeline

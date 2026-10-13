@@ -213,6 +213,11 @@ RELEASE_PIPELINE_PARAM_GLOBALS = [
         "apply_models_params",
         ["skip_coverage_model", "groupings"],
     ),
+    (
+        "regional_rr_globals",
+        "regional_rr_params",
+        [],
+    ),
 ]
 """Pipeline parameter globals: (internal name, release name, fields to drop)."""
 
@@ -233,7 +238,185 @@ RELEASE_CG_SELECT = [
     "z_raw",
     "z_score",
     "oe_ci",
+    "unadj",
     "gen_anc_obs",
     "gen_anc_exp",
 ]
 """Fields selected from the release constraint-group struct, in display order."""
+
+RELEASE_UNADJ_FIELDS = ["exp", "oe", "oe_ci", "z_raw", "z_score"]
+"""
+Fields in the release ``unadj`` struct (metrics without the regional rr adjustment).
+"""
+
+# ---------------------------------------------------------------------------
+# Regional mutation rate (rr) adjustment
+# ---------------------------------------------------------------------------
+
+UNADJ_EXPECTED_FIELD = "unadj_expected"
+"""
+Per-variant and aggregated field holding the expected variant count before the
+regional rr adjustment is applied.
+"""
+
+GENOMIC_FEATURES = [
+    "dist2telo",
+    "dist2cent",
+    "GC_content",
+    "LCR",
+    "SINE",
+    "LINE",
+    "recomb_male",
+    "recomb_female",
+    "met_sperm",
+    "Nucleosome",
+    "cDNM_maternal_05M",
+    "cDNM_paternal_05M",
+    "CpG_island",
+]
+"""
+Regional genomic features used to model the regional mutation rate (rr).
+
+Order matches the columns of the published Gnocchi feature matrix
+(``genomic_features13_genome_1kb.txt``).
+"""
+
+RR_SCREEN_FEATURE_ORDER = [
+    "dist2telo",
+    "dist2cent",
+    "LCR",
+    "SINE",
+    "LINE",
+    "GC_content",
+    "recomb_male",
+    "recomb_female",
+    "met_sperm",
+    "Nucleosome",
+    "CpG_island",
+    "cDNM_maternal_05M",
+    "cDNM_paternal_05M",
+]
+"""
+Order in which features are screened for rr feature selection.
+
+This is the legacy Gnocchi screening order (it differs from the published column
+order), which determines the column order of the rr models.
+"""
+
+GENOMIC_FEATURE_SCALES = ["1k", "10k", "100k", "1M"]
+"""Flanking window scales at which each regional genomic feature is computed."""
+
+GENOMIC_FEATURE_COLUMNS = [
+    f"{f}_{s}" for s in GENOMIC_FEATURE_SCALES for f in GENOMIC_FEATURES
+]
+"""Feature matrix columns (``{feature}_{scale}``), in published column order."""
+
+RR_CONTEXTS = sorted(f"{b1}{c}{b3}" for b1 in "ACGT" for c in "AC" for b3 in "ACGT")
+"""Strand-collapsed trinucleotide contexts (central base A or C) modeled for rr."""
+
+CPG_CONTEXTS = ["ACG", "CCG", "GCG", "TCG"]
+"""Strand-collapsed CpG trinucleotide contexts."""
+
+METHYLATION_CORRELATED_FEATURES = [
+    "GC_content",
+    "SINE",
+    "met_sperm",
+    "Nucleosome",
+    "CpG_island",
+]
+"""
+Features correlated with methylation that are dropped from CpG context rr models.
+"""
+
+RR_FEATURE_SELECTION_ALPHA = 0.05
+"""Family-wise alpha used by the legacy Bonferroni rr feature selection."""
+
+RR_BONFERRONI_CUTOFF = "bonferroni"
+"""
+Feature selection cutoff token for the legacy Bonferroni rule.
+
+A feature is selected when its univariate p-value is at most
+``RR_FEATURE_SELECTION_ALPHA / len(GENOMIC_FEATURE_SCALES) / n``, where ``n`` is 13
+for non-CpG contexts and 8 (13 minus the methylation-correlated features) for CpG
+contexts.
+"""
+
+RR_BACKGROUND_FRACTION = 0.05
+"""Fraction of non-mutated synonymous sites sampled as the rr training background."""
+
+RR_BACKGROUND_SEED = 0
+"""Seed used when sampling the non-mutated rr training background."""
+
+RR_CLIP_BOUNDS = (0.2, 5.0)
+"""Default lower and upper bounds used to clip rr when safeguards are applied."""
+
+RR_XY_MASKED_FEATURES = [
+    "recomb_male",
+    "recomb_female",
+    "met_sperm",
+    "Nucleosome",
+    "cDNM_maternal_05M",
+    "cDNM_paternal_05M",
+]
+"""
+Features masked (pinned to the genome-average window) on chrX and chrY windows.
+
+These features have no source data covering chrX/chrY (or the source track is not
+available), so their values are missing in the X/Y feature matrix.
+"""
+
+GENOMIC_FEATURE_COVERAGE_TRACKS = {
+    "LCR": "btu356_LCR-hs38.bed",
+    "SINE": "repeatMasker_hg38.SINE.bed",
+    "LINE": "repeatMasker_hg38.LINE.bed",
+    "CpG_island": "cpgIslandExt.bed",
+}
+"""
+Source tracks (in the genomic feature track directory) for coverage features.
+
+Each feature is the percent of the window covered by the (merged) track intervals.
+"""
+
+GENOMIC_FEATURE_DISTANCE_TRACKS = {
+    "dist2telo": "telomeres_hg38.bed",
+    "dist2cent": "centromeres_hg38.bed",
+}
+"""
+Source tracks (in the genomic feature track directory) for distance features.
+
+Each feature is the distance from the window midpoint to the nearest track
+interval, as a percent of the chromosome length.
+"""
+
+GENOMIC_FEATURE_WINDOW_BEDS = {
+    "1k": "hg38.chrom.1kb.bed",
+    "10k": "hg38.chrom.1kb_flnk_10k.bed",
+    "100k": "hg38.chrom.1kb_flnk_100k.bed",
+    "1M": "hg38.chrom.1kb_flnk_1M.bed",
+}
+"""Window (and flanking window) BEDs, per feature scale, keyed by 1kb element ID."""
+
+GENOMIC_FEATURE_MID_BEDS = {
+    "1k": "hg38.chrom.1kb.mid.bed",
+    "10k": "hg38.chrom.1kb_flnk_10k.mid.bed",
+    "100k": "hg38.chrom.1kb_flnk_100k.mid.bed",
+    "1M": "hg38.chrom.1kb_flnk_1M.mid.bed",
+}
+"""Window midpoint BEDs, per feature scale, used for the distance features."""
+
+RR_STATSMODELS_VERSION = "0.14.4"
+"""
+statsmodels version used to fit the legacy syn_adj_r rr models.
+
+``Logit.fit_regularized`` results differ slightly (~1e-5 relative rr) with
+statsmodels >= 0.14.5, so this version (which requires scipy < 1.16) is needed to
+exactly reproduce the legacy models.
+"""
+
+RR_FOLDS = ("odd", "even")
+"""
+Chromosome-split folds used for out-of-fold rr evaluation.
+
+Autosomes are assigned by chromosome number parity, chrX to "odd", and chrY to
+"even".
+"""

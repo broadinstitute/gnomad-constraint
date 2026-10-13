@@ -18,7 +18,14 @@ The constraint pipeline consists of the following parts:
     - create training set
     - build models
     - apply models
+    - apply the regional mutation rate (rr) adjustment to the per-variant expected
+      counts (post-calibration, in --aggregate-per-variant-expected; rr is generated
+      by regional_rate_pipeline.py)
     - calculate metrics
+
+By default, expected counts and all downstream metrics use the rr-adjusted expected
+counts. The unadjusted expected counts and metrics are kept alongside
+('unadj_expected', 'unadj_oe_info', and the release 'unadj' struct).
 """
 
 import argparse
@@ -26,6 +33,7 @@ import logging
 
 import hail as hl
 from gnomad.resources.grch38.reference_data import lcr_intervals, seg_dup_intervals
+from gnomad.resources.resource_utils import TableResource
 from gnomad.utils.constraint import (
     build_models,
     calculate_gerp_cutoffs,
@@ -39,11 +47,14 @@ from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
     CUSTOM_VEP_ANNOTATIONS,
     RELEASE_KEY_ORDER,
+    RR_BONFERRONI_CUTOFF,
+    UNADJ_EXPECTED_FIELD,
     VERSIONS,
 )
 from gnomad_constraint.resources.resource_utils import (
     filter_for_test,
     get_adj_r_ht,
+    get_rr_ht,
     get_syn_adj_r_ht,
 )
 from gnomad_constraint.utils.constraint import (
@@ -86,6 +97,8 @@ def main(args):
     custom_vep_annotation = args.custom_vep_annotation
     skip_coverage_model = args.skip_coverage_model
     log10_coverage = args.use_logarithmic_coverage_model
+    output_root = args.output_root
+    skip_regional_rr = args.skip_regional_rr
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
@@ -96,6 +109,56 @@ def main(args):
             "Please refer to Commit 39928d1 for the last version of the script that"
             "supports v2.1.1."
         )
+
+    # The output root only applies to the post-calibration steps. Upstream steps
+    # resolve to their production outputs, so they must not be run with it.
+    upstream_steps = [
+        "prepare_context_ht",
+        "calculate_gerp_cutoffs",
+        "preprocess_data",
+        "compute_gene_quality_metrics",
+        "calculate_mutation_rate",
+        "create_training_set",
+        "build_models",
+        "apply_models_per_variant",
+        "apply_models_aggregated",
+        "prepare_release_mutation_rate",
+    ]
+    if output_root and any(getattr(args, s) for s in upstream_steps):
+        raise ValueError(
+            "--output-root only applies to --aggregate-per-variant-expected and the"
+            " downstream steps. The upstream steps are read-only production inputs"
+            " when --output-root is set."
+        )
+
+    # The regional rr adjustment is applied to the per-variant expected Table after
+    # model calibration, so it cannot be used with the aggregated model path.
+    if not skip_regional_rr and (
+        args.apply_models_aggregated or args.use_aggregated_expected
+    ):
+        raise ValueError(
+            "The regional rr adjustment is applied per variant in"
+            " --aggregate-per-variant-expected and is not available for"
+            " --apply-models-aggregated or --use-aggregated-expected. Use"
+            " --skip-regional-rr with these options."
+        )
+
+    # Resolve the regional rr Table used by --aggregate-per-variant-expected.
+    regional_rr_ht = None
+    if args.aggregate_per_variant_expected and not skip_regional_rr:
+        if args.regional_rr_ht_path is not None:
+            regional_rr_ht = TableResource(args.regional_rr_ht_path)
+        else:
+            regional_rr_ht = get_rr_ht(
+                cutoff=args.regional_rr_feature_cutoff,
+                corrected_window_coords=args.regional_rr_corrected_window_coords,
+                xy_masked=args.regional_rr_xy_masked,
+                calibrated=args.regional_rr_type == "calibrated",
+                version=version,
+                test=test,
+                output_root=output_root,
+            )
+        logger.info("Using regional rr Table: %s", regional_rr_ht.path)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
@@ -110,6 +173,8 @@ def main(args):
         models,
         directory_post_fix,
         path_post_fix,
+        output_root=output_root,
+        regional_rr_ht=regional_rr_ht,
     )
 
     try:
@@ -315,7 +380,17 @@ def main(args):
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = aggregate_per_variant_expected_ht(ht)
+            ht = filter_for_test(ht, use_gene_list=test_gene_list) if test else ht
+
+            # Apply the regional rr adjustment after model calibration. When
+            # skipped, an rr of 1.0 is used so that the unadjusted expected fields
+            # are still present and the output schema is unchanged.
+            ht = aggregate_per_variant_expected_ht(
+                ht,
+                apply_regional_rr=True,
+                rr_ht=None if skip_regional_rr else res.regional_rr_ht.ht(),
+                rr_ht_path=None if skip_regional_rr else res.regional_rr_ht.path,
+            )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
 
@@ -368,6 +443,9 @@ def main(args):
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(k for k in ht.key if k in RELEASE_KEY_ORDER),
+                additional_fields_to_sum=tuple(
+                    f for f in (UNADJ_EXPECTED_FIELD,) if f in ht.row
+                ),
             ).write(out_res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
@@ -484,6 +562,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path-post-fix",
         help="Post-fix to append to the output file path.",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--output-root",
+        help=(
+            "Optional bucket path (e.g. gs://gnomad-tmp/rp) to use as the root of the"
+            " outputs of --aggregate-per-variant-expected and all downstream steps"
+            " (including release and export) instead of the production root. The"
+            " upstream outputs (through --apply-models-per-variant) are read from"
+            " their production paths and cannot be written when this is set."
+        ),
         type=str,
         default=None,
     )
@@ -783,6 +873,56 @@ if __name__ == "__main__":
         choices=CUSTOM_VEP_ANNOTATIONS,
     )
     aggregate_per_variant_expected_args._group_actions.append(cov_model_type)
+    aggregate_per_variant_expected_args.add_argument(
+        "--skip-regional-rr",
+        help=(
+            "Skip the regional mutation rate (rr) adjustment of the per-variant"
+            " expected counts. By default, expected counts are multiplied by the"
+            " synonymous DNM trained rr of the variant's 1kb window and context, and"
+            " the unadjusted expected counts are kept in 'unadj_expected'."
+        ),
+        action="store_true",
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--regional-rr-ht-path",
+        help=(
+            "Optional path to a regional rr Table keyed by 'interval' with an 'adj_r'"
+            " dict mapping trinucleotide context to rr. Overrides the rr Table"
+            " resolved from the --regional-rr-* arguments."
+        ),
+        type=str,
+        default=None,
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--regional-rr-type",
+        help=(
+            "Which regional rr Table to use: 'calibrated' (rr clipped and normalized"
+            " with regional_rate_pipeline.py --compute-rr --apply-rr-safeguards) or"
+            " 'raw'. Default is 'calibrated'."
+        ),
+        type=str,
+        default="calibrated",
+        choices=["calibrated", "raw"],
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--regional-rr-feature-cutoff",
+        help=(
+            "Feature selection cutoff token of the regional rr Table to use (see"
+            f" regional_rate_pipeline.py). Default is '{RR_BONFERRONI_CUTOFF}'."
+        ),
+        type=str,
+        default=RR_BONFERRONI_CUTOFF,
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--regional-rr-corrected-window-coords",
+        help="Use the regional rr Table built with corrected window coordinates.",
+        action="store_true",
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--regional-rr-xy-masked",
+        help="Use the regional rr Table built with chrX/chrY feature masking.",
+        action="store_true",
+    )
 
     aggregate_by_constraint_groups_args = parser.add_argument_group(
         "Aggregate by constraint groups args",
