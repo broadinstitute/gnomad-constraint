@@ -6,6 +6,10 @@ non-PAR) and chrY windows from the Gnocchi source tracks (the extracted contents
 gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13.tar.gz). Port of the
 chrX PAR feature builder in Ruchit10/gene_deserts (regional_corrections).
 
+By default the source track tarball is copied from the public bucket and extracted
+to a local directory (``--tracks-cache-dir``); ``--tracks-dir`` uses an already
+extracted copy instead.
+
 Only features whose source data covers chrX/chrY are computed (GC_content, LCR, SINE,
 LINE, CpG_island, dist2telo, dist2cent). The other features (``--masked-features``)
 are written as NaN (never 0) and are masked when computing rr
@@ -33,6 +37,7 @@ from gnomad_constraint.resources.constants import (
 )
 from gnomad_constraint.utils.regional_rate import (
     build_feature_matrix,
+    extract_genomic_feature_tracks,
     load_feature_windows,
     validate_feature_builder,
 )
@@ -67,11 +72,14 @@ def main(args):
         output_root=args.output_root,
         tracks_dir=args.tracks_dir,
     )
-    tracks_dir = args.tracks_dir or constraint_res.get_genomic_feature_tracks_dir(
-        version=version, test=test, output_root=args.output_root
-    )
-
     try:
+        tracks_dir = args.tracks_dir
+        if tracks_dir is None and (args.validate or args.build_xy_features):
+            tracks_dir = extract_genomic_feature_tracks(
+                constraint_res.get_genomic_feature_tracks_path(),
+                args.tracks_cache_dir,
+            )
+
         if args.validate:
             logger.info("Validating the feature builder on published windows...")
             df = validate_feature_builder(
@@ -183,12 +191,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tracks-dir",
         help=(
-            "Directory (local or gs://) with the extracted genomic_features13.tar.gz"
-            " source tracks. Default is the regional_rate genomic_features13_tracks"
-            " directory under the output root."
+            "Directory (local or gs://) with already extracted"
+            " genomic_features13.tar.gz source tracks. Default is None, which extracts"
+            " the published tarball to --tracks-cache-dir."
         ),
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--tracks-cache-dir",
+        help=(
+            "Local directory the published genomic_features13.tar.gz source tracks are"
+            " extracted to (~2 GB) when --tracks-dir is not given. Previously"
+            " extracted tracks in this directory are reused."
+        ),
+        type=str,
+        default=os.path.join(tempfile.gettempdir(), "genomic_features13_tracks"),
     )
     parser.add_argument(
         "--seq-cache-dir",

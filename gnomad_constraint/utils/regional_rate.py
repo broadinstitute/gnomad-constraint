@@ -19,6 +19,7 @@ rr is applied to the per-variant expected counts after model calibration
 import json
 import logging
 import os
+import tarfile
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -418,10 +419,20 @@ def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
     :return: DataFrame with ``locus`` (as "contig:position"), ``context``, ``y``,
         ``row_idx``, and the feature columns.
     """
-    ht = ht.key_by().select(
+    ht = ht.key_by()
+    ht = ht.select(
         "context", "y", "row_idx", *GENOMIC_FEATURE_COLUMNS, locus=hl.str(ht.locus)
     )
     df = ht.to_pandas()
+    # to_pandas returns nullable extension dtypes (e.g. Float64); use NumPy dtypes
+    # (missing values as NaN) as in the legacy training files.
+    df = df.astype(
+        {
+            "y": "int64",
+            "row_idx": "int64",
+            **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, "float64"),
+        }
+    )
     df = df.sort_values(["y", "row_idx"], ascending=[False, True], kind="stable")
 
     return df.reset_index(drop=True)
@@ -649,7 +660,8 @@ def fit_rr_models(
     Models trained on all training sites have fold ``MODEL_FOLD_ALL``. With
     ``cv_chrom_split``, models are also fit with one chromosome-split fold held out
     (see ``RR_FOLDS``); these models have ``fold`` set to the held-out fold (the
-    fold whose windows they are applied to) and their held-out log loss and AUC are
+    fold whose windows they are applied to) and their held-out log loss, the
+    held-out log loss of an intercept-only model (``null_log_loss``), and AUC are
     returned.
 
     :param df: Training DataFrame (:func:`rr_training_ht_to_pandas`).
@@ -694,6 +706,11 @@ def fit_rr_models(
                 if test_df["y"].nunique() < 2:
                     continue
                 pred = predict_rr_model(model, test_df)
+                # Intercept-only baseline: the DNM rate of the training sites.
+                null_pred = np.full(
+                    len(test_df),
+                    model["n_dnm"] / (model["n_dnm"] + model["n_background"]),
+                )
                 metrics.append(
                     {
                         "cutoff": cutoff,
@@ -702,6 +719,9 @@ def fit_rr_models(
                         "n_features": len(features),
                         "n_test": len(test_df),
                         "log_loss": log_loss(test_df["y"], pred, labels=[0, 1]),
+                        "null_log_loss": log_loss(
+                            test_df["y"], null_pred, labels=[0, 1]
+                        ),
                         "auc": roc_auc_score(test_df["y"], pred),
                     }
                 )
@@ -863,39 +883,51 @@ def _adj_freq_idx(ht: hl.Table) -> int:
     return hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
 
 
-def _filter_to_syn_mane_select(per_variant_ht: hl.Table) -> hl.Table:
+def get_syn_mane_select_ht(per_variant_ht: hl.Table) -> hl.Table:
     """
-    Filter the per-variant expected Table to synonymous MANE Select rows.
+    Get the synonymous MANE Select rows of the per-variant expected Table.
+
+    Keeps the fields used to calibrate and evaluate rr: ``context``, ``transcript``,
+    adj ``obs`` and unadjusted adj ``exp``. The result is small (one row per
+    synonymous site of each MANE Select transcript) and is meant to be checkpointed
+    once and reused for every rr Table.
 
     :param per_variant_ht: Per-variant expected Table from the constraint pipeline.
-    :return: Filtered Table.
+    :return: Table keyed by ``locus`` and ``alleles`` with ``context``,
+        ``transcript``, ``obs``, and ``exp``.
     """
+    adj_idx = _adj_freq_idx(per_variant_ht)
     ht = per_variant_ht.filter(
         (per_variant_ht.annotation == SYNONYMOUS_CSQ) & per_variant_ht.mane_select
     )
+    ht = ht.select(
+        "context",
+        "transcript",
+        obs=hl.or_else(ht.calibrate_mu.observed_variants[adj_idx], 0),
+        exp=ht.expected_variants[adj_idx],
+    ).select_globals()
 
     return ht.naive_coalesce(200)
 
 
 def compute_rr_normalization_factors(
-    per_variant_ht: hl.Table, rr_ht: hl.Table
+    syn_ht: hl.Table, rr_ht: hl.Table
 ) -> Dict[str, float]:
     """
     Compute the per-context rr normalization factors on exome synonymous sites.
 
     The factor of a context is the expected-weighted mean rr over synonymous MANE
-    Select sites of the per-variant expected Table (unadjusted adj
-    ``expected_variants``) that fall in an rr window:
-    ``sum(expected * rr) / sum(expected)``.
+    Select sites of the per-variant expected Table (unadjusted adj expected) that
+    fall in an rr window: ``sum(exp * rr) / sum(exp)``.
 
-    :param per_variant_ht: Per-variant expected Table from the constraint pipeline.
+    :param syn_ht: Synonymous MANE Select per-variant rows
+        (:func:`get_syn_mane_select_ht`).
     :param rr_ht: rr Table (:func:`compute_rr_ht`, optionally clipped).
     :return: Dictionary of context to normalization factor.
     """
-    adj_idx = _adj_freq_idx(per_variant_ht)
-    ht = _filter_to_syn_mane_select(per_variant_ht)
+    ht = syn_ht
     rr_expr = rr_ht[ht.locus].adj_r.get(ht.context)
-    exp_expr = ht.expected_variants[adj_idx]
+    exp_expr = ht.exp
     sums = ht.aggregate(
         hl.agg.filter(
             hl.is_defined(rr_expr) & hl.is_defined(exp_expr),
@@ -1003,7 +1035,7 @@ def run_mask_ablation(
 
 
 def evaluate_rr_cutoffs(
-    per_variant_ht: hl.Table,
+    syn_ht: hl.Table,
     rr_hts: Dict[str, hl.Table],
     cv_metrics_df: Optional[pd.DataFrame] = None,
     n_contexts_modeled: Optional[Dict[str, int]] = None,
@@ -1022,13 +1054,17 @@ def evaluate_rr_cutoffs(
         - ``n_syn_outliers``: transcripts with |raw z| > ``syn_z_outlier_threshold``.
         - ``oe_decile_{i}``: synonymous o/e (sum obs / sum exp) in each LOEUF decile,
           when ``loeuf_ht`` is provided.
-        - ``n_contexts_modeled``, ``heldout_mean_log_loss``, ``heldout_mean_auc``
-          when provided.
+        - ``n_contexts_modeled`` when provided.
+        - ``heldout_ll_gain`` (held-out DNM log-likelihood gain over
+          intercept-only models, summed over all contexts and both chromosome
+          folds; unmodeled contexts add 0) and ``heldout_mean_auc`` (mean over
+          modeled contexts and folds), when ``cv_metrics_df`` is provided.
 
     Out-of-fold rr Tables should be used to avoid evaluating genes on the same DNMs
     used to train the rr models.
 
-    :param per_variant_ht: Per-variant expected Table from the constraint pipeline.
+    :param syn_ht: Synonymous MANE Select per-variant rows
+        (:func:`get_syn_mane_select_ht`).
     :param rr_hts: Dictionary of cutoff token to rr Table.
     :param cv_metrics_df: Optional held-out metrics (:func:`fit_rr_models`). Default
         is None.
@@ -1042,25 +1078,21 @@ def evaluate_rr_cutoffs(
         included. Default is 0.0 (transcripts with expected > 0).
     :return: DataFrame with one row per cutoff (and "unadjusted").
     """
-    adj_idx = _adj_freq_idx(per_variant_ht)
-    ht = _filter_to_syn_mane_select(per_variant_ht)
-    obs_expr = hl.or_else(ht.calibrate_mu.observed_variants[adj_idx], 0)
-    exp_expr = ht.expected_variants[adj_idx]
+    ht = syn_ht
     labels = ["unadjusted", *rr_hts]
-    exp_fields = {"exp_0": exp_expr}
+    exp_fields = {"exp_0": ht.exp}
     for i, rr_ht in enumerate(rr_hts.values(), start=1):
         rr_expr = hl.or_else(rr_ht[ht.locus].adj_r.get(ht.context), 1.0)
-        exp_fields[f"exp_{i}"] = exp_expr * rr_expr
+        exp_fields[f"exp_{i}"] = ht.exp * rr_expr
 
-    ht = ht.select("transcript", obs=obs_expr, **exp_fields)
+    ht = ht.select("transcript", "obs", **exp_fields)
     ht = ht.group_by("transcript").aggregate(
         obs=hl.agg.sum(ht.obs), **{f: hl.agg.sum(ht[f]) for f in exp_fields}
     )
     ht = ht.filter((ht.exp_0 > 0) & (ht.exp_0 >= min_expected))
     if loeuf_ht is not None:
-        decile_ht = loeuf_ht.key_by("transcript").select(
-            decile=loeuf_ht.lof.oe_ci.upper_bin_decile
-        )
+        decile_ht = loeuf_ht.key_by("transcript")
+        decile_ht = decile_ht.select(decile=decile_ht.lof.oe_ci.upper_bin_decile)
         decile_ht = decile_ht.distinct()
         ht = ht.annotate(decile=decile_ht[ht.transcript].decile)
     ht = ht.checkpoint(new_temp_file("rr_cutoff_evaluation", "ht"))
@@ -1101,7 +1133,11 @@ def evaluate_rr_cutoffs(
             row["n_contexts_modeled"] = n_contexts_modeled.get(label)
         if cv_metrics_df is not None and not cv_metrics_df.empty:
             m = cv_metrics_df[cv_metrics_df["cutoff"] == label]
-            row["heldout_mean_log_loss"] = m["log_loss"].mean() if len(m) else np.nan
+            row["heldout_ll_gain"] = (
+                ((m["null_log_loss"] - m["log_loss"]) * m["n_test"]).sum()
+                if len(m)
+                else np.nan
+            )
             row["heldout_mean_auc"] = m["auc"].mean() if len(m) else np.nan
         rows.append(row)
 
@@ -1126,6 +1162,43 @@ def _read_tsv(path: str, **kwargs) -> pd.DataFrame:
         return pd.read_csv(hl.hadoop_open(path, "r"), sep="\t", **kwargs)
 
     return pd.read_csv(path, sep="\t", compression="infer", **kwargs)
+
+
+def extract_genomic_feature_tracks(tracks_path: str, local_dir: str) -> str:
+    """
+    Extract the genomic feature source track tarball to a local directory.
+
+    The tarball (``genomic_features13.tar.gz``) is copied from a local or ``gs://``
+    path and extracted once; later calls reuse the extracted tracks.
+
+    :param tracks_path: Local or ``gs://`` path of the source track tarball.
+    :param local_dir: Local directory to extract the tarball into.
+    :return: Local directory holding the extracted source tracks.
+    """
+    tracks_dir = os.path.join(local_dir, "genomic_features13")
+    if os.path.exists(os.path.join(tracks_dir, "hg38.chrom.sizes")):
+        logger.info("Using previously extracted source tracks in %s.", tracks_dir)
+        return tracks_dir
+
+    os.makedirs(local_dir, exist_ok=True)
+    local_tar = tracks_path
+    if tracks_path.startswith("gs://"):
+        local_tar = os.path.join(local_dir, os.path.basename(tracks_path))
+        logger.info("Copying %s to %s...", tracks_path, local_tar)
+        hl.hadoop_copy(tracks_path, f"file://{os.path.abspath(local_tar)}")
+
+    logger.info("Extracting %s to %s...", local_tar, local_dir)
+    with tarfile.open(local_tar, "r:gz") as tar:
+        # Use the "data" extraction filter (blocks unsafe member paths) when this
+        # Python version supports it.
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(local_dir, filter="data")
+        else:
+            tar.extractall(local_dir)
+    if local_tar != tracks_path:
+        os.remove(local_tar)
+
+    return tracks_dir
 
 
 def load_bed_intervals(path: str, contig: Optional[str] = None) -> pd.DataFrame:

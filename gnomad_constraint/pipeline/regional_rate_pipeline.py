@@ -40,6 +40,7 @@ from gnomad_constraint.resources.constants import (
     RR_BONFERRONI_CUTOFF,
     RR_CLIP_BOUNDS,
     RR_STATSMODELS_VERSION,
+    RR_TRAINING_N_PARTITIONS,
     RR_XY_MASKED_FEATURES,
     VERSIONS,
 )
@@ -52,6 +53,7 @@ from gnomad_constraint.utils.regional_rate import (
     create_rr_training_ht,
     evaluate_rr_cutoffs,
     fit_rr_models,
+    get_syn_mane_select_ht,
     get_syn_sites_ht,
     import_genomic_features,
     normalize_rr_ht,
@@ -146,7 +148,7 @@ def _compute_and_write_rr(
     cutoff: str,
     out_path: str,
     args: argparse.Namespace,
-    per_variant_ht: hl.Table,
+    syn_ht: Optional[hl.Table],
     masked_features: Optional[List[str]],
     out_of_fold: bool,
     models_ht_path: str,
@@ -160,7 +162,8 @@ def _compute_and_write_rr(
     :param cutoff: Feature selection cutoff token.
     :param out_path: Output path of the rr Table.
     :param args: Parsed arguments.
-    :param per_variant_ht: Per-variant expected Table used for normalization.
+    :param syn_ht: Synonymous MANE Select per-variant rows used for normalization,
+        or None if safeguards are not applied.
     :param masked_features: Masked feature names, or None if not masked.
     :param out_of_fold: Whether to use the chromosome-split models.
     :param models_ht_path: Path of the rr model Table.
@@ -172,7 +175,7 @@ def _compute_and_write_rr(
     if args.apply_rr_safeguards:
         rr_ht = clip_rr_ht(rr_ht, args.rr_min, args.rr_max)
         rr_ht = rr_ht.checkpoint(new_temp_file("rr_clipped", "ht"))
-        factors = compute_rr_normalization_factors(per_variant_ht, rr_ht)
+        factors = compute_rr_normalization_factors(syn_ht, rr_ht)
         logger.info(
             "rr normalization factors for cutoff %s%s: %s",
             cutoff,
@@ -244,14 +247,27 @@ def main(args):
         loeuf_ht=TableResource(args.loeuf_ht_path) if args.loeuf_ht_path else None,
     )
 
-    def _get_per_variant_ht(ht: hl.Table) -> hl.Table:
+    syn_hts: Dict[str, hl.Table] = {}
+
+    def _get_syn_ht(ht: hl.Table) -> hl.Table:
         """
-        Filter the per-variant expected Table for testing if requested.
+        Get the checkpointed synonymous MANE Select rows of the per-variant Table.
+
+        The per-variant expected Table is filtered (and filtered for testing if
+        requested) and checkpointed once, then reused by --compute-rr and
+        --evaluate-rr-cutoffs.
 
         :param ht: Per-variant expected Table.
-        :return: Optionally filtered Table.
+        :return: Synonymous MANE Select per-variant rows.
         """
-        return filter_for_test(ht, use_gene_list=test_gene_list) if test else ht
+        if "syn" not in syn_hts:
+            if test:
+                ht = filter_for_test(ht, use_gene_list=test_gene_list)
+            syn_hts["syn"] = get_syn_mane_select_ht(ht).checkpoint(
+                new_temp_file("rr_syn_mane_select", "ht")
+            )
+
+        return syn_hts["syn"]
 
     try:
         if args.import_genomic_features:
@@ -298,8 +314,12 @@ def main(args):
                 res.genomic_features_ht.ht(),
                 args.background_fraction,
                 args.background_seed,
+            ).checkpoint(new_temp_file("rr_training", "ht"))
+            # Sampled sites keep the context Table partitioning, so coalesce the
+            # small training Table before writing it.
+            ht = ht.naive_coalesce(RR_TRAINING_N_PARTITIONS).checkpoint(
+                res.rr_training_ht.path, overwrite=overwrite
             )
-            ht = ht.checkpoint(res.rr_training_ht.path, overwrite=overwrite)
             logger.info(
                 "rr training set sites (1 = DNM, 0 = background): %s",
                 dict(ht.aggregate(hl.agg.counter(ht.y))),
@@ -333,8 +353,16 @@ def main(args):
             if not metrics_df.empty:
                 logger.info(
                     "Held-out metrics per cutoff (mean over contexts):\n%s",
-                    metrics_df.groupby("cutoff")[["log_loss", "auc"]]
-                    .mean()
+                    metrics_df.assign(
+                        ll_gain=(metrics_df["null_log_loss"] - metrics_df["log_loss"])
+                        * metrics_df["n_test"]
+                    )
+                    .groupby("cutoff")
+                    .agg(
+                        n_contexts=("context", "nunique"),
+                        heldout_ll_gain=("ll_gain", "sum"),
+                        mean_auc=("auc", "mean"),
+                    )
                     .to_string(),
                 )
             logger.info("Done training rr models.")
@@ -347,7 +375,11 @@ def main(args):
             models_ht = res.rr_models_ht.ht()
             all_models = models_ht.collect()
             features_ht = res.genomic_features_ht.ht()
-            per_variant_ht = _get_per_variant_ht(res.per_variant_expected_ht.ht())
+            syn_ht = (
+                _get_syn_ht(res.per_variant_expected_ht.ht())
+                if args.apply_rr_safeguards
+                else None
+            )
 
             for cutoff in cutoffs:
                 models = [m for m in all_models if m.cutoff == cutoff]
@@ -361,7 +393,7 @@ def main(args):
                     "models": models,
                     "cutoff": cutoff,
                     "args": args,
-                    "per_variant_ht": per_variant_ht,
+                    "syn_ht": syn_ht,
                     "masked_features": masked_features,
                     "models_ht_path": res.rr_models_ht.path,
                     "features_ht_path": res.genomic_features_ht.path,
@@ -398,7 +430,7 @@ def main(args):
                 c: hl.eval(ht.rr_globals.n_contexts_modeled) for c, ht in rr_hts.items()
             }
             df = evaluate_rr_cutoffs(
-                _get_per_variant_ht(res.per_variant_expected_ht.ht()),
+                _get_syn_ht(res.per_variant_expected_ht.ht()),
                 rr_hts,
                 cv_metrics_df=_read_tsv(res.rr_cv_metrics_tsv),
                 n_contexts_modeled=n_contexts_modeled,

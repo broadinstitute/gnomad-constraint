@@ -347,6 +347,14 @@ RR_BACKGROUND_FRACTION = 0.05
 RR_BACKGROUND_SEED = 0
 """Seed used when sampling the non-mutated rr training background."""
 
+RR_TRAINING_N_PARTITIONS = 100
+"""
+Number of partitions of the written rr training Table.
+
+The sampled training sites keep the partitioning of the context Table (~15,000
+partitions for ~500,000 rows), so the Table is coalesced before it is written.
+"""
+
 RR_CLIP_BOUNDS = (0.2, 5.0)
 """Default lower and upper bounds used to clip rr when safeguards are applied."""
 

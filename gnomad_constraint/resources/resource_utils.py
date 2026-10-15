@@ -681,31 +681,17 @@ def get_published_genomic_features_path() -> str:
     return "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
 
 
-def get_genomic_feature_tracks_dir(
-    version: str = CURRENT_VERSION,
-    test: bool = False,
-    output_root: Optional[str] = None,
-) -> str:
+def get_genomic_feature_tracks_path() -> str:
     """
-    Return the directory holding the source tracks used to build genomic features.
+    Return the path to the published Gnocchi genomic feature source track tarball.
 
-    The directory is expected to contain the extracted contents of
-    ``gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13.tar.gz`` (window
-    BEDs, flank and midpoint BEDs, ``hg38.chrom.sizes``, and the feature source
-    tracks).
+    The tarball has a single ``genomic_features13/`` directory with the window BEDs,
+    flank and midpoint BEDs, ``hg38.chrom.sizes``, and the feature source tracks
+    used to build the 1kb regional genomic feature matrix.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
-    :param test: Whether to use the test root. Default is False.
-    :param output_root: Optional bucket path to use as the root instead of the
-        production root. See :func:`get_constraint_root`. Default is None.
-    :return: Path of the source track directory.
+    :return: Path to the source track tarball.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(
-        version=version, test=test, sub_dir="regional_rate", output_root=output_root
-    )
-    return f"{root}/genomic_features13_tracks"
+    return "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13.tar.gz"
 
 
 def _get_rr_name(
@@ -1341,8 +1327,9 @@ def get_build_xy_features_resources(
     :param output_root: Optional bucket path to use as the root of the outputs
         instead of the production root. See :func:`get_constraint_root`. Default is
         None.
-    :param tracks_dir: Optional directory holding the genomic feature source tracks.
-        Default is the directory returned by :func:`get_genomic_feature_tracks_dir`.
+    :param tracks_dir: Optional directory holding the already extracted genomic
+        feature source tracks. Default is None, which uses the published tarball
+        returned by :func:`get_genomic_feature_tracks_path`.
     :return: PipelineResourceCollection containing resources for all steps of the
         chrX/chrY genomic feature builder.
     """
@@ -1357,18 +1344,15 @@ def get_build_xy_features_resources(
         "path_post_fix": path_post_fix,
         "output_root": output_root,
     }
-    tracks_dir = tracks_dir or get_genomic_feature_tracks_dir(
-        version=version, test=test, output_root=output_root
-    )
+    if tracks_dir is None:
+        tracks = {"tracks_tarball": get_genomic_feature_tracks_path()}
+    else:
+        tracks = {"chrom_sizes": f"{tracks_dir}/hg38.chrom.sizes"}
 
     build_xy_features = PipelineStepResourceCollection(
         "--build-xy-features",
         output_resources={"xy_features_tsv": get_xy_features_tsv_path(**out_params)},
-        input_resources={
-            "genomic_features13.tar.gz source tracks": {
-                "chrom_sizes": f"{tracks_dir}/hg38.chrom.sizes",
-            },
-        },
+        input_resources={"genomic_features13.tar.gz source tracks": tracks},
     )
     xy_features_pipeline.add_steps({"build_xy_features": build_xy_features})
 

@@ -88,7 +88,7 @@ rr is applied **after model calibration** in `--aggregate-per-variant-expected`,
 
 ### Run order
 
-1. `build_xy_features.py --validate` then `--build-xy-features` (chrX/chrY features; requires the extracted `genomic_features13.tar.gz` source tracks).
+1. `build_xy_features.py --validate` then `--build-xy-features` (chrX/chrY features; copies and extracts the published `gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13.tar.gz` source tracks to `--tracks-cache-dir`, or use an already extracted copy with `--tracks-dir`).
 2. `prepare_syn_dnms.py --prepare-syn-dnms` (combine 7 DNM cohorts, keep synonymous DNMs, always deduplicate by locus/alleles).
 3. `regional_rate_pipeline.py`:
 
