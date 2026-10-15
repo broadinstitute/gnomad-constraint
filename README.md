@@ -98,7 +98,7 @@ rr is applied **after model calibration** in `--aggregate-per-variant-expected`,
 | 2 | `--create-rr-training-set` | Synonymous DNM sites + sampled non-mutated synonymous background |
 | 3 | `--train-rr-models` | Univariate feature screen and per-context models per `--feature-pval-cutoffs` (`--cv-chrom-split` for held-out metrics) |
 | 4 | `--compute-rr` | rr per window/context (`--apply-rr-safeguards`, `--mask-features`, `--out-of-fold`, `--mask-ablation`) |
-| 5 | `--evaluate-rr-cutoffs` | Synonymous calibration (dispersion, outliers, o/e by LOEUF decile) of out-of-fold rr per cutoff |
+| 5 | `--evaluate-rr-cutoffs` | Synonymous calibration (dispersion, outliers, o/e by LOEUF decile) of out-of-fold rr per cutoff (LOEUF deciles from `--loeuf-ht-path`, default the v4.1.2 constraint metrics Table) |
 
 4. `constraint_pipeline.py --aggregate-per-variant-expected` onward (rr applied by default; `--regional-rr-type {calibrated,raw}`, `--regional-rr-feature-cutoff`, `--regional-rr-corrected-window-coords`, `--regional-rr-xy-masked`, `--regional-rr-ht-path`, `--skip-regional-rr`).
 

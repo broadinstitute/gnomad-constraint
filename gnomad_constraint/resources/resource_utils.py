@@ -681,6 +681,21 @@ def get_published_genomic_features_path() -> str:
     return "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
 
 
+def get_loeuf_decile_ht() -> TableResource:
+    """
+    Return the constraint metrics Table used to bin transcripts by LOEUF decile.
+
+    This is the v4.1.2 constraint metrics Table (``constraint_bins.decile.lof``),
+    which includes a fix to the v4.1.1 LOEUF bins.
+
+    :return: Constraint metrics TableResource.
+    """
+    return TableResource(
+        "gs://gnomad/v4.1.2/constraint/metrics/transcript_consequences/"
+        "gnomad.v4.1.2.constraint_metrics.ht"
+    )
+
+
 def get_genomic_feature_tracks_path() -> str:
     """
     Return the path to the published Gnocchi genomic feature source track tarball.
@@ -1067,7 +1082,7 @@ def get_constraint_resources(
     common_params = {
         "version": version,
         "test": test and not output_root,
-        "directory_post_fix": directory_post_fix,
+        "directory_post_fix": None if output_root else directory_post_fix,
     }
     upstream_path_post_fix = None if output_root else path_post_fix
     downstream_params = {
@@ -1407,8 +1422,9 @@ def get_regional_rate_resources(
         Default is False.
     :param extra_features_paths: Optional additional feature matrix paths to import.
         Default is None.
-    :param loeuf_ht: Optional release constraint Table resource used to bin
-        transcripts by LOEUF decile when evaluating cutoffs. Default is None.
+    :param loeuf_ht: Optional constraint Table resource (metrics or release format)
+        used to bin transcripts by LOEUF decile when evaluating cutoffs. Default is
+        None.
     :return: PipelineResourceCollection containing resources for all steps of the
         regional rate pipeline.
     """

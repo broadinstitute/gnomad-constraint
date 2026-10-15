@@ -672,11 +672,13 @@ if __name__ == "__main__":
     evaluate_args.add_argument(
         "--loeuf-ht-path",
         help=(
-            "Optional release-format constraint Table used to bin transcripts by"
-            " LOEUF decile."
+            "Constraint Table (metrics or release format) used to bin transcripts by"
+            " LOEUF decile. Default is the v4.1.2 constraint metrics Table"
+            f" ({constraint_res.get_loeuf_decile_ht().path}), which fixes the v4.1.1"
+            " LOEUF bins."
         ),
         type=str,
-        default=None,
+        default=constraint_res.get_loeuf_decile_ht().path,
     )
     evaluate_args.add_argument(
         "--syn-z-outlier-threshold",

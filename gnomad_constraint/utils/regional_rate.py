@@ -1070,8 +1070,10 @@ def evaluate_rr_cutoffs(
         is None.
     :param n_contexts_modeled: Optional dictionary of cutoff token to number of
         modeled contexts. Default is None.
-    :param loeuf_ht: Optional release-format constraint Table with ``transcript``
-        and ``lof.oe_ci.upper_bin_decile``. Default is None.
+    :param loeuf_ht: Optional constraint Table with ``transcript`` and the LOEUF
+        decile, either a constraint metrics Table (``constraint_bins.decile.lof``,
+        e.g. :func:`get_loeuf_decile_ht`) or a release Table
+        (``lof.oe_ci.upper_bin_decile``). Default is None.
     :param syn_z_outlier_threshold: Absolute raw z-score above which a transcript is
         a synonymous outlier. Default is 8.0.
     :param min_expected: Minimum unadjusted expected count for a transcript to be
@@ -1092,8 +1094,11 @@ def evaluate_rr_cutoffs(
     ht = ht.filter((ht.exp_0 > 0) & (ht.exp_0 >= min_expected))
     if loeuf_ht is not None:
         decile_ht = loeuf_ht.key_by("transcript")
-        decile_ht = decile_ht.select(decile=decile_ht.lof.oe_ci.upper_bin_decile)
-        decile_ht = decile_ht.distinct()
+        if "constraint_bins" in decile_ht.row:
+            decile_expr = decile_ht.constraint_bins.decile.lof
+        else:
+            decile_expr = decile_ht.lof.oe_ci.upper_bin_decile
+        decile_ht = decile_ht.select(decile=decile_expr).distinct()
         ht = ht.annotate(decile=decile_ht[ht.transcript].decile)
     ht = ht.checkpoint(new_temp_file("rr_cutoff_evaluation", "ht"))
 
