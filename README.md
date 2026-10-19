@@ -89,7 +89,7 @@ rr is applied **after model calibration** in `--aggregate-per-variant-expected`,
 ### Run order
 
 1. `build_xy_features.py --validate` then `--build-xy-features` (chrX/chrY features; copies and extracts the published `gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13.tar.gz` source tracks to `--tracks-cache-dir`, or use an already extracted copy with `--tracks-dir`).
-2. `prepare_syn_dnms.py --prepare-syn-dnms` (combine 7 DNM cohorts, keep synonymous DNMs, always deduplicate by locus/alleles).
+2. `prepare_syn_dnms.py --prepare-syn-dnms` (combine 8 DNM cohorts, keep synonymous DNMs, always deduplicate by locus/alleles). The ASD and DD DNMs come from the Satterstrom 2026 `satterstrom_2026_asd` and `satterstrom_2026_ddd` files (trios shared with the ASD cohort are removed from the DD file), which replace the older DDD + ASD DNM Table.
 3. `regional_rate_pipeline.py`:
 
 | Step | CLI Flag | Function |
@@ -99,6 +99,9 @@ rr is applied **after model calibration** in `--aggregate-per-variant-expected`,
 | 3 | `--train-rr-models` | Univariate feature screen and per-context models per `--feature-pval-cutoffs` (`--cv-chrom-split` for held-out metrics) |
 | 4 | `--compute-rr` | rr per window/context (`--apply-rr-safeguards`, `--mask-features`, `--out-of-fold`, `--mask-ablation`) |
 | 5 | `--evaluate-rr-cutoffs` | Synonymous calibration (dispersion, outliers, o/e by LOEUF decile) of out-of-fold rr per cutoff (LOEUF deciles from `--loeuf-ht-path`, default the v4.1.2 constraint metrics Table) |
+| 6 | `--compare-rr-variants` | Synonymous calibration and per-context mean rr of the rr variants in `--rr-variants` (e.g. legacy `syn_adj_r` vs. the new rr with or without clipping, normalization, masking, or out-of-fold models) |
+
+Synonymous calibration is evaluated on Ensembl MANE Select transcripts only (the RefSeq MANE Select transcripts would count each gene twice), and the rr normalization factors are computed on the same sites.
 
 4. `constraint_pipeline.py --aggregate-per-variant-expected` onward (rr applied by default; `--regional-rr-type {calibrated,raw}`, `--regional-rr-feature-cutoff`, `--regional-rr-corrected-window-coords`, `--regional-rr-xy-masked`, `--regional-rr-ht-path`, `--skip-regional-rr`).
 
@@ -108,6 +111,7 @@ rr is applied **after model calibration** in `--aggregate-per-variant-expected`,
 - **Window coordinates** (`--corrected-window-coords`): use `[start + 1, end]` for the BED windows instead of the legacy `[start, end)` (1bp offset).
 - **chrX/chrY masking** (`--mask-features`): on chrX/chrY windows only, pin the features without X/Y source data (`--masked-features`, default `recomb_male`, `recomb_female`, `met_sperm`, `Nucleosome`, `cDNM_maternal_05M`, `cDNM_paternal_05M`) to the genome-average window. Autosomes are never masked.
 - **Feature selection cutoff** (`--feature-pval-cutoffs`): `bonferroni` (legacy: `0.05/4/13`, `0.05/4/8` for CpG contexts) and/or raw p-value cutoffs. Compare cutoffs with `--train-rr-models --cv-chrom-split`, `--compute-rr --out-of-fold`, and `--evaluate-rr-cutoffs`.
+- **rr variants** (`--rr-variants`): each spec is a source (`legacy` for the legacy `syn_adj_r`, `legacy_noncoding` for the legacy non-coding `adj_r`, `path=<rr Table>`, or `cutoff=<token>` for rr built from the trained models) followed by comma-separated modifiers (`clip`, `norm`, and for `cutoff=` also `mask` and `oof`), e.g. `cutoff=bonferroni,clip,norm,mask`. The default list adds one change of the new code at a time to the legacy `syn_adj_r` baseline.
 
 ### Output roots
 

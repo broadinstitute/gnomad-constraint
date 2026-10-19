@@ -651,13 +651,16 @@ def get_dnm_cohort_resources() -> Dict[str, Union[str, TableResource]]:
     :return: Dictionary keyed by cohort name with the cohort's resource as value.
     """
     rmc_ref = "gs://regional_missense_constraint/resources/{build}/reference_data"
+    satterstrom_ref = (
+        f"{rmc_ref.format(build='GRCh38')}/"
+        "Satterstrom_2026_{}_dnv_SNV_indel.txt.gz"
+    )
     return {
         "decode_psychencode": (
             "gs://gnomad-nc-constraint-v31-paper/misc/DNM_decode_psychencode.flip2hl.txt"
         ),
-        "ddd_asd": TableResource(
-            f"{rmc_ref.format(build='GRCh38')}/ht/ndd_de_novo_min_rep.ht"
-        ),
+        "satterstrom_2026_asd": satterstrom_ref.format("ASD"),
+        "satterstrom_2026_ddd": satterstrom_ref.format("DDD"),
         "gnomad_v4.1": TableResource(
             "gs://gcp-public-data--gnomad/release/4.1/ht/exomes/"
             "gnomad.exomes.v4.1.de_novo.high_quality_coding.ht"
@@ -926,6 +929,42 @@ def get_rr_cutoff_evaluation_tsv_path(
             xy_masked=xy_masked,
             calibrated=calibrated,
         ),
+        sub_dir="regional_rate",
+        extension="tsv",
+        **kwargs,
+    )
+
+
+def get_rr_variant_comparison_tsv_path(
+    corrected_window_coords: bool = False, **kwargs
+) -> str:
+    """
+    Return the TSV path of the rr variant comparison (one row per rr variant).
+
+    :param corrected_window_coords: Whether the windows use the corrected
+        coordinates. Default is False.
+    :return: Path of the rr variant comparison TSV.
+    """
+    return get_constraint_data(
+        _get_rr_name("rr_variant_comparison", corrected_window_coords),
+        sub_dir="regional_rate",
+        extension="tsv",
+        **kwargs,
+    )
+
+
+def get_rr_variant_context_rr_tsv_path(
+    corrected_window_coords: bool = False, **kwargs
+) -> str:
+    """
+    Return the TSV path of the per-context mean rr of each compared rr variant.
+
+    :param corrected_window_coords: Whether the windows use the corrected
+        coordinates. Default is False.
+    :return: Path of the per-context mean rr TSV.
+    """
+    return get_constraint_data(
+        _get_rr_name("rr_variant_context_rr", corrected_window_coords),
         sub_dir="regional_rate",
         extension="tsv",
         **kwargs,
@@ -1535,6 +1574,19 @@ def get_regional_rate_resources(
             "constraint pipeline": evaluate_inputs,
         },
     )
+    compare_rr_variants = PipelineStepResourceCollection(
+        "--compare-rr-variants",
+        output_resources={
+            "rr_variant_comparison_tsv": get_rr_variant_comparison_tsv_path(
+                **coords_params
+            ),
+            "rr_variant_context_rr_tsv": get_rr_variant_context_rr_tsv_path(
+                **coords_params
+            ),
+        },
+        pipeline_input_steps=[import_genomic_features, train_rr_models],
+        add_input_resources={"constraint pipeline": evaluate_inputs},
+    )
 
     rr_pipeline.add_steps(
         {
@@ -1543,6 +1595,7 @@ def get_regional_rate_resources(
             "train_rr_models": train_rr_models,
             "compute_rr": compute_rr,
             "evaluate_rr_cutoffs": evaluate_rr_cutoffs,
+            "compare_rr_variants": compare_rr_variants,
         }
     )
 

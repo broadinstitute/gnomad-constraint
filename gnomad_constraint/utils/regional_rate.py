@@ -47,10 +47,12 @@ from gnomad_constraint.resources.constants import (
     GENOMIC_FEATURES,
     METHYLATION_CORRELATED_FEATURES,
     RR_BONFERRONI_CUTOFF,
+    RR_CLIP_BOUNDS,
     RR_CONTEXTS,
     RR_FEATURE_SELECTION_ALPHA,
     RR_FOLDS,
     RR_SCREEN_FEATURE_ORDER,
+    RR_VARIANT_MODIFIERS,
 )
 
 logging.basicConfig(
@@ -68,6 +70,9 @@ UCSC_SEQUENCE_API = "https://api.genome.ucsc.edu/getData/sequence"
 
 MODEL_FOLD_ALL = "all"
 """Fold label of rr models trained on all training sites."""
+
+ENSEMBL_TRANSCRIPT_PREFIX = "ENST"
+"""Prefix of Ensembl transcript IDs (RefSeq MANE Select transcripts are excluded)."""
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +112,11 @@ def load_dnm_cohort(cohort: str, resource: Union[str, TableResource]) -> hl.Tabl
         - ``decode_psychencode``: deCODE + PsychENCODE DNMs used by Gnocchi
           (GRCh38). Each DNM is listed in both allele orientations; the wrong
           orientation is removed when joining to the context Table.
-        - ``ddd_asd``: DDD + ASD DNMs (GRCh38 Hail Table).
+        - ``satterstrom_2026_asd``, ``satterstrom_2026_ddd``: Satterstrom 2026 ASD
+          and DD DNMs (GRCh38 comma-delimited files with a "chrom:pos:ref:alt"
+          ``Variant`` column). Trios shared with the ASD cohort are removed from the
+          DD cohort. These replace the older DDD + ASD DNM Table. Indels are removed
+          when joining to the context Table.
         - ``gnomad_v4.1``: gnomAD v4.1 high-quality coding de novos (GRCh38 Hail
           Table).
         - ``chd_2017``, ``ee_2014``, ``cdh_2021``: GRCh37 text files, lifted over.
@@ -117,8 +126,16 @@ def load_dnm_cohort(cohort: str, resource: Union[str, TableResource]) -> hl.Tabl
     :param resource: Path (text cohorts) or TableResource (Hail Table cohorts).
     :return: Table keyed by ``locus`` and ``alleles`` with a ``cohort`` field.
     """
-    if cohort in {"ddd_asd", "gnomad_v4.1"}:
+    if cohort == "gnomad_v4.1":
         ht = resource.ht().key_by("locus", "alleles").select()
+    elif cohort in {"satterstrom_2026_asd", "satterstrom_2026_ddd"}:
+        # The files are gzip (not bgzip) compressed and quote fields with commas.
+        ht = hl.import_table(resource, delimiter=",", quote='"', force=True)
+        variant = ht.Variant.split(":")
+        ht = ht.select(
+            locus=hl.locus(variant[0], hl.int(variant[1]), reference_genome="GRCh38"),
+            alleles=variant[2:],
+        ).key_by("locus", "alleles")
     elif cohort == "decode_psychencode":
         ht = _import_dnm_text(resource)
         ht = ht.select(
@@ -192,7 +209,13 @@ def combine_syn_dnms(
     """
     hts = [ht.select("cohort") for ht in cohort_hts.values()]
     ht = hts[0].union(*hts[1:])
+    ht = ht.checkpoint(new_temp_file("syn_dnm.all_cohorts", "ht"))
 
+    # The cohort Tables have few partitions (text files are imported as one), so
+    # joining the context Table into them would scan most of the context Table in
+    # each DNM partition. Instead, filter the context Table to the DNM sites in a
+    # scan over its own partitions, then join the small filtered Table.
+    context_ht = context_ht.semi_join(ht.select().distinct())
     context_ht = context_ht.select(
         "context",
         "ref",
@@ -200,6 +223,8 @@ def combine_syn_dnms(
         "methylation_level",
         csq=context_ht.vep.most_severe_consequence,
     )
+    context_ht = context_ht.naive_coalesce(50)
+    context_ht = context_ht.checkpoint(new_temp_file("syn_dnm.context", "ht"))
     ht = ht.annotate(**context_ht[ht.key])
     ht = ht.filter(ht.csq == SYNONYMOUS_CSQ).drop("csq")
     ht = ht.checkpoint(new_temp_file("syn_dnm.by_cohort", "ht"))
@@ -885,7 +910,10 @@ def _adj_freq_idx(ht: hl.Table) -> int:
 
 def get_syn_mane_select_ht(per_variant_ht: hl.Table) -> hl.Table:
     """
-    Get the synonymous MANE Select rows of the per-variant expected Table.
+    Get the synonymous Ensembl MANE Select rows of the per-variant expected Table.
+
+    Only Ensembl transcripts are kept: the RefSeq MANE Select transcripts are the
+    same transcripts, so keeping both would count every gene (and site) twice.
 
     Keeps the fields used to calibrate and evaluate rr: ``context``, ``transcript``,
     adj ``obs`` and unadjusted adj ``exp``. The result is small (one row per
@@ -898,7 +926,9 @@ def get_syn_mane_select_ht(per_variant_ht: hl.Table) -> hl.Table:
     """
     adj_idx = _adj_freq_idx(per_variant_ht)
     ht = per_variant_ht.filter(
-        (per_variant_ht.annotation == SYNONYMOUS_CSQ) & per_variant_ht.mane_select
+        (per_variant_ht.annotation == SYNONYMOUS_CSQ)
+        & per_variant_ht.mane_select
+        & per_variant_ht.transcript.startswith(ENSEMBL_TRANSCRIPT_PREFIX)
     )
     ht = ht.select(
         "context",
@@ -1030,8 +1060,266 @@ def run_mask_ablation(
 
 
 # ---------------------------------------------------------------------------
-# Feature selection cutoff evaluation
+# Feature selection cutoff and rr variant evaluation
 # ---------------------------------------------------------------------------
+
+
+def parse_rr_variant_spec(spec: str) -> Dict[str, Any]:
+    """
+    Parse an rr variant spec.
+
+    A spec is a comma-separated source followed by modifiers
+    (``RR_VARIANT_MODIFIERS``), e.g. "legacy", "legacy,clip,norm", or
+    "cutoff=bonferroni,clip,norm,mask". See ``RR_COMPARISON_VARIANTS``.
+
+    :param spec: rr variant spec.
+    :return: Dictionary with ``source`` ("legacy", "legacy_noncoding", "path", or
+        "model"), ``cutoff``, ``path``, and booleans ``clip``, ``normalize``,
+        ``mask``, and ``out_of_fold``.
+    """
+    tokens = [t.strip() for t in spec.split(",") if t.strip()]
+    if not tokens:
+        raise ValueError("Empty rr variant spec!")
+    source, modifiers = tokens[0], set(tokens[1:])
+    unknown = modifiers - set(RR_VARIANT_MODIFIERS)
+    if unknown:
+        raise ValueError(f"Unknown modifiers {sorted(unknown)} in rr variant {spec}!")
+
+    parsed = {
+        "source": source,
+        "cutoff": None,
+        "path": None,
+        "clip": "clip" in modifiers,
+        "normalize": "norm" in modifiers,
+        "mask": "mask" in modifiers,
+        "out_of_fold": "oof" in modifiers,
+    }
+    if source.startswith("cutoff="):
+        parsed.update(source="model", cutoff=source.split("=", 1)[1])
+    elif source.startswith("path="):
+        parsed.update(source="path", path=source.split("=", 1)[1])
+    elif source not in {"legacy", "legacy_noncoding"}:
+        raise ValueError(f"Unknown source in rr variant {spec}!")
+    if parsed["source"] != "model" and (parsed["mask"] or parsed["out_of_fold"]):
+        raise ValueError(
+            f"'mask' and 'oof' only apply to rr built from the models: {spec}!"
+        )
+
+    return parsed
+
+
+def build_rr_variant_ht(
+    spec: str,
+    syn_ht: hl.Table,
+    features_ht: Optional[hl.Table] = None,
+    models: Optional[List[hl.Struct]] = None,
+    legacy_hts: Optional[Dict[str, hl.Table]] = None,
+    masked_features: Optional[List[str]] = None,
+    clip_bounds: Tuple[float, float] = RR_CLIP_BOUNDS,
+) -> Tuple[hl.Table, Optional[Dict[str, float]]]:
+    """
+    Build the rr Table of an rr variant spec (:func:`parse_rr_variant_spec`).
+
+    rr built from the models (``cutoff=``) is computed from the feature Table, so no
+    rr Table needs to be written beforehand. Modifiers are applied in the same order
+    as ``--compute-rr --apply-rr-safeguards``: clipping, then normalization.
+
+    :param spec: rr variant spec.
+    :param syn_ht: Synonymous Ensembl MANE Select per-variant rows
+        (:func:`get_syn_mane_select_ht`), used for normalization.
+    :param features_ht: Feature Table (:func:`import_genomic_features`). Required
+        for ``cutoff=`` specs. Default is None.
+    :param models: Rows of the rr model Table. Required for ``cutoff=`` specs.
+        Default is None.
+    :param legacy_hts: Dictionary of legacy source name ("legacy",
+        "legacy_noncoding") to legacy rr Table. Default is None.
+    :param masked_features: Features masked on chrX/chrY with the "mask" modifier.
+        Default is None.
+    :param clip_bounds: Lower and upper clip bounds used with the "clip" modifier.
+        Default is ``RR_CLIP_BOUNDS``.
+    :return: Tuple of the rr Table (keyed by interval with an ``adj_r`` dict) and
+        the normalization factors (None without the "norm" modifier).
+    """
+    v = parse_rr_variant_spec(spec)
+    if v["source"] == "model":
+        if features_ht is None or models is None:
+            raise ValueError(f"rr variant {spec} needs the features and models!")
+        cutoff_models = [m for m in models if m.cutoff == v["cutoff"]]
+        if not cutoff_models:
+            raise ValueError(f"No rr models were trained for cutoff {v['cutoff']}!")
+        rr_ht = compute_rr_ht(
+            features_ht,
+            cutoff_models,
+            masked_features if v["mask"] else None,
+            v["out_of_fold"],
+        )
+    elif v["source"] == "path":
+        rr_ht = hl.read_table(v["path"])
+    else:
+        rr_ht = (legacy_hts or {})[v["source"]]
+    rr_ht = rr_ht.select("adj_r").select_globals()
+
+    if v["clip"]:
+        rr_ht = clip_rr_ht(rr_ht, *clip_bounds)
+    if v["source"] == "model" or v["clip"]:
+        rr_ht = rr_ht.checkpoint(new_temp_file("rr_variant", "ht"))
+
+    factors = None
+    if v["normalize"]:
+        factors = compute_rr_normalization_factors(syn_ht, rr_ht)
+        rr_ht = normalize_rr_ht(rr_ht, factors).checkpoint(
+            new_temp_file("rr_variant_normalized", "ht")
+        )
+
+    return rr_ht, factors
+
+
+def evaluate_rr_variants(
+    syn_ht: hl.Table,
+    rr_hts: Dict[str, hl.Table],
+    loeuf_ht: Optional[hl.Table] = None,
+    syn_z_outlier_threshold: float = 8.0,
+    min_expected: float = 0.0,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Evaluate the synonymous calibration of rr Tables on exome synonymous sites.
+
+    Synonymous Ensembl MANE Select rows of the per-variant expected Table are
+    aggregated per transcript (adj observed, unadjusted adj expected, and expected
+    multiplied by each rr, with rr = 1 for sites without a window or context). For
+    the unadjusted expected ("unadjusted") and each rr Table, reports:
+
+        - ``n_transcripts``, ``syn_mean_z2`` (mean squared raw z-score, i.e.
+          dispersion), and ``n_syn_outliers`` (transcripts with |raw z| >
+          ``syn_z_outlier_threshold``), over all transcripts and over chrX/chrY
+          transcripts (``*_xy``).
+        - ``oe_decile_{i}``: synonymous o/e (sum obs / sum exp) in each LOEUF decile,
+          when ``loeuf_ht`` is provided.
+        - ``syn_mean_rr``: expected-weighted mean rr over all synonymous sites, and
+          ``max_context_mean_rr_dev``: the largest deviation from 1 of the
+          per-context expected-weighted mean rr.
+
+    :param syn_ht: Synonymous Ensembl MANE Select per-variant rows
+        (:func:`get_syn_mane_select_ht`).
+    :param rr_hts: Dictionary of label to rr Table (keyed by interval with an
+        ``adj_r`` dict).
+    :param loeuf_ht: Optional constraint Table with ``transcript`` and the LOEUF
+        decile, either a constraint metrics Table (``constraint_bins.decile.lof``,
+        e.g. :func:`get_loeuf_decile_ht`) or a release Table
+        (``lof.oe_ci.upper_bin_decile``). Default is None.
+    :param syn_z_outlier_threshold: Absolute raw z-score above which a transcript is
+        a synonymous outlier. Default is 8.0.
+    :param min_expected: Minimum unadjusted expected count for a transcript to be
+        included. Default is 0.0 (transcripts with expected > 0).
+    :return: Tuple of a DataFrame with one row per label (``label`` column) and a
+        DataFrame of the per-context expected-weighted mean rr (one row per
+        context, one column per label).
+    """
+    labels = ["unadjusted", *rr_hts]
+    ht = syn_ht
+    rr_fields = {"rr_0": hl.float64(1.0)}
+    for i, rr_ht in enumerate(rr_hts.values(), start=1):
+        rr_fields[f"rr_{i}"] = hl.or_else(rr_ht[ht.locus].adj_r.get(ht.context), 1.0)
+    ht = ht.select(
+        "context",
+        "transcript",
+        "obs",
+        "exp",
+        is_xy=~ht.locus.in_autosome(),
+        **rr_fields,
+    )
+    ht = ht.checkpoint(new_temp_file("rr_variant_sites", "ht"))
+
+    # Per-context expected-weighted mean rr of each label.
+    context_means = ht.aggregate(
+        hl.agg.group_by(
+            ht.context,
+            hl.struct(
+                **{
+                    f: hl.agg.sum(ht.exp * ht[f]) / hl.agg.sum(ht.exp)
+                    for f in rr_fields
+                }
+            ),
+        )
+    )
+    context_df = pd.DataFrame(
+        [
+            {"context": c, **{lab: s[f"rr_{i}"] for i, lab in enumerate(labels)}}
+            for c, s in sorted(context_means.items())
+        ]
+    )
+
+    # Per-transcript observed and expected counts.
+    exp_fields = {f"exp_{i}": ht.exp * ht[f"rr_{i}"] for i in range(len(labels))}
+    tx_ht = ht.group_by("transcript").aggregate(
+        obs=hl.agg.sum(ht.obs),
+        is_xy=hl.agg.any(ht.is_xy),
+        **{f: hl.agg.sum(e) for f, e in exp_fields.items()},
+    )
+    tx_ht = tx_ht.filter((tx_ht.exp_0 > 0) & (tx_ht.exp_0 >= min_expected))
+    if loeuf_ht is not None:
+        decile_ht = loeuf_ht.key_by("transcript")
+        if "constraint_bins" in decile_ht.row:
+            decile_expr = decile_ht.constraint_bins.decile.lof
+        else:
+            decile_expr = decile_ht.lof.oe_ci.upper_bin_decile
+        decile_ht = decile_ht.select(decile=decile_expr).distinct()
+        tx_ht = tx_ht.annotate(decile=decile_ht[tx_ht.transcript].decile)
+    tx_ht = tx_ht.checkpoint(new_temp_file("rr_variant_transcripts", "ht"))
+
+    def _z_stats(z_expr: hl.expr.Float64Expression) -> hl.expr.StructExpression:
+        """
+        Get the dispersion and outlier count of raw z-scores.
+
+        :param z_expr: Raw z-score expression.
+        :return: Struct of ``n``, ``mean_z2``, and ``n_outliers``.
+        """
+        return hl.struct(
+            n=hl.agg.count(),
+            mean_z2=hl.agg.mean(z_expr**2),
+            n_outliers=hl.agg.count_where(hl.abs(z_expr) > syn_z_outlier_threshold),
+        )
+
+    rows = []
+    for i, label in enumerate(labels):
+        exp_f = tx_ht[f"exp_{i}"]
+        z_expr = calculate_raw_z_score(tx_ht.obs, exp_f)
+        agg = {
+            "all": _z_stats(z_expr),
+            "xy": hl.agg.filter(tx_ht.is_xy, _z_stats(z_expr)),
+        }
+        if loeuf_ht is not None:
+            agg["oe_by_decile"] = hl.agg.group_by(
+                tx_ht.decile, hl.agg.sum(tx_ht.obs) / hl.agg.sum(exp_f)
+            )
+        res = tx_ht.aggregate(hl.struct(**agg))
+        ctx_means = context_df[label].to_numpy(dtype=float)
+        row = {
+            "label": label,
+            "n_transcripts": res["all"].n,
+            "syn_mean_z2": res["all"].mean_z2,
+            "n_syn_outliers": res["all"].n_outliers,
+            "n_transcripts_xy": res["xy"].n,
+            "syn_mean_z2_xy": res["xy"].mean_z2,
+            "n_syn_outliers_xy": res["xy"].n_outliers,
+        }
+        if loeuf_ht is not None:
+            row.update(
+                {
+                    f"oe_decile_{d}": v
+                    for d, v in sorted(
+                        res.oe_by_decile.items(), key=lambda x: (x[0] is None, x[0])
+                    )
+                    if d is not None
+                }
+            )
+        row["syn_mean_rr"] = tx_ht.aggregate(
+            hl.agg.sum(exp_f) / hl.agg.sum(tx_ht.exp_0)
+        )
+        row["max_context_mean_rr_dev"] = float(np.nanmax(np.abs(ctx_means - 1.0)))
+        rows.append(row)
+
+    return pd.DataFrame(rows), context_df
 
 
 def evaluate_rr_cutoffs(
@@ -1046,24 +1334,17 @@ def evaluate_rr_cutoffs(
     """
     Evaluate synonymous calibration of the rr Tables of each feature selection cutoff.
 
-    Synonymous MANE Select rows of the per-variant expected Table are aggregated per
-    transcript (adj observed, unadjusted adj expected, and expected multiplied by
-    the rr of each cutoff). For each cutoff (and the unadjusted expected), reports:
-
-        - ``syn_mean_z2``: mean squared raw z-score (dispersion).
-        - ``n_syn_outliers``: transcripts with |raw z| > ``syn_z_outlier_threshold``.
-        - ``oe_decile_{i}``: synonymous o/e (sum obs / sum exp) in each LOEUF decile,
-          when ``loeuf_ht`` is provided.
-        - ``n_contexts_modeled`` when provided.
-        - ``heldout_ll_gain`` (held-out DNM log-likelihood gain over
-          intercept-only models, summed over all contexts and both chromosome
-          folds; unmodeled contexts add 0) and ``heldout_mean_auc`` (mean over
-          modeled contexts and folds), when ``cv_metrics_df`` is provided.
+    Reports the metrics of :func:`evaluate_rr_variants` for each cutoff (and the
+    unadjusted expected), plus ``n_contexts_modeled`` when provided, and
+    ``heldout_ll_gain`` (held-out DNM log-likelihood gain over intercept-only
+    models, summed over all contexts and both chromosome folds; unmodeled contexts
+    add 0) and ``heldout_mean_auc`` (mean over modeled contexts and folds) when
+    ``cv_metrics_df`` is provided.
 
     Out-of-fold rr Tables should be used to avoid evaluating genes on the same DNMs
     used to train the rr models.
 
-    :param syn_ht: Synonymous MANE Select per-variant rows
+    :param syn_ht: Synonymous Ensembl MANE Select per-variant rows
         (:func:`get_syn_mane_select_ht`).
     :param rr_hts: Dictionary of cutoff token to rr Table.
     :param cv_metrics_df: Optional held-out metrics (:func:`fit_rr_models`). Default
@@ -1071,82 +1352,37 @@ def evaluate_rr_cutoffs(
     :param n_contexts_modeled: Optional dictionary of cutoff token to number of
         modeled contexts. Default is None.
     :param loeuf_ht: Optional constraint Table with ``transcript`` and the LOEUF
-        decile, either a constraint metrics Table (``constraint_bins.decile.lof``,
-        e.g. :func:`get_loeuf_decile_ht`) or a release Table
-        (``lof.oe_ci.upper_bin_decile``). Default is None.
+        decile (see :func:`evaluate_rr_variants`). Default is None.
     :param syn_z_outlier_threshold: Absolute raw z-score above which a transcript is
         a synonymous outlier. Default is 8.0.
     :param min_expected: Minimum unadjusted expected count for a transcript to be
         included. Default is 0.0 (transcripts with expected > 0).
     :return: DataFrame with one row per cutoff (and "unadjusted").
     """
-    ht = syn_ht
-    labels = ["unadjusted", *rr_hts]
-    exp_fields = {"exp_0": ht.exp}
-    for i, rr_ht in enumerate(rr_hts.values(), start=1):
-        rr_expr = hl.or_else(rr_ht[ht.locus].adj_r.get(ht.context), 1.0)
-        exp_fields[f"exp_{i}"] = ht.exp * rr_expr
-
-    ht = ht.select("transcript", "obs", **exp_fields)
-    ht = ht.group_by("transcript").aggregate(
-        obs=hl.agg.sum(ht.obs), **{f: hl.agg.sum(ht[f]) for f in exp_fields}
+    df, _ = evaluate_rr_variants(
+        syn_ht,
+        rr_hts,
+        loeuf_ht=loeuf_ht,
+        syn_z_outlier_threshold=syn_z_outlier_threshold,
+        min_expected=min_expected,
     )
-    ht = ht.filter((ht.exp_0 > 0) & (ht.exp_0 >= min_expected))
-    if loeuf_ht is not None:
-        decile_ht = loeuf_ht.key_by("transcript")
-        if "constraint_bins" in decile_ht.row:
-            decile_expr = decile_ht.constraint_bins.decile.lof
-        else:
-            decile_expr = decile_ht.lof.oe_ci.upper_bin_decile
-        decile_ht = decile_ht.select(decile=decile_expr).distinct()
-        ht = ht.annotate(decile=decile_ht[ht.transcript].decile)
-    ht = ht.checkpoint(new_temp_file("rr_cutoff_evaluation", "ht"))
+    df = df.rename(columns={"label": "cutoff"})
+    if n_contexts_modeled is not None:
+        df["n_contexts_modeled"] = df["cutoff"].map(n_contexts_modeled)
+    if cv_metrics_df is not None and not cv_metrics_df.empty:
+        gain = (
+            (
+                (cv_metrics_df["null_log_loss"] - cv_metrics_df["log_loss"])
+                * cv_metrics_df["n_test"]
+            )
+            .groupby(cv_metrics_df["cutoff"])
+            .sum()
+        )
+        auc = cv_metrics_df.groupby("cutoff")["auc"].mean()
+        df["heldout_ll_gain"] = df["cutoff"].map(gain)
+        df["heldout_mean_auc"] = df["cutoff"].map(auc)
 
-    rows = []
-    for i, label in enumerate(labels):
-        exp_f = ht[f"exp_{i}"]
-        z_expr = calculate_raw_z_score(ht.obs, exp_f)
-        agg = {
-            "syn_mean_z2": hl.agg.mean(z_expr**2),
-            "n_syn_outliers": hl.agg.count_where(
-                hl.abs(z_expr) > syn_z_outlier_threshold
-            ),
-            "n_transcripts": hl.agg.count(),
-        }
-        if loeuf_ht is not None:
-            agg["oe_by_decile"] = hl.agg.group_by(
-                ht.decile, hl.agg.sum(ht.obs) / hl.agg.sum(exp_f)
-            )
-        res = ht.aggregate(hl.struct(**agg))
-        row = {
-            "cutoff": label,
-            "n_transcripts": res.n_transcripts,
-            "syn_mean_z2": res.syn_mean_z2,
-            "n_syn_outliers": res.n_syn_outliers,
-        }
-        if loeuf_ht is not None:
-            row.update(
-                {
-                    f"oe_decile_{d}": v
-                    for d, v in sorted(
-                        res.oe_by_decile.items(), key=lambda x: (x[0] is None, x[0])
-                    )
-                    if d is not None
-                }
-            )
-        if n_contexts_modeled is not None:
-            row["n_contexts_modeled"] = n_contexts_modeled.get(label)
-        if cv_metrics_df is not None and not cv_metrics_df.empty:
-            m = cv_metrics_df[cv_metrics_df["cutoff"] == label]
-            row["heldout_ll_gain"] = (
-                ((m["null_log_loss"] - m["log_loss"]) * m["n_test"]).sum()
-                if len(m)
-                else np.nan
-            )
-            row["heldout_mean_auc"] = m["auc"].mean() if len(m) else np.nan
-        rows.append(row)
-
-    return pd.DataFrame(rows)
+    return df
 
 
 # ---------------------------------------------------------------------------

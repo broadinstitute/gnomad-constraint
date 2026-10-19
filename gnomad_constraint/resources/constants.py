@@ -428,3 +428,35 @@ Chromosome-split folds used for out-of-fold rr evaluation.
 Autosomes are assigned by chromosome number parity, chrX to "odd", and chrY to
 "even".
 """
+
+RR_VARIANT_MODIFIERS = ("clip", "norm", "mask", "oof")
+"""
+Modifiers of an rr variant spec (see ``RR_COMPARISON_VARIANTS``).
+
+"clip" clips rr to the clip bounds, "norm" divides rr by its per-context
+expected-weighted mean over exome synonymous sites, "mask" masks chrX/chrY features,
+and "oof" uses the chromosome-split models. "mask" and "oof" only apply to rr built
+from the new models (``cutoff=``).
+"""
+
+RR_COMPARISON_VARIANTS = [
+    "legacy",
+    "legacy,clip,norm",
+    "cutoff=bonferroni",
+    "cutoff=bonferroni,clip",
+    "cutoff=bonferroni,clip,norm",
+    "cutoff=bonferroni,clip,norm,mask",
+    "cutoff=bonferroni,clip,norm,mask,oof",
+    "legacy_noncoding",
+]
+"""
+Default rr variants compared by ``regional_rate_pipeline.py --compare-rr-variants``.
+
+Each spec is a comma-separated source followed by modifiers
+(``RR_VARIANT_MODIFIERS``). Sources are "legacy" (the legacy synonymous DNM
+``syn_adj_r`` Table), "legacy_noncoding" (the legacy non-coding DNM ``adj_r``
+Table), "path=<path>" (any rr Table keyed by interval with an ``adj_r`` dict), or
+"cutoff=<token>" (rr built from the rr models of a feature selection cutoff). The
+defaults add one change of the new code at a time to the legacy ``syn_adj_r``
+baseline.
+"""

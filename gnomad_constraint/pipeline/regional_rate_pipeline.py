@@ -20,6 +20,9 @@ The rr pipeline consists of the following steps:
       chrX/chrY feature masking, and out-of-fold rr).
     - --evaluate-rr-cutoffs: compare synonymous calibration across feature selection
       cutoffs using out-of-fold rr.
+    - --compare-rr-variants: compare synonymous calibration of rr variants (e.g. the
+      legacy syn_adj_r and the new rr with or without clipping, normalization,
+      masking, or out-of-fold models) to isolate each change from the legacy rr.
 """
 
 import argparse
@@ -39,19 +42,26 @@ from gnomad_constraint.resources.constants import (
     RR_BACKGROUND_SEED,
     RR_BONFERRONI_CUTOFF,
     RR_CLIP_BOUNDS,
+    RR_COMPARISON_VARIANTS,
     RR_STATSMODELS_VERSION,
     RR_TRAINING_N_PARTITIONS,
     RR_XY_MASKED_FEATURES,
     VERSIONS,
 )
-from gnomad_constraint.resources.resource_utils import filter_for_test
+from gnomad_constraint.resources.resource_utils import (
+    filter_for_test,
+    get_adj_r_ht,
+    get_syn_adj_r_ht,
+)
 from gnomad_constraint.utils.regional_rate import (
     MODEL_FOLD_ALL,
+    build_rr_variant_ht,
     clip_rr_ht,
     compute_rr_ht,
     compute_rr_normalization_factors,
     create_rr_training_ht,
     evaluate_rr_cutoffs,
+    evaluate_rr_variants,
     fit_rr_models,
     get_syn_mane_select_ht,
     get_syn_sites_ht,
@@ -441,6 +451,47 @@ def main(args):
             logger.info("rr cutoff evaluation:\n%s", df.to_string(index=False))
             logger.info("Done evaluating rr feature selection cutoffs.")
 
+        if args.compare_rr_variants:
+            logger.info("Comparing rr variants: %s...", args.rr_variants)
+            res = resources.compare_rr_variants
+            res.check_resource_existence()
+
+            syn_ht = _get_syn_ht(res.per_variant_expected_ht.ht())
+            models = res.rr_models_ht.ht().collect()
+            features_ht = res.genomic_features_ht.ht()
+            legacy_hts = {
+                "legacy": get_syn_adj_r_ht(),
+                "legacy_noncoding": get_adj_r_ht(),
+            }
+            rr_hts = {}
+            for spec in args.rr_variants:
+                rr_hts[spec], factors = build_rr_variant_ht(
+                    spec,
+                    syn_ht,
+                    features_ht=features_ht,
+                    models=models,
+                    legacy_hts=legacy_hts,
+                    masked_features=args.masked_features,
+                    clip_bounds=(args.rr_min, args.rr_max),
+                )
+                if factors is not None:
+                    logger.info("rr normalization factors for %s: %s", spec, factors)
+
+            df, context_df = evaluate_rr_variants(
+                syn_ht,
+                rr_hts,
+                loeuf_ht=res.loeuf_ht.ht() if args.loeuf_ht_path else None,
+                syn_z_outlier_threshold=args.syn_z_outlier_threshold,
+            )
+            _write_tsv(df, res.rr_variant_comparison_tsv)
+            _write_tsv(context_df, res.rr_variant_context_rr_tsv)
+            logger.info("rr variant comparison:\n%s", df.to_string(index=False))
+            logger.info(
+                "Per-context expected-weighted mean rr:\n%s",
+                context_df.to_string(index=False),
+            )
+            logger.info("Done comparing rr variants.")
+
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(
@@ -685,6 +736,33 @@ if __name__ == "__main__":
         help="Absolute raw syn z-score defining an outlier. Default is 8.0.",
         type=float,
         default=8.0,
+    )
+
+    compare_args = parser.add_argument_group(
+        "Compare rr variants args",
+        "Arguments used for comparing rr variants. Uses --loeuf-ht-path,"
+        " --syn-z-outlier-threshold, --rr-min, --rr-max, and --masked-features.",
+    )
+    compare_args.add_argument(
+        "--compare-rr-variants",
+        help=(
+            "Compare synonymous calibration (dispersion, outliers, o/e by LOEUF"
+            " decile, per-context mean rr) of the rr variants in --rr-variants and"
+            " the unadjusted expected."
+        ),
+        action="store_true",
+    )
+    compare_args.add_argument(
+        "--rr-variants",
+        help=(
+            "rr variant specs to compare: a source ('legacy', 'legacy_noncoding',"
+            " 'path=<rr Table>', or 'cutoff=<token>') followed by optional"
+            " comma-separated modifiers ('clip', 'norm', and, for 'cutoff=', 'mask'"
+            " and 'oof'), e.g. 'cutoff=bonferroni,clip,norm,mask'. Default is"
+            f" {RR_COMPARISON_VARIANTS}."
+        ),
+        nargs="+",
+        default=RR_COMPARISON_VARIANTS,
     )
 
     args = parser.parse_args()
