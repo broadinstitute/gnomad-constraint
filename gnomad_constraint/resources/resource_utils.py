@@ -729,7 +729,7 @@ def _get_rr_name(
         Default is False.
     :param cutoff: Optional feature selection cutoff token. Default is None.
     :param xy_masked: Whether chrX/chrY features were masked. Default is False.
-    :param calibrated: Whether rr safeguards (clipping and normalization) were
+    :param calibrated: Whether rr normalization (--apply-rr-safeguards) was
         applied. Default is False.
     :param out_of_fold: Whether rr was computed from the chromosome-split models.
         Default is False.
@@ -886,7 +886,7 @@ def get_rr_ht(
     :param corrected_window_coords: Whether the windows use the corrected
         coordinates. Default is False.
     :param xy_masked: Whether chrX/chrY features were masked. Default is False.
-    :param calibrated: Whether rr safeguards (clipping and normalization) were
+    :param calibrated: Whether rr normalization (--apply-rr-safeguards) was
         applied. Default is False.
     :param out_of_fold: Whether rr was computed from the chromosome-split models.
         Default is False.
@@ -918,7 +918,7 @@ def get_rr_cutoff_evaluation_tsv_path(
     :param corrected_window_coords: Whether the windows use the corrected
         coordinates. Default is False.
     :param xy_masked: Whether chrX/chrY features were masked. Default is False.
-    :param calibrated: Whether rr safeguards (clipping and normalization) were
+    :param calibrated: Whether rr normalization (--apply-rr-safeguards) was
         applied. Default is False.
     :return: Path of the cutoff evaluation TSV.
     """
@@ -1450,7 +1450,7 @@ def get_regional_rate_resources(
         coordinates. Default is False.
     :param xy_masked: Whether chrX/chrY features are masked when computing rr.
         Default is False.
-    :param calibrated: Whether rr safeguards (clipping and normalization) are
+    :param calibrated: Whether rr normalization (--apply-rr-safeguards) is
         applied when computing rr. Default is False.
     :param out_of_fold: Whether rr is also computed from the chromosome-split models.
         Default is False.

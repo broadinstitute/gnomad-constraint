@@ -16,13 +16,13 @@ The rr pipeline consists of the following steps:
     - --create-rr-training-set: create the DNM / non-mutated background training set.
     - --train-rr-models: run the univariate feature screen and fit the per-context
       models for each feature selection cutoff (optionally chromosome-split).
-    - --compute-rr: compute rr per window and context (optionally with safeguards,
+    - --compute-rr: compute rr per window and context (optionally normalized, with
       chrX/chrY feature masking, and out-of-fold rr).
     - --evaluate-rr-cutoffs: compare synonymous calibration across feature selection
       cutoffs using out-of-fold rr.
     - --compare-rr-variants: compare synonymous calibration of rr variants (e.g. the
-      legacy syn_adj_r and the new rr with or without clipping, normalization,
-      masking, or out-of-fold models) to isolate each change from the legacy rr.
+      legacy syn_adj_r and the new rr with or without normalization, masking, or
+      out-of-fold models) to isolate each change from the legacy rr.
 """
 
 import argparse
@@ -41,7 +41,6 @@ from gnomad_constraint.resources.constants import (
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
     RR_BONFERRONI_CUTOFF,
-    RR_CLIP_BOUNDS,
     RR_COMPARISON_VARIANTS,
     RR_STATSMODELS_VERSION,
     RR_TRAINING_N_PARTITIONS,
@@ -56,7 +55,6 @@ from gnomad_constraint.resources.resource_utils import (
 from gnomad_constraint.utils.regional_rate import (
     MODEL_FOLD_ALL,
     build_rr_variant_ht,
-    clip_rr_ht,
     compute_rr_ht,
     compute_rr_normalization_factors,
     create_rr_training_ht,
@@ -123,7 +121,7 @@ def _get_rr_globals(
     :param args: Parsed arguments.
     :param masked_features: Masked feature names, or None if not masked.
     :param out_of_fold: Whether rr was computed from the chromosome-split models.
-    :param factors: Normalization factors, or None if safeguards were not applied.
+    :param factors: Normalization factors, or None if rr was not normalized.
     :param models_ht_path: Path of the rr model Table.
     :param features_ht_path: Path of the genomic feature Table.
     :return: Struct expression of rr parameters.
@@ -137,11 +135,6 @@ def _get_rr_globals(
         masked_features=hl.literal(masked_features or [], hl.tarray(hl.tstr)),
         out_of_fold=out_of_fold,
         calibrated=calibrated,
-        clip_bounds=(
-            hl.struct(lower=args.rr_min, upper=args.rr_max)
-            if calibrated
-            else hl.missing(hl.tstruct(lower=hl.tfloat64, upper=hl.tfloat64))
-        ),
         normalization_factors=(
             hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64))
             if calibrated
@@ -165,7 +158,7 @@ def _compute_and_write_rr(
     features_ht_path: str,
 ) -> None:
     """
-    Compute the rr Table of one cutoff, apply safeguards if requested, and write it.
+    Compute the rr Table of one cutoff, normalize it if requested, and write it.
 
     :param features_ht: Genomic feature Table.
     :param models: rr model rows of the cutoff.
@@ -183,8 +176,7 @@ def _compute_and_write_rr(
     rr_ht = compute_rr_ht(features_ht, models, masked_features, out_of_fold)
     factors = None
     if args.apply_rr_safeguards:
-        rr_ht = clip_rr_ht(rr_ht, args.rr_min, args.rr_max)
-        rr_ht = rr_ht.checkpoint(new_temp_file("rr_clipped", "ht"))
+        rr_ht = rr_ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
         factors = compute_rr_normalization_factors(syn_ht, rr_ht)
         logger.info(
             "rr normalization factors for cutoff %s%s: %s",
@@ -472,7 +464,6 @@ def main(args):
                     models=models,
                     legacy_hts=legacy_hts,
                     masked_features=args.masked_features,
-                    clip_bounds=(args.rr_min, args.rr_max),
                 )
                 if factors is not None:
                     logger.info("rr normalization factors for %s: %s", spec, factors)
@@ -659,23 +650,11 @@ if __name__ == "__main__":
     compute_args.add_argument(
         "--apply-rr-safeguards",
         help=(
-            "Clip rr to [--rr-min, --rr-max] and divide rr by its per-context"
-            " expected-weighted mean over exome synonymous MANE Select sites. Without"
-            " this flag rr is written as trained (reproducing the legacy syn_adj_r)."
+            "Divide rr by its per-context expected-weighted mean over exome"
+            " synonymous MANE Select sites. Without this flag rr is written as"
+            " trained (reproducing the legacy syn_adj_r)."
         ),
         action="store_true",
-    )
-    compute_args.add_argument(
-        "--rr-min",
-        help=f"Lower rr clipping bound. Default is {RR_CLIP_BOUNDS[0]}.",
-        type=float,
-        default=RR_CLIP_BOUNDS[0],
-    )
-    compute_args.add_argument(
-        "--rr-max",
-        help=f"Upper rr clipping bound. Default is {RR_CLIP_BOUNDS[1]}.",
-        type=float,
-        default=RR_CLIP_BOUNDS[1],
     )
     compute_args.add_argument(
         "--mask-features",
@@ -741,7 +720,7 @@ if __name__ == "__main__":
     compare_args = parser.add_argument_group(
         "Compare rr variants args",
         "Arguments used for comparing rr variants. Uses --loeuf-ht-path,"
-        " --syn-z-outlier-threshold, --rr-min, --rr-max, and --masked-features.",
+        " --syn-z-outlier-threshold, and --masked-features.",
     )
     compare_args.add_argument(
         "--compare-rr-variants",
@@ -757,8 +736,8 @@ if __name__ == "__main__":
         help=(
             "rr variant specs to compare: a source ('legacy', 'legacy_noncoding',"
             " 'path=<rr Table>', or 'cutoff=<token>') followed by optional"
-            " comma-separated modifiers ('clip', 'norm', and, for 'cutoff=', 'mask'"
-            " and 'oof'), e.g. 'cutoff=bonferroni,clip,norm,mask'. Default is"
+            " comma-separated modifiers ('norm', and, for 'cutoff=', 'mask' and"
+            " 'oof'), e.g. 'cutoff=bonferroni,norm,mask'. Default is"
             f" {RR_COMPARISON_VARIANTS}."
         ),
         nargs="+",

@@ -47,7 +47,6 @@ from gnomad_constraint.resources.constants import (
     GENOMIC_FEATURES,
     METHYLATION_CORRELATED_FEATURES,
     RR_BONFERRONI_CUTOFF,
-    RR_CLIP_BOUNDS,
     RR_CONTEXTS,
     RR_FEATURE_SELECTION_ALPHA,
     RR_FOLDS,
@@ -884,20 +883,6 @@ def compute_rr_ht(
     )
 
 
-def clip_rr_ht(rr_ht: hl.Table, lower: float, upper: float) -> hl.Table:
-    """
-    Clip rr values to ``[lower, upper]``.
-
-    :param rr_ht: rr Table (:func:`compute_rr_ht`).
-    :param lower: Lower bound.
-    :param upper: Upper bound.
-    :return: rr Table with clipped ``adj_r`` values.
-    """
-    return rr_ht.annotate(
-        adj_r=rr_ht.adj_r.map_values(lambda v: hl.max(hl.min(v, upper), lower))
-    )
-
-
 def _adj_freq_idx(ht: hl.Table) -> int:
     """
     Get the index of the adj frequency element in a per-variant expected Table.
@@ -952,7 +937,7 @@ def compute_rr_normalization_factors(
 
     :param syn_ht: Synonymous MANE Select per-variant rows
         (:func:`get_syn_mane_select_ht`).
-    :param rr_ht: rr Table (:func:`compute_rr_ht`, optionally clipped).
+    :param rr_ht: rr Table (:func:`compute_rr_ht`).
     :return: Dictionary of context to normalization factor.
     """
     ht = syn_ht
@@ -1069,13 +1054,13 @@ def parse_rr_variant_spec(spec: str) -> Dict[str, Any]:
     Parse an rr variant spec.
 
     A spec is a comma-separated source followed by modifiers
-    (``RR_VARIANT_MODIFIERS``), e.g. "legacy", "legacy,clip,norm", or
-    "cutoff=bonferroni,clip,norm,mask". See ``RR_COMPARISON_VARIANTS``.
+    (``RR_VARIANT_MODIFIERS``), e.g. "legacy", "legacy,norm", or
+    "cutoff=bonferroni,norm,mask". See ``RR_COMPARISON_VARIANTS``.
 
     :param spec: rr variant spec.
     :return: Dictionary with ``source`` ("legacy", "legacy_noncoding", "path", or
-        "model"), ``cutoff``, ``path``, and booleans ``clip``, ``normalize``,
-        ``mask``, and ``out_of_fold``.
+        "model"), ``cutoff``, ``path``, and booleans ``normalize``, ``mask``, and
+        ``out_of_fold``.
     """
     tokens = [t.strip() for t in spec.split(",") if t.strip()]
     if not tokens:
@@ -1089,7 +1074,6 @@ def parse_rr_variant_spec(spec: str) -> Dict[str, Any]:
         "source": source,
         "cutoff": None,
         "path": None,
-        "clip": "clip" in modifiers,
         "normalize": "norm" in modifiers,
         "mask": "mask" in modifiers,
         "out_of_fold": "oof" in modifiers,
@@ -1115,14 +1099,13 @@ def build_rr_variant_ht(
     models: Optional[List[hl.Struct]] = None,
     legacy_hts: Optional[Dict[str, hl.Table]] = None,
     masked_features: Optional[List[str]] = None,
-    clip_bounds: Tuple[float, float] = RR_CLIP_BOUNDS,
 ) -> Tuple[hl.Table, Optional[Dict[str, float]]]:
     """
     Build the rr Table of an rr variant spec (:func:`parse_rr_variant_spec`).
 
     rr built from the models (``cutoff=``) is computed from the feature Table, so no
-    rr Table needs to be written beforehand. Modifiers are applied in the same order
-    as ``--compute-rr --apply-rr-safeguards``: clipping, then normalization.
+    rr Table needs to be written beforehand. The "norm" modifier normalizes rr as
+    ``--compute-rr --apply-rr-safeguards`` does.
 
     :param spec: rr variant spec.
     :param syn_ht: Synonymous Ensembl MANE Select per-variant rows
@@ -1135,8 +1118,6 @@ def build_rr_variant_ht(
         "legacy_noncoding") to legacy rr Table. Default is None.
     :param masked_features: Features masked on chrX/chrY with the "mask" modifier.
         Default is None.
-    :param clip_bounds: Lower and upper clip bounds used with the "clip" modifier.
-        Default is ``RR_CLIP_BOUNDS``.
     :return: Tuple of the rr Table (keyed by interval with an ``adj_r`` dict) and
         the normalization factors (None without the "norm" modifier).
     """
@@ -1159,9 +1140,7 @@ def build_rr_variant_ht(
         rr_ht = (legacy_hts or {})[v["source"]]
     rr_ht = rr_ht.select("adj_r").select_globals()
 
-    if v["clip"]:
-        rr_ht = clip_rr_ht(rr_ht, *clip_bounds)
-    if v["source"] == "model" or v["clip"]:
+    if v["source"] == "model":
         rr_ht = rr_ht.checkpoint(new_temp_file("rr_variant", "ht"))
 
     factors = None

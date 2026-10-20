@@ -355,9 +355,6 @@ The sampled training sites keep the partitioning of the context Table (~15,000
 partitions for ~500,000 rows), so the Table is coalesced before it is written.
 """
 
-RR_CLIP_BOUNDS = (0.2, 5.0)
-"""Default lower and upper bounds used to clip rr when safeguards are applied."""
-
 RR_XY_MASKED_FEATURES = [
     "recomb_male",
     "recomb_female",
@@ -429,24 +426,22 @@ Autosomes are assigned by chromosome number parity, chrX to "odd", and chrY to
 "even".
 """
 
-RR_VARIANT_MODIFIERS = ("clip", "norm", "mask", "oof")
+RR_VARIANT_MODIFIERS = ("norm", "mask", "oof")
 """
 Modifiers of an rr variant spec (see ``RR_COMPARISON_VARIANTS``).
 
-"clip" clips rr to the clip bounds, "norm" divides rr by its per-context
-expected-weighted mean over exome synonymous sites, "mask" masks chrX/chrY features,
-and "oof" uses the chromosome-split models. "mask" and "oof" only apply to rr built
-from the new models (``cutoff=``).
+"norm" divides rr by its per-context expected-weighted mean over exome synonymous
+sites, "mask" masks chrX/chrY features, and "oof" uses the chromosome-split models.
+"mask" and "oof" only apply to rr built from the new models (``cutoff=``).
 """
 
 RR_COMPARISON_VARIANTS = [
     "legacy",
-    "legacy,clip,norm",
+    "legacy,norm",
     "cutoff=bonferroni",
-    "cutoff=bonferroni,clip",
-    "cutoff=bonferroni,clip,norm",
-    "cutoff=bonferroni,clip,norm,mask",
-    "cutoff=bonferroni,clip,norm,mask,oof",
+    "cutoff=bonferroni,norm",
+    "cutoff=bonferroni,norm,mask",
+    "cutoff=bonferroni,norm,mask,oof",
     "legacy_noncoding",
 ]
 """

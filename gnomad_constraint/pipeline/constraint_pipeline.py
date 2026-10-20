@@ -896,7 +896,7 @@ if __name__ == "__main__":
     aggregate_per_variant_expected_args.add_argument(
         "--regional-rr-type",
         help=(
-            "Which regional rr Table to use: 'calibrated' (rr clipped and normalized"
+            "Which regional rr Table to use: 'calibrated' (rr normalized"
             " with regional_rate_pipeline.py --compute-rr --apply-rr-safeguards) or"
             " 'raw'. Default is 'calibrated'."
         ),
