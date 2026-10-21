@@ -1,7 +1,7 @@
 """Script containing utility functions used in the constraint pipeline."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import hail as hl
 from gnomad.resources.grch38.gnomad import DOWNSAMPLINGS
@@ -857,8 +857,10 @@ def _prepare_ht_for_apply_models(
 
 def _apply_constraint_models(
     ht: hl.Table,
-    plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
+    plateau_models: hl.expr.DictExpression,
+    coverage_model: Optional[
+        Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
+    ],
     log10_coverage: bool = True,
 ) -> hl.Table:
     """
@@ -866,8 +868,10 @@ def _apply_constraint_models(
 
     :param ht: Table with ``mu_snp``, ``possible_variants``, ``exomes_coverage``,
         and ``apply_model`` fields.
-    :param plateau_models: Plateau models for the constraint calculations.
-    :param coverage_model: Coverage model for the constraint calculations.
+    :param plateau_models: Plateau models for the constraint calculations, keyed by
+        model group (as returned by ``build_models``).
+    :param coverage_model: Coverage model for the constraint calculations as
+        ``[intercept, slope]`` (as returned by ``build_models``).
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :return: Table annotated with model outputs (``mu``,
         ``predicted_proportion_observed``, ``expected_variants``,
@@ -888,8 +892,10 @@ def _apply_constraint_models(
 
 def _annotate_apply_models_globals(
     ht: hl.Table,
-    plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
+    plateau_models: hl.expr.DictExpression,
+    coverage_model: Optional[
+        Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
+    ],
     log10_coverage: bool,
     groupings: List[str],
 ) -> hl.Table:
@@ -900,7 +906,7 @@ def _annotate_apply_models_globals(
     to the existing struct. Otherwise a new struct is created.
 
     :param ht: Input Table.
-    :param plateau_models: Plateau models used.
+    :param plateau_models: Plateau models used, keyed by model group.
     :param coverage_model: Coverage model used.
     :param log10_coverage: Whether log10 coverage was used.
     :param groupings: List of grouping field names.
@@ -924,8 +930,10 @@ def _annotate_apply_models_globals(
 def create_per_variant_expected_ht(
     ht: hl.Table,
     mutation_ht: hl.Table,
-    plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
+    plateau_models: hl.expr.DictExpression,
+    coverage_model: Optional[
+        Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
+    ],
     log10_coverage: bool = True,
     custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
@@ -941,8 +949,10 @@ def create_per_variant_expected_ht(
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
-    :param plateau_models: Plateau models for the constraint calculations.
-    :param coverage_model: Coverage model for the constraint calculations.
+    :param plateau_models: Plateau models for the constraint calculations, keyed by
+        model group (as returned by ``build_models``).
+    :param coverage_model: Coverage model for the constraint calculations as
+        ``[intercept, slope]`` (as returned by ``build_models``).
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :param custom_vep_annotation: Custom VEP annotation to use. Default is
         ``"transcript_consequences"``.
@@ -1020,8 +1030,10 @@ def aggregate_per_variant_expected_ht(
 def create_aggregated_expected_ht(
     ht: hl.Table,
     mutation_ht: hl.Table,
-    plateau_models: hl.StructExpression,
-    coverage_model: Tuple[float, float],
+    plateau_models: hl.expr.DictExpression,
+    coverage_model: Optional[
+        Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
+    ],
     log10_coverage: bool = True,
     custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
@@ -1048,8 +1060,10 @@ def create_aggregated_expected_ht(
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
-    :param plateau_models: Plateau models for the constraint calculations.
-    :param coverage_model: Coverage model for the constraint calculations.
+    :param plateau_models: Plateau models for the constraint calculations, keyed by
+        model group (as returned by ``build_models``).
+    :param coverage_model: Coverage model for the constraint calculations as
+        ``[intercept, slope]`` (as returned by ``build_models``).
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :param custom_vep_annotation: Custom VEP annotation to use. Default is
         ``"transcript_consequences"``.
@@ -2302,8 +2316,8 @@ def annotate_constraint_percentile_bins(
 
     :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
     :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list
-        of threshold values, as produced by
-        :func:`compute_percentile_thresholds`.
+        of threshold values, built from :func:`compute_percentile_thresholds`
+        output (see :func:`annotate_bins_by_threshold`).
     :param metric_group_idx: Mapping of metric name to its index in
         ``constraint_groups`` (e.g. ``{"lof": 5, "mis": 1, "syn": 0}``).
     :return: Annotated Table with an added ``constraint_bins`` struct field.
