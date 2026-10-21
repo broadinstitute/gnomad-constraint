@@ -2294,20 +2294,15 @@ def flatten_release_ht(ht: hl.Table) -> hl.Table:
     """
     Flatten the release constraint metrics Table for TSV export.
 
-    Drops per-genetic-ancestry downsampling fields (``gen_anc_obs``,
-    ``gen_anc_exp``) when present and calls :meth:`~hail.Table.flatten`
-    to expand nested struct fields using ``.`` as the separator
-    (e.g. ``lof.obs``, ``lof.oe_ci.upper``).
+    Calls :meth:`~hail.Table.flatten` to expand nested struct fields using ``.`` as
+    the separator (e.g. ``lof.obs``, ``lof.oe_ci.upper``). When downsampling data is
+    present, the per-genetic-ancestry downsampling fields are kept as array-valued
+    columns (e.g. ``lof.gen_anc_obs.afr``), as in the published release TSVs.
 
     :param ht: Release-format constraint metrics Table (output of
         :func:`prepare_release_ht`).
     :return: Flat Table suitable for :meth:`~hail.Table.export`.
     """
-    # Drop struct/array fields not suitable for flat TSV export.
-    drop_fields = [f for f in ["gen_anc_obs", "gen_anc_exp"] if f in ht.row]
-    if drop_fields:
-        ht = ht.drop(*drop_fields)
-
     # Reorder key fields to match RELEASE_KEY_ORDER before flattening so
     # the TSV columns appear in the expected order (flatten drops the key
     # and may emit fields in internal storage order rather than key order).
