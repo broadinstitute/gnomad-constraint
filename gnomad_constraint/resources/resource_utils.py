@@ -687,6 +687,7 @@ def get_constraint_resources(
     directory_post_fix: Optional[str] = None,
     path_post_fix: Optional[str] = None,
     skip_pre_rank_metrics: bool = False,
+    use_aggregated_expected: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -699,6 +700,9 @@ def get_constraint_resources(
     :param models: List of models to use. Default is ["plateau", "coverage"].
     :param directory_post_fix: Post-fix to add to the directory path of the resources.
     :param path_post_fix: Post-fix to add to the path of the resources.
+    :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
+        reads the ``--apply-models-aggregated`` output instead of the
+        ``--aggregate-per-variant-expected`` output. Default is False.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -804,15 +808,6 @@ def get_constraint_resources(
             build_models,
         ],
     )
-    aggregate_by_constraint_groups = PipelineStepResourceCollection(
-        "--aggregate-by-constraint-groups",
-        output_resources={
-            "constraint_group_ht": get_constraint_group_ht(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
-            )
-        },
-        pipeline_input_steps=[aggregate_per_variant_expected],
-    )
     apply_models_aggregated = PipelineStepResourceCollection(
         "--apply-models-aggregated",
         output_resources={
@@ -822,6 +817,26 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
+    if use_aggregated_expected:
+        aggregate_by_constraint_groups = PipelineStepResourceCollection(
+            "--aggregate-by-constraint-groups --use-aggregated-expected",
+            output_resources={
+                "constraint_group_ht": get_constraint_group_ht(
+                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                )
+            },
+            pipeline_input_steps=[apply_models_aggregated],
+        )
+    else:
+        aggregate_by_constraint_groups = PipelineStepResourceCollection(
+            "--aggregate-by-constraint-groups",
+            output_resources={
+                "constraint_group_ht": get_constraint_group_ht(
+                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                )
+            },
+            pipeline_input_steps=[aggregate_per_variant_expected],
+        )
     if skip_pre_rank_metrics:
         # Only the ranking is rerun, over an existing pre-rank Table. The
         # upstream metrics inputs are not read, and the pre-rank Table becomes
