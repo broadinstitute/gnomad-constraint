@@ -202,7 +202,8 @@ def get_gencode_cds_ht(
     """Build and checkpoint a per-locus GENCODE CDS transcript ID table.
 
     Calls :func:`get_gencode_ht` to retrieve the GENCODE table, filters to
-    CDS features, explodes each CDS interval into individual locus positions,
+    CDS features (dropping chrY PAR copies, which share the chrX copy's
+    transcript ID), explodes each CDS interval into individual locus positions,
     and groups by locus to produce an array of transcript IDs per position.
     The result is checkpointed (read if it already exists) and returned as a
     :class:`TableResource`.
@@ -215,10 +216,14 @@ def get_gencode_cds_ht(
     """
     check_param_scope(version=version)
     root = get_constraint_root(version=version, temp=True)
-    path = f"{root}/gencode_cds_positions.ht"
+    path = f"{root}/gencode_cds_positions.no_y_par.ht"
 
     gencode_ht = get_gencode_ht(version)
-    gencode_ht = gencode_ht.filter(gencode_ht.feature == "CDS").select("transcript_id")
+    gencode_ht = gencode_ht.filter(
+        (gencode_ht.feature == "CDS")
+        & ~gencode_ht.transcript_id_version.endswith("Y_PAR")
+        & ~gencode_ht.transcript_id_version.endswith("PAR_Y")
+    ).select("transcript_id")
     gencode_ht = gencode_ht.annotate(
         positions=hl.range(
             gencode_ht.interval.start.position,
