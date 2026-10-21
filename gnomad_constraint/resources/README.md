@@ -55,7 +55,10 @@ gs://gnomad/v{version}/constraint/
 
 Tests use `gs://gnomad-tmp/gnomad_v{version}_testing/constraint/...` (`test=True`)
 and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/...`
-(`temp=True`).
+(`temp=True`). These rules apply to every output, including the release files.
+`--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
+`--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
+apply-models, metrics, and constraint-metrics release outputs.
 
 ---
 

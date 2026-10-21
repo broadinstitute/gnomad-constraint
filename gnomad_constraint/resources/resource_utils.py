@@ -341,56 +341,44 @@ def get_mutation_ht(**kwargs) -> TableResource:
     return get_constraint_data("mutation_rate", sub_dir="mutation_rate", **kwargs)
 
 
-def get_release_mutation_ht(version: str = CURRENT_VERSION) -> TableResource:
+def get_release_mutation_ht(**kwargs) -> TableResource:
     """
     Return TableResource for the release mutation rate Table.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: TableResource of the release mutation rate Table.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return TableResource(f"{root}/release/gnomad.v{version}.mutation_rate.ht")
+    return get_constraint_data("mutation_rate", sub_dir="release", **kwargs)
 
 
-def get_release_mutation_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_release_mutation_tsv_path(**kwargs) -> str:
     """
     Return path for the release mutation rate TSV.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: Path of the release mutation rate TSV.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return f"{root}/release/gnomad.v{version}.mutation_rate.tsv"
+    return get_constraint_data(
+        "mutation_rate", sub_dir="release", extension="tsv", **kwargs
+    )
 
 
-def get_release_constraint_ht(version: str = CURRENT_VERSION) -> TableResource:
+def get_release_constraint_ht(**kwargs) -> TableResource:
     """
     Return TableResource for the release constraint metrics Table.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: TableResource of the release constraint metrics Table.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return TableResource(f"{root}/release/gnomad.v{version}.constraint_metrics.ht")
+    return get_constraint_data("constraint_metrics", sub_dir="release", **kwargs)
 
 
-def get_release_constraint_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_release_constraint_tsv_path(**kwargs) -> str:
     """
     Return path for the release constraint metrics TSV.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: Path of the release constraint metrics TSV.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return f"{root}/release/gnomad.v{version}.constraint_metrics.tsv.bgz"
+    return get_constraint_data(
+        "constraint_metrics", sub_dir="release", extension="tsv.bgz", **kwargs
+    )
 
 
 def get_annotated_context_ht(**kwargs) -> TableResource:
@@ -559,46 +547,41 @@ def get_pre_rank_constraint_metrics_dataset(
     )
 
 
-def get_gene_quality_metrics_ht(version: str = CURRENT_VERSION) -> TableResource:
+def get_gene_quality_metrics_ht(**kwargs) -> TableResource:
     """
     Return TableResource of per-transcript gene quality metrics.
 
     Contains coverage and mapping quality metrics per transcript used for
     annotating the release constraint Table.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: TableResource of gene quality metrics.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return TableResource(f"{root}/metrics/gnomad.v{version}.gene_quality_metrics.ht")
+    return get_constraint_data("gene_quality_metrics", sub_dir="metrics", **kwargs)
 
 
-def get_lof_threshold_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_lof_threshold_tsv_path(**kwargs) -> str:
     """
     Return path for the LoF OE CI upper bin thresholds TSV.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: Path of the LoF threshold TSV.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return f"{root}/release/gnomad.v{version}.loeuf_percentile_thresholds.tsv"
+    return get_constraint_data(
+        "loeuf_percentile_thresholds", sub_dir="release", extension="tsv", **kwargs
+    )
 
 
-def get_release_downsampling_tsv_path(version: str = CURRENT_VERSION) -> str:
+def get_release_downsampling_tsv_path(**kwargs) -> str:
     """
     Return path for the release per-genetic-ancestry downsampling TSV.
 
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
     :return: Path of the release downsampling TSV.
     """
-    check_param_scope(version=version)
-    root = get_constraint_root(version=version)
-    return f"{root}/release/gnomad.v{version}.constraint_metrics.downsampling.tsv.bgz"
+    return get_constraint_data(
+        "constraint_metrics.downsampling",
+        sub_dir="release",
+        extension="tsv.bgz",
+        **kwargs,
+    )
 
 
 def get_logging_path(name: str, **kwargs) -> str:
@@ -757,7 +740,7 @@ def get_constraint_resources(
     compute_gene_quality_metrics_step = PipelineStepResourceCollection(
         "--compute-gene-quality-metrics",
         output_resources={
-            "gene_quality_metrics_ht": get_gene_quality_metrics_ht(version=version)
+            "gene_quality_metrics_ht": get_gene_quality_metrics_ht(**common_params)
         },
         add_input_resources={
             "gnomAD resources": {"exomes_sites_ht": input_hts["exomes_sites_ht"]},
@@ -880,26 +863,32 @@ def get_constraint_resources(
     prepare_release = PipelineStepResourceCollection(
         "--prepare-release",
         output_resources={
-            "release_ht": get_release_constraint_ht(version=version),
+            "release_ht": get_release_constraint_ht(
+                **common_params, path_post_fix=path_post_fix
+            ),
         },
         pipeline_input_steps=[compute_constraint_metrics],
     )
     prepare_release_mutation_rate = PipelineStepResourceCollection(
         "--prepare-release-mutation-rate",
         output_resources={
-            "release_mutation_ht": get_release_mutation_ht(version=version),
-            "release_mutation_tsv": get_release_mutation_tsv_path(version=version),
+            "release_mutation_ht": get_release_mutation_ht(**common_params),
+            "release_mutation_tsv": get_release_mutation_tsv_path(**common_params),
         },
         pipeline_input_steps=[calculate_mutation_rate],
     )
     export_release_tsv = PipelineStepResourceCollection(
         "--export-release-tsv",
         output_resources={
-            "release_tsv": get_release_constraint_tsv_path(version=version),
-            "release_downsampling_tsv": get_release_downsampling_tsv_path(
-                version=version
+            "release_tsv": get_release_constraint_tsv_path(
+                **common_params, path_post_fix=path_post_fix
             ),
-            "lof_threshold_tsv": get_lof_threshold_tsv_path(version=version),
+            "release_downsampling_tsv": get_release_downsampling_tsv_path(
+                **common_params, path_post_fix=path_post_fix
+            ),
+            "lof_threshold_tsv": get_lof_threshold_tsv_path(
+                **common_params, path_post_fix=path_post_fix
+            ),
         },
         pipeline_input_steps=[prepare_release],
     )
