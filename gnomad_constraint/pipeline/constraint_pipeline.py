@@ -292,6 +292,7 @@ def main(args):
             coverage_model, plateau_models = build_models(
                 ht,
                 ht.exomes_coverage,
+                weighted=args.use_weights,
                 model_group_expr=ht.build_model,
                 skip_coverage_model=skip_coverage_model,
                 log10_coverage=log10_coverage,
@@ -801,24 +802,6 @@ if __name__ == "__main__":
     )
 
     aggregate_per_variant_expected_args.add_argument(
-        "--apply-obs-pos-count-partition-hint",
-        help=(
-            "Target number of partitions for aggregation when counting observed and"
-            " expected variants for model application"
-        ),
-        type=int,
-        default=2000,
-    )
-    aggregate_per_variant_expected_args.add_argument(
-        "--apply-expected-variant-partition-hint",
-        help=(
-            "Target number of partitions for sum aggregators after applying models to"
-            " get expected variant counts."
-        ),
-        type=int,
-        default=1000,
-    )
-    aggregate_per_variant_expected_args.add_argument(
         "--custom-vep-annotation",
         help=(
             "Custom VEP annotation to be used to annotate transcript when"
@@ -876,15 +859,6 @@ if __name__ == "__main__":
             " confidence interval around oe ratio."
         ),
         action="store_true",
-    )
-    compute_constraint_args.add_argument(
-        "--compute-constraint-metrics-partitions",
-        help=(
-            "Number of partitions to which the Table of expected variant counts should "
-            "be reaprtitioned."
-        ),
-        type=int,
-        default=1000,
     )
     compute_constraint_args.add_argument(
         "--skip-pre-rank-metrics",
