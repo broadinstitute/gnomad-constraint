@@ -610,10 +610,9 @@ Each constraint group is exposed as a named struct (group names from
 - `z_raw: float64` — raw z-statistic.
 - `z_score: float64` — `z_raw / sd_raw_z[<group>]`.
 - `oe_ci: struct{lower: float64, upper: float64}` — OE confidence interval.
-  The estimator (Poisson vs Gamma) depends on the group:
-  - `syn`, `mis`, `lof_hc_lc` use the discretized-Poisson CI.
-  - `lof` uses the Gamma CI (the LOEUF), and **additionally** carries rank
-    fields on `oe_ci` (the only group in `RELEASE_GROUPS_WITH_RANK`):
+  Every group uses the Gamma CI (`oe_ci_gamma` in §10; for `lof` this is the
+  LOEUF). `lof` **additionally** carries rank fields on `oe_ci` (the only group
+  in `RELEASE_GROUPS_WITH_RANK`):
     - `upper_rank: int64` — 0-based rank by `oe_ci.upper` ascending.
     - `upper_bin_percentile: int32` — percentile bin (0–99).
     - `upper_bin_decile: int32` — decile bin (0–9; LOEUF decile).
