@@ -72,6 +72,30 @@ logger = logging.getLogger("constraint_pipeline")
 logger.setLevel(logging.INFO)
 
 
+def check_skip_coverage_model(
+    params_expr: hl.expr.StructExpression, skip_coverage_model: bool
+) -> None:
+    """
+    Check that ``--skip-coverage-model`` matches the setting used in preprocessing.
+
+    Preprocessing assigns low coverage sites to the coverage model unless it is
+    skipped, so building or applying the models with a different setting gives wrong
+    expected counts.
+
+    :param params_expr: Parameter global of the input Table (``build_models_globals``
+        or ``apply_models_globals``).
+    :param skip_coverage_model: Whether ``--skip-coverage-model`` was passed.
+    :return: None.
+    """
+    preprocess_skip = hl.eval(params_expr.skip_coverage_model)
+    if preprocess_skip != skip_coverage_model:
+        raise ValueError(
+            f"--skip-coverage-model is {skip_coverage_model}, but the input Table was"
+            f" preprocessed with skip_coverage_model={preprocess_skip}. Use the same"
+            " setting as --preprocess-data."
+        )
+
+
 def main(args):
     """Execute the constraint pipeline."""
     hl.init(
@@ -261,6 +285,7 @@ def main(args):
             res.check_resource_existence()
             ht = res.train_ht.ht()
             print_global_struct(ht.build_models_globals)
+            check_skip_coverage_model(ht.build_models_globals, skip_coverage_model)
             coverage_model, plateau_models = build_models(
                 ht,
                 ht.exomes_coverage,
@@ -291,6 +316,7 @@ def main(args):
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
+            check_skip_coverage_model(ht.apply_models_globals, skip_coverage_model)
             ht = create_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
@@ -335,6 +361,7 @@ def main(args):
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
+            check_skip_coverage_model(ht.apply_models_globals, skip_coverage_model)
             ht = create_aggregated_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),

@@ -878,23 +878,30 @@ def _apply_constraint_models(
     :param plateau_models: Plateau models for the constraint calculations, keyed by
         model group (as returned by ``build_models``).
     :param coverage_model: Coverage model for the constraint calculations as
-        ``[intercept, slope]`` (as returned by ``build_models``).
+        ``[intercept, slope]`` (as returned by ``build_models``). If None, only the
+        plateau models are applied and ``coverage_correction`` is 1.
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :return: Table annotated with model outputs (``mu``,
         ``predicted_proportion_observed``, ``expected_variants``,
         ``coverage_correction``).
     """
-    return ht.annotate(
-        **apply_models(
-            ht.mu_snp,
-            plateau_models.get(ht.apply_model.model_group),
-            ht.possible_variants,
-            coverage_model=coverage_model,
-            coverage_expr=ht.exomes_coverage,
-            model_group_expr=ht.apply_model,
-            log10_coverage=log10_coverage,
-        )
+    apply_expr = apply_models(
+        ht.mu_snp,
+        plateau_models.get(ht.apply_model.model_group),
+        ht.possible_variants,
+        coverage_model=coverage_model,
+        coverage_expr=ht.exomes_coverage,
+        model_group_expr=ht.apply_model,
+        log10_coverage=log10_coverage,
     )
+
+    # When the coverage model is skipped, preprocessing assigns sites only to the high
+    # coverage model, whose correction is 1. Add it so the downstream sums have the
+    # same fields either way.
+    if coverage_model is None:
+        apply_expr = apply_expr.annotate(coverage_correction=hl.float64(1.0))
+
+    return ht.annotate(**apply_expr)
 
 
 def _annotate_apply_models_globals(
@@ -914,11 +921,14 @@ def _annotate_apply_models_globals(
 
     :param ht: Input Table.
     :param plateau_models: Plateau models used, keyed by model group.
-    :param coverage_model: Coverage model used.
+    :param coverage_model: Coverage model used. If None, the global is missing.
     :param log10_coverage: Whether log10 coverage was used.
     :param groupings: List of grouping field names.
     :return: Table with updated ``apply_models_globals`` global.
     """
+    if coverage_model is None:
+        coverage_model = hl.missing(hl.tarray(hl.tfloat64))
+
     model_params = hl.struct(
         plateau_models=plateau_models,
         coverage_model=coverage_model,
