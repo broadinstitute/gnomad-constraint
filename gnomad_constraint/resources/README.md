@@ -447,7 +447,7 @@ Pipeline-parameter globals (same as §7) plus:
 
 ## 10. `constraint_metrics.ht` (internal)
 
-Per-transcript metrics: pLI, OE confidence intervals (two estimators),
+Per-transcript metrics: pLI (LoF groups), OE confidence intervals (two estimators),
 raw and standardized z-scores, percentile/decile/sextile bins. Produced by
 `--compute-constraint-metrics`. This is the *internal* metrics table; the
 public release table (§12) is a renamed/flattened projection.
@@ -485,6 +485,11 @@ Pipeline-parameter globals (as §9) plus:
   - `flags: set<str>` — per-group QC flags (e.g. low observed, low expected).
   - `z_score: float64` — `z_raw / sd_raw_z[group_idx]`, taken at the
     canonical (global-adj) freq index.
+  - `pNull: float64`, `pRec: float64`, `pLI: float64` — pNull / pRec / pLI
+    scores computed from this group's global-adj observed / expected via
+    [`compute_pli`](https://github.com/broadinstitute/gnomad_methods). Defined
+    only for the groups in `RELEASE_GROUPS_WITH_PLI` (`lof_hc`, `lof_hc_lc`);
+    missing for every other group.
   - `oe_ci_discretized_poisson_rank: struct` and `oe_ci_gamma_rank: struct` —
     rank/bin annotations for the `upper` bound of each CI:
     - `upper_rank: int64` — 0-based ascending rank within the group.
@@ -496,9 +501,6 @@ Pipeline-parameter globals (as §9) plus:
   (`no_variants`, `not_in_gencode`, `outlier_*`, etc.).
 - `constraint_bins: struct{percentile, decile, sextile}` — convenience bins
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
-- `pLI: float64`, `pNull: float64`, `pRec: float64` — pLI / pRec / pNull scores
-  derived from LOEUF observed / expected via
-  [`compute_pli`](https://github.com/broadinstitute/gnomad_methods).
 - `gene_quality_metrics: struct` — joined-in from §11:
   - `exome_prop_bp_AN90: float64` — fraction of transcript CDS bp with
     exome AN ≥ 90% of max.

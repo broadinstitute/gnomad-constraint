@@ -1780,46 +1780,72 @@ def compute_constraint_percentile_bins(
     return annotate_constraint_percentile_bins(ht, thresholds, metric_group_idx)
 
 
+def _get_constraint_group_name(meta: Dict[str, str]) -> str:
+    """
+    Get the internal name of a constraint group from its metadata.
+
+    For example, ``{"csq_set": "syn"}`` gives ``"syn"`` and ``{"lof": "hc"}`` gives
+    ``"lof_hc"``.
+
+    :param meta: Constraint group metadata, one element of ``constraint_group_meta``.
+    :return: Constraint group name.
+    """
+    return "_".join(f"{k}_{v}" for k, v in meta.items()).replace("csq_set_", "")
+
+
 def _compute_pli_scores(
     ht: hl.Table,
     expected_values: Optional[Dict[str, float]] = None,
     min_diff_convergence: float = 0.001,
 ) -> hl.Table:
     """
-    Compute pLI, pNull, and pRec scores for the HC LoF constraint group.
+    Compute pLI, pNull, and pRec scores for the LoF constraint groups.
+
+    Scores are computed separately for each group in ``RELEASE_GROUPS_WITH_PLI``
+    from that group's own observed and expected counts.
 
     :param ht: Table output by :func:`_compute_z_scores`.
     :param expected_values: Dictionary containing the expected OE values for 'Null',
         'Rec', and 'LI' to use as starting values. Default is ``PLI_EXPECTED_VALUES``.
     :param min_diff_convergence: Minimum iteration change in LI to consider the EM
         model convergence criteria as met. Default is 0.001.
-    :return: Table with pLI, pNull, and pRec annotations.
+    :return: Table with pLI, pNull, and pRec annotations on each constraint group,
+        missing for groups not in ``RELEASE_GROUPS_WITH_PLI``.
     """
     if expected_values is None:
         expected_values = PLI_EXPECTED_VALUES
 
-    # Locate the HC LoF constraint group and its adj-frequency oe_info entry
-    # to extract observed and expected variant counts for the EM model.
     meta = hl.eval(ht.constraint_group_meta)
     freq_meta = hl.eval(ht.exomes_freq_meta)
-    lof_idx = meta.index({"lof": "hc"})
     all_freq_idx = freq_meta.index(ADJ_FREQ_META)
 
-    # Run the EM algorithm (via compute_pli) to classify each transcript
-    # into three categories based on its observed vs expected HC LoF count:
+    # Run the EM algorithm (via compute_pli) on each LoF group's adj-frequency
+    # observed and expected counts to classify each transcript into three
+    # categories:
     #   - pNull: probability of being unconstrained (OE ~ 1.0)
     #   - pRec:  probability of being recessive-lethal (OE ~ 0.706)
     #   - pLI:   probability of being LoF-intolerant (OE ~ 0.207)
-    # The result is annotated as top-level fields (pLI, pNull, pRec), not
-    # inside constraint_groups, since they only apply to HC LoF.
-    hc_lof_expr = ht.constraint_groups[lof_idx].oe_info[all_freq_idx]
+    pli_exprs = {}
+    for i, m in enumerate(meta):
+        if _get_constraint_group_name(m) in RELEASE_GROUPS_WITH_PLI:
+            oe_info_expr = ht.constraint_groups[i].oe_info[all_freq_idx]
+            pli_exprs[i] = compute_pli(
+                ht,
+                obs_expr=oe_info_expr.observed_variants,
+                exp_expr=oe_info_expr.expected_variants,
+                expected_values=expected_values,
+                min_diff_convergence=min_diff_convergence,
+            )
+
+    # All elements of the constraint_groups array must share a schema, so groups
+    # without scores get missing values.
+    missing_pli_expr = hl.missing(next(iter(pli_exprs.values())).dtype)
     return ht.annotate(
-        **compute_pli(
-            ht,
-            obs_expr=hc_lof_expr.observed_variants,
-            exp_expr=hc_lof_expr.expected_variants,
-            expected_values=expected_values,
-            min_diff_convergence=min_diff_convergence,
+        constraint_groups=hl.array(
+            [
+                ht.constraint_groups[i].annotate(**pli_exprs.get(i, missing_pli_expr))
+                for i in range(len(meta))
+            ]
         )
     )
 
@@ -1843,7 +1869,8 @@ def compute_constraint_metrics(
     1. Annotate OE ratios, confidence intervals, raw z-scores, and per-group flags
        (:func:`_annotate_oe_ci_z`).
     2. Normalize z-scores and union constraint flags (:func:`_compute_z_scores`).
-    3. Compute pLI / pNull / pRec scores (:func:`_compute_pli_scores`).
+    3. Compute pLI / pNull / pRec scores for the LoF groups
+       (:func:`_compute_pli_scores`).
     4. Annotate with gene quality metrics and GENCODE transcript annotations.
 
     Rank, decile, and percentile bin annotations are *not* added here. They are
@@ -1901,7 +1928,7 @@ def compute_constraint_metrics(
     ht = _compute_z_scores(ht)
     ht = ht.checkpoint(new_temp_file("constraint_metrics.z_scores", "ht"))
 
-    # Run the EM algorithm to compute pLI/pNull/pRec from HC LoF
+    # Run the EM algorithm to compute pLI/pNull/pRec from each LoF group's
     # observed vs expected counts.
     ht = _compute_pli_scores(ht, expected_values, min_diff_convergence)
     ht = ht.checkpoint(new_temp_file("constraint_metrics.pli", "ht"))
@@ -1940,7 +1967,8 @@ def _restructure_release_rows(
     Annotates the Table with one top-level field per group (applying
     ``RELEASE_GROUP_RENAMES``, e.g. ``lof_hc`` -> ``lof``), trims the
     ``oe_ci`` struct to ranked or unranked CI fields depending on the group,
-    and adds ``pLI`` / ``pNull`` / ``pRec`` for the LoF group. Finally
+    and adds ``pLI`` / ``pNull`` / ``pRec`` for the groups in
+    ``RELEASE_GROUPS_WITH_PLI``. Finally
     selects release row fields, re-keys, and filters out transcripts with
     no possible variants in any group.
 
@@ -2003,9 +2031,9 @@ def _restructure_release_rows(
     # Explode the array into named top-level fields (syn, mis, lof_hc_lc,
     # lof), applying group renames (lof_hc -> lof). For each group:
     #   - Trim oe_ci to just lower/upper for unranked groups, or add
-    #     rank + bin fields for ranked groups (lof, lof_hc_lc).
-    #   - Attach pLI/pNull/pRec (top-level fields from _compute_pli_scores)
-    #     to the LoF groups.
+    #     rank + bin fields for ranked groups (RELEASE_GROUPS_WITH_RANK).
+    #   - Attach the group's own pLI/pNull/pRec (from _compute_pli_scores)
+    #     to the groups in RELEASE_GROUPS_WITH_PLI.
     cg_fields = {
         RELEASE_GROUP_RENAMES.get(name, name): cg_expr[i].annotate(
             oe_ci=cg_expr[i].oe_ci.select(
@@ -2016,7 +2044,7 @@ def _restructure_release_rows(
                 )
             ),
             **{
-                k: ht[k]
+                k: ht.constraint_groups[i][k]
                 for k in (RELEASE_LOF_FIELDS if name in RELEASE_GROUPS_WITH_PLI else [])
             },
         )
@@ -2185,10 +2213,7 @@ def prepare_release_ht(
 
     # Derive human-readable field names from the constraint group metadata
     # dicts (e.g. {"csq_set": "syn"} -> "syn", {"lof": "hc"} -> "lof_hc").
-    field_names = [
-        "_".join(f"{k}_{v}" for k, v in m.items()).replace("csq_set_", "")
-        for m in constraint_meta
-    ]
+    field_names = [_get_constraint_group_name(m) for m in constraint_meta]
     logger.info("Release constraint group field names: %s", field_names)
 
     # Build a mapping from genetic ancestry to its oe_info indices for
