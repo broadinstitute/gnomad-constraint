@@ -13,7 +13,9 @@ coverage, methylation, GERP, GENCODE, `all_sites_an`) see
 > **Scope.** This README documents v4.1.1. Older versions (`2.1.1`, `4.0`,
 > `4.1`) follow the same general layout but partition some artifacts by
 > genomic region (e.g. `*.autosome_par.ht`, `*.chrx_nonpar.ht`,
-> `*.chry_nonpar.ht`). v4 drops chrX/chrY early in the pipeline.
+> `*.chry_nonpar.ht`). v4.1.1 keeps all regions in one Table and labels each
+> site with a `genomic_region` annotation (`autosome_or_par`, `chrx_nonpar`, or
+> `chry_nonpar`).
 
 ---
 
@@ -43,6 +45,7 @@ gs://gnomad/v{version}/constraint/
 ├── metrics/
 │   ├── gnomad.v{version}.gene_quality_metrics.ht
 │   └── {transcript_consequences|worst_csq_by_gene}/
+│       ├── gnomad.v{version}.constraint_metrics_pre_rank.ht
 │       └── gnomad.v{version}.constraint_metrics.ht
 └── release/
     ├── gnomad.v{version}.constraint_metrics.ht

@@ -28,9 +28,6 @@ DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 """Model types used for constraint calibration."""
 
-GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
-"""Genomic regions used to partition constraint calculations."""
-
 CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
 """
 VEP annotations used when applying models.

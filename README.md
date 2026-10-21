@@ -1,6 +1,6 @@
 # gnomad-constraint
 
-Genic constraint analysis pipeline for gnomAD. Computes observed/expected ratios, pLI scores, z-scores, and confidence intervals for LoF, missense, and synonymous variants at the gene/transcript level. Current version: **v4.1.1** (GRCh38). Historical version 2.1.1 (GRCh37) is also supported.
+Genic constraint analysis pipeline for gnomAD. Computes observed/expected ratios, pLI scores, z-scores, and confidence intervals for LoF, missense, and synonymous variants at the gene/transcript level. Current version: **v4.1.1** (GRCh38). Version 2.1.1 (GRCh37) is no longer supported by this pipeline; commit 39928d1 is the last version of the script that supports it.
 
 An overview of the pipeline and functions that are used can be found in [/gnomad_constraint/flowchart/constraint_pipeline_v4.pdf](./gnomad_constraint/flowchart/constraint_pipeline_v4.pdf). Note that many functions are imported from the [gnomad_methods](https://github.com/broadinstitute/gnomad_methods) repo.
 
@@ -11,9 +11,7 @@ The `gnomad_constraint/experimental/proemis3d/` directory contains the ProEmis3D
 | Directory | Purpose |
 |-----------|---------|
 | `gnomad_constraint/pipeline/constraint_pipeline.py` | Main constraint pipeline |
-| `gnomad_constraint/pipeline/constraint_pipeline_complex.py` | Complex region constraint pipeline |
 | `gnomad_constraint/utils/constraint.py` | Core utility functions (preprocessing, model building, metrics) |
-| `gnomad_constraint/utils/constraint_complex.py` | Complex region constraint utilities |
 | `gnomad_constraint/resources/resource_utils.py` | Resource paths and `TableResource` definitions |
 | `gnomad_constraint/resources/constants.py` | Pipeline constants |
 | `gnomad_constraint/experimental/proemis3d/` | ProEmis3D regional missense constraint |
@@ -26,7 +24,7 @@ The main pipeline (`constraint_pipeline.py`) has these steps (each a CLI flag):
 | Step | CLI Flag | Function |
 |------|----------|----------|
 | 1 | `--prepare-context-ht` | Annotate VEP context with methylation, coverage, GERP |
-| 2 | `--preprocess-data` | Add VEP context annotations to exome/genome tables, prepare for constraint |
+| 2 | `--preprocess-data` | Add observed/possible, mutation rate, and model-group annotations to the annotated context Table |
 | 3 | `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs |
 | 4 | `--calculate-mutation-rate` | Compute baseline mutation rate per substitution/context |
 | 5 | `--create-training-set` | Count observed + possible variants at synonymous sites |
@@ -47,33 +45,36 @@ Steps 7a/8/9 (per-variant path) and 7b (aggregated path) are alternative ways to
 
 ```
 gs://gnomad/v4.1.1/constraint/                              # Production root
-gs://gnomad-tmp/gnomad_v4.1.1_testing/constraint/            # Test root
+gs://gnomad-tmp/gnomad_v4.1.1_testing/constraint/            # Test root (--test)
 
 # Key outputs:
-.../preprocessed_data/annotated_context.ht
-.../preprocessed_data/gnomad.v4.1.1.{context|exomes|genomes}.preprocessed.{region}.ht
+.../preprocessed_data/gnomad.v4.1.1.annotated_context.ht
+.../preprocessed_data/gnomad.v4.1.1.context.preprocessed.ht
 .../mutation_rate/gnomad.v4.1.1.mutation_rate.ht
-.../training_data/gnomad.v4.1.1.constraint_training.{region}.ht
-.../models/gnomad.v4.1.1.{plateau|coverage}.{region}.he
-.../apply_models/transcript_consequences/gnomad.v4.1.1.per_variant_expected.{region}.ht
-.../apply_models/transcript_consequences/gnomad.v4.1.1.aggregated_expected.{region}.ht
-.../apply_models/transcript_consequences/gnomad.v4.1.1.apply.{region}.ht
-.../constraint_groups/transcript_consequences/gnomad.v4.1.1.constraint_groups.{region}.ht
-.../metrics/gnomad.v4.1.1.constraint_metrics.ht
+.../training_data/gnomad.v4.1.1.constraint_training.ht
+.../models/gnomad.v4.1.1.{plateau|coverage}.he
+.../apply_models/transcript_consequences/gnomad.v4.1.1.per_variant_expected.ht
+.../apply_models/transcript_consequences/gnomad.v4.1.1.per_variant_expected.aggregated.ht
+.../apply_models/transcript_consequences/gnomad.v4.1.1.aggregated_expected.ht
+.../apply_models/transcript_consequences/gnomad.v4.1.1.constraint_group.ht
+.../metrics/gnomad.v4.1.1.gene_quality_metrics.ht
+.../metrics/transcript_consequences/gnomad.v4.1.1.constraint_metrics.ht
+.../release/gnomad.v4.1.1.constraint_metrics.{ht|tsv.bgz}
 ```
 
-### constraint_metrics Table
+All outputs, including the release files, go under the test root with `--test`. See [gnomad_constraint/resources/README.md](gnomad_constraint/resources/README.md) for the full layout and the schema of every output.
 
-Keyed by `(gene, transcript, canonical)` (and optionally `mane_select`, `gene_id`).
+### Release constraint metrics Table
 
-Output struct per annotation category (`lof`, `mis`, `syn`):
+Keyed by `(gene, gene_id, transcript, canonical, mane_select)`. One struct per constraint group (`syn`, `mis`, `lof_hc_lc`, `lof`):
 - `.obs` — observed variant count
 - `.exp` — expected variant count
 - `.oe` — observed/expected ratio
-- `.oe_ci` — 90% CI around o/e
-- `.z_raw` — raw z-score
-- `.pLI` — probability of loss-of-function intolerance (LoF only)
-- `.pNull`, `.pRec` — null/recessive probabilities (LoF only)
+- `.oe_ci` — 90% gamma CI around o/e (for `lof`, the LOEUF, with rank and bin fields)
+- `.z_raw`, `.z_score` — raw and standardized z-scores
+- `.pLI`, `.pNull`, `.pRec` — pLI / null / recessive probabilities, computed from each group's own counts (`lof_hc_lc` and `lof` only)
+
+The internal `metrics/.../constraint_metrics.ht` stores the same metrics in a `constraint_groups` array; see the resources README.
 
 ## Missense Score Percentile Analysis
 

@@ -26,11 +26,10 @@ Use **Sphinx-style** (`:param:`, `:return:`) docstrings following the gnomad_met
 ## Key Constants (`constants.py`)
 
 ```python
-VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1"]
+VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1", "4.1.2"]
 CURRENT_VERSION = "4.1.1"
 DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
-GENOMIC_REGIONS = ["autosome_par", "chrx_nonpar", "chry_nonpar"]
 POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
 COVERAGE_CUTOFF = 40
 CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
@@ -39,9 +38,9 @@ MU_GROUPING = ("context", "ref", "alt", "methylation_level")
 
 ## Known Gotchas
 
-- **MU_GROUPING not exported**: `gnomad_constraint.resources.resource_utils` does NOT export `MU_GROUPING`. It must be defined locally as `("context", "ref", "alt", "methylation_level")`.
-- **v4 drops chrY/chrX**: The v4 pipeline removes `chry_nonpar` and `chrx_nonpar` from regions early in `main()`. Don't assume all 3 genomic regions are present.
-- **Coverage metric**: v4 can use `"exomes_AN_percent"` instead of `"exome_coverage"`. This affects model building and application.
+- **MU_GROUPING lives in constants**: `gnomad_constraint.resources.resource_utils` does NOT export `MU_GROUPING`. Import it from `gnomad_constraint.resources.constants`.
+- **Genomic regions are labels, not separate Tables**: `prepare_context_ht` annotates each site with `genomic_region` (`"autosome_or_par"`, `"chrx_nonpar"`, or `"chry_nonpar"`), and all three stay in the same Tables. Filter on `"autosome_or_par"`, not `"autosome_par"`. `adj_r` and `syn_adj_r` are only defined on autosomes.
+- **Coverage metric**: `--exome-coverage-metric` sets how exome coverage is measured (`AN_percent` by default; also `median` or `AN`). This affects model building and application.
 - **Genomes v3.1.2 for v4**: Even in v4, the genomes sites resource uses v3.1.2 (downsamplings dropped in v4).
 - **Hail `hl.init` tmp_dir**: Pipeline uses `gs://gnomad-tmp-4day` as the Hail temp directory. Ensure this bucket exists and is writable.
 - **`ht.get()` doesn't exist on Hail Tables**: Use `field in ht.row` to check field existence.
