@@ -110,6 +110,8 @@ def main(args):
     overwrite = args.overwrite
     custom_vep_annotation = args.custom_vep_annotation
     skip_coverage_model = args.skip_coverage_model
+    gerp_lower_cutoff = args.calculate_mutation_rate_gerp_lower_cutoff
+    gerp_upper_cutoff = args.calculate_mutation_rate_gerp_upper_cutoff
     log10_coverage = args.use_logarithmic_coverage_model
 
     if version not in VERSIONS:
@@ -175,13 +177,14 @@ def main(args):
         if args.calculate_gerp_cutoffs:
             logger.warning(
                 "Calculating new GERP cutoffs to be used instead of"
-                " '--gerp-lower-cutoff' and '--gerp-upper-cutoff' defaults."
+                " '--calculate-mutation-rate-gerp-lower-cutoff' and"
+                " '--calculate-mutation-rate-gerp-upper-cutoff'."
             )
             res = resources.calculate_gerp_cutoffs
             res.check_resource_existence()
             ht = res.annotated_context_ht.ht()
             gerp_lower_cutoff, gerp_upper_cutoff = calculate_gerp_cutoffs(
-                ht.filter(ht.genomic_region == "autosome_par")
+                ht.filter(ht.genomic_region == "autosome_or_par")
             )
             logger.info(
                 "Calculated new GERP cutoffs: using a lower GERP cutoff of %f "
@@ -205,8 +208,8 @@ def main(args):
                 include_downsamplings=args.include_downsamplings,
                 calculate_mutation_rate_min_cov=args.calculate_mutation_rate_min_cov,
                 calculate_mutation_rate_max_cov=args.calculate_mutation_rate_max_cov,
-                calculate_mutation_rate_gerp_lower_cutoff=args.calculate_mutation_rate_gerp_lower_cutoff,
-                calculate_mutation_rate_gerp_upper_cutoff=args.calculate_mutation_rate_gerp_upper_cutoff,
+                calculate_mutation_rate_gerp_lower_cutoff=gerp_lower_cutoff,
+                calculate_mutation_rate_gerp_upper_cutoff=gerp_upper_cutoff,
                 max_af=args.max_af,
                 build_model_low_cov_cutoff=args.pipeline_low_coverage_filter,
                 build_model_high_cov_cutoff=args.build_model_high_cov_definition,
@@ -560,10 +563,10 @@ if __name__ == "__main__":
         "--calculate-gerp-cutoffs",
         help=(
             "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
-            " of GERP scores in the context Table. Note that if"
-            " '--calculate-gerp-cutoffs' is specified, the computed values will be used"
-            " in all downstream steps of the constraint pipeline instead of the values"
-            " defined by --gerp-lower-cutoff and --gerp-upper-cutoff."
+            " of GERP scores at autosome/PAR sites in the context Table. If"
+            " '--preprocess-data' runs in the same command, the computed values are"
+            " used instead of --calculate-mutation-rate-gerp-lower-cutoff and"
+            " --calculate-mutation-rate-gerp-upper-cutoff."
         ),
         action="store_true",
     )
