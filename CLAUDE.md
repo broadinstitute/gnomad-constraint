@@ -45,6 +45,7 @@ MU_GROUPING = ("context", "ref", "alt", "methylation_level")
 - **Hail `hl.init` tmp_dir**: Pipeline uses `gs://gnomad-tmp-4day` as the Hail temp directory. Ensure this bucket exists and is writable.
 - **`ht.get()` doesn't exist on Hail Tables**: Use `field in ht.row` to check field existence.
 - **constraint_metrics.ht pLoF lacks adj_r**: The pre-computed `constraint_metrics.ht` has `lof.exp` WITHOUT the regional depletion correction (`adj_r`). To get adj_r-corrected pLoF, compute it from the per-SNV table by filtering to LOFTEE HC + `possible_variants == 1` and aggregating with `expected_variants[0] * adj_r`.
+- **The flowchart is checked in CI**: `gnomad_constraint/flowchart/constraint_pipeline.html` is generated from the pipeline's steps, flags, resources, and function calls. After changing any of those (or the docstring of a gnomad-constraint function a step reaches), commit, then run `python -m gnomad_constraint.flowchart.generate_flowchart --extract`; CI's `--check` fails otherwise. Hand-written prose lives in `gnomad_constraint/flowchart/notes.py`, keyed by step, function, flag, and resource names, so renaming any of them means updating the notes too.
 - **Table version awareness**: Undated tables (e.g., `annotate_with_oe.ht`) and dated tables (e.g., `annotate_with_oe.12_23_25.ht`) may have different schemas and column names. Always verify which version you're using.
 
 ## Hail / Dataproc Best Practices
