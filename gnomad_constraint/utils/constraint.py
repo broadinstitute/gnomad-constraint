@@ -450,14 +450,26 @@ def get_exomes_observed_and_possible(
         - observed_variants: This annotation is an array, where each element corresponds
           to whether the variant is observed in the exomes dataset for the frequency
           group at the corresponding index in the ``exomes_freq`` array and has an
-          AF <= 0.001. The boolean value is stored as an integer (0 or 1).
+          AF <= ``max_af``. The boolean value is stored as an integer (0 or 1).
         - possible_variants: Whether the variant is considered a possible variant in the
-          exomes dataset. This includes variants not in the exome dataset (exome AF
-          undefined), or also considered in the observed variant set. The boolean value
-          is stored as an integer (0 or 1).
+          exomes dataset. This includes variants not in the exomes dataset, variants
+          that fail the exome filters, and variants in the observed variant set. The
+          boolean value is stored as an integer (0 or 1).
 
-    The observed and possible variant annotations are set to missing if the exome
-    coverage is undefined or the variant does not pass the exome filters.
+    Both annotations are missing if the exome coverage is undefined. For variants that
+    are not in the exomes dataset or that fail the exome filters (including AC0),
+    ``observed_variants`` is missing and ``possible_variants`` is 1.
+
+    .. note::
+
+        Counting variants that fail the exome filters as possible is intentional. A
+        variant was called at the site, so the site could have been observed and
+        belongs in the denominator, but the calls were low quality, so the variant is
+        not counted as observed. This differs from v2 and from the earlier v4
+        pipeline, which removed filtered variants from both counts. It was adopted for
+        the v4.1.1 metrics after comparing the metrics with and without it. Because
+        ``observed_variants`` is based on adj frequencies, AC0 variants are possible
+        but can never be observed.
 
     The function also returns a struct with the global parameters for the observed and
     possible variant annotations:
@@ -499,9 +511,10 @@ def get_exomes_observed_and_possible(
         downsampling_gen_ancs=gen_ancs if downsamplings is not None else None,
     )
 
-    # If the exome coverage is undefined or the variant does not pass the exome filters,
-    # set the observed and possible variant annotations to missing. Otherwise, set the
-    # observed and possible variant annotations based on the frequency array.
+    # Set the frequency of variants that fail the exome filters to missing, so they are
+    # counted as possible but not observed (intentional; see the docstring note). If the
+    # exome coverage is undefined, set the observed and possible variant annotations to
+    # missing.
     exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
     obs_pos_expr = hl.struct(
         exomes_freq=exomes_freq_expr,
