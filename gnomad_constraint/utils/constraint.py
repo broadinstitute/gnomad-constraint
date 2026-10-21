@@ -458,7 +458,7 @@ def get_exomes_observed_and_possible(
 
     Both annotations are missing if the exome coverage is undefined. For variants that
     are not in the exomes dataset or that fail the exome filters (including AC0),
-    ``observed_variants`` is missing and ``possible_variants`` is 1.
+    ``observed_variants`` is 0 and ``possible_variants`` is 1.
 
     .. note::
 
@@ -516,12 +516,19 @@ def get_exomes_observed_and_possible(
     # exome coverage is undefined, set the observed and possible variant annotations to
     # missing.
     exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
+    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af)
+
+    # A missing frequency array gives a missing observed array, which aggregations
+    # skip, so a group in which no variant is observed would sum to missing instead
+    # of 0. Set it to 0 for each frequency group.
+    obs_pos_expr = obs_pos_expr.annotate(
+        observed_variants=hl.or_else(
+            obs_pos_expr.observed_variants, [0] * len(exomes_freq_meta)
+        )
+    )
     obs_pos_expr = hl.struct(
         exomes_freq=exomes_freq_expr,
-        **hl.or_missing(
-            hl.is_defined(exomes_coverage_expr),
-            variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af),
-        ),
+        **hl.or_missing(hl.is_defined(exomes_coverage_expr), obs_pos_expr),
     )
     obs_pos_globals = hl.struct(
         exomes_freq_meta=exomes_freq_meta,
