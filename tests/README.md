@@ -61,12 +61,6 @@ large, so its tests are split by pipeline stage into
   `prepare_release_ht` and `flatten_release_ht` produce exactly those columns.
   Update both files when the schema changes on purpose.
 
-## Known bugs (xfail)
-
-- `filter_for_test(use_gene_list=True)` compares a `ReferenceGenome` to the string
-  `"GRCh37"`, so GRCh37 Tables get the GRCh38 gene intervals. Unreachable while the
-  pipeline rejects v2.1.1.
-
 ## Not covered yet
 
 Anything that reads real inputs or outputs on GCS: `get_constraint_resources`,

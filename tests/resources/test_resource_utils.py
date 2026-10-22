@@ -472,17 +472,12 @@ class TestFilterForTest:
         ht = filter_for_test(self._ht(keep + drop, "GRCh38"), use_gene_list=True)
         assert sorted(str(r.locus) for r in ht.collect()) == sorted(keep)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "filter_for_test compares the ReferenceGenome object from"
-            " get_reference_genome to the string 'GRCh37', which is always False,"
-            " so GRCh37 Tables get the GRCh38 gene intervals and"
-            " parse_locus_interval fails on 'chr1:...'."
-        ),
-    )
     def test_gene_list_grch37(self) -> None:
-        """Test that the gene list uses the GRCh37 gene intervals for GRCh37 Tables."""
+        """Test that the gene list uses the GRCh37 gene intervals for GRCh37 Tables.
+
+        Regression test: the reference genome object was compared to the string
+        "GRCh37", which is never equal, so GRCh37 Tables got the GRCh38 intervals.
+        """
         keep = ["1:55505149", "X:13760000"]
         drop = ["1:55505148", "20:100"]
         ht = filter_for_test(self._ht(keep + drop, "GRCh37"), use_gene_list=True)
