@@ -1,0 +1,80 @@
+struct {
+  gene: str,
+  gene_id: str,
+  transcript: str,
+  canonical: bool,
+  mane_select: bool,
+  constraint_groups: array<struct {
+    mu_snp: float64,
+    mu: float64,
+    possible_variants: int64,
+    coverage_correction: float64,
+    oe_info: array<struct {
+      observed_variants: int64,
+      predicted_proportion_observed: float64,
+      expected_variants: float64,
+      oe: float64,
+      oe_ci_discretized_poisson: struct {
+        lower: float64,
+        upper: float64
+      },
+      oe_ci_gamma: struct {
+        lower: float64,
+        upper: float64
+      },
+      z_raw: float64
+    }>,
+    flags: set<str>,
+    z_score: float64,
+    oe_ci_discretized_poisson_rank: struct {
+      upper_rank: int64,
+      upper_bin_percentile: int32,
+      upper_bin_decile: int32,
+      upper_bin_sextile: int32
+    },
+    oe_ci_gamma_rank: struct {
+      upper_rank: int64,
+      upper_bin_percentile: int32,
+      upper_bin_decile: int32,
+      upper_bin_sextile: int32
+    },
+    pNull: float64,
+    pRec: float64,
+    pLI: float64
+  }>,
+  no_variants: bool,
+  constraint_flags: set<str>,
+  constraint_bins: struct {
+    percentile: struct {
+      syn: int32,
+      mis: int32,
+      lof: int32
+    },
+    decile: struct {
+      syn: int32,
+      mis: int32,
+      lof: int32
+    },
+    sextile: struct {
+      syn: int32,
+      mis: int32,
+      lof: int32
+    }
+  },
+  gene_quality_metrics: struct {
+    exome_prop_bp_AN90: float64,
+    exome_mean_AS_MQ: float64,
+    exome_prop_segdup: float64,
+    exome_prop_LCR: float64
+  },
+  gene_flags: set<str>,
+  level: str,
+  transcript_type: str,
+  end_position: int32,
+  start_position: int32,
+  chromosome: str,
+  gene_id_version: str,
+  transcript_id_version: str,
+  cds_length: int64,
+  num_coding_exons: int64
+}

@@ -23,6 +23,15 @@ Use **Sphinx-style** (`:param:`, `:return:`) docstrings following the gnomad_met
 - For Hail expression parameters, use `hl.expr.StructExpression`, `hl.expr.BooleanExpression`, etc.
 - For Hail table/matrix types, use `hl.Table`, `hl.MatrixTable`.
 
+## Tests
+
+Unit tests live in `tests/`, mirroring the package layout; tests for `gnomad_constraint/utils/constraint.py` are split by pipeline stage into `tests/utils/test_constraint_{preprocess,apply,metrics,gene_quality}.py`. Run them with `python -m pytest` (Hail >= 0.2.137 for the gamma CI tests); CI runs them on every pull request. See `tests/README.md` for conventions.
+
+- Add or update a test with every bug fix, and say what it guards against in the test docstring. A known, unfixed bug gets an `xfail(strict=True)` test that asserts the correct behavior.
+- Build fixtures with `hl.Table.parallelize`; tests must not read from GCS.
+- Test classes are `Test<FunctionName>`, and every test has a docstring and `-> None` (pydocstyle runs on `tests/`).
+- If the internal constraint metrics schema or the release columns change on purpose, update `tests/data/constraint_metrics_row_type.txt` and `tests/data/release_tsv_columns.txt`.
+
 ## Key Constants (`constants.py`)
 
 ```python
