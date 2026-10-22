@@ -2,7 +2,7 @@
 
 Genic constraint analysis pipeline for gnomAD. Computes observed/expected ratios, pLI scores, z-scores, and confidence intervals for LoF, missense, and synonymous variants at the gene/transcript level. Current version: **v4.1.1** (GRCh38). Version 2.1.1 (GRCh37) is no longer supported by this pipeline; commit 39928d1 is the last version of the script that supports it.
 
-An overview of the pipeline and functions that are used can be found in [/gnomad_constraint/flowchart/constraint_pipeline_v4.pdf](./gnomad_constraint/flowchart/constraint_pipeline_v4.pdf). Note that many functions are imported from the [gnomad_methods](https://github.com/broadinstitute/gnomad_methods) repo.
+An interactive map of the pipeline is published at <https://broadinstitute.github.io/gnomad-constraint/>: every step with its flags, the Tables it reads and writes, the function calls behind it (in this repo and in [gnomad_methods](https://github.com/broadinstitute/gnomad_methods)), and the schema, row count, and first rows of each Table. The page is [gnomad_constraint/flowchart/constraint_pipeline.html](./gnomad_constraint/flowchart/constraint_pipeline.html); see [Updating the flowchart](#updating-the-flowchart).
 
 The `gnomad_constraint/experimental/proemis3d/` directory contains the ProEmis3D project for regional missense constraint visualization.
 
@@ -16,6 +16,7 @@ The `gnomad_constraint/experimental/proemis3d/` directory contains the ProEmis3D
 | `gnomad_constraint/resources/constants.py` | Pipeline constants |
 | `gnomad_constraint/experimental/proemis3d/` | ProEmis3D regional missense constraint |
 | `gnomad_constraint/plots/` | R and Python plotting scripts |
+| `gnomad_constraint/flowchart/` | Interactive pipeline flowchart and the script that generates it |
 
 ## Constraint Pipeline Steps
 
@@ -75,6 +76,35 @@ Keyed by `(gene, gene_id, transcript, canonical, mane_select)`. One struct per c
 - `.pLI`, `.pNull`, `.pRec` — pLI / null / recessive probabilities, computed from each group's own counts (`lof_hc_lc` and `lof` only)
 
 The internal `metrics/.../constraint_metrics.ht` stores the same metrics in a `constraint_groups` array; see the resources README.
+
+## Updating the flowchart
+
+[generate_flowchart.py](gnomad_constraint/flowchart/generate_flowchart.py) fills three generated blocks in the page:
+
+- **Code**: steps, flags, input and output resources, and the function calls behind each step, read from `constraint_pipeline.py`, `resource_utils.py`, and the utility modules of this repo and gnomad_methods. Prose the code cannot supply (what each step does to the data, pitfalls, Table summaries) lives in [notes.py](gnomad_constraint/flowchart/notes.py).
+- **Notes**: `notes.py`, checked against the code so a renamed step, function, flag, or resource fails instead of going stale.
+- **Tables**: the schema, row count, globals, and first rows of every pipeline input and output, read on Dataproc.
+
+After changing the pipeline, commit, then run from the repository root with gnomad_methods and gnomad_qc importable:
+
+```bash
+python -m gnomad_constraint.flowchart.generate_flowchart --extract
+```
+
+`--extract` records the commit of both repositories so every source link is a permalink, and refuses to read files with uncommitted changes (`--allow-dirty` overrides this, and the page then shows a warning). CI runs `--check`, which fails when the page no longer matches the code or `notes.py`.
+
+After rerunning pipeline steps, refresh the Table panels (build the single zip as in [CLAUDE.md](CLAUDE.md)):
+
+```bash
+hailctl dataproc submit <cluster> \
+  <repo>/gnomad_constraint/flowchart/generate_flowchart.py \
+  --pyfiles /tmp/pyfiles.zip \
+  -- --collect --out gs://gnomad-tmp-4day/constraint_flowchart/tables.json
+gsutil cp gs://gnomad-tmp-4day/constraint_flowchart/tables.json .
+python -m gnomad_constraint.flowchart.generate_flowchart --inject-tables tables.json
+```
+
+[pages.yml](.github/workflows/pages.yml) publishes the page to GitHub Pages whenever it changes on `main`.
 
 ## Missense Score Percentile Analysis
 
