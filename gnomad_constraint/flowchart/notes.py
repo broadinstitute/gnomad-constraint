@@ -9,6 +9,10 @@ step, function, flag, or resource in the code.
 Keys:
 
     - ``stages``: Bands of the map, in order. Every step is in exactly one.
+    - ``source_groups``: Panels of the Sources band, in order. Every input the
+      pipeline does not produce is in exactly one, named by its resource name
+      (declared inputs), its getter function name (e.g. ``get_gerp_ht``), or the
+      last part of its dotted path (resource objects read with ``.ht()``).
     - ``tags``: Cost tags used by step ``ops``, with a label and one-line blurb.
     - ``key_lanes``: The key-shape ribbon. Each lane alternates ``key`` entries
       (a Table key and the Tables that carry it) with ``via`` entries (the
@@ -28,6 +32,49 @@ Text may use ``code`` in double backticks.
 """
 
 NOTES = {
+    "source_groups": [
+        {
+            "id": "reference",
+            "name": "Reference annotations",
+            "note": (
+                "Every possible SNV with VEP 105, plus methylation, GERP, GENCODE,"
+                " and the segdup and LCR intervals."
+            ),
+            "members": [
+                "context_ht",
+                "methylation_ht",
+                "get_gerp_ht",
+                "get_gencode_ht",
+                "get_gencode_cds_ht",
+                "seg_dup_intervals",
+                "lcr_intervals",
+            ],
+        },
+        {
+            "id": "exomes",
+            "name": "gnomAD exomes",
+            "note": "v4.1 sites and allele numbers, v4.0 coverage.",
+            "members": ["exomes_sites_ht", "exomes_coverage_ht", "exomes_an_ht"],
+        },
+        {
+            "id": "genomes",
+            "name": "gnomAD genomes",
+            "note": (
+                "v3.1.2 sites, which keep the downsamplings v4 dropped, v3.0.1"
+                " coverage, and v4.1 allele numbers."
+            ),
+            "members": ["genomes_sites_ht", "genomes_coverage_ht", "genomes_an_ht"],
+        },
+        {
+            "id": "regional",
+            "name": "Regional mutability",
+            "note": (
+                "Per-context ``adj_r`` and ``syn_adj_r`` on autosomes. Carried"
+                " through to the per-variant Table but not applied."
+            ),
+            "members": ["get_adj_r_ht", "get_syn_adj_r_ht"],
+        },
+    ],
     "stages": [
         {
             "id": "context",

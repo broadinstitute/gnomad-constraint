@@ -1023,7 +1023,49 @@ def validate_notes(code: Dict[str, Any]) -> List[str]:
     for key in NOTES.get("resources", {}):
         if key not in outputs:
             problems.append(f"notes for unknown resource {key}")
+    grouped = [m for g in NOTES["source_groups"] for m in g["members"]]
+    sources = get_source_keys(code)
+    for key in sorted(sources - set(grouped)):
+        problems.append(f"source {key} is in no source group")
+    for key in sorted(set(grouped) - sources):
+        problems.append(f"source group lists unknown source {key}")
     return problems
+
+
+def get_source_keys(code: Dict[str, Any]) -> Set[str]:
+    """
+    Name every input the pipeline reads but does not produce.
+
+    Matches how the page builds its Sources band: declared inputs from outside the
+    pipeline, resource getters called in a step block, and resource objects read
+    with ``.ht()``.
+
+    :param code: The CODE block.
+    :return: Resource names, getter function names, and the last part of each
+        resource object's dotted path.
+    """
+    step_ids = {s["id"] for s in code["steps"]}
+    produced = {
+        o["path"]
+        for s in code["steps"]
+        for o in s["outputs"] + [o for m in s["modes"] for o in m["outputs"]]
+    }
+    getter_prefix = f"{constraint_res.__name__}."
+    keys = set()
+    for step in code["steps"]:
+        keys.update(
+            i["name"]
+            for i in step["inputs"]
+            if i["from"] not in step_ids and i["path"] not in produced
+        )
+        for call in step["calls"]:
+            name = call["fn"][len(getter_prefix) :]
+            if call["fn"].startswith(getter_prefix) and re.fullmatch(
+                r"get_.*_ht", name
+            ):
+                keys.add(name)
+        keys.update(r["path"].split(".")[-1] for r in step["reads"])
+    return keys
 
 
 def resolved_notes(code: Dict[str, Any]) -> Dict[str, Any]:
