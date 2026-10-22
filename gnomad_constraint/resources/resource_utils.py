@@ -625,7 +625,7 @@ def filter_for_test(
     """
     rg = get_reference_genome(ht.locus)
     if use_gene_list:
-        if rg == "GRCh37":
+        if rg.name == "GRCh37":
             keep_regions = [
                 "1:55505149-55530526",  # PCSK9
                 "20:49505585-49547958",  # ADNP
