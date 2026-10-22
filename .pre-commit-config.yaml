@@ -17,7 +17,7 @@ repos:
     hooks:
       - id: autopep8
         args: ["--exit-code", "--in-place"]
-        files: gnomad_constraint
+        files: ^(gnomad_constraint|tests)/
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.1.1 # This should be kept in sync with the version in requirements-dev.in
     hooks:
@@ -29,7 +29,7 @@ repos:
     hooks:
       - id: isort
         args: ["--profile", "black", "--filter-files"]
-        files: gnomad_constraint
+        files: ^(gnomad_constraint|tests)/
   - repo: local
     hooks:
       - id: styler

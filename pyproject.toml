@@ -36,6 +36,9 @@ disable = [
   "unused-variable",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.black]
 target-version = ['py36', 'py37', 'py38']
 preview = true
@@ -54,4 +57,3 @@ max_line_length = 88
 ignore = ['E201', 'E202', 'E203', 'E731']
 recursive = true
 aggressive = 1
-
