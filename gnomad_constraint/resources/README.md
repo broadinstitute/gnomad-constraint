@@ -312,10 +312,10 @@ pickled Hail expressions reread by `apply_models_globals`.
 
 ### Types and meaning
 - `plateau.he : dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
-  — for each (cpg, genomic_region) bucket, a list of `[slope, intercept]`
-  pairs parallel to `mutation_rate.mu` (one entry per freq-meta index). The
-  inner ordering follows `freq_meta`, so element `downsampling_idx` is the
-  canonical fit.
+  — for each (cpg, genomic_region) bucket, a list of `[intercept, slope]`
+  pairs parallel to `exomes_freq_meta` (one entry per exome frequency index).
+  The global-adj fit is at the index of `{group: adj}` in `exomes_freq_meta`;
+  `calculate_mu_globals.downsampling_idx` instead indexes the genome mutation rates.
 - `coverage.he : array<float64>` — `[intercept, slope]` of the linear
   regression mapping (log10) median exome coverage to the multiplicative
   coverage correction in the low-coverage regime.
