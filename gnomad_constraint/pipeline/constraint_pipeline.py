@@ -138,6 +138,7 @@ def main(args):
         directory_post_fix,
         path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
+        use_aggregated_expected=args.use_aggregated_expected,
     )
 
     try:
@@ -389,19 +390,17 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
+            res = resources.aggregate_by_constraint_groups
+            res.check_resource_existence()
             if args.use_aggregated_expected:
-                res = resources.apply_models_aggregated
                 ht = res.aggregated_expected_ht.ht()
             else:
-                res = resources.aggregate_by_constraint_groups
-                res.check_resource_existence()
                 ht = res.apply_ht.ht()
 
-            out_res = resources.aggregate_by_constraint_groups
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(k for k in ht.key if k in RELEASE_KEY_ORDER),
-            ).write(out_res.constraint_group_ht.path, overwrite=overwrite)
+            ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
 
@@ -507,7 +506,8 @@ def main(args):
         )
 
 
-if __name__ == "__main__":
+def get_script_argument_parser() -> argparse.ArgumentParser:
+    """Get script argument parser."""
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -1005,5 +1005,10 @@ if __name__ == "__main__":
         action="store_true",
     )
 
+    return parser
+
+
+if __name__ == "__main__":
+    parser = get_script_argument_parser()
     args = parser.parse_args()
     main(args)

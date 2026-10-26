@@ -52,6 +52,8 @@ jobs:
         run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint
       - name: Run tests
         run: python -m pytest
+      - name: Check the pipeline flowchart matches the code
+        run: PYTHONPATH=$(pwd):$PYTHONPATH python -m gnomad_constraint.flowchart.generate_flowchart --check
       - name: Run styler
         run: Rscript -e "styler::style_dir('gnomad_constraint/plots/')"
       - name: Run lintr
