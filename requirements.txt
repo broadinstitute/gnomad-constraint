@@ -1,0 +1,8 @@
+# We're using the main branch of gnomad_methods and gnomad_qc on GitHub rather than
+# the pip versions, since they are being developed in tandem with this repo.
+git+https://github.com/broadinstitute/gnomad_methods@main
+git+https://github.com/broadinstitute/gnomad_qc@main
+# gnomad_methods' gamma oe confidence interval uses hl.qgamma, which needs Hail
+# 0.2.137 or later. gnomad_methods also excludes 0.2.139 for a memory regression that
+# runs the driver out of memory; the exclusion lifts itself on 0.2.140.
+hail>=0.2.137,!=0.2.139
