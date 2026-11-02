@@ -559,9 +559,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--feature-pval-cutoffs",
         help=(
-            "Feature selection cutoff tokens: 'bonferroni' (legacy rule) and/or raw"
-            " p-value cutoffs (e.g. 1e-3 0.01). Used by --train-rr-models,"
-            f" --compute-rr, and --evaluate-rr-cutoffs. Default is"
+            "Feature selection cutoff tokens: 'bonferroni' (legacy rule), raw"
+            " p-value cutoffs (e.g. 1e-3 0.01), and/or 'ridge' (no feature screen;"
+            " every feature in a ridge-penalized fit, with the default per-site"
+            " penalty) or 'ridge_<penalty>' (e.g. ridge_0.5). Used by"
+            " --train-rr-models, --compute-rr, and --evaluate-rr-cutoffs. Default is"
             f" {RR_BONFERRONI_CUTOFF}."
         ),
         nargs="+",

@@ -341,6 +341,29 @@ for non-CpG contexts and 8 (13 minus the methylation-correlated features) for Cp
 contexts.
 """
 
+RR_RIDGE_CUTOFF = "ridge"
+"""
+Feature selection token for the ridge-penalized rr model.
+
+There is no feature screen: every feature column, at every scale, goes into the model
+of each context (methylation-correlated features are still dropped for CpG contexts),
+and the logistic fit is ridge-penalized instead of unpenalized, so the penalty rather
+than a p-value cutoff decides how much each feature counts. "ridge" uses
+``RR_RIDGE_PENALTY``; "ridge_<penalty>" (e.g. "ridge_0.5") sets the penalty.
+"""
+
+RR_RIDGE_PENALTY = 0.3
+"""
+Default per-site ridge penalty of the rr model (see ``RR_RIDGE_CUTOFF``).
+
+The fit minimizes mean log loss + penalty / 2 * sum(coef ** 2) on z-scored features
+(the intercept is not penalized). Because the penalty is per site, it does not need
+rescaling when the number of training sites changes, e.g. between chromosome-split
+and all-site models. 0.3 minimized the held-out DNM log loss of chromosome-split
+models over 0.05-1 for both the DDD+ASD and the Satterstrom 2026 training sets (no
+gnomAD data used to choose it).
+"""
+
 RR_BACKGROUND_FRACTION = 0.05
 """Fraction of non-mutated synonymous sites sampled as the rr training background."""
 

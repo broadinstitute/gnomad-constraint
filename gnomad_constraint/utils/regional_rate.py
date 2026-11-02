@@ -33,6 +33,7 @@ from gnomad.utils.constraint import calculate_raw_z_score
 from gnomad.utils.liftover import default_lift_data
 from hail.utils.misc import new_temp_file
 from sklearn.decomposition import IncrementalPCA
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, roc_auc_score
 
 from gnomad_constraint.resources.constants import (
@@ -50,6 +51,8 @@ from gnomad_constraint.resources.constants import (
     RR_CONTEXTS,
     RR_FEATURE_SELECTION_ALPHA,
     RR_FOLDS,
+    RR_RIDGE_CUTOFF,
+    RR_RIDGE_PENALTY,
     RR_SCREEN_FEATURE_ORDER,
     RR_VARIANT_MODIFIERS,
 )
@@ -555,19 +558,41 @@ def run_rr_feature_screen(
     return pd.DataFrame(rows)
 
 
+def get_rr_ridge_penalty(cutoff: str) -> Optional[float]:
+    """
+    Get the ridge penalty of a feature selection token.
+
+    :param cutoff: Feature selection token: ``RR_RIDGE_CUTOFF`` ("ridge", which uses
+        ``RR_RIDGE_PENALTY``), "ridge_<penalty>", or any other (non-ridge) token.
+    :return: The per-site ridge penalty, or None for a non-ridge token.
+    """
+    if cutoff == RR_RIDGE_CUTOFF:
+        return RR_RIDGE_PENALTY
+    if cutoff.startswith(f"{RR_RIDGE_CUTOFF}_"):
+        return float(cutoff.split("_", 1)[1])
+
+    return None
+
+
 def select_rr_features(screen_df: pd.DataFrame, cutoff: str) -> pd.DataFrame:
     """
     Select rr model features from the univariate feature screen.
 
     With the ``RR_BONFERRONI_CUTOFF`` token, a feature is selected when its p-value
     is at most ``RR_FEATURE_SELECTION_ALPHA / 4 / 13`` (``/ 8`` for CpG contexts).
-    Otherwise ``cutoff`` is a raw p-value cutoff. Only the first passing scale (in
-    screening order, i.e. the smallest) is kept for each context and feature.
+    With a ridge token (see :func:`get_rr_ridge_penalty`), every feature and scale
+    is selected. Otherwise ``cutoff`` is a raw p-value cutoff. For p-value cutoffs,
+    only the first passing scale (in screening order, i.e. the smallest) is kept for
+    each context and feature.
 
     :param screen_df: Feature screen DataFrame (:func:`run_rr_feature_screen`).
-    :param cutoff: ``RR_BONFERRONI_CUTOFF`` or a p-value cutoff (e.g. "1e-3").
+    :param cutoff: ``RR_BONFERRONI_CUTOFF``, a ridge token, or a p-value cutoff (e.g.
+        "1e-3").
     :return: Selected rows of ``screen_df``.
     """
+    if get_rr_ridge_penalty(cutoff) is not None:
+        return screen_df.copy()
+
     df = screen_df.copy()
     if cutoff == RR_BONFERRONI_CUTOFF:
         n_scales = len(GENOMIC_FEATURE_SCALES)
@@ -602,7 +627,7 @@ def get_rr_model_features(selected_df: pd.DataFrame, context: str) -> List[str]:
 
 
 def fit_rr_context_model(
-    df: pd.DataFrame, features: List[str]
+    df: pd.DataFrame, features: List[str], ridge_penalty: Optional[float] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Fit the rr logistic model of one context.
@@ -611,6 +636,11 @@ def fit_rr_context_model(
     dropped, DNM rows are followed by background rows (training row order), the
     features are z-scored (ddof=0), rotated with a full-rank ``IncrementalPCA``, and
     a logistic regression is fit with ``fit_regularized(method="l1", alpha=0)``.
+
+    With ``ridge_penalty``, the logistic regression is instead ridge-penalized: it
+    minimizes mean log loss + ridge_penalty / 2 * sum(coef ** 2), with the intercept
+    unpenalized. The PCA rotation is orthogonal, so this is the same ridge fit as on
+    the z-scored features.
 
     The PCA is folded into the model coefficients so that the linear predictor of a
     window is ``intercept + sum(coefs * (x - mean) / sd)``. As in the legacy models,
@@ -621,6 +651,8 @@ def fit_rr_context_model(
 
     :param df: Training rows of one context (:func:`rr_training_ht_to_pandas`).
     :param features: Model features (:func:`get_rr_model_features`).
+    :param ridge_penalty: Optional per-site ridge penalty. Default is None
+        (unpenalized, as in the legacy models).
     :return: Dictionary of model parameters, or None if there is no training data.
     """
     df_1 = df[df["y"] == 1][["locus", *features]].dropna()
@@ -634,11 +666,20 @@ def fit_rr_context_model(
     x_scaled = x.apply(scipy.stats.zscore)
     pca = IncrementalPCA(n_components=len(features))
     x_pca = pca.fit_transform(x_scaled)
-    fit = sm.Logit(y, sm.add_constant(x_pca, has_constant="add")).fit_regularized(
-        method="l1", alpha=0.0, disp=False
-    )
+    if ridge_penalty is None:
+        fit = sm.Logit(y, sm.add_constant(x_pca, has_constant="add")).fit_regularized(
+            method="l1", alpha=0.0, disp=False
+        )
+        params = np.asarray(fit.params, dtype=float)
+        converged = bool(fit.mle_retvals.get("converged", False))
+    else:
+        # sklearn minimizes C * sum(log loss) + sum(coef ** 2) / 2, so C = 1 / (n *
+        # penalty) gives the per-site penalty.
+        fit = LogisticRegression(C=1.0 / (len(y) * ridge_penalty), max_iter=10000)
+        fit.fit(x_pca, y)
+        params = np.concatenate([fit.intercept_, fit.coef_[0]])
+        converged = bool(fit.n_iter_[0] < fit.max_iter)
 
-    params = np.asarray(fit.params, dtype=float)
     coefs = pca.components_.T @ params[1:]
     intercept = params[0] - pca.mean_ @ coefs
 
@@ -651,7 +692,7 @@ def fit_rr_context_model(
         "ave": float(1.0 / (1.0 + np.exp(-params[0]))),
         "n_dnm": int(len(df_1)),
         "n_background": int(len(df_0)),
-        "converged": bool(fit.mle_retvals.get("converged", False)),
+        "converged": converged,
     }
 
 
@@ -704,6 +745,7 @@ def fit_rr_models(
     metrics = []
     for cutoff in cutoffs:
         selected_df = select_rr_features(screen_df, cutoff)
+        ridge_penalty = get_rr_ridge_penalty(cutoff)
         n_modeled = 0
         for context in contexts:
             features = get_rr_model_features(selected_df, context)
@@ -716,7 +758,7 @@ def fit_rr_models(
                     if fold == MODEL_FOLD_ALL
                     else ctx_df[ctx_df["_fold"] != fold]
                 )
-                model = fit_rr_context_model(train_df, features)
+                model = fit_rr_context_model(train_df, features, ridge_penalty)
                 if model is None:
                     continue
                 models.append(
