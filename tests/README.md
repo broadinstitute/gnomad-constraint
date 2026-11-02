@@ -10,8 +10,9 @@ python -m pytest
 python -m pytest -q tests/utils/test_constraint_metrics.py
 ```
 
-The tests need a JVM for Hail and the `gnomad_methods` and `gnomad_qc` versions
-pinned in `requirements-dev.txt`. `conftest.py` starts Hail once for the whole
+The tests need a JVM for Hail and the packages in `requirements.txt`, including
+gnomad_methods at the pinned commit; a different gnomad_methods can fail to import
+or give different results. `conftest.py` starts Hail once for the whole
 session on the local Spark backend, even when `~/.config/hail/config.ini` selects
 Hail Batch, and binds the Spark driver to `127.0.0.1` so it starts on machines
 whose hostname does not resolve. CI runs the suite on every pull request; it takes

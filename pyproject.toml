@@ -1,3 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gnomad-constraint"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["gnomad_constraint*"]
+
 [tool.pydocstyle]
 convention = "pep257"
 match = ".*\\.py"
@@ -28,7 +40,7 @@ disable = [
 testpaths = ["tests"]
 
 [tool.black]
-target-version = ['py36', 'py37', 'py38']
+target-version = ["py310", "py311"]
 preview = true
 
 [tool.isort]

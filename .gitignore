@@ -107,6 +107,7 @@ ENV/
 # tokens
 slack_creds.py
 
-# Claude local config
-.claude/
+# Claude local files
 CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
