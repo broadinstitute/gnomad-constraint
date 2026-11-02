@@ -1,8 +1,10 @@
-# We're using the main branch of gnomad_methods and gnomad_qc on GitHub rather than
-# the pip versions, since they are being developed in tandem with this repo.
-git+https://github.com/broadinstitute/gnomad_methods@main
+# gnomad_methods and gnomad_qc are installed from GitHub rather than PyPI, since they
+# are developed in tandem with this repo. gnomad_methods is pinned to the last commit
+# the code here works with (2026-03-30); later commits remove functions it imports.
+# Move the pin forward when the code is updated to the newer gnomad_methods API.
+git+https://github.com/broadinstitute/gnomad_methods@017ee36ff05e39323189d0031acb5b35e6be2082
 git+https://github.com/broadinstitute/gnomad_qc@main
-# gnomad_methods' gamma oe confidence interval uses hl.qgamma, which needs Hail
-# 0.2.137 or later. gnomad_methods also excludes 0.2.139 for a memory regression that
-# runs the driver out of memory; the exclusion lifts itself on 0.2.140.
+# Hail 0.2.137 or later is needed for hl.qgamma, which newer gnomad_methods uses for
+# the gamma oe confidence interval. gnomad_methods excludes 0.2.139 for a memory
+# regression that runs the driver out of memory; the exclusion lifts itself on 0.2.140.
 hail>=0.2.137,!=0.2.139
