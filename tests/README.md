@@ -13,9 +13,12 @@ python -m pytest -q tests/utils/test_constraint_metrics.py
 The tests need a JVM for Hail and the packages in `requirements.txt`, including
 gnomad_methods at the pinned commit; a different gnomad_methods can fail to import
 or give different results. `conftest.py` starts Hail once for the whole
-session on the local Spark backend, even when `~/.config/hail/config.ini` selects
-Hail Batch, and binds the Spark driver to `127.0.0.1` so it starts on machines
-whose hostname does not resolve. CI runs the suite on every pull request; it takes
+session, before tests are collected, on the local Spark backend even when
+`~/.config/hail/config.ini` selects Hail Batch. It gives the Spark driver a 4 GB
+heap (the 1 GB default runs out of memory), binds it to `127.0.0.1` so it starts
+on machines whose hostname does not resolve, and prints the path of the session's
+Hail log in the test header. Spark fails to start on Java 23 or later; CI uses
+Java 11. CI runs the suite on every pull request; it takes
 about 1.5 minutes locally.
 
 The gamma confidence interval needs `hl.qgamma` (Hail >= 0.2.137). On older Hail
