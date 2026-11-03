@@ -1188,8 +1188,8 @@ class TestPrepareReleaseHt:
         assert g.max_af == 0.001
 
 
-class TestReleaseColumns:
-    """Test the release Table and TSV produced from the internal metrics Table."""
+class TestFlattenReleaseHt:
+    """Test the flatten_release_ht function on a prepare_release_ht release Table."""
 
     def _internal_metrics_ht(self) -> hl.Table:
         """Return an empty internal metrics Table with the pipeline's schema and globals.
