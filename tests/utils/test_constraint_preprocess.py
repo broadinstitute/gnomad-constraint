@@ -322,17 +322,14 @@ class TestGetExomeCoverageExpr:
         assert cov["autosome"] == 150
         assert cov["missing_an"] is None
 
-    @pytest.mark.parametrize(
-        "coverage_fields, expected",
-        [
-            ({"median_approx": 30, "median": 20}, 30),
-            ({"median": 20}, 20),
-        ],
-    )
-    def test_median(self, coverage_fields: Dict[str, int], expected: int) -> None:
-        """Test that the median metric prefers median_approx over median."""
-        cov = self._coverage(self._ht(coverage_fields), "median")
-        assert cov["autosome"] == expected
+    def test_median(self) -> None:
+        """Test that the median metric is the approximate median depth.
+
+        ``prepare_context_ht`` keeps only ``median_approx``, so there is no exact
+        median to fall back to.
+        """
+        cov = self._coverage(self._ht({"median_approx": 30}), "median")
+        assert cov["autosome"] == 30
 
     def test_invalid_metric(self) -> None:
         """Test that an unknown coverage metric raises an error."""

@@ -385,8 +385,9 @@ def get_exome_coverage_expr(
     The requested ``exome_coverage_metric`` is extracted from the exome coverage
     annotations in the input ``ht``:
 
-        - "median": the expression returned is "median_approx" if it exists in
-          ``ht.coverage.exomes``, otherwise "median".
+        - "median": the expression returned is the approximate median exome depth
+          (``ht.coverage.exomes.median_approx``), the only median that
+          ``prepare_context_ht`` keeps.
         - "AN": the expression returned is the exomes allele number (``ht.AN.exomes``).
         - "AN_percent": the expression returned is the percent of samples with a
           non-missing genotype, which is the exomes allele number (``ht.AN.exomes``)
@@ -399,11 +400,7 @@ def get_exome_coverage_expr(
     :return: Exome coverage expression.
     """
     if exome_coverage_metric == "median":
-        # Obtain field name for median exome coverage.
-        exome_coverage_metric = (
-            "median_approx" if "median_approx" in ht.coverage.exomes else "median"
-        )
-        cov_expr = ht.coverage.exomes[exome_coverage_metric]
+        cov_expr = ht.coverage.exomes.median_approx
     elif exome_coverage_metric == "AN":
         cov_expr = ht.AN.exomes
     elif exome_coverage_metric == "AN_percent":
