@@ -519,11 +519,14 @@ def filter_for_test(
     use_gene_list: bool = False,
 ) -> hl.Table:
     """
-    Filter ``ht`` to chr20, chrX, and chrY or a gene list for testing.
+    Filter ``ht`` to chr20, chrX, and chrY, or to six genes, for testing.
+
+    The genes are PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1 and FAAH2 (chrX), and
+    ZFY (chrY).
 
     :param ht: Table to filter.
-    :param use_gene_list: Whether to use a gene list for testing instead of all of
-        chr20, chrX, and chrY for testing.
+    :param use_gene_list: Whether to filter to the six genes instead of all of chr20,
+        chrX, and chrY.
     :return: Filtered Table for testing.
     """
     rg = get_reference_genome(ht.locus)

@@ -607,8 +607,8 @@ if __name__ == "__main__":
         "--test-gene-list",
         help=(
             "Whether to filter the exome Table, genome Table and the context Table to"
-            " only a list of genes on chromosome 20, chromosome X, and chromosome Y for"
-            " testing."
+            " only six genes for testing: PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1"
+            " and FAAH2 (chrX), and ZFY (chrY)."
         ),
         action="store_true",
     )
