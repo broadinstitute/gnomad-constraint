@@ -95,6 +95,48 @@ def check_skip_coverage_model(
         )
 
 
+def check_constraint_group_input(
+    aggregate_per_variant_expected: bool,
+    apply_models_aggregated: bool,
+    use_aggregated_expected: bool,
+) -> None:
+    """
+    Warn when ``--aggregate-by-constraint-groups`` reads an output this command didn't write.
+
+    The step reads the ``--aggregate-per-variant-expected`` output, or with
+    ``--use-aggregated-expected`` the ``--apply-models-aggregated`` output. If only
+    the other one runs in the same command, the step groups a Table that may be from
+    an earlier run instead of the one just written.
+
+    :param aggregate_per_variant_expected: Whether
+        ``--aggregate-per-variant-expected`` runs in this command.
+    :param apply_models_aggregated: Whether ``--apply-models-aggregated`` runs in this
+        command.
+    :param use_aggregated_expected: Whether ``--use-aggregated-expected`` was passed.
+    :return: None.
+    """
+    if apply_models_aggregated and not (
+        use_aggregated_expected or aggregate_per_variant_expected
+    ):
+        logger.warning(
+            "--apply-models-aggregated runs in this command, but without"
+            " --use-aggregated-expected, --aggregate-by-constraint-groups reads the"
+            " --aggregate-per-variant-expected output, which may be from an earlier"
+            " run. Add --use-aggregated-expected to group the Table written here."
+        )
+    if (
+        aggregate_per_variant_expected
+        and use_aggregated_expected
+        and not apply_models_aggregated
+    ):
+        logger.warning(
+            "--aggregate-per-variant-expected runs in this command, but with"
+            " --use-aggregated-expected, --aggregate-by-constraint-groups reads the"
+            " --apply-models-aggregated output, which may be from an earlier run."
+            " Drop --use-aggregated-expected to group the Table written here."
+        )
+
+
 def main(args):
     """Execute the constraint pipeline."""
     hl.init(
@@ -128,6 +170,7 @@ def main(args):
         directory_post_fix,
         path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
+        use_aggregated_expected=args.use_aggregated_expected,
     )
 
     try:
@@ -377,19 +420,22 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
+            check_constraint_group_input(
+                aggregate_per_variant_expected=args.aggregate_per_variant_expected,
+                apply_models_aggregated=args.apply_models_aggregated,
+                use_aggregated_expected=args.use_aggregated_expected,
+            )
+            res = resources.aggregate_by_constraint_groups
+            res.check_resource_existence()
             if args.use_aggregated_expected:
-                res = resources.apply_models_aggregated
                 ht = res.aggregated_expected_ht.ht()
             else:
-                res = resources.aggregate_by_constraint_groups
-                res.check_resource_existence()
                 ht = res.apply_ht.ht()
 
-            out_res = resources.aggregate_by_constraint_groups
             aggregate_by_constraint_groups(
                 ht,
                 keys=tuple(k for k in ht.key if k in RELEASE_KEY_ORDER),
-            ).write(out_res.constraint_group_ht.path, overwrite=overwrite)
+            ).write(res.constraint_group_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
             logger.info("Done with aggregating by constraint groups.")
 

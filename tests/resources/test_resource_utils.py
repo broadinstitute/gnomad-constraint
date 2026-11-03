@@ -516,3 +516,28 @@ class TestGetConstraintResources:
         ]
         assert paths
         assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
+
+    @pytest.mark.parametrize("use_aggregated_expected", [False, True])
+    def test_constraint_group_input(self, use_aggregated_expected: bool) -> None:
+        """
+        Test that --aggregate-by-constraint-groups declares the input it reads.
+
+        Regression test: with ``--use-aggregated-expected``, the step read the
+        ``--apply-models-aggregated`` output without declaring it, so its resources
+        weren't checked.
+        """
+        resources = get_constraint_resources(
+            version="4.1.1",
+            overwrite=False,
+            test=True,
+            use_aggregated_expected=use_aggregated_expected,
+        )
+        if use_aggregated_expected:
+            step = "--apply-models-aggregated"
+            path = get_aggregated_expected(version="4.1.1", test=True).path
+        else:
+            step = "--aggregate-per-variant-expected"
+            path = get_aggregated_per_variant_expected(version="4.1.1", test=True).path
+        inputs = resources.aggregate_by_constraint_groups.input_resources
+        assert list(inputs) == [step]
+        assert [_path(r) for r in inputs[step]] == [path]
