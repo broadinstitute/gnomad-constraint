@@ -864,7 +864,7 @@ if __name__ == "__main__":
         "--use-weights",
         help=(
             "Whether to generalize the models to weighted least squares using"
-            "'possible_variants'."
+            " 'possible_variants'."
         ),
         action="store_true",
     )
