@@ -302,13 +302,22 @@ class TestComputeZScores:
     def test_constraint_flags(
         self, result: Tuple[List[float], Dict[str, hl.Struct]]
     ) -> None:
-        """Test that constraint_flags is the union of the syn, mis, and HC LoF flags."""
+        """
+        Test that constraint_flags has the syn, mis, and HC LoF flags and no_variants.
+
+        Regression test: the refactor dropped ``no_variants`` from
+        ``constraint_flags``. Since observed counts sum to 0 instead of missing
+        (gnomad_production#2294), those transcripts get an o/e and a LOEUF, and
+        without the flag they counted toward the published LOEUF thresholds, which
+        leave out only flagged transcripts.
+        """
         _, rows = result
         assert rows["T_flagged"].constraint_flags == {
             "outlier_syn",
             "outlier_mis",
             "outlier_lof",
         }
+        assert rows["T_no_variants"].constraint_flags == {"no_variants"}
         assert rows["T1"].constraint_flags == set()
 
 
