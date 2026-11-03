@@ -592,12 +592,17 @@ NOTES = {
             ),
             "ops": [
                 {
+                    "tag": "filter",
+                    "text": (
+                        "Keep only the mutation rate sites, the rows with ``compute_mu``"
+                        " counts."
+                    ),
+                },
+                {
                     "tag": "agg",
                     "text": (
-                        "group_by ``(context, ref, alt, methylation_level)`` over the whole"
-                        " preprocessed Table, summing the ``compute_mu`` observed arrays and"
-                        " possible counts. Rows outside the mutation rate sites have missing"
-                        " counts and add nothing."
+                        "group_by ``(context, ref, alt, methylation_level)``, summing the"
+                        " ``compute_mu`` observed arrays and possible counts."
                     ),
                 },
                 {
