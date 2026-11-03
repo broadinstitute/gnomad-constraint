@@ -1032,7 +1032,8 @@ NOTES = {
                 {
                     "tag": "rowexpr",
                     "text": (
-                        "``no_variants``: the adj observed count, summed over all groups, is 0."
+                        "``no_variants``: the adj observed count, summed over the syn, mis and"
+                        " lof_hc groups, is 0."
                     ),
                 },
                 {
@@ -1181,7 +1182,7 @@ NOTES = {
                         "Compute ``sd_raw_z`` per group in one aggregation, over transcripts"
                         " without ``no_variants`` and without that group's flags. Then ``z_score"
                         " = z_raw / sd``, and ``constraint_flags`` is the union of the syn, mis"
-                        " and lof_hc flags. Temp checkpoint."
+                        " and lof_hc flags, plus ``no_variants``. Temp checkpoint."
                     ),
                 },
                 {
@@ -1667,8 +1668,9 @@ NOTES = {
                     " The release drops ``lof_classic`` and renames ``lof_hc`` to ``lof``."
                 ),
                 (
-                    "``no_variants`` looks only at the first (adj) observed count of each"
-                    " group."
+                    "``no_variants`` looks only at the first (adj) observed count of the syn,"
+                    " mis and lof_hc groups, as on main; the filter that drops empty"
+                    " transcripts looks at every group."
                 ),
             ],
         },
