@@ -1247,7 +1247,7 @@ def add_oe_upper_rank_and_bins(
 
     Thin wrapper around :func:`rank_array_element_metrics` that extracts the
     discretized Poisson and gamma upper CI values from each constraint group's
-    first oe_info element.
+    adj ``oe_info`` entry.
 
     :param ht: Table with the oe upper confidence interval.
     :param use_mane_select_over_canonical: Use MANE Select over canonical transcripts
@@ -2352,7 +2352,7 @@ def annotate_constraint_percentile_bins(
     Annotate each transcript with its percentile bin for all metric/granularity combinations.
 
     Thin wrapper around :func:`annotate_bins_by_threshold` that extracts the
-    gamma upper CI value from each constraint group's first oe_info element.
+    gamma upper CI value from each constraint group's adj ``oe_info`` entry.
 
     Annotates ``constraint_bins.{granularity}.{metric}`` for each combination.
     Bin 0 is the most constrained (value below all thresholds); bin N equals
