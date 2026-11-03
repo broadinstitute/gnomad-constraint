@@ -1,7 +1,7 @@
 """Resource utility functions and resource definitions for the constraint pipeline."""
 
 import logging
-from typing import List, Optional, Union
+from typing import Optional, Tuple, Union
 
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
@@ -579,7 +579,7 @@ def get_constraint_resources(
     version: str,
     overwrite: bool,
     test: bool,
-    models: List[str] = ["plateau", "coverage"],
+    models: Tuple[str, ...] = ("plateau", "coverage"),
     directory_post_fix: Optional[str] = None,
     path_post_fix: Optional[str] = None,
     skip_pre_rank_metrics: bool = False,
@@ -591,7 +591,7 @@ def get_constraint_resources(
     :param version: Version of constraint resources to use.
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
-    :param models: List of models to use. Default is ["plateau", "coverage"].
+    :param models: Models to use. Default is ("plateau", "coverage").
     :param directory_post_fix: Post-fix to add to the directory path of the resources.
     :param path_post_fix: Post-fix to add to the path of the resources.
     :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
