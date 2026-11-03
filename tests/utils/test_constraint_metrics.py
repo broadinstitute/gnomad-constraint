@@ -119,7 +119,8 @@ class TestAnnotateOeCiZ:
     }
 
     @pytest.fixture(scope="class")
-    def rows(self) -> Dict[str, hl.Struct]:
+    @classmethod
+    def rows(cls) -> Dict[str, hl.Struct]:
         """Return the annotated rows keyed by transcript."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64, expected_variants=hl.tfloat64
@@ -136,10 +137,10 @@ class TestAnnotateOeCiZ:
                 ]
                 * len(CONSTRAINT_GROUP_META),
             )
-            for t, (obs, exp) in self.COUNTS.items()
+            for t, (obs, exp) in cls.COUNTS.items()
         ]
         ht = _annotate_oe_ci_z(
-            _constraint_groups_ht(rows, oe_info_type), self.Z_THRESHOLDS
+            _constraint_groups_ht(rows, oe_info_type), cls.Z_THRESHOLDS
         )
         return {r.transcript: r for r in ht.collect()}
 
@@ -232,7 +233,8 @@ class TestComputeZScores:
     }
 
     @pytest.fixture(scope="class")
-    def result(self) -> Tuple[List[float], Dict[str, hl.Struct]]:
+    @classmethod
+    def result(cls) -> Tuple[List[float], Dict[str, hl.Struct]]:
         """Return the sd_raw_z global and the annotated rows keyed by transcript."""
         rows = [
             dict(
@@ -241,12 +243,12 @@ class TestComputeZScores:
                 constraint_groups=[
                     hl.Struct(
                         oe_info=[hl.Struct(z_raw=z)],
-                        flags=self.FLAGS.get(t, [set()] * 5)[i],
+                        flags=cls.FLAGS.get(t, [set()] * 5)[i],
                     )
                     for i, z in enumerate(zs)
                 ],
             )
-            for t, zs in self.Z.items()
+            for t, zs in cls.Z.items()
         ]
         ht = _constraint_groups_ht(
             rows, hl.tstruct(z_raw=hl.tfloat64), {"flags": hl.tset(hl.tstr)}
@@ -353,7 +355,8 @@ class TestAddOeUpperRankAndBins:
     }
 
     @pytest.fixture(scope="class")
-    def rows(self) -> Dict[str, hl.Struct]:
+    @classmethod
+    def rows(cls) -> Dict[str, hl.Struct]:
         """Return the ranked constraint group keyed by transcript."""
         oe_info_type = hl.tstruct(
             oe_ci_discretized_poisson=CI_TYPE, oe_ci_gamma=CI_TYPE
@@ -375,7 +378,7 @@ class TestAddOeUpperRankAndBins:
                     )
                 ],
             )
-            for t, (g, m, gu, p) in self.TRANSCRIPTS.items()
+            for t, (g, m, gu, p) in cls.TRANSCRIPTS.items()
         ]
         ht = add_oe_upper_rank_and_bins(_constraint_groups_ht(rows, oe_info_type))
         return {r.transcript: r.constraint_groups[0] for r in ht.collect()}
@@ -454,7 +457,8 @@ class TestComputeConstraintPercentileBins:
     """Test the compute_constraint_percentile_bins function."""
 
     @pytest.fixture(scope="class")
-    def result(self) -> Tuple[hl.Struct, List[hl.Struct]]:
+    @classmethod
+    def result(cls) -> Tuple[hl.Struct, List[hl.Struct]]:
         """Return the thresholds global and the binned rows.
 
         The 30 MANE Select transcripts have values from 0.05 to 1.5. The outliers
@@ -668,7 +672,8 @@ class TestComputeConstraintMetrics:
         )
     }
 
-    def _gencode_ht(self) -> hl.Table:
+    @staticmethod
+    def _gencode_ht() -> hl.Table:
         """Return GENCODE features for ENST0 and the PAR transcript ENST1."""
 
         def _feature(t, contig, start, end, feature, par_y=False):
@@ -711,7 +716,8 @@ class TestComputeConstraintMetrics:
         )
 
     @pytest.fixture(scope="class")
-    def result(self) -> Tuple[List[float], Dict[str, hl.Struct]]:
+    @classmethod
+    def result(cls) -> Tuple[List[float], Dict[str, hl.Struct]]:
         """Return the sd_raw_z global and the metrics rows keyed by transcript."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64,
@@ -746,7 +752,7 @@ class TestComputeConstraintMetrics:
                     _cg(obs, exp),
                 ],
             )
-            for i, (t, (obs, exp)) in enumerate(self.LOF.items())
+            for i, (t, (obs, exp)) in enumerate(cls.LOF.items())
         ]
         ht = _constraint_groups_ht(
             rows,
@@ -773,7 +779,7 @@ class TestComputeConstraintMetrics:
             ),
             key="transcript",
         )
-        ht = compute_constraint_metrics(ht, self._gencode_ht(), gene_quality_ht)
+        ht = compute_constraint_metrics(ht, cls._gencode_ht(), gene_quality_ht)
         return hl.eval(ht.sd_raw_z), {r.transcript: r for r in ht.collect()}
 
     def test_metrics(self, result: Tuple[List[float], Dict[str, hl.Struct]]) -> None:
@@ -826,7 +832,8 @@ class TestPrepareReleaseHt:
     ]
 
     @pytest.fixture(scope="class")
-    def internal_ht(self) -> hl.Table:
+    @classmethod
+    def internal_ht(cls) -> hl.Table:
         """Return an internal metrics Table with distinct values for every group."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64,
@@ -860,7 +867,7 @@ class TestPrepareReleaseHt:
 
         def _cg(i, possible):
             # oe_info: adj, then the downsamplings, where obs is the downsampling.
-            ds = [int(m["downsampling"]) for m in self.FREQ_META[1:]]
+            ds = [int(m["downsampling"]) for m in cls.FREQ_META[1:]]
             has_pli = GROUP_NAMES[i] in ("lof_hc", "lof_hc_lc")
             return hl.Struct(
                 mu_snp=float(i + 1),
@@ -956,7 +963,7 @@ class TestPrepareReleaseHt:
                 groupings=["gene"],
                 log10_coverage=True,
             ),
-            exomes_freq_meta=self.FREQ_META,
+            exomes_freq_meta=cls.FREQ_META,
             downsamplings=[10, 100],
             max_af=0.001,
             constraint_group_meta=CONSTRAINT_GROUP_META,
@@ -971,7 +978,8 @@ class TestPrepareReleaseHt:
         )
 
     @pytest.fixture(scope="class")
-    def release(self, internal_ht: hl.Table) -> Tuple[hl.Table, Dict[str, hl.Struct]]:
+    @classmethod
+    def release(cls, internal_ht: hl.Table) -> Tuple[hl.Table, Dict[str, hl.Struct]]:
         """Return the release Table and its rows keyed by transcript."""
         ht = prepare_release_ht(internal_ht)
         return ht, {r.transcript: r for r in ht.collect()}

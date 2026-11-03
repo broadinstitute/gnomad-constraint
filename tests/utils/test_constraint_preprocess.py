@@ -115,10 +115,11 @@ class TestGetAnnotationsForComputingMu:
         ("ds_ac_6", ("chr1", 1014), set(), (9, 6), 30, 0.0, "intron_variant"),
     ]
 
-    def _ht(self, gen_ancs: Optional[List[str]] = None) -> hl.Table:
+    @classmethod
+    def _ht(cls, gen_ancs: Optional[List[str]] = None) -> hl.Table:
         """Return the sites in ``ROWS`` annotated with the mutation rate annotations."""
         rows = []
-        for name, (contig, pos), filters, ac, cov, gerp, csq in self.ROWS:
+        for name, (contig, pos), filters, ac, cov, gerp, csq in cls.ROWS:
             # Entries follow GENOMES_FREQ_META: adj, global ds, afr ds, raw.
             freq = (
                 None
@@ -167,9 +168,10 @@ class TestGetAnnotationsForComputingMu:
         return ht.annotate(**expr).annotate_globals(calculate_mu_globals=globals_expr)
 
     @pytest.fixture(scope="class")
-    def mu_rows(self) -> Dict[str, hl.Struct]:
+    @classmethod
+    def mu_rows(cls) -> Dict[str, hl.Struct]:
         """Return the annotated sites by name, collected once for the class."""
-        return {r.name: r for r in self._ht().collect()}
+        return {r.name: r for r in cls._ht().collect()}
 
     @pytest.mark.parametrize(
         "name, observed, possible",
@@ -894,7 +896,8 @@ class TestPrepareContextHt:
     """Test the prepare_context_ht function."""
 
     @pytest.fixture(scope="class")
-    def context_rows(self, annotated_context_ht: hl.Table) -> Dict[str, hl.Struct]:
+    @classmethod
+    def context_rows(cls, annotated_context_ht: hl.Table) -> Dict[str, hl.Struct]:
         """Return the annotated context rows by site name."""
         return _rows_by_site(annotated_context_ht)
 
@@ -953,7 +956,8 @@ class TestPrepareHtForConstraintCalculations:
     """Test the prepare_ht_for_constraint_calculations function."""
 
     @pytest.fixture(scope="class")
-    def preprocessed(self, annotated_context_ht: hl.Table):
+    @classmethod
+    def preprocessed(cls, annotated_context_ht: hl.Table):
         """Return the preprocessed rows by site name and the evaluated globals.
 
         The coverage model is skipped so the globals test can check that the
