@@ -160,13 +160,14 @@ and note in the PR description that it was run and what you did or did not act
 on. Human review time is the scarce resource here; don't spend it on things the
 skill would have caught.
 
-For a large PR, especially one that changes released metrics, the
-`/gnomad-pr-review` skill does a deeper multi-agent review and writes a ranked
-`REVIEW.md` with a draft comment per finding. It only runs when invoked by name.
-It is Mike Wilson's skill from gnomad_qc, which reviews PRs in all three gnomAD
-repos, so this repo ships no copy: a second SessionStart hook installs it into
-`~/.claude/skills/gnomad-pr-review` and keeps it updated, and
-`GNOMAD_SKIP_REVIEW_HOOK=1` turns that hook off too.
+The skills shared by the gnomAD repos live in
+[gnomad-skills](https://github.com/broadinstitute/gnomad-skills); install them
+once as its README describes. For a large PR, especially one that changes
+released metrics, its `/gnomad-pr-review` does a deeper multi-agent review and
+writes a ranked `REVIEW.md` with a draft comment per finding. It only runs when
+invoked by name. The others (`gnomad-commit`, `gnomad-pr-description`,
+`gnomad-clean-git-history`) commit, draft PR descriptions, and tidy history in
+any gnomAD repo.
 
 **If a change alters the structure of the repo, update the repo layout table in
 the README in the same pull request.** If a change alters a release Table's
