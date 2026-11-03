@@ -2372,7 +2372,7 @@ def annotate_constraint_percentile_bins(
         of threshold values, built from :func:`compute_percentile_thresholds`
         output (see :func:`annotate_bins_by_threshold`).
     :param metric_group_idx: Mapping of metric name to its index in
-        ``constraint_groups`` (e.g. ``{"lof": 5, "mis": 1, "syn": 0}``).
+        ``constraint_groups`` (e.g. ``{"lof": 4, "mis": 1, "syn": 0}``).
     :return: Annotated Table with an added ``constraint_bins`` struct field.
     """
     logger.info(
