@@ -22,12 +22,12 @@ from gnomad_qc.resource_utils import (
 
 from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
-    CUSTOM_VEP_ANNOTATIONS,
     DATA_TYPES,
     EXTENSIONS,
     GENCODE_VERSION_MAP,
     MODEL_TYPES,
     SITES_VERSION_MAP,
+    VEP_ANNOTATION,
     VEP_VERSION_MAP,
     VERSIONS,
 )
@@ -43,7 +43,6 @@ logger.setLevel(logging.INFO)
 def check_param_scope(
     version: Optional[str] = None,
     model_type: Optional[str] = None,
-    custom_vep_annotation: Optional[str] = None,
     extension: Optional[str] = None,
     data_type: Optional[str] = None,
 ) -> None:
@@ -52,8 +51,6 @@ def check_param_scope(
 
     :param version: One of the release versions (`VERSIONS`). Default is None.
     :param model_type: One of "plateau", "coverage". Default is None.
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is None.
     :param extension: File extension. Default is None.
     :param data_type: One of "exomes", "genomes". Default is None.
     :return: None.
@@ -62,10 +59,6 @@ def check_param_scope(
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
     if model_type and model_type not in MODEL_TYPES:
         raise ValueError(f"model_type must be one of: {MODEL_TYPES}!")
-    if custom_vep_annotation and custom_vep_annotation not in CUSTOM_VEP_ANNOTATIONS:
-        raise ValueError(
-            f"custom_vep_annotation must be one of: {CUSTOM_VEP_ANNOTATIONS}!"
-        )
     if extension and extension not in EXTENSIONS:
         raise ValueError(f"extension must be one of: {EXTENSIONS}!")
     if version and version not in VERSIONS:
@@ -244,7 +237,6 @@ def get_constraint_data(
     test: bool = False,
     directory_post_fix: Optional[str] = None,
     sub_dir: Optional[str] = None,
-    custom_vep_annotation: Optional[str] = None,
     extension: str = "ht",
     path_post_fix: Optional[str] = None,
     temp: bool = False,
@@ -259,20 +251,11 @@ def get_constraint_data(
         the data. Default is False.
     :param directory_post_fix: Postfix to append to the root path. Default is None.
     :param sub_dir: Subdirectory to append to the path. Default is None.
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is
-        None.
     :param extension: File extension. Default is "ht".
     :param path_post_fix: Postfix to append to the file name. Default is None.
     :return: Path, TableResource, or ExpressionResource of the constraint data.
     """
-    check_param_scope(
-        version, custom_vep_annotation=custom_vep_annotation, extension=extension
-    )
-
-    if custom_vep_annotation:
-        sub_dir = f"{sub_dir}/" if sub_dir else ""
-        sub_dir = f"{sub_dir}{custom_vep_annotation}"
+    check_param_scope(version, extension=extension)
 
     path_post_fix = path_post_fix or ""
     if path_post_fix:
@@ -397,100 +380,75 @@ def get_models(model_type: str, **kwargs) -> ExpressionResource:
     return get_constraint_data(model_type, sub_dir="models", extension="he", **kwargs)
 
 
-def get_per_variant_expected_dataset(
-    custom_vep_annotation: str = "transcript_consequences", **kwargs
-) -> TableResource:
+def get_per_variant_expected_dataset(**kwargs) -> TableResource:
     """
     Return TableResource containing the expected variant counts and observed:expected ratio.
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :return: Path of the model.
     """
     return get_constraint_data(
         "per_variant_expected",
-        sub_dir="apply_models",
-        custom_vep_annotation=custom_vep_annotation,
+        sub_dir=f"apply_models/{VEP_ANNOTATION}",
         **kwargs,
     )
 
 
-def get_aggregated_per_variant_expected(
-    custom_vep_annotation: str = "transcript_consequences", **kwargs
-) -> TableResource:
+def get_aggregated_per_variant_expected(**kwargs) -> TableResource:
     """
     Return TableResource containing the expected variant counts and observed:expected ratio.
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :return: Path of the model.
     """
     return get_constraint_data(
         "per_variant_expected.aggregated",
-        sub_dir="apply_models",
-        custom_vep_annotation=custom_vep_annotation,
+        sub_dir=f"apply_models/{VEP_ANNOTATION}",
         **kwargs,
     )
 
 
-def get_aggregated_expected(
-    custom_vep_annotation: str = "transcript_consequences", **kwargs
-) -> TableResource:
+def get_aggregated_expected(**kwargs) -> TableResource:
     """
     Return TableResource for the aggregated expected variant counts Table.
 
     This is the output of the aggregated model application path, where counts
     are aggregated before applying models (as opposed to the per-variant path).
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :return: TableResource of the aggregated expected Table.
     """
     return get_constraint_data(
         "aggregated_expected",
-        sub_dir="apply_models",
-        custom_vep_annotation=custom_vep_annotation,
+        sub_dir=f"apply_models/{VEP_ANNOTATION}",
         **kwargs,
     )
 
 
-def get_constraint_group_ht(custom_vep_annotation: str, **kwargs) -> TableResource:
+def get_constraint_group_ht(**kwargs) -> TableResource:
     """
     Return TableResource of constraint group Table.
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :return: TableResource of constraint group Table.
     """
     return get_constraint_data(
         "constraint_group",
-        sub_dir="apply_models",
-        custom_vep_annotation=custom_vep_annotation,
+        sub_dir=f"apply_models/{VEP_ANNOTATION}",
         **kwargs,
     )
 
 
-def get_constraint_metrics_dataset(
-    custom_vep_annotation: str = "transcript_consequences", **kwargs
-) -> TableResource:
+def get_constraint_metrics_dataset(**kwargs) -> TableResource:
     """
     Return TableResource of pLI scores, observed:expected ratio, 90% confidence interval around the observed:expected ratio, and z scores.
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :return: TableResource of constraint metrics.
     """
     return get_constraint_data(
         "constraint_metrics",
-        sub_dir="metrics",
-        custom_vep_annotation=custom_vep_annotation,
+        sub_dir=f"metrics/{VEP_ANNOTATION}",
         **kwargs,
     )
 
 
-def get_pre_rank_constraint_metrics_dataset(
-    custom_vep_annotation: str = "transcript_consequences", **kwargs
-) -> TableResource:
+def get_pre_rank_constraint_metrics_dataset(**kwargs) -> TableResource:
     """
     Return TableResource of constraint metrics before rank and bin annotations are added.
 
@@ -498,14 +456,11 @@ def get_pre_rank_constraint_metrics_dataset(
     :func:`compute_constraint_percentile_bins`. Keeping it as its own dataset
     allows the ranking to be recomputed without rerunning the metrics.
 
-    :param custom_vep_annotation: The VEP annotation used to customize the constraint
-        model (one of "transcript_consequences" or "worst_csq_by_gene").
     :return: TableResource of constraint metrics without rank annotations.
     """
     return get_constraint_data(
         "constraint_metrics_pre_rank",
-        sub_dir="metrics",
-        custom_vep_annotation=custom_vep_annotation,
+        sub_dir=f"metrics/{VEP_ANNOTATION}",
         **kwargs,
     )
 
@@ -618,7 +573,6 @@ def get_syn_adj_r_ht() -> hl.Table:
 
 def get_constraint_resources(
     version: str,
-    custom_vep_annotation: str,
     overwrite: bool,
     test: bool,
     models: List[str] = ["plateau", "coverage"],
@@ -631,8 +585,6 @@ def get_constraint_resources(
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
 
     :param version: Version of constraint resources to use.
-    :param custom_vep_annotation: Custom VEP annotation to use for applying models
-        resources.
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
     :param models: List of models to use. Default is ["plateau", "coverage"].
@@ -724,7 +676,7 @@ def get_constraint_resources(
         "--apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": get_per_variant_expected_dataset(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -733,7 +685,7 @@ def get_constraint_resources(
         "--aggregate-per-variant-expected",
         output_resources={
             "apply_ht": get_aggregated_per_variant_expected(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[
@@ -746,7 +698,7 @@ def get_constraint_resources(
         "--apply-models-aggregated",
         output_resources={
             "aggregated_expected_ht": get_aggregated_expected(
-                custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -756,7 +708,7 @@ def get_constraint_resources(
             "--aggregate-by-constraint-groups --use-aggregated-expected",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
-                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=path_post_fix
                 )
             },
             pipeline_input_steps=[apply_models_aggregated],
@@ -766,7 +718,7 @@ def get_constraint_resources(
             "--aggregate-by-constraint-groups",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
-                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=path_post_fix
                 )
             },
             pipeline_input_steps=[aggregate_per_variant_expected],
@@ -781,7 +733,6 @@ def get_constraint_resources(
                 "--compute-constraint-metrics": {
                     "pre_rank_constraint_metrics_ht": (
                         get_pre_rank_constraint_metrics_dataset(
-                            custom_vep_annotation,
                             **common_params,
                             path_post_fix=path_post_fix,
                         )
@@ -790,7 +741,7 @@ def get_constraint_resources(
             },
             output_resources={
                 "constraint_metrics_ht": get_constraint_metrics_dataset(
-                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=path_post_fix
                 ),
             },
         )
@@ -800,13 +751,12 @@ def get_constraint_resources(
             output_resources={
                 "pre_rank_constraint_metrics_ht": (
                     get_pre_rank_constraint_metrics_dataset(
-                        custom_vep_annotation,
                         **common_params,
                         path_post_fix=path_post_fix,
                     )
                 ),
                 "constraint_metrics_ht": get_constraint_metrics_dataset(
-                    custom_vep_annotation, **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=path_post_fix
                 ),
             },
             pipeline_input_steps=[

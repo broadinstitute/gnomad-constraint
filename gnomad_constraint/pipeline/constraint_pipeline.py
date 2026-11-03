@@ -37,7 +37,6 @@ from gnomad.utils.reference_genome import get_reference_genome
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
-    CUSTOM_VEP_ANNOTATIONS,
     RELEASE_KEY_ORDER,
     VERSIONS,
 )
@@ -108,7 +107,6 @@ def main(args):
     directory_post_fix = args.directory_post_fix
     path_post_fix = args.path_post_fix
     overwrite = args.overwrite
-    custom_vep_annotation = args.custom_vep_annotation
     skip_coverage_model = args.skip_coverage_model
     gerp_lower_cutoff = args.calculate_mutation_rate_gerp_lower_cutoff
     gerp_upper_cutoff = args.calculate_mutation_rate_gerp_upper_cutoff
@@ -124,7 +122,6 @@ def main(args):
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = constraint_res.get_constraint_resources(
         version,
-        custom_vep_annotation,
         overwrite,
         test,
         models,
@@ -321,7 +318,6 @@ def main(args):
                 res.model_plateau.he(),
                 coverage_model=None if skip_coverage_model else res.model_coverage.he(),
                 log10_coverage=log10_coverage,
-                custom_vep_annotation=custom_vep_annotation,
                 use_mane_select=True,
             )
             ht.write(res.per_variant_apply_ht.path, overwrite=overwrite)
@@ -368,7 +364,6 @@ def main(args):
                     None if skip_coverage_model else res.model_coverage.he()
                 ),
                 log10_coverage=log10_coverage,
-                custom_vep_annotation=custom_vep_annotation,
                 use_mane_select=True,
             )
             ht.write(res.aggregated_expected_ht.path, overwrite=overwrite)
@@ -797,16 +792,6 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
     )
 
-    aggregate_per_variant_expected_args.add_argument(
-        "--custom-vep-annotation",
-        help=(
-            "Custom VEP annotation to be used to annotate transcript when"
-            ' applying models (one of "transcript_consequences" or "worst_csq_by_gene")'
-        ),
-        type=str,
-        default="transcript_consequences",
-        choices=CUSTOM_VEP_ANNOTATIONS,
-    )
     aggregate_per_variant_expected_args._group_actions.append(cov_model_type)
 
     aggregate_by_constraint_groups_args = parser.add_argument_group(

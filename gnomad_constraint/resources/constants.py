@@ -38,16 +38,12 @@ DATA_TYPES = ["context", "exomes", "genomes"]
 MODEL_TYPES = ["plateau", "coverage"]
 """Model types used for constraint calibration."""
 
-CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
+VEP_ANNOTATION = "transcript_consequences"
 """
-VEP annotations used when applying models.
+VEP annotation the models are applied to, one row per transcript consequence.
 
-"transcript_consequences" option will annotate the Table with 'annotation', 'gene',
-'coverage', 'transcript', and either 'canonical' or 'mane_select' annotations using 'transcript_consequences'
-VEP annotation.
-
-"worst_csq_by_gene" option will annotate the Table with 'annotation', 'gene', and
-'coverage' annotations using 'worst_csq_by_gene' VEP annotation.
+The outputs of the apply-models and metrics steps are in a subdirectory with this
+name, left from when the annotation was an option.
 """
 
 SFS_BIN_CUTOFFS = (0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5)
