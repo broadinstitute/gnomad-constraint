@@ -173,9 +173,11 @@ def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
 
     One gene with a MANE Select transcript (T1) and a second transcript (T2), and a
     chrX non-PAR gene (G2, transcript TX). Synonymous variants are at high and low
-    coverage, so the coverage model changes their expected count. The last four
-    rows are dropped before the models are applied, or by the coding-consequence
-    filter.
+    coverage, so the coverage model changes their expected count. Three of the
+    synonymous variants share their substitution, coverage, transcript, and
+    consequence, so the aggregated path sums them into one row with three possible
+    variants before applying the models. The last four rows are dropped before the
+    models are applied, or by the coding-consequence filter.
 
     :param skip_coverage_model: Whether to give low coverage sites no apply model,
         as preprocessing does with ``--skip-coverage-model``. Default is False.
@@ -197,6 +199,9 @@ def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
         variant(3, CPG, HIGH_COV, [1, 1], 1, [_csq("missense_variant")]),
         variant(4, CPG, LOW_COV, [0, 0], 1, [_csq("stop_gained", lof="HC")]),
         variant(5, NON_CPG, HIGH_COV, [1, 0], 1, [_csq("stop_gained", lof="LC")]),
+        # Same substitution, coverage, transcript, and consequence as position 1.
+        variant(10, NON_CPG, HIGH_COV, [0, 0], 1, [_csq("synonymous_variant")]),
+        variant(11, NON_CPG, HIGH_COV, [1, 1], 1, [_csq("synonymous_variant")]),
         variant(
             3_000_000,
             NON_CPG,
@@ -351,6 +356,8 @@ class TestPrepareHtForApplyModels:
             (4, "T1"),
             (5, "T1"),
             (9, "T1"),
+            (10, "T1"),
+            (11, "T1"),
             (3_000_000, "TX"),
         ]
 
@@ -537,13 +544,14 @@ class TestAggregatePerVariantExpectedHt:
             ("TX", "synonymous_variant", "None"),
         }
 
+        # Three high coverage synonymous variants and one low coverage one.
         syn = rows[("T1", "synonymous_variant", "None")]
-        assert syn.observed_variants == [1, 0]
-        assert syn.possible_variants == 2
-        assert syn.mu_snp == pytest.approx(2 * MU_SNP[False])
-        assert syn.coverage_correction == pytest.approx(1 + LOW_COV_CORRECTION)
+        assert syn.observed_variants == [2, 1]
+        assert syn.possible_variants == 4
+        assert syn.mu_snp == pytest.approx(4 * MU_SNP[False])
+        assert syn.coverage_correction == pytest.approx(3 + LOW_COV_CORRECTION)
         assert syn.expected_variants == pytest.approx(
-            [0.3 * (1 + LOW_COV_CORRECTION), 0.15 * (1 + LOW_COV_CORRECTION)]
+            [0.3 * (3 + LOW_COV_CORRECTION), 0.15 * (3 + LOW_COV_CORRECTION)]
         )
 
     def test_unobserved_group_sums_to_zero(self) -> None:
@@ -592,7 +600,9 @@ class TestPerVariantAndAggregatedPathsAgree:
     """Test that the per-variant and aggregated paths give the same sums.
 
     The two paths apply the models at different stages: per variant and then
-    summed, or to summed counts. Every summed field should agree.
+    summed, or to summed counts. Every summed field should agree. The aggregated
+    path multiplies by the summed possible count, which the three synonymous
+    variants that share a row test.
     """
 
     @pytest.mark.parametrize("coverage_model", [COVERAGE_MODEL, None])
