@@ -10,10 +10,13 @@ aggregated by transcript and constraint group.
 The current version is v4.1.1 (GRCh38). Version 2.1.1 (GRCh37) is no longer
 supported; commit 39928d1 is the last version of the pipeline that supports it.
 
-An overview of the pipeline and the functions it uses is in
-[gnomad_constraint/flowchart/constraint_pipeline_v4.pdf](./gnomad_constraint/flowchart/constraint_pipeline_v4.pdf).
-Many of the functions are imported from
-[gnomad_methods](https://github.com/broadinstitute/gnomad_methods).
+An interactive map of the pipeline is published at
+<https://broadinstitute.github.io/gnomad-constraint/>: every step with its flags,
+the Tables it reads and writes, the function calls behind it (in this repo and in
+[gnomad_methods](https://github.com/broadinstitute/gnomad_methods)), and the
+schema, row count, and first rows of each Table. The page is
+[gnomad_constraint/flowchart/constraint_pipeline.html](./gnomad_constraint/flowchart/constraint_pipeline.html);
+see [Updating the flowchart](#updating-the-flowchart).
 
 ## Repository layout
 
@@ -25,7 +28,7 @@ Many of the functions are imported from
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
 | `gnomad_constraint/resources/README.md` | Schema reference for every pipeline output |
 | `gnomad_constraint/plots/` | R scripts for constraint figures; see its [README](gnomad_constraint/plots/README.md) for setup |
-| `gnomad_constraint/flowchart/` | Pipeline overview |
+| `gnomad_constraint/flowchart/` | Interactive pipeline flowchart and the script that generates it |
 | `tests/` | Unit tests; see its [README](tests/README.md) |
 | `release_readme/` | Field descriptions for the released constraint and mutation rate Tables |
 | `requirements.txt` | What the pipeline needs to run: gnomad_methods, gnomad_qc, and Hail |
@@ -123,9 +126,53 @@ hailctl dataproc submit <cluster> gnomad_constraint/pipeline/constraint_pipeline
 
 Run a step with `--test` and check its output before running it at full scale.
 
+## Updating the flowchart
+
+[generate_flowchart.py](gnomad_constraint/flowchart/generate_flowchart.py) fills
+three generated blocks in the page:
+
+- **Code**: steps, flags, input and output resources, and the function calls
+  behind each step, read from `constraint_pipeline.py`, `resource_utils.py`, and
+  the utility modules of this repo and gnomad_methods. Prose the code cannot
+  supply (what each step does to the data, pitfalls, Table summaries) lives in
+  [notes.py](gnomad_constraint/flowchart/notes.py).
+- **Notes**: `notes.py`, checked against the code so a renamed step, function,
+  flag, or resource fails instead of going stale.
+- **Tables**: the schema, row count, globals, and first rows of every pipeline
+  input and output, read on Dataproc.
+
+After changing the pipeline, commit, then run from the repository root with
+gnomad_methods (at the commit pinned in `requirements.txt`) and gnomad_qc
+importable:
+
+```bash
+python -m gnomad_constraint.flowchart.generate_flowchart --extract
+```
+
+`--extract` records the commit of both repositories so every source link is a
+permalink, and refuses to read files with uncommitted changes (`--allow-dirty`
+overrides this, and the page then shows a warning). CI runs `--check`, which
+fails when the page no longer matches the code or `notes.py`.
+
+After rerunning pipeline steps, refresh the Table panels (build the single zip
+as in [Running the pipeline](#running-the-pipeline)):
+
+```bash
+hailctl dataproc submit <cluster> \
+  <repo>/gnomad_constraint/flowchart/generate_flowchart.py \
+  --pyfiles /tmp/pyfiles.zip \
+  -- --collect --out gs://gnomad-tmp-4day/constraint_flowchart/tables.json
+gsutil cp gs://gnomad-tmp-4day/constraint_flowchart/tables.json .
+python -m gnomad_constraint.flowchart.generate_flowchart --inject-tables tables.json
+```
+
+[pages.yml](.github/workflows/pages.yml) publishes the page to GitHub Pages
+whenever it changes on `main`.
+
 ## Continuous integration
 
 CI (`.github/workflows/ci.yml`) runs on pull requests and pushes to `main`. It
 checks formatting (black, isort, autopep8), docstrings (pydocstyle), and pylint
-errors on the Python code, runs the unit tests, and runs styler and lintr on the
-R code. The same formatters run as pre-commit hooks.
+errors on the Python code, runs the unit tests, checks that the flowchart matches
+the code, and runs styler and lintr on the R code. The same formatters run as
+pre-commit hooks.

@@ -208,6 +208,13 @@ fields or globals, update its description in `release_readme/` too.
   `--skip-coverage-model` doesn't match the preprocessed Table.
 - `--compute-constraint-metrics` needs Hail 0.2.137 or later (`hl.qgamma`, used
   for the gamma confidence interval).
+- `gnomad_constraint/flowchart/constraint_pipeline.html` is generated from the
+  pipeline's steps, flags, resources, and function calls, and CI's `--check`
+  fails when it's stale. After changing any of those, or the docstring of a
+  function a step reaches, commit, then run
+  `python -m gnomad_constraint.flowchart.generate_flowchart --extract`. Its prose
+  lives in `gnomad_constraint/flowchart/notes.py`, keyed by step, function, flag,
+  and resource names, so renaming one of them means updating the notes too.
 
 ## Maintaining CLAUDE.md
 
