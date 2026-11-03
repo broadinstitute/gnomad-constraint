@@ -12,6 +12,7 @@ from gnomad.resources.resource_utils import TableResource
 from gnomad_constraint.pipeline.constraint_pipeline import (
     check_apply_models_resources,
     check_constraint_group_input,
+    check_gerp_cutoffs_step,
     check_skip_coverage_model,
     get_release_downsamplings,
 )
@@ -82,6 +83,29 @@ class TestCheckApplyModelsResources:
         res = self._res(os.path.join(tmp_path, "missing.ht"))
         check_apply_models_resources(res, skip_coverage_model=False)
         res.check_resource_existence.assert_called_once()
+
+
+class TestCheckGerpCutoffsStep:
+    """Test the check_gerp_cutoffs_step function."""
+
+    @pytest.mark.parametrize(
+        "calculate_gerp_cutoffs, preprocess_data",
+        [(True, True), (False, True), (False, False)],
+    )
+    def test_allowed(self, calculate_gerp_cutoffs: bool, preprocess_data: bool) -> None:
+        """Test that the cutoffs can be calculated with preprocessing, or not at all."""
+        check_gerp_cutoffs_step(calculate_gerp_cutoffs, preprocess_data)
+
+    def test_without_preprocess_data(self) -> None:
+        """
+        Test that calculating the cutoffs without preprocessing raises an error.
+
+        Regression test: the cutoffs are not saved and only ``--preprocess-data`` in
+        the same command uses them, so on their own they were calculated and
+        discarded, and a later ``--preprocess-data`` used the default cutoffs.
+        """
+        with pytest.raises(ValueError, match="--preprocess-data"):
+            check_gerp_cutoffs_step(calculate_gerp_cutoffs=True, preprocess_data=False)
 
 
 class TestCheckConstraintGroupInput:

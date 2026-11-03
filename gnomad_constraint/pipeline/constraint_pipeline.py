@@ -114,6 +114,27 @@ def check_apply_models_resources(
     res.check_resource_existence()
 
 
+def check_gerp_cutoffs_step(
+    calculate_gerp_cutoffs: bool, preprocess_data: bool
+) -> None:
+    """
+    Check that ``--calculate-gerp-cutoffs`` runs with ``--preprocess-data``.
+
+    The cutoffs are not saved, and only ``--preprocess-data`` in the same command
+    uses them.
+
+    :param calculate_gerp_cutoffs: Whether ``--calculate-gerp-cutoffs`` runs in this
+        command.
+    :param preprocess_data: Whether ``--preprocess-data`` runs in this command.
+    :return: None.
+    """
+    if calculate_gerp_cutoffs and not preprocess_data:
+        raise ValueError(
+            "--calculate-gerp-cutoffs doesn't save its cutoffs, and only"
+            " --preprocess-data in the same command uses them. Add --preprocess-data."
+        )
+
+
 def get_release_downsamplings(release_ht: hl.Table) -> hl.Struct:
     """
     Return the downsampling levels of the release Table.
@@ -194,6 +215,7 @@ def main(args: argparse.Namespace) -> None:
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+    check_gerp_cutoffs_step(args.calculate_gerp_cutoffs, args.preprocess_data)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
@@ -649,9 +671,10 @@ if __name__ == "__main__":
         "--calculate-gerp-cutoffs",
         help=(
             "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
-            " of GERP scores at autosome/PAR sites in the context Table. If"
-            " '--preprocess-data' runs in the same command, the computed values are"
-            " used instead of --calculate-mutation-rate-gerp-lower-cutoff and"
+            " of GERP scores at autosome/PAR sites in the context Table. The cutoffs"
+            " are not saved, so this must run in the same command as"
+            " --preprocess-data, which uses them instead of"
+            " --calculate-mutation-rate-gerp-lower-cutoff and"
             " --calculate-mutation-rate-gerp-upper-cutoff."
         ),
         action="store_true",

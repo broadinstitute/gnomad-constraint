@@ -40,7 +40,7 @@ flag, in this order:
 | Flag | Step |
 |---|---|
 | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
-| `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so run it in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
+| `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so it must run in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
 | `--preprocess-data` | Add per-site observed and possible counts, mutation rate inputs, and model groups |
 | `--compute-gene-quality-metrics` | Per-transcript coverage, mapping quality, segmental duplication, and low-complexity region metrics |
 | `--calculate-mutation-rate` | Compute the mutation rate for each substitution and context |
