@@ -1026,10 +1026,10 @@ def aggregate_per_variant_expected_ht(
         ],
     ]
 
-    # The per-variant table from create_per_variant_expected_ht nests
-    # transcript-level fields (gene, transcript, canonical, annotation, etc.)
-    # inside a `calibrate_mu` struct. Promote them to top-level so they can
-    # be used as grouping keys.
+    # The grouping fields (gene, transcript, annotation, etc.) are top-level, but
+    # the observed and possible counts are inside the `calibrate_mu` struct with
+    # the exomes frequency array and model groups. Promote them so they can be
+    # summed.
     if "calibrate_mu" in ht.row:
         ht = ht.annotate(**ht.calibrate_mu)
 
@@ -1154,9 +1154,14 @@ def calculate_mu_by_downsampling(
         - ref - the reference allele.
         - alt - the alternate base.
         - methylation_level - methylation_level.
-        - downsampling_counts_{gen_anc} - variant counts in downsamplings for genetic
-          ancestry groups in ``gen_ancs``.
-        - mu_snp - SNP mutation rate.
+        - observed_variants - observed counts, one per entry of
+          ``calculate_mu_globals.freq_meta`` (the adj frequency and the
+          downsamplings).
+        - possible_variants - possible variant count.
+        - proportion_observed - ``observed_variants / possible_variants``, per entry.
+        - mu - scaled mutation rate, per entry.
+        - mu_snp - SNP mutation rate, the ``mu`` entry at
+          ``calculate_mu_globals.downsampling_idx``.
         - annotations added by ``annotate_mutation_type``.
 
     :param ht: Table returned by ``prepare_ht_for_constraint_calculations``.
@@ -1249,13 +1254,13 @@ def add_oe_upper_rank_and_bins(
         with no canonical fallback. Default is False.
     :param bin_granularities: Mapping of bin name to multiplier used to assign each
         transcript to a bin (``hl.int(rank * multiplier / n_transcripts)``). Each entry
-        produces a ``bin_{name}`` field. Default is
+        produces an ``upper_bin_{name}`` field. Default is
         ``{"percentile": 100, "decile": 10, "sextile": 6}``.
     :return: Input table with ``oe_ci_{ci}_rank`` fields added at the constraint-group
         level (e.g., ``oe_ci_discretized_poisson_rank``, ``oe_ci_gamma_rank``), each
-        a struct with ``rank`` and ``bin_{name}`` fields for every entry in
-        ``bin_granularities``. Transcripts excluded from ranking have these fields set
-        to missing.
+        a struct with ``upper_rank`` and ``upper_bin_{name}`` fields for every entry
+        in ``bin_granularities``. Transcripts excluded from ranking have these fields
+        set to missing.
     """
     ci_fields = ["discretized_poisson", "gamma"]
 
