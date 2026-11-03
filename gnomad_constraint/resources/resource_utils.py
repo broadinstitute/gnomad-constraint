@@ -1,7 +1,7 @@
 """Resource utility functions and resource definitions for the constraint pipeline."""
 
 import logging
-from typing import List, Optional, Union
+from typing import Optional, Tuple, Union
 
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
@@ -519,11 +519,14 @@ def filter_for_test(
     use_gene_list: bool = False,
 ) -> hl.Table:
     """
-    Filter ``ht`` to chr20, chrX, and chrY or a gene list for testing.
+    Filter ``ht`` to chr20, chrX, and chrY, or to six genes, for testing.
+
+    The genes are PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1 and FAAH2 (chrX), and
+    ZFY (chrY).
 
     :param ht: Table to filter.
-    :param use_gene_list: Whether to use a gene list for testing instead of all of
-        chr20, chrX, and chrY for testing.
+    :param use_gene_list: Whether to filter to the six genes instead of all of chr20,
+        chrX, and chrY.
     :return: Filtered Table for testing.
     """
     rg = get_reference_genome(ht.locus)
@@ -576,7 +579,7 @@ def get_constraint_resources(
     version: str,
     overwrite: bool,
     test: bool,
-    models: List[str] = ["plateau", "coverage"],
+    models: Tuple[str, ...] = ("plateau", "coverage"),
     directory_post_fix: Optional[str] = None,
     path_post_fix: Optional[str] = None,
     skip_pre_rank_metrics: bool = False,
@@ -588,9 +591,12 @@ def get_constraint_resources(
     :param version: Version of constraint resources to use.
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
-    :param models: List of models to use. Default is ["plateau", "coverage"].
+    :param models: Models to use. Default is ("plateau", "coverage").
     :param directory_post_fix: Post-fix to add to the directory path of the resources.
     :param path_post_fix: Post-fix to add to the path of the resources.
+    :param skip_pre_rank_metrics: Whether ``--compute-constraint-metrics`` reuses an
+        existing pre-rank metrics Table, which then becomes its input instead of
+        an output. Default is False.
     :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
         reads the ``--apply-models-aggregated`` output instead of the
         ``--aggregate-per-variant-expected`` output. Default is False.

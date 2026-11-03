@@ -23,6 +23,8 @@ The constraint pipeline consists of the following parts:
 
 import argparse
 import logging
+import math
+from typing import Optional, Tuple
 
 import hail as hl
 from gnomad.utils.constraint import (
@@ -114,6 +116,124 @@ def check_apply_models_resources(
     res.check_resource_existence()
 
 
+def get_coverage_model(
+    res: PipelineStepResourceCollection,
+    skip_coverage_model: bool,
+    log10_coverage: bool,
+    high_cov_cutoff: int,
+) -> Tuple[Optional[hl.expr.ArrayNumericExpression], bool]:
+    """
+    Read the coverage model and the coverage scale to apply it on.
+
+    ``--build-models`` saves the coverage model as a struct of its ``coefficients``
+    (``[intercept, slope]``) and the ``log10_coverage`` setting it was built with,
+    and the model is applied on that scale. A model saved before the setting was
+    stored has only the coefficients, so ``--use-logarithmic-coverage-model`` sets
+    the scale for it, with a warning.
+
+    For such a model, the coefficients are checked against the flag. The model is
+    fit to o/e scaled so high coverage sites are at 1, so on the scale it was built
+    on, its correction at the high coverage cutoff is close to 1, and on the other
+    scale it is far from 1. If the flag's scale gives the correction further from 1,
+    an error is raised.
+
+    :param res: Resources of ``--apply-models-per-variant`` or
+        ``--apply-models-aggregated``.
+    :param skip_coverage_model: Whether ``--skip-coverage-model`` was passed.
+    :param log10_coverage: Whether ``--use-logarithmic-coverage-model`` was passed.
+    :param high_cov_cutoff: Coverage at and above which sites are high coverage
+        when applying the models.
+    :return: Tuple of the coverage model coefficients, or None when the coverage
+        model is skipped, and whether to apply them to log10 coverage.
+    """
+    if skip_coverage_model:
+        return None, log10_coverage
+
+    coverage_model = res.model_coverage.he()
+    if not isinstance(coverage_model, hl.expr.StructExpression):
+        intercept, slope = hl.eval(coverage_model)
+        correction = {
+            log10: intercept
+            + slope * (math.log10(high_cov_cutoff) if log10 else high_cov_cutoff)
+            for log10 in (False, True)
+        }
+        if abs(correction[log10_coverage] - 1) > abs(
+            correction[not log10_coverage] - 1
+        ):
+            scale = {False: "linear", True: "log10"}
+            raise ValueError(
+                "The coverage model was saved without the coverage scale it was built"
+                " on, and its coefficients look like it was built on"
+                f" {scale[not log10_coverage]} coverage: at the high coverage cutoff"
+                f" ({high_cov_cutoff}), its correction is"
+                f" {correction[log10_coverage]:.3g} on {scale[log10_coverage]}"
+                f" coverage and {correction[not log10_coverage]:.3g} on"
+                f" {scale[not log10_coverage]} coverage, where it should be close to"
+                f" 1. {'Remove' if log10_coverage else 'Add'}"
+                " --use-logarithmic-coverage-model, or rebuild the models."
+            )
+        logger.warning(
+            "The coverage model was saved without the coverage scale it was built on,"
+            " so it is applied to %s coverage, as set by"
+            " --use-logarithmic-coverage-model. Rebuild the models to save the scale"
+            " with them.",
+            "log10" if log10_coverage else "linear",
+        )
+        return coverage_model, log10_coverage
+
+    saved_log10_coverage = hl.eval(coverage_model.log10_coverage)
+    if log10_coverage and not saved_log10_coverage:
+        logger.warning(
+            "--use-logarithmic-coverage-model is ignored: the coverage model was built"
+            " on linear coverage."
+        )
+    logger.info(
+        "Applying the coverage model to %s coverage, the scale it was built on.",
+        "log10" if saved_log10_coverage else "linear",
+    )
+    return coverage_model.coefficients, saved_log10_coverage
+
+
+def check_gerp_cutoffs_step(
+    calculate_gerp_cutoffs: bool, preprocess_data: bool
+) -> None:
+    """
+    Check that ``--calculate-gerp-cutoffs`` runs with ``--preprocess-data``.
+
+    The cutoffs are not saved, and only ``--preprocess-data`` in the same command
+    uses them.
+
+    :param calculate_gerp_cutoffs: Whether ``--calculate-gerp-cutoffs`` runs in this
+        command.
+    :param preprocess_data: Whether ``--preprocess-data`` runs in this command.
+    :return: None.
+    """
+    if calculate_gerp_cutoffs and not preprocess_data:
+        raise ValueError(
+            "--calculate-gerp-cutoffs doesn't save its cutoffs, and only"
+            " --preprocess-data in the same command uses them. Add --preprocess-data."
+        )
+
+
+def get_release_downsamplings(release_ht: hl.Table) -> hl.Struct:
+    """
+    Return the downsampling levels of the release Table.
+
+    The release Table only has a ``downsamplings`` global when preprocessing used
+    ``--include-downsamplings``.
+
+    :param release_ht: Release constraint metrics Table.
+    :return: Downsampling levels for each genetic ancestry group.
+    """
+    if "downsamplings" not in release_ht.globals:
+        raise ValueError(
+            "The release Table has no downsamplings global, so there is no"
+            " downsampling TSV to export. Rerun --preprocess-data with"
+            " --include-downsamplings, then the steps after it."
+        )
+    return hl.eval(release_ht.downsamplings)
+
+
 def check_constraint_group_input(
     aggregate_per_variant_expected: bool,
     apply_models_aggregated: bool,
@@ -156,7 +276,7 @@ def check_constraint_group_input(
         )
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     """Execute the constraint pipeline."""
     hl.init(
         log="/constraint_pipeline.log",
@@ -175,6 +295,7 @@ def main(args):
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+    check_gerp_cutoffs_step(args.calculate_gerp_cutoffs, args.preprocess_data)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
@@ -316,7 +437,7 @@ def main(args):
         if args.create_training_set:
             logger.info(
                 "Computing the observed and possible counts of synonymous variants to"
-                "use as a training set for the plateau and coverage models..."
+                " use as a training set for the plateau and coverage models..."
             )
             res = resources.create_training_set
             res.check_resource_existence()
@@ -353,8 +474,14 @@ def main(args):
                 plateau_models, res.model_plateau.path, overwrite=overwrite
             )
             if not args.skip_coverage_model:
+                # Save the coverage scale with the model, so it's applied on the same
+                # scale.
                 hl.experimental.write_expression(
-                    coverage_model, res.model_coverage.path, overwrite=overwrite
+                    hl.struct(
+                        coefficients=coverage_model, log10_coverage=log10_coverage
+                    ),
+                    res.model_coverage.path,
+                    overwrite=overwrite,
                 )
 
             logger.info("Done building models.")
@@ -372,12 +499,18 @@ def main(args):
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
+            coverage_model, apply_log10_coverage = get_coverage_model(
+                res,
+                skip_coverage_model,
+                log10_coverage,
+                hl.eval(ht.apply_models_globals.high_cov_cutoff),
+            )
             ht = create_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
                 res.model_plateau.he(),
-                coverage_model=None if skip_coverage_model else res.model_coverage.he(),
-                log10_coverage=log10_coverage,
+                coverage_model=coverage_model,
+                log10_coverage=apply_log10_coverage,
                 use_mane_select=True,
             )
             ht.write(res.per_variant_apply_ht.path, overwrite=overwrite)
@@ -415,14 +548,18 @@ def main(args):
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
+            coverage_model, apply_log10_coverage = get_coverage_model(
+                res,
+                skip_coverage_model,
+                log10_coverage,
+                hl.eval(ht.apply_models_globals.high_cov_cutoff),
+            )
             ht = create_aggregated_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
                 res.model_plateau.he(),
-                coverage_model=(
-                    None if skip_coverage_model else res.model_coverage.he()
-                ),
-                log10_coverage=log10_coverage,
+                coverage_model=coverage_model,
+                log10_coverage=apply_log10_coverage,
                 use_mane_select=True,
                 partition_hint=args.apply_models_aggregated_partition_hint,
             )
@@ -507,7 +644,7 @@ def main(args):
 
             release_ht = prepare_release_ht(
                 constraint_ht,
-                release_version=args.release_version,
+                release_version=args.release_version or version,
             ).naive_coalesce(1000)
             release_ht.write(res.release_ht.path, overwrite=overwrite)
             logger.info("Done preparing release Table.")
@@ -520,7 +657,7 @@ def main(args):
             mutation_ht = res.mutation_ht.ht()
             release_mutation_ht = prepare_release_mutation_ht(
                 mutation_ht,
-                release_version=args.release_version,
+                release_version=args.release_version or version,
             )
             release_mutation_ht.write(res.release_mutation_ht.path, overwrite=overwrite)
 
@@ -549,7 +686,7 @@ def main(args):
             logger.info("Exporting release downsampling TSV...")
             downsampling_ht = explode_downsamplings_oe(
                 release_ht,
-                downsampling_meta=hl.eval(release_ht.downsamplings),
+                downsampling_meta=get_release_downsamplings(release_ht),
                 metrics=["syn", "mis", "lof_hc_lc", "lof"],
             )
             downsampling_ht.export(res.release_downsampling_tsv)
@@ -558,7 +695,12 @@ def main(args):
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(
-            constraint_res.get_logging_path("constraint_pipeline", version=version)
+            constraint_res.get_logging_path(
+                "constraint_pipeline",
+                version=version,
+                directory_post_fix=directory_post_fix,
+                path_post_fix=path_post_fix,
+            )
         )
 
 
@@ -608,8 +750,8 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--test-gene-list",
         help=(
             "Whether to filter the exome Table, genome Table and the context Table to"
-            " only a list of genes on chromosome 20, chromosome X, and chromosome Y for"
-            " testing."
+            " only six genes for testing: PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1"
+            " and FAAH2 (chrX), and ZFY (chrY)."
         ),
         action="store_true",
     )
@@ -626,9 +768,10 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--calculate-gerp-cutoffs",
         help=(
             "Calculate GERP lower and upper cutoffs based on 5th and 95th percentiles"
-            " of GERP scores at autosome/PAR sites in the context Table. If"
-            " '--preprocess-data' runs in the same command, the computed values are"
-            " used instead of --calculate-mutation-rate-gerp-lower-cutoff and"
+            " of GERP scores at autosome/PAR sites in the context Table. The cutoffs"
+            " are not saved, so this must run in the same command as"
+            " --preprocess-data, which uses them instead of"
+            " --calculate-mutation-rate-gerp-lower-cutoff and"
             " --calculate-mutation-rate-gerp-upper-cutoff."
         ),
         action="store_true",
@@ -666,7 +809,7 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Minimum GERP score for variant to be included when calculating the"
             " mutation rate. Default is -3.9885 (precalculated on the GRCh37 context"
-            " Table to define the 95th percentile)."
+            " Table to define the 5th percentile)."
         ),
         type=float,
         default=-3.9885,
@@ -676,7 +819,7 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Maximum GERP score for variant to be included when calculating the"
             " mutation rate. Default is 2.6607 (precalculated on the GRCh37 context"
-            " Table to define the 5th percentile)."
+            " Table to define the 95th percentile)."
         ),
         type=float,
         default=2.6607,
@@ -684,11 +827,13 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     preprocess_args.add_argument(
         "--exome-coverage-metric",
         help=(
-            "Name of metric to use to assess exome coverage, such as 'median', 'AN', or"
-            "'AN_percent'. Default is 'AN_percent'."
+            "Metric to use for exome coverage: 'median' (median depth), 'AN' (allele"
+            " number), or 'AN_percent' (percent of samples with a genotype). Default is"
+            " 'AN_percent'."
         ),
         type=str,
         default="AN_percent",
+        choices=["median", "AN", "AN_percent"],
     )
     preprocess_args.add_argument(
         "--pipeline-low-coverage-filter",
@@ -816,15 +961,18 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--use-weights",
         help=(
             "Whether to generalize the models to weighted least squares using"
-            "'possible_variants'."
+            " 'possible_variants'."
         ),
         action="store_true",
     )
-    cov_model_type = build_models_args.add_argument(
+    build_models_args.add_argument(
         "--use-logarithmic-coverage-model",
         help=(
-            "Use a logarithmic model for low coverage sites when building and applying "
-            "the coverage model."
+            "Build the coverage model on log10 coverage instead of linear coverage."
+            " The scale is saved with the model, and the model is applied on it. For"
+            " a coverage model saved without the scale, pass this flag when applying"
+            " to apply it on log10 coverage; an error is raised if its coefficients"
+            " look like the other scale."
         ),
         action="store_true",
     )
@@ -871,8 +1019,6 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         ),
         action="store_true",
     )
-
-    aggregate_per_variant_expected_args._group_actions.append(cov_model_type)
 
     aggregate_by_constraint_groups_args = parser.add_argument_group(
         "Aggregate by constraint groups args",
@@ -1034,8 +1180,8 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     prepare_release_args.add_argument(
         "--release-version",
         help=(
-            "Version string to set in the release Table globals. If not specified, "
-            "the existing version global is retained."
+            "Version string to set as the version global of the release Tables."
+            " Default is --version."
         ),
         type=str,
         default=None,

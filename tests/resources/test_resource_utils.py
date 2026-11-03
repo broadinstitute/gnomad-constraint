@@ -1,6 +1,6 @@
 """Tests for the resource utility module."""
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Union
 
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
@@ -51,7 +51,7 @@ PROD_ROOT = "gs://gnomad/v4.1.1/constraint"
 TEST_ROOT = "gs://gnomad-tmp/gnomad_v4.1.1_testing/constraint"
 
 
-def _path(resource) -> str:
+def _path(resource: Union[str, TableResource]) -> str:
     """Return the path of a resource or of a path string."""
     return resource if isinstance(resource, str) else resource.path
 
@@ -390,6 +390,16 @@ class TestGetLoggingPath:
         """Test that log files always go under the test root."""
         assert get_logging_path("constraint", version="4.1.1") == (
             f"{TEST_ROOT}/logging/gnomad.v4.1.1.constraint.log"
+        )
+
+    def test_post_fixes(self) -> None:
+        """Test that the post-fixes keep the logs of separate runs apart."""
+        path = get_logging_path(
+            "constraint", version="4.1.1", directory_post_fix="x", path_post_fix="v2"
+        )
+        assert path == (
+            "gs://gnomad-tmp/gnomad_v4.1.1_testing/constraint_x/logging/"
+            "gnomad.v4.1.1.constraint.v2.log"
         )
 
 

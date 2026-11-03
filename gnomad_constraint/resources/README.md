@@ -325,12 +325,20 @@ pickled Hail expressions reread by `apply_models_globals`.
   pairs parallel to `exomes_freq_meta` (one entry per exome frequency index).
   The global-adj fit is at the index of `{group: adj}` in `exomes_freq_meta`;
   `calculate_mu_globals.downsampling_idx` instead indexes the genome mutation rates.
-- `coverage.he : array<float64>` — `[intercept, slope]` of the linear
-  regression mapping (log10) median exome coverage to the multiplicative
-  coverage correction in the low-coverage regime.
+- `coverage.he : struct{coefficients: array<float64>, log10_coverage: bool}` —
+  `coefficients` is the `[intercept, slope]` of the linear regression mapping
+  exome coverage (`--exome-coverage-metric`), or its log10 when
+  `log10_coverage` is True, to the multiplicative coverage correction in the
+  low-coverage regime. The apply steps use the saved scale. Models built before
+  the scale was saved, including v4.1.1, are only the `array<float64>` of
+  coefficients, and are applied on the scale set by
+  `--use-logarithmic-coverage-model`. For these, the apply steps raise an error
+  if the model's correction at the high coverage cutoff is further from 1 on
+  that scale than on the other.
 
-These two expressions are read back into `apply_models_globals.plateau_models`
-and `apply_models_globals.coverage_model` on every downstream apply step.
+These expressions are read back into `apply_models_globals.plateau_models`,
+`apply_models_globals.coverage_model` (the coefficients), and
+`apply_models_globals.log10_coverage` on every downstream apply step.
 
 ---
 

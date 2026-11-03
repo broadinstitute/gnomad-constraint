@@ -90,12 +90,12 @@ the CpG model [0.4, 0.2], and the chrX non-PAR model [0.2, 0.1], so a site's
 expected counts show which model it got.
 """
 
-COVERAGE_MODEL = (0.1, 0.5)
-"""[intercept, slope] of the coverage model on log10 coverage."""
+COVERAGE_MODEL = (0.1, 0.02)
+"""[intercept, slope] of the coverage model on linear coverage."""
 
 HIGH_COV = 60
 LOW_COV = 20
-LOW_COV_CORRECTION = COVERAGE_MODEL[0] + COVERAGE_MODEL[1] * math.log10(LOW_COV)
+LOW_COV_CORRECTION = COVERAGE_MODEL[0] + COVERAGE_MODEL[1] * LOW_COV
 
 GROUPINGS = [
     "annotation",
@@ -442,16 +442,22 @@ class TestApplyConstraintModels:
             assert row.mu == pytest.approx(1e-8)
             assert row.expected_variants[0] == pytest.approx(0.3)
 
-    def test_with_coverage_model(self) -> None:
+    @pytest.mark.parametrize(
+        "log10_coverage, expected_correction",
+        [(False, 0.1 + 0.02 * 20), (True, 0.1 + 0.02 * math.log10(20))],
+    )
+    def test_with_coverage_model(
+        self, log10_coverage: bool, expected_correction: float
+    ) -> None:
         """Test that the coverage model corrects only low coverage sites."""
         ht = _apply_constraint_models(
             self._ht(["high", "low"]),
             hl.literal(self.PLATEAU_MODELS),
-            hl.literal([0.1, 0.5]),
+            hl.literal([0.1, 0.02]),
+            log10_coverage=log10_coverage,
         )
         high, low = ht.order_by("idx").collect()
         assert high.coverage_correction == 1.0
-        expected_correction = 0.1 + 0.5 * hl.eval(hl.log10(20))
         assert low.coverage_correction == pytest.approx(expected_correction)
         assert low.expected_variants[0] == pytest.approx(0.3 * expected_correction)
 
@@ -469,7 +475,7 @@ class TestApplyConstraintModels:
             ht.collect()
 
     @pytest.mark.parametrize(
-        "coverage_model, expected", [(None, None), ([0.1, 0.5], [0.1, 0.5])]
+        "coverage_model, expected", [(None, None), ([0.1, 0.02], [0.1, 0.02])]
     )
     def test_globals(
         self, coverage_model: Optional[List[float]], expected: Optional[List[float]]
@@ -551,7 +557,7 @@ class TestCreatePerVariantExpectedHt:
         assert params.coverage_model == (
             None if coverage_model is None else list(coverage_model)
         )
-        assert params.log10_coverage is True
+        assert params.log10_coverage is False
         assert list(params.groupings) == GROUPINGS
 
 

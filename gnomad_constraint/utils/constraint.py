@@ -103,8 +103,9 @@ def prepare_context_ht(
         field).
     :param methylation_ht: Methylation sites Table.
     :param gerp_ht: GERP scores Table.
-    :param adj_r_ht: Table with adj_r annotation keyed by locus.
-    :param syn_adj_r_ht: Table with synonymous DNM adj_r annotation keyed by locus.
+    :param adj_r_ht: Table with adj_r annotation keyed by interval.
+    :param syn_adj_r_ht: Table with synonymous DNM adj_r annotation keyed by
+        interval.
     :param sfs_bin_cutoffs: Allele frequency upper bounds defining site frequency
         spectrum bins. Default is ``SFS_BIN_CUTOFFS``.
     :return: Annotated context Table.
@@ -384,8 +385,9 @@ def get_exome_coverage_expr(
     The requested ``exome_coverage_metric`` is extracted from the exome coverage
     annotations in the input ``ht``:
 
-        - "median": the expression returned is "median_approx" if it exists in
-          ``ht.coverage.exomes``, otherwise "median".
+        - "median": the expression returned is the approximate median exome depth
+          (``ht.coverage.exomes.median_approx``), the only median that
+          ``prepare_context_ht`` keeps.
         - "AN": the expression returned is the exomes allele number (``ht.AN.exomes``).
         - "AN_percent": the expression returned is the percent of samples with a
           non-missing genotype, which is the exomes allele number (``ht.AN.exomes``)
@@ -398,20 +400,18 @@ def get_exome_coverage_expr(
     :return: Exome coverage expression.
     """
     if exome_coverage_metric == "median":
-        # Obtain field name for median exome coverage.
-        exome_coverage_metric = (
-            "median_approx" if "median_approx" in ht.coverage.exomes else "median"
-        )
-        cov_expr = ht.coverage.exomes[exome_coverage_metric]
+        cov_expr = ht.coverage.exomes.median_approx
     elif exome_coverage_metric == "AN":
         cov_expr = ht.AN.exomes
     elif exome_coverage_metric == "AN_percent":
         # Calculate total allele number from strata_sample_count and annotate
         # exomes_AN_percent (percent samples with AN).
         an_sample_count = ht.an_globals.exomes.strata_sample_count
-        an_meta = ht.an_globals.exomes.strata_meta
+        an_meta = hl.eval(ht.an_globals.exomes.strata_meta)
 
         # Get total AN count taking into account XX and XY samples for X and Y non-PAR.
+        # A missing stratum raises a ValueError here.
+        adj_index = an_meta.index(ADJ_FREQ_META)
         xx_index = an_meta.index({**ADJ_FREQ_META, "sex": "XX"})
         xy_index = an_meta.index({**ADJ_FREQ_META, "sex": "XY"})
         xx_an_sample_count = an_sample_count[xx_index]
@@ -420,7 +420,7 @@ def get_exome_coverage_expr(
             hl.case()
             .when(ht.locus.in_x_nonpar(), (xx_an_sample_count * 2) + xy_an_sample_count)
             .when(ht.locus.in_y_nonpar(), xy_an_sample_count)
-            .default(an_sample_count[0] * 2)  # Index 0 is adj (all samples).
+            .default(an_sample_count[adj_index] * 2)
         )
 
         cov_expr = hl.int((ht.AN.exomes / an_count) * 100)
@@ -865,7 +865,7 @@ def _apply_constraint_models(
     coverage_model: Optional[
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
-    log10_coverage: bool = True,
+    log10_coverage: bool = False,
 ) -> hl.Table:
     """
     Apply plateau and coverage models to a Table with ``mu_snp`` and ``apply_model``.
@@ -877,7 +877,7 @@ def _apply_constraint_models(
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``). If None, only the
         plateau models are applied and ``coverage_correction`` is 1.
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param log10_coverage: Whether to use log10 coverage. Default is False.
     :return: Table annotated with model outputs (``mu``,
         ``predicted_proportion_observed``, ``expected_variants``,
         ``coverage_correction``). Raises an error for a row whose model group has no
@@ -958,7 +958,7 @@ def create_per_variant_expected_ht(
     coverage_model: Optional[
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
-    log10_coverage: bool = True,
+    log10_coverage: bool = False,
     use_mane_select: bool = False,
 ) -> hl.Table:
     """
@@ -980,7 +980,7 @@ def create_per_variant_expected_ht(
         model group (as returned by ``build_models``).
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``).
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param log10_coverage: Whether to use log10 coverage. Default is False.
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
     :return: Per-variant expected Table.
     """
@@ -1057,7 +1057,7 @@ def create_aggregated_expected_ht(
     coverage_model: Optional[
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
-    log10_coverage: bool = True,
+    log10_coverage: bool = False,
     use_mane_select: bool = False,
     partition_hint: int = 100,
 ) -> hl.Table:
@@ -1086,7 +1086,7 @@ def create_aggregated_expected_ht(
         model group (as returned by ``build_models``).
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``).
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param log10_coverage: Whether to use log10 coverage. Default is False.
     :param use_mane_select: Whether to include MANE Select as a group. Default is
         False.
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
@@ -1140,10 +1140,9 @@ def create_aggregated_expected_ht(
     return ht
 
 
-# TODO: Move this up after review in this location.
 def calculate_mu_by_downsampling(
     ht: hl.Table,
-    additional_grouping: Tuple[str] = ("methylation_level",),
+    additional_grouping: Tuple[str, ...] = ("methylation_level",),
     total_mu: float = 1.2e-08,
 ) -> hl.Table:
     """
@@ -1248,7 +1247,7 @@ def add_oe_upper_rank_and_bins(
 
     Thin wrapper around :func:`rank_array_element_metrics` that extracts the
     discretized Poisson and gamma upper CI values from each constraint group's
-    first oe_info element.
+    adj ``oe_info`` entry.
 
     :param ht: Table with the oe upper confidence interval.
     :param use_mane_select_over_canonical: Use MANE Select over canonical transcripts
@@ -1267,12 +1266,14 @@ def add_oe_upper_rank_and_bins(
         set to missing.
     """
     ci_fields = ["discretized_poisson", "gamma"]
+    all_freq_idx = hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
 
     return rank_array_element_metrics(
         ht,
         array_field="constraint_groups",
         element_value_fn=lambda x: {
-            f"oe_ci_{ci}": x.oe_info[0][f"oe_ci_{ci}"].upper for ci in ci_fields
+            f"oe_ci_{ci}": x.oe_info[all_freq_idx][f"oe_ci_{ci}"].upper
+            for ci in ci_fields
         },
         filter_fn=lambda t: get_transcript_filter_expr(
             t, use_mane_select_over_canonical, mane_select_only
@@ -1408,7 +1409,7 @@ def _compute_coverage_metrics(
     ht = ht.filter(hl.is_defined(ht.exomes_coverage))
 
     # Explode by transcript and aggregate.
-    ht = ht.explode("transcript_id").cache()
+    ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
         prop_bp_AN90=hl.agg.fraction(ht.exomes_coverage >= an_coverage_threshold),
@@ -1436,7 +1437,7 @@ def _compute_site_quality_metrics(
     # GENCODE CDS table, then keep only sites inside annotated CDS regions.
     # Explode so each (locus, transcript) pair is a separate row.
     ht = ht.annotate(transcript_id=gencode_cds_ht[ht.locus].transcript_id)
-    ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id").cache()
+    ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id")
 
     # Average AS_MQ across all SNV sites in each transcript's CDS.
     # Used downstream to flag transcripts with low mapping quality.
@@ -1473,7 +1474,7 @@ def _compute_region_flag_metrics(
     # compute the fraction of CDS bases in each region per transcript.
     # These proportions are used downstream to flag transcripts with high
     # segdup/LCR overlap.
-    ht = ht.explode("transcript_id").cache()
+    ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
         prop_segdup=hl.agg.fraction(ht.in_segdup),
@@ -1548,7 +1549,7 @@ def compute_gene_quality_metrics(
         ),
     )
 
-    return ht.key_by("transcript")
+    return ht
 
 
 def _annotate_oe_ci_z(
@@ -1669,8 +1670,9 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     # (excluding those with no variants). This produces one SD per constraint
     # group, stored as a global array parallel to constraint_groups.
     # For non-synonymous groups, negative z-scores are mirrored to build a
-    # symmetric distribution (constrained genes skew the left tail); for syn,
-    # the distribution is already roughly symmetric so no mirroring is needed.
+    # symmetric distribution (constrained genes, with positive z, skew the right
+    # tail); for syn, the distribution is already roughly symmetric so no
+    # mirroring is needed.
     ht = ht.annotate_globals(
         sd_raw_z=ht.aggregate(
             hl.agg.filter(
@@ -1726,14 +1728,16 @@ def compute_constraint_percentile_bins(
         transcripts for filtering when determining ranks. Default is True.
     :return: Table with rank, decile, and percentile bin annotations.
     """
-    # Assign each transcript a dense rank (0-based) for its gamma OE upper
-    # CI within each constraint group, plus rank-based decile/sextile bins.
+    # Assign each transcript a 0-based rank for its gamma OE upper CI within each
+    # constraint group (ties get different, arbitrary ranks), plus rank-based
+    # decile/sextile bins.
     # Only MANE Select (or canonical) transcripts are ranked.
     ht = add_oe_upper_rank_and_bins(ht, use_mane_select_over_canonical)
 
     # Map the three metric categories we compute thresholds for to their
     # indices in the constraint_groups array.
     meta = hl.eval(ht.constraint_group_meta)
+    all_freq_idx = hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
     metric_group_idx = {
         "syn": next(i for i, m in enumerate(meta) if m == {"csq_set": "syn"}),
         "mis": next(i for i, m in enumerate(meta) if m == {"csq_set": "mis"}),
@@ -1764,7 +1768,9 @@ def compute_constraint_percentile_bins(
         vals = compute_percentile_thresholds(
             ht,
             percentiles=all_qs,
-            metric_expr=ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper,
+            metric_expr=ht.constraint_groups[idx]
+            .oe_info[all_freq_idx]
+            .oe_ci_gamma.upper,
             outlier_expr=outlier_expr,
             transcript_filter_expr=get_transcript_filter_expr(
                 ht, mane_select_only=True
@@ -2092,7 +2098,7 @@ def _restructure_release_globals(
     freq_meta: List[Dict],
     gen_anc_ds_indices: Dict[str, List[int]],
     sd_raw_z_arr: List[float],
-    release_version: Optional[str],
+    release_version: str,
 ) -> hl.Table:
     """
     Restructure globals for public release.
@@ -2108,8 +2114,7 @@ def _restructure_release_globals(
         keyed by genetic ancestry, with arrays of integer downsampling levels
         matching the order of ``gen_anc_obs`` / ``gen_anc_exp`` in the rows.
         - ``max_af`` is preserved unchanged if present.
-        - ``version`` is set to ``release_version`` if provided, otherwise
-        carried over from the existing global.
+        - ``version`` is set to ``release_version``.
 
     :param ht: Table whose globals are being restructured.
     :param field_names: Internal name for each constraint group (parallel to
@@ -2121,8 +2126,7 @@ def _restructure_release_globals(
         no downsampling data is present.
     :param sd_raw_z_arr: Evaluated ``sd_raw_z`` global array, parallel to
         ``field_names``.
-    :param release_version: Version string for the ``version`` global. When
-        *None*, the existing ``version`` global is retained if present.
+    :param release_version: Version string for the ``version`` global.
     :return: Table with release-formatted globals.
     """
     # Convert sd_raw_z from a positional array (parallel to
@@ -2141,13 +2145,7 @@ def _restructure_release_globals(
 
     # Build the release globals dict. select_globals at the end replaces
     # all internal globals with just these.
-    global_kwargs = {}
-
-    # Set the release version string.
-    if release_version is not None:
-        global_kwargs["version"] = release_version
-    elif "version" in ht.globals:
-        global_kwargs["version"] = ht.globals.version
+    global_kwargs = {"version": release_version}
 
     # Rename pipeline parameter globals (e.g. calculate_mu_globals ->
     # calculate_mu_params) and strip internal-only sub-fields like
@@ -2184,7 +2182,7 @@ def _restructure_release_globals(
 
 def prepare_release_ht(
     ht: hl.Table,
-    release_version: Optional[str] = None,
+    release_version: str,
 ) -> hl.Table:
     """
     Prepare the constraint metrics Table for public release.
@@ -2212,8 +2210,7 @@ def prepare_release_ht(
         transcript annotations (``transcript_id_version``, ``level``, etc.)
         and gene quality metric annotations (``gene_quality_metrics``,
         ``gene_flags``).
-    :param release_version: Version string for the ``version`` global. When
-        *None*, the existing ``version`` global is retained if present.
+    :param release_version: Version string for the ``version`` global.
     :return: Release-formatted Table.
     """
     # Rename GENCODE fields to release names (e.g. transcript_id_version ->
@@ -2260,7 +2257,7 @@ def prepare_release_ht(
 
 def prepare_release_mutation_ht(
     ht: hl.Table,
-    release_version: Optional[str] = None,
+    release_version: str,
 ) -> hl.Table:
     """
     Prepare the mutation rate Table for public release.
@@ -2273,8 +2270,6 @@ def prepare_release_mutation_ht(
     :param ht: Mutation rate Table produced by
         :func:`calculate_mu_by_downsampling`.
     :param release_version: Version string for the ``version`` global.
-        When *None*, the existing ``version`` global is retained if
-        present.
     :return: Release-formatted mutation rate Table.
     """
     # Keep only the scalar mutation rate and the trinucleotide-class flags.
@@ -2286,18 +2281,16 @@ def prepare_release_mutation_ht(
     )
 
     # Restructure globals.
-    global_kwargs: Dict[str, Any] = {}
-    if release_version is not None:
-        global_kwargs["version"] = release_version
-    elif "version" in ht.globals:
-        global_kwargs["version"] = ht.globals.version
+    global_kwargs: Dict[str, Any] = {"version": release_version}
 
     # Rename calculate_mu_globals → calculate_mu_params, dropping
     # internal-only sub-fields (freq_meta, genetic_ancestry_groups,
     # downsampling_idx). Only keep calculate_mu_globals; the other
     # pipeline globals (build_models, apply_models) are not relevant
     # to the mutation rate release.
-    src, dest, drop_fields = RELEASE_PIPELINE_PARAM_GLOBALS[0]
+    src, dest, drop_fields = next(
+        g for g in RELEASE_PIPELINE_PARAM_GLOBALS if g[0] == "calculate_mu_globals"
+    )
     if src in ht.globals:
         global_kwargs[dest] = ht.globals[src].drop(*drop_fields)
 
@@ -2359,7 +2352,7 @@ def annotate_constraint_percentile_bins(
     Annotate each transcript with its percentile bin for all metric/granularity combinations.
 
     Thin wrapper around :func:`annotate_bins_by_threshold` that extracts the
-    gamma upper CI value from each constraint group's first oe_info element.
+    gamma upper CI value from each constraint group's adj ``oe_info`` entry.
 
     Annotates ``constraint_bins.{granularity}.{metric}`` for each combination.
     Bin 0 is the most constrained (value below all thresholds); bin N equals
@@ -2370,7 +2363,7 @@ def annotate_constraint_percentile_bins(
         of threshold values, built from :func:`compute_percentile_thresholds`
         output (see :func:`annotate_bins_by_threshold`).
     :param metric_group_idx: Mapping of metric name to its index in
-        ``constraint_groups`` (e.g. ``{"lof": 5, "mis": 1, "syn": 0}``).
+        ``constraint_groups`` (e.g. ``{"lof": 4, "mis": 1, "syn": 0}``).
     :return: Annotated Table with an added ``constraint_bins`` struct field.
     """
     logger.info(
@@ -2378,8 +2371,9 @@ def annotate_constraint_percentile_bins(
         len(thresholds),
     )
 
+    all_freq_idx = hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
     metric_exprs = {
-        metric: ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
+        metric: ht.constraint_groups[idx].oe_info[all_freq_idx].oe_ci_gamma.upper
         for metric, idx in metric_group_idx.items()
     }
 

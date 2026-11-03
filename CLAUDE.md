@@ -77,8 +77,7 @@ submission command. When submitting:
 - Zip gnomad_methods **at the commit pinned in `requirements.txt`**. Without it,
   the cluster runs whatever gnomad_methods it has installed.
 - `--calculate-gerp-cutoffs` saves nothing: its cutoffs are only used by
-  `--preprocess-data` in the same command. Submitted on its own, preprocessing
-  silently uses the default cutoffs.
+  `--preprocess-data` in the same command, so it raises an error without it.
 - Run a step with `--test` (chr20, chrX, and chrY) or `--test-gene-list` (six
   genes) and check the output before running it at full scale.
 
