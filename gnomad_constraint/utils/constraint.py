@@ -2300,7 +2300,9 @@ def prepare_release_mutation_ht(
     # downsampling_idx). Only keep calculate_mu_globals; the other
     # pipeline globals (build_models, apply_models) are not relevant
     # to the mutation rate release.
-    src, dest, drop_fields = RELEASE_PIPELINE_PARAM_GLOBALS[0]
+    src, dest, drop_fields = next(
+        g for g in RELEASE_PIPELINE_PARAM_GLOBALS if g[0] == "calculate_mu_globals"
+    )
     if src in ht.globals:
         global_kwargs[dest] = ht.globals[src].drop(*drop_fields)
 
