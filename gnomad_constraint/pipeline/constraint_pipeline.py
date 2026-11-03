@@ -838,11 +838,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--apply-models-aggregated",
         help=(
-            "Apply plateau and coverage models and aggregate to constraint groups"
-            " in a single step, without writing per-variant intermediates. This is"
-            " an alternative to running --apply-models-per-variant,"
-            " --aggregate-per-variant-expected, and"
-            " --aggregate-by-constraint-groups separately."
+            "Sum the observed and possible counts by transcript, consequence,"
+            " context, and coverage first, then apply the plateau and coverage"
+            " models, without writing per-variant expected counts. This replaces"
+            " --apply-models-per-variant and --aggregate-per-variant-expected; run"
+            " --aggregate-by-constraint-groups --use-aggregated-expected afterward."
         ),
         action="store_true",
     )
