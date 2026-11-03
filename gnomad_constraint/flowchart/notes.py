@@ -488,9 +488,10 @@ NOTES = {
             ],
             "notes": [
                 (
-                    "The cutoffs take effect only when ``--preprocess-data`` runs in the same"
-                    " command. They are logged and recorded in ``calculate_mu_globals`` of"
-                    " the preprocessed Table, and nowhere else."
+                    "Only ``--preprocess-data`` uses the cutoffs, so the pipeline raises an"
+                    " error unless it runs in the same command. They are logged and"
+                    " recorded in ``calculate_mu_globals`` of the preprocessed Table, and"
+                    " nowhere else."
                 ),
                 (
                     "The percentiles are taken over autosome and PAR sites, but the mutation"
@@ -747,8 +748,8 @@ NOTES = {
                 {
                     "tag": "write",
                     "text": (
-                        "Write ``plateau.he``, and ``coverage.he`` unless the coverage model is"
-                        " skipped."
+                        "Write ``plateau.he``, and unless the coverage model is skipped,"
+                        " ``coverage.he``: its ``coefficients`` and ``log10_coverage``."
                     ),
                 },
             ],
@@ -765,9 +766,11 @@ NOTES = {
                     " full-dataset observed counts."
                 ),
                 (
-                    "Only ``--skip-coverage-model`` is checked between steps. ``coverage.he``"
-                    " does not record the log10 choice, so pass the same"
-                    " ``--use-logarithmic-coverage-model`` to the apply steps."
+                    "The apply steps use the log10 choice saved in ``coverage.he``. A"
+                    " ``coverage.he`` saved as only its coefficients (v4.1.1) is applied on"
+                    " the scale ``--use-logarithmic-coverage-model`` sets, and raises an"
+                    " error if its correction at the high coverage cutoff is closer to 1 on"
+                    " the other scale."
                 ),
             ],
         },
@@ -1331,8 +1334,8 @@ NOTES = {
                     " thresholds, and genetic ancestry entries without downsamplings."
                 ),
                 (
-                    "No step sets a ``version`` global, so the release has one only if"
-                    " ``--release-version`` is passed."
+                    "No earlier step sets a ``version`` global. The release's is"
+                    " ``--release-version``, or ``--version`` if that isn't passed."
                 ),
             ],
         },
@@ -1364,7 +1367,10 @@ NOTES = {
                 },
             ],
             "notes": [
-                ("Without ``--release-version`` the Table has no ``version`` global."),
+                (
+                    "``version`` is ``--release-version``, or ``--version`` if that isn't"
+                    " passed."
+                ),
             ],
         },
         "export_release_tsv": {
@@ -1419,7 +1425,8 @@ NOTES = {
             "notes": [
                 (
                     "Needs a release built from a run with ``--include-downsamplings``."
-                    " Otherwise the ``downsamplings`` global is absent and the step fails."
+                    " Otherwise the ``downsamplings`` global is absent and the step raises"
+                    " an error saying so."
                 ),
             ],
         },
@@ -1491,10 +1498,11 @@ NOTES = {
         "get_exome_coverage_expr": {
             "notes": [
                 (
-                    "The pipeline default is ``AN_percent`` (the function default is"
-                    " ``median``): ``int(AN / possible alleles * 100)``. Possible alleles are"
-                    " 2 x samples on autosomes and PAR, 2 x XX + XY on chrX non-PAR, and XY"
-                    " on chrY non-PAR. Every coverage cutoff downstream is in these units."
+                    "The default is ``AN_percent``: ``int(AN / possible alleles * 100)``."
+                    " Possible alleles are 2 x samples on autosomes and PAR, 2 x XX + XY on"
+                    " chrX non-PAR, and XY on chrY non-PAR, with the strata looked up by"
+                    " their metadata, so an AN Table without XX or XY raises an error. Every"
+                    " coverage cutoff downstream is in these units."
                 ),
             ],
         },
@@ -2099,7 +2107,8 @@ NOTES = {
             "notes": [
                 (
                     "Needs a release from a run with ``--include-downsamplings``; otherwise"
-                    " the ``downsamplings`` global is missing and the step fails."
+                    " the ``downsamplings`` global is missing and the pipeline raises an"
+                    " error."
                 ),
             ],
         },
