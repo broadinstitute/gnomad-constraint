@@ -31,11 +31,6 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/update-review-skill.sh",
             "timeout": 20
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/update-gnomad-pr-review-skill.sh",
-            "timeout": 20
           }
         ]
       }
