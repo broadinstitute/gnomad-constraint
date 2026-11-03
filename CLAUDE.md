@@ -36,9 +36,10 @@ this file:
 - **Dataset paths** come from `get_*` functions in
   `gnomad_constraint/resources/resource_utils.py`. They take `version` and
   `test`; `test` sends output to `gs://gnomad-tmp/gnomad_v{version}_testing/`.
-  Public gnomAD releases and reference data (VEP context, methylation, GERP,
-  GENCODE) come from `gnomad.resources.grch38` and `grch37`; check there before
-  adding a resource.
+  Public gnomAD releases and reference data (VEP context, methylation, GENCODE)
+  come from `gnomad.resources.grch38` and `grch37`; check there before adding a
+  resource. GERP is the exception: `get_gerp_ht` loads it from Hail's datasets
+  API with `hl.experimental.load_dataset`.
 - **Shared utilities**: check gnomad_methods before writing a helper. A local
   gnomad_methods checkout is often on an unrelated branch, so confirm which copy
   your imports resolve to, and that it matches the pinned commit, before
