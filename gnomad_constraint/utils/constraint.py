@@ -1669,8 +1669,9 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     # (excluding those with no variants). This produces one SD per constraint
     # group, stored as a global array parallel to constraint_groups.
     # For non-synonymous groups, negative z-scores are mirrored to build a
-    # symmetric distribution (constrained genes skew the left tail); for syn,
-    # the distribution is already roughly symmetric so no mirroring is needed.
+    # symmetric distribution (constrained genes, with positive z, skew the right
+    # tail); for syn, the distribution is already roughly symmetric so no
+    # mirroring is needed.
     ht = ht.annotate_globals(
         sd_raw_z=ht.aggregate(
             hl.agg.filter(
