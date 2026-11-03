@@ -316,7 +316,7 @@ def main(args):
         if args.create_training_set:
             logger.info(
                 "Computing the observed and possible counts of synonymous variants to"
-                "use as a training set for the plateau and coverage models..."
+                " use as a training set for the plateau and coverage models..."
             )
             res = resources.create_training_set
             res.check_resource_existence()
