@@ -1268,12 +1268,14 @@ def add_oe_upper_rank_and_bins(
         set to missing.
     """
     ci_fields = ["discretized_poisson", "gamma"]
+    all_freq_idx = hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
 
     return rank_array_element_metrics(
         ht,
         array_field="constraint_groups",
         element_value_fn=lambda x: {
-            f"oe_ci_{ci}": x.oe_info[0][f"oe_ci_{ci}"].upper for ci in ci_fields
+            f"oe_ci_{ci}": x.oe_info[all_freq_idx][f"oe_ci_{ci}"].upper
+            for ci in ci_fields
         },
         filter_fn=lambda t: get_transcript_filter_expr(
             t, use_mane_select_over_canonical, mane_select_only
@@ -1737,6 +1739,7 @@ def compute_constraint_percentile_bins(
     # Map the three metric categories we compute thresholds for to their
     # indices in the constraint_groups array.
     meta = hl.eval(ht.constraint_group_meta)
+    all_freq_idx = hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
     metric_group_idx = {
         "syn": next(i for i, m in enumerate(meta) if m == {"csq_set": "syn"}),
         "mis": next(i for i, m in enumerate(meta) if m == {"csq_set": "mis"}),
@@ -1767,7 +1770,9 @@ def compute_constraint_percentile_bins(
         vals = compute_percentile_thresholds(
             ht,
             percentiles=all_qs,
-            metric_expr=ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper,
+            metric_expr=ht.constraint_groups[idx]
+            .oe_info[all_freq_idx]
+            .oe_ci_gamma.upper,
             outlier_expr=outlier_expr,
             transcript_filter_expr=get_transcript_filter_expr(
                 ht, mane_select_only=True
@@ -2383,8 +2388,9 @@ def annotate_constraint_percentile_bins(
         len(thresholds),
     )
 
+    all_freq_idx = hl.eval(ht.exomes_freq_meta).index(ADJ_FREQ_META)
     metric_exprs = {
-        metric: ht.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
+        metric: ht.constraint_groups[idx].oe_info[all_freq_idx].oe_ci_gamma.upper
         for metric, idx in metric_group_idx.items()
     }
 
