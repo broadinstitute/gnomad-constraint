@@ -594,6 +594,9 @@ def get_constraint_resources(
     :param models: Models to use. Default is ("plateau", "coverage").
     :param directory_post_fix: Post-fix to add to the directory path of the resources.
     :param path_post_fix: Post-fix to add to the path of the resources.
+    :param skip_pre_rank_metrics: Whether ``--compute-constraint-metrics`` reuses an
+        existing pre-rank metrics Table, which then becomes its input instead of
+        an output. Default is False.
     :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
         reads the ``--apply-models-aggregated`` output instead of the
         ``--aggregate-per-variant-expected`` output. Default is False.
