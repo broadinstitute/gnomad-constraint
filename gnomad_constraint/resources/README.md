@@ -420,7 +420,7 @@ apply-then-aggregate (§7) results; the canonical downstream input is §7.
 ## 9. `constraint_group.ht`
 
 Pre-metric per-transcript table organized into constraint groups (`syn`, `mis`,
-`lof_hc`, `lof_hc_lc`, plus any additional groupings). Produced by
+`lof_classic`, `lof_hc_lc`, `lof_hc`, plus any additional groupings). Produced by
 `--aggregate-by-constraint-groups` /
 [`aggregate_by_constraint_groups`](../utils/constraint.py).
 
@@ -431,10 +431,10 @@ Pre-metric per-transcript table organized into constraint groups (`syn`, `mis`,
 ### Globals
 Pipeline-parameter globals (same as §7) plus:
 - `constraint_group_meta: array<dict<str,str>>` — one dict per
-  `constraint_groups[i]` describing the group's filter (e.g. `{annotation:
-  synonymous_variant}`, `{annotation: missense_variant}`,
-  `{annotation: lof, modifier: HC}`, `{annotation: lof, modifier: HC_LC}`).
-  Position in this array matches position in the row-level
+  `constraint_groups[i]` describing the group's filter: `{csq_set: syn}`,
+  `{csq_set: mis}`, `{lof: classic}` (stop gained, splice donor, and splice
+  acceptor variants), `{lof: hc_lc}` (LOFTEE HC or LC), and `{lof: hc}`
+  (LOFTEE HC). Position in this array matches position in the row-level
   `constraint_groups` array.
 
 ### Rows
@@ -493,7 +493,10 @@ Pipeline-parameter globals (as §9) plus:
       Gamma estimator (the LOEUF estimator).
     - `z_raw: float64` — `(expected - observed) / sqrt(expected)`, so it is
       positive when there are fewer variants than expected.
-  - `flags: set<str>` — per-group QC flags (e.g. low observed, low expected).
+  - `flags: set<str>` — per-group QC flags: `no_exp_{syn,mis,lof}` when the
+    expected count is missing or 0, and `outlier_{syn,mis,lof}` when `z_raw`
+    is outside the group's outlier thresholds. Every LoF group uses the `lof`
+    name and thresholds.
   - `z_score: float64` — `z_raw / sd_raw_z[group_idx]`, taken at the
     canonical (global-adj) freq index.
   - `pNull: float64`, `pRec: float64`, `pLI: float64` — pNull / pRec / pLI
@@ -508,8 +511,9 @@ Pipeline-parameter globals (as §9) plus:
     - `upper_bin_decile: int32` — decile bin (0–9).
     - `upper_bin_sextile: int32` — sextile bin (0–5).
 - `no_variants: bool` — as §9.
-- `constraint_flags: set<str>` — transcript-level QC flags
-  (`no_variants`, `not_in_gencode`, `outlier_*`, etc.).
+- `constraint_flags: set<str>` — transcript-level QC flags: the union of the
+  `syn`, `mis`, and `lof_hc` groups' `flags`, so the `no_exp_*` and
+  `outlier_*` flags.
 - `constraint_bins: struct{percentile, decile, sextile}` — convenience bins
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:
@@ -519,7 +523,8 @@ Pipeline-parameter globals (as §9) plus:
   - `exome_prop_segdup: float64` — fraction of transcript CDS in segmental
     duplications.
   - `exome_prop_LCR: float64` — fraction in low-complexity regions.
-- `gene_flags: set<str>` — joined-in from §11 (e.g. low coverage, high segdup).
+- `gene_flags: set<str>` — joined-in from §11 (`low_exome_coverage`,
+  `low_exome_mapping_quality`).
 - `level: str`, `transcript_type: str`, `chromosome: str`,
   `start_position: int32`, `end_position: int32`,
   `gene_id_version: str`, `transcript_id_version: str`,
@@ -543,8 +548,9 @@ by `--compute-gene-quality-metrics`.
 - `transcript: str` — key.
 - `gene_quality_metrics: struct{exome_prop_bp_AN90, exome_mean_AS_MQ, exome_prop_segdup, exome_prop_LCR}`
   — see §10 for the individual fields.
-- `gene_flags: set<str>` — transcript-level flags derived from the above
-  (e.g. `low_exome_coverage`, `high_segdup_overlap`).
+- `gene_flags: set<str>` — transcript-level flags derived from the above:
+  `low_exome_coverage` when `exome_prop_bp_AN90` < 0.1, and
+  `low_exome_mapping_quality` when `exome_mean_AS_MQ` < 50.
 
 ---
 
