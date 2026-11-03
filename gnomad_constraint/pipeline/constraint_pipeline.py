@@ -25,14 +25,14 @@ import argparse
 import logging
 
 import hail as hl
-from gnomad.resources.grch38.reference_data import lcr_intervals, seg_dup_intervals
 from gnomad.utils.constraint import (
     build_models,
     calculate_gerp_cutoffs,
     explode_downsamplings_oe,
 )
-from gnomad.utils.file_utils import print_global_struct
+from gnomad.utils.file_utils import file_exists, print_global_struct
 from gnomad.utils.reference_genome import get_reference_genome
+from gnomad_qc.resource_utils import PipelineStepResourceCollection
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
@@ -40,11 +40,7 @@ from gnomad_constraint.resources.constants import (
     RELEASE_KEY_ORDER,
     VERSIONS,
 )
-from gnomad_constraint.resources.resource_utils import (
-    filter_for_test,
-    get_adj_r_ht,
-    get_syn_adj_r_ht,
-)
+from gnomad_constraint.resources.resource_utils import filter_for_test
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
@@ -92,6 +88,71 @@ def check_skip_coverage_model(
             f"--skip-coverage-model is {skip_coverage_model}, but the input Table was"
             f" preprocessed with skip_coverage_model={preprocess_skip}. Use the same"
             " setting as --preprocess-data."
+        )
+
+
+def check_apply_models_resources(
+    res: PipelineStepResourceCollection, skip_coverage_model: bool
+) -> None:
+    """
+    Check an apply-models step's ``--skip-coverage-model`` setting, then its resources.
+
+    The setting is checked first, against the preprocessed Table if it exists. With
+    a mismatch the coverage model is missing, and the resource check would report it
+    as a missing ``--build-models`` output instead of as the mismatch.
+
+    :param res: Resources of ``--apply-models-per-variant`` or
+        ``--apply-models-aggregated``.
+    :param skip_coverage_model: Whether ``--skip-coverage-model`` was passed.
+    :return: None.
+    """
+    preprocessed_ht = res.temp_preprocess_data_ht
+    if file_exists(preprocessed_ht.path):
+        check_skip_coverage_model(
+            preprocessed_ht.ht().apply_models_globals, skip_coverage_model
+        )
+    res.check_resource_existence()
+
+
+def check_constraint_group_input(
+    aggregate_per_variant_expected: bool,
+    apply_models_aggregated: bool,
+    use_aggregated_expected: bool,
+) -> None:
+    """
+    Warn when ``--aggregate-by-constraint-groups`` reads an output this command didn't write.
+
+    The step reads the ``--aggregate-per-variant-expected`` output, or with
+    ``--use-aggregated-expected`` the ``--apply-models-aggregated`` output. If only
+    the other one runs in the same command, the step groups a Table that may be from
+    an earlier run instead of the one just written.
+
+    :param aggregate_per_variant_expected: Whether
+        ``--aggregate-per-variant-expected`` runs in this command.
+    :param apply_models_aggregated: Whether ``--apply-models-aggregated`` runs in this
+        command.
+    :param use_aggregated_expected: Whether ``--use-aggregated-expected`` was passed.
+    :return: None.
+    """
+    if apply_models_aggregated and not (
+        use_aggregated_expected or aggregate_per_variant_expected
+    ):
+        logger.warning(
+            "--apply-models-aggregated runs in this command, but without"
+            " --use-aggregated-expected, --aggregate-by-constraint-groups reads the"
+            " --aggregate-per-variant-expected output, which may be from an earlier"
+            " run. Add --use-aggregated-expected to group the Table written here."
+        )
+    if (
+        aggregate_per_variant_expected
+        and use_aggregated_expected
+        and not apply_models_aggregated
+    ):
+        logger.warning(
+            "--aggregate-per-variant-expected runs in this command, but with"
+            " --use-aggregated-expected, --aggregate-by-constraint-groups reads the"
+            " --apply-models-aggregated output, which may be from an earlier run."
+            " Drop --use-aggregated-expected to group the Table written here."
         )
 
 
@@ -158,8 +219,8 @@ def main(args):
                 },
                 methylation_ht=res.methylation_ht.ht(),
                 gerp_ht=constraint_res.get_gerp_ht(get_reference_genome(ht.locus).name),
-                adj_r_ht=get_adj_r_ht(),
-                syn_adj_r_ht=get_syn_adj_r_ht(),
+                adj_r_ht=res.adj_r_ht.ht(),
+                syn_adj_r_ht=res.syn_adj_r_ht.ht(),
             )
             ht.write(res.annotated_context_ht.path, overwrite)
 
@@ -231,8 +292,8 @@ def main(args):
                 res.temp_preprocess_data_ht.ht(),
                 exomes_sites_ht,
                 gencode_cds_ht,
-                seg_dup_intervals.ht(),
-                lcr_intervals.ht(),
+                res.seg_dup_intervals.ht(),
+                res.lcr_intervals.ht(),
             )
             gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
             logger.info("Done computing gene quality metrics.")
@@ -304,14 +365,13 @@ def main(args):
                 "compute the per-variant expected variant count..."
             )
             res = resources.apply_models_per_variant
-            res.check_resource_existence()
+            check_apply_models_resources(res, skip_coverage_model)
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
-            check_skip_coverage_model(ht.apply_models_globals, skip_coverage_model)
             ht = create_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
@@ -349,13 +409,12 @@ def main(args):
         if args.apply_models_aggregated:
             logger.info("Aggregating counts and applying models on aggregated data...")
             res = resources.apply_models_aggregated
-            res.check_resource_existence()
+            check_apply_models_resources(res, skip_coverage_model)
 
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
-            check_skip_coverage_model(ht.apply_models_globals, skip_coverage_model)
             ht = create_aggregated_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
@@ -378,6 +437,11 @@ def main(args):
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
+            check_constraint_group_input(
+                aggregate_per_variant_expected=args.aggregate_per_variant_expected,
+                apply_models_aggregated=args.apply_models_aggregated,
+                use_aggregated_expected=args.use_aggregated_expected,
+            )
             res = resources.aggregate_by_constraint_groups
             res.check_resource_existence()
             if args.use_aggregated_expected:

@@ -70,5 +70,5 @@ large, so its tests are split by pipeline stage into
 ## Not covered yet
 
 Anything that reads real inputs or outputs on GCS: `get_gencode_ht`,
-`get_gencode_cds_ht`, `get_gerp_ht`, the adj_r resources, and the pipeline
-`main()`, whose argument parser is only built under `if __name__ == "__main__"`.
+`get_gencode_cds_ht`, `get_gerp_ht`, and the pipeline `main()`, whose argument
+parser is only built under `if __name__ == "__main__"`.

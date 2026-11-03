@@ -17,6 +17,7 @@ from gnomad_constraint.resources.constants import (
 from gnomad_constraint.resources.resource_utils import (
     check_param_scope,
     filter_for_test,
+    get_adj_r_ht,
     get_aggregated_expected,
     get_aggregated_per_variant_expected,
     get_annotated_context_ht,
@@ -40,6 +41,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
     get_sites_resource,
+    get_syn_adj_r_ht,
     get_training_dataset,
     get_training_tsv_path,
     get_vep_context_ht,
@@ -516,3 +518,51 @@ class TestGetConstraintResources:
         ]
         assert paths
         assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
+
+    @pytest.mark.parametrize("use_aggregated_expected", [False, True])
+    def test_constraint_group_input(self, use_aggregated_expected: bool) -> None:
+        """
+        Test that --aggregate-by-constraint-groups declares the input it reads.
+
+        Regression test: with ``--use-aggregated-expected``, the step read the
+        ``--apply-models-aggregated`` output without declaring it, so its resources
+        weren't checked.
+        """
+        resources = get_constraint_resources(
+            version="4.1.1",
+            overwrite=False,
+            test=True,
+            use_aggregated_expected=use_aggregated_expected,
+        )
+        if use_aggregated_expected:
+            step = "--apply-models-aggregated"
+            path = get_aggregated_expected(version="4.1.1", test=True).path
+        else:
+            step = "--aggregate-per-variant-expected"
+            path = get_aggregated_per_variant_expected(version="4.1.1", test=True).path
+        inputs = resources.aggregate_by_constraint_groups.input_resources
+        assert list(inputs) == [step]
+        assert [_path(r) for r in inputs[step]] == [path]
+
+    def test_inputs_read_by_steps_are_declared(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """
+        Test that the Tables steps read are declared inputs, so they're checked.
+
+        Regression test: ``--prepare-context-ht`` read the adj_r and syn_adj_r Tables,
+        and ``--compute-gene-quality-metrics`` the segdup and LCR intervals, without
+        declaring them, so a missing one failed on read instead of in the resource
+        check.
+        """
+
+        def _input_paths(step: Any) -> set:
+            return {_path(r) for rs in step.input_resources.values() for r in rs}
+
+        assert {get_adj_r_ht().path, get_syn_adj_r_ht().path} <= _input_paths(
+            resources.prepare_context
+        )
+        assert {
+            ref_grch38.seg_dup_intervals.path,
+            ref_grch38.lcr_intervals.path,
+        } <= _input_paths(resources.compute_gene_quality_metrics)

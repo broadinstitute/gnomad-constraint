@@ -547,25 +547,26 @@ def filter_for_test(
     return hl.filter_intervals(ht, keep)
 
 
-def get_adj_r_ht() -> hl.Table:
+def get_adj_r_ht() -> TableResource:
     """
-    Read the adj_r per-context methylation genome 1kb autosome aggregate Table.
+    Return TableResource of the adj_r per-context methylation genome 1kb autosome aggregate Table.
 
-    :return: Table with adj_r annotation keyed by locus.
+    :return: TableResource of the Table with the adj_r annotation.
     """
-    return hl.read_table(
+    return TableResource(
         "gs://gnomad/v4.1/constraint/resources/annotations/ht/"
         "adj_r_per_context_methyl_genome_1kb_autosome.agg.ht"
     )
 
 
-def get_syn_adj_r_ht() -> hl.Table:
+def get_syn_adj_r_ht() -> TableResource:
     """
-    Read the aggregated synonymous DNM adj_r per-context methylation genome 1kb autosome Table.
+    Return TableResource of the synonymous DNM adj_r per-context methylation genome 1kb autosome Table.
 
-    :return: Table with adj_r dict annotation keyed by interval.
+    :return: TableResource of the Table with the adj_r dict annotation keyed by
+        interval.
     """
-    return hl.read_table(
+    return TableResource(
         "gs://gnomad/v4.1/constraint/resources/annotations/ht/"
         "adj_r_syn_dnm_per_context_methyl_genome_1kb_autosome.agg.ht"
     )
@@ -606,6 +607,8 @@ def get_constraint_resources(
     input_hts = {
         "context_ht": get_vep_context_ht(version),
         "methylation_ht": ref_grch38.methylation_sites,
+        "adj_r_ht": get_adj_r_ht(),
+        "syn_adj_r_ht": get_syn_adj_r_ht(),
     }
     for d in ["exomes", "genomes"]:
         input_hts[f"{d}_coverage_ht"] = get_coverage_ht(d, version)
@@ -638,7 +641,11 @@ def get_constraint_resources(
             "gene_quality_metrics_ht": get_gene_quality_metrics_ht(**common_params)
         },
         add_input_resources={
-            "gnomAD resources": {"exomes_sites_ht": input_hts["exomes_sites_ht"]},
+            "gnomAD resources": {
+                "exomes_sites_ht": input_hts["exomes_sites_ht"],
+                "seg_dup_intervals": ref_grch38.seg_dup_intervals,
+                "lcr_intervals": ref_grch38.lcr_intervals,
+            },
         },
         pipeline_input_steps=[preprocess_data],
     )
