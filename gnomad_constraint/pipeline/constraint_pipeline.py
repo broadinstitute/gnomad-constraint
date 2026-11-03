@@ -25,7 +25,6 @@ import argparse
 import logging
 
 import hail as hl
-from gnomad.resources.grch38.reference_data import lcr_intervals, seg_dup_intervals
 from gnomad.utils.constraint import (
     build_models,
     calculate_gerp_cutoffs,
@@ -41,11 +40,7 @@ from gnomad_constraint.resources.constants import (
     RELEASE_KEY_ORDER,
     VERSIONS,
 )
-from gnomad_constraint.resources.resource_utils import (
-    filter_for_test,
-    get_adj_r_ht,
-    get_syn_adj_r_ht,
-)
+from gnomad_constraint.resources.resource_utils import filter_for_test
 from gnomad_constraint.utils.constraint import (
     aggregate_by_constraint_groups,
     aggregate_per_variant_expected_ht,
@@ -224,8 +219,8 @@ def main(args):
                 },
                 methylation_ht=res.methylation_ht.ht(),
                 gerp_ht=constraint_res.get_gerp_ht(get_reference_genome(ht.locus).name),
-                adj_r_ht=get_adj_r_ht(),
-                syn_adj_r_ht=get_syn_adj_r_ht(),
+                adj_r_ht=res.adj_r_ht.ht(),
+                syn_adj_r_ht=res.syn_adj_r_ht.ht(),
             )
             ht.write(res.annotated_context_ht.path, overwrite)
 
@@ -297,8 +292,8 @@ def main(args):
                 res.temp_preprocess_data_ht.ht(),
                 exomes_sites_ht,
                 gencode_cds_ht,
-                seg_dup_intervals.ht(),
-                lcr_intervals.ht(),
+                res.seg_dup_intervals.ht(),
+                res.lcr_intervals.ht(),
             )
             gene_quality_ht.write(res.gene_quality_metrics_ht.path, overwrite=overwrite)
             logger.info("Done computing gene quality metrics.")
