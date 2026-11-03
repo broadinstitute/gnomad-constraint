@@ -1410,7 +1410,7 @@ def _compute_coverage_metrics(
     ht = ht.filter(hl.is_defined(ht.exomes_coverage))
 
     # Explode by transcript and aggregate.
-    ht = ht.explode("transcript_id").cache()
+    ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
         prop_bp_AN90=hl.agg.fraction(ht.exomes_coverage >= an_coverage_threshold),
@@ -1438,7 +1438,7 @@ def _compute_site_quality_metrics(
     # GENCODE CDS table, then keep only sites inside annotated CDS regions.
     # Explode so each (locus, transcript) pair is a separate row.
     ht = ht.annotate(transcript_id=gencode_cds_ht[ht.locus].transcript_id)
-    ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id").cache()
+    ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id")
 
     # Average AS_MQ across all SNV sites in each transcript's CDS.
     # Used downstream to flag transcripts with low mapping quality.
@@ -1475,7 +1475,7 @@ def _compute_region_flag_metrics(
     # compute the fraction of CDS bases in each region per transcript.
     # These proportions are used downstream to flag transcripts with high
     # segdup/LCR overlap.
-    ht = ht.explode("transcript_id").cache()
+    ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
         prop_segdup=hl.agg.fraction(ht.in_segdup),
@@ -1550,7 +1550,7 @@ def compute_gene_quality_metrics(
         ),
     )
 
-    return ht.key_by("transcript")
+    return ht
 
 
 def _annotate_oe_ci_z(
