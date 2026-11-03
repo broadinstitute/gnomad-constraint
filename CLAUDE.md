@@ -135,6 +135,33 @@ inspecting the output. A passing `--test` run is necessary but not sufficient:
 out-of-memory and shuffle failures only appear at full scale. Say what you ran
 and at what scale rather than calling a change verified.
 
+## Pull Requests
+
+**Run the `/review` skill on every pull request before requesting review from a
+team member** (Ben Weisburd's skill:
+https://github.com/bw2/claude-code-review-skill). A SessionStart hook in
+`.claude/settings.json` clones it into `~/.claude/skills/review` the first time
+you open this repo and pulls updates after that, so there is nothing to install
+by hand. If you already have a modified or hand-copied skill there, the hook
+leaves it alone and tells you so at session start. Set
+`GNOMAD_SKIP_REVIEW_HOOK=1` to turn the hook off. Work through what it reports,
+and note in the PR description that it was run and what you did or did not act
+on. Human review time is the scarce resource here; don't spend it on things the
+skill would have caught.
+
+The skills shared by the gnomAD repos live in
+[gnomad-skills](https://github.com/broadinstitute/gnomad-skills); install them
+once as its README describes. For a large PR, especially one that changes
+released metrics, its `/gnomad-pr-review` does a deeper multi-agent review and
+writes a ranked `REVIEW.md` with a draft comment per finding. It only runs when
+invoked by name. The others (`gnomad-commit`, `gnomad-pr-description`,
+`gnomad-clean-git-history`) commit, draft PR descriptions, and tidy history in
+any gnomAD repo.
+
+**If a change alters the structure of the repo, update the repo layout table in
+the README in the same pull request.** If a change alters a release Table's
+fields or globals, update its description in `release_readme/` too.
+
 ## Attribution
 
 - When Claude Code or another agent helped with a commit, add exactly one
