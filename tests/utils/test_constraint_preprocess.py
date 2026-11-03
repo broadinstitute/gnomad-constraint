@@ -1,6 +1,6 @@
 """Tests for the preprocessing functions in ``gnomad_constraint.utils.constraint``."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import hail as hl
 import pytest
@@ -410,6 +410,58 @@ class TestGetExomesObservedAndPossible:
         assert sums["g2"] == ([0, 0], 2)
         assert sums["g3"] == ([0, 0], 0)
 
+    DS_FREQ_META = [
+        {"group": "adj"},
+        {"group": "adj", "gen_anc": "afr"},
+        {"group": "adj", "gen_anc": "global", "downsampling": "10"},
+        {"group": "adj", "gen_anc": "afr", "downsampling": "10"},
+        {"group": "adj", "gen_anc": "global", "downsampling": "100"},
+    ]
+    """Exomes frequency metadata with downsamplings."""
+
+    @pytest.mark.parametrize(
+        "include_downsamplings, kept_idx, downsamplings",
+        [(False, [0, 1], None), (True, [0, 1, 2, 4, 3], [10, 100])],
+    )
+    def test_include_downsamplings(
+        self,
+        include_downsamplings: bool,
+        kept_idx: List[int],
+        downsamplings: Optional[List[int]],
+    ) -> None:
+        """Test that the downsamplings are counted only when requested.
+
+        The kept entries are adj, the requested genetic ancestry groups, then the
+        downsamplings of the global group followed by those of each requested group.
+        The site is observed in every other frequency entry, so the counts show
+        which entries were kept.
+        """
+        ac = [1, 0, 1, 0, 1]
+        ht = hl.Table.parallelize(
+            [
+                dict(
+                    filters=set(),
+                    freq=[hl.Struct(AC=x, AF=x / 1e5) for x in ac],
+                    coverage=30,
+                )
+            ],
+            hl.tstruct(filters=hl.tset(hl.tstr), freq=FREQ_TYPE, coverage=hl.tint32),
+        )
+        expr, globals_expr = get_exomes_observed_and_possible(
+            ht.filters,
+            ht.freq,
+            self.DS_FREQ_META,
+            ht.coverage,
+            gen_ancs=["afr"],
+            include_downsamplings=include_downsamplings,
+        )
+        g = hl.eval(globals_expr)
+        assert g.exomes_freq_meta == [self.DS_FREQ_META[i] for i in kept_idx]
+        assert g.downsamplings == downsamplings
+        assert ht.annotate(**expr).collect()[0].observed_variants == [
+            ac[i] for i in kept_idx
+        ]
+
 
 class TestGetBuildCalibrationModelAnnotation:
     """Test the get_build_calibration_model_annotation function."""
@@ -744,10 +796,28 @@ CONTEXT_SITES = [
         0.0,
         {"AC0"},
     ),
+    (
+        "lof_lc_end_trunc",
+        ("chr1", 4000),
+        "AAACAAA",
+        "stop_gained",
+        ("LC", "END_TRUNC", "GERP_DIST:5.0,50_BP_RULE:PASS"),
+        None,
+        None,
+    ),
+    # Exome AN 120, so 60% of samples: between the build and apply model cutoffs
+    # used by TestPrepareHtForConstraintCalculations.
+    ("syn_mid_cov", ("chr1", 5000), "AAACGAA", "synonymous_variant", None, 5e-3, set()),
+    # Reaches the mutation rate sites: autosomal intron variant absent from genomes.
+    ("intron_mu", ("chr1", 6000), "AAACAAA", "intron_variant", None, None, None),
     ("chrx_nonpar", ("chrX", 10000000), "AAACAAA", "intron_variant", None, 0.3, set()),
     ("chrx_par", ("chrX", 100000), "AAACAAA", "intron_variant", None, 0.7, set()),
     ("chry_nonpar", ("chrY", 3000000), "AAACAAA", "intron_variant", None, None, None),
+    ("chry_par", ("chrY", 100000), "AAACAAA", "intron_variant", None, None, None),
 ]
+
+EXOMES_AN = {"syn_mid_cov": 120}
+"""Exome AN of sites that don't have the default of 150."""
 
 
 def _context_inputs() -> Dict[str, Any]:
@@ -810,9 +880,11 @@ def _context_inputs() -> Dict[str, Any]:
             dict(mean=hl.tint32, median_approx=hl.tint32),
         )
 
-    def _an_ht(an: int) -> hl.Table:
+    def _an_ht(an: int, site_an: Optional[Dict[str, int]] = None) -> hl.Table:
+        site_an = site_an or {}
         ht = _locus_ht(
-            {n: dict(AN=[an, an]) for n in loci}, dict(AN=hl.tarray(hl.tint32))
+            {n: dict(AN=[site_an.get(n, an)] * 2) for n in loci},
+            dict(AN=hl.tarray(hl.tint32)),
         )
         return ht.annotate_globals(
             strata_meta=AN_STRATA_META, strata_sample_count=AN_STRATA_SAMPLE_COUNT
@@ -857,7 +929,7 @@ def _context_inputs() -> Dict[str, Any]:
     return dict(
         ht=context_ht,
         coverage_hts={"exomes": _coverage_ht(50), "genomes": _coverage_ht(30)},
-        an_hts={"exomes": _an_ht(150), "genomes": _an_ht(100)},
+        an_hts={"exomes": _an_ht(150, EXOMES_AN), "genomes": _an_ht(100)},
         freq_hts={
             "exomes": exomes_freq_ht.select("freq"),
             "genomes": genomes_freq_ht.select("freq"),
@@ -902,15 +974,23 @@ class TestPrepareContextHt:
         return _rows_by_site(annotated_context_ht)
 
     def test_genomic_region(self, context_rows: Dict[str, hl.Struct]) -> None:
-        """Test the genomic region labels, with the chrX PAR as autosome_or_par."""
+        """Test the genomic region labels, with the chrX and chrY PARs as autosome_or_par.
+
+        A chrY PAR site gets the same label as its chrX copy. This pins the current
+        behavior; whether chrY PAR sites should be counted at all is still open.
+        """
         rows = context_rows
         assert {n: r.genomic_region for n, r in rows.items()} == {
             "syn_cpg": "autosome_or_par",
             "lof_end_trunc": "autosome_or_par",
             "lof_hc": "autosome_or_par",
+            "lof_lc_end_trunc": "autosome_or_par",
+            "syn_mid_cov": "autosome_or_par",
+            "intron_mu": "autosome_or_par",
             "chrx_nonpar": "chrx_nonpar",
             "chrx_par": "autosome_or_par",
             "chry_nonpar": "chry_nonpar",
+            "chry_par": "autosome_or_par",
         }
 
     def test_sfs_bin(self, context_rows: Dict[str, hl.Struct]) -> None:
@@ -924,9 +1004,13 @@ class TestPrepareContextHt:
             "syn_cpg": 4,
             "lof_end_trunc": 0,
             "lof_hc": 0,
+            "lof_lc_end_trunc": 0,
+            "syn_mid_cov": 7,
+            "intron_mu": 0,
             "chrx_nonpar": 8,
             "chrx_par": None,
             "chry_nonpar": 0,
+            "chry_par": 0,
         }
 
     def test_adj_r(self, context_rows: Dict[str, hl.Struct]) -> None:
@@ -939,10 +1023,15 @@ class TestPrepareContextHt:
         assert rows["chrx_nonpar"].adj_r is None
 
     def test_loftee_end_trunc(self, context_rows: Dict[str, hl.Struct]) -> None:
-        """Test that HC LoF at an unconstrained end truncation becomes LC."""
+        """Test the END_TRUNC fix in both directions.
+
+        HC LoF at an unconstrained end truncation becomes LC, and LC LoF whose only
+        filter is END_TRUNC, at a constrained end truncation, becomes HC.
+        """
         rows = context_rows
         assert rows["lof_end_trunc"].vep.transcript_consequences[0].lof == "LC"
         assert rows["lof_hc"].vep.transcript_consequences[0].lof == "HC"
+        assert rows["lof_lc_end_trunc"].vep.transcript_consequences[0].lof == "HC"
 
     def test_coverage_and_an(self, context_rows: Dict[str, hl.Struct]) -> None:
         """Test that coverage and AN are reshaped per data type."""
@@ -955,24 +1044,40 @@ class TestPrepareContextHt:
 class TestPrepareHtForConstraintCalculations:
     """Test the prepare_ht_for_constraint_calculations function."""
 
-    @pytest.fixture(scope="class")
+    # Non-default settings that differ from each other, so a setting passed to the
+    # wrong place shows in the annotations or the globals.
+    SETTINGS = dict(
+        exome_coverage_metric="AN_percent",
+        calculate_mutation_rate_min_cov=20,
+        calculate_mutation_rate_max_cov=40,
+        calculate_mutation_rate_gerp_lower_cutoff=-1.0,
+        calculate_mutation_rate_gerp_upper_cutoff=1.0,
+        calculate_mutation_rate_ac_cutoff=3,
+        max_af=0.01,
+        build_model_high_cov_cutoff=70,
+        apply_model_high_cov_cutoff=50,
+    )
+
+    @pytest.fixture(
+        scope="class",
+        params=[False, True],
+        ids=["coverage_model", "skip_coverage_model"],
+    )
     @classmethod
-    def preprocessed(cls, annotated_context_ht: hl.Table):
-        """Return the preprocessed rows by site name and the evaluated globals.
-
-        The coverage model is skipped so the globals test can check that the
-        setting is recorded; it does not change the high coverage site's groups.
-        """
+    def preprocessed(
+        cls, request: pytest.FixtureRequest, annotated_context_ht: hl.Table
+    ) -> Tuple[bool, Dict[str, hl.Struct], hl.Struct]:
+        """Return whether the coverage model is skipped, the rows by site, and the globals."""
         ht = prepare_ht_for_constraint_calculations(
-            annotated_context_ht,
-            exome_coverage_metric="AN_percent",
-            skip_coverage_model=True,
+            annotated_context_ht, skip_coverage_model=request.param, **cls.SETTINGS
         )
-        return _rows_by_site(ht), hl.eval(ht.globals)
+        return request.param, _rows_by_site(ht), hl.eval(ht.globals)
 
-    def test_annotations(self, preprocessed) -> None:
-        """Test the coverage, observed/possible, and model group annotations."""
-        rows, _ = preprocessed
+    def test_annotations(
+        self, preprocessed: Tuple[bool, Dict[str, hl.Struct], hl.Struct]
+    ) -> None:
+        """Test the coverage, observed/possible, and mutation rate annotations."""
+        _, rows, _ = preprocessed
         syn = rows["syn_cpg"]
         assert "freq" not in syn
         assert syn.exomes_coverage == 75
@@ -980,6 +1085,8 @@ class TestPrepareHtForConstraintCalculations:
         assert syn.calibrate_mu.possible_variants == 1
         assert syn.calibrate_mu.build_model.high_or_low_coverage == "high"
         assert syn.calibrate_mu.apply_model.high_or_low_coverage == "high"
+        # AF 0.005 is under the max_af of 0.01, though not the default of 0.001.
+        assert rows["syn_mid_cov"].calibrate_mu.observed_variants == [1]
         # Absent from the exomes, and AC0-filtered: possible but not observed.
         for name in ["lof_end_trunc", "lof_hc"]:
             assert rows[name].calibrate_mu.observed_variants == [0], name
@@ -989,18 +1096,46 @@ class TestPrepareHtForConstraintCalculations:
         assert syn.compute_mu.possible_variants is None
         # Intron variant, but not autosomal.
         assert rows["chrx_par"].compute_mu.possible_variants is None
+        # Autosomal intron variant inside the coverage and GERP cutoffs, and absent
+        # from the genomes: possible but not observed.
+        mu = rows["intron_mu"].compute_mu
+        assert mu.observed_variants == [0, 0]
+        assert mu.possible_variants == 1
 
-    def test_globals(self, preprocessed) -> None:
-        """Test that the globals record the parameters used."""
-        _, g = preprocessed
+    def test_model_groups(
+        self, preprocessed: Tuple[bool, Dict[str, hl.Struct], hl.Struct]
+    ) -> None:
+        """Test the model groups of a site between the build and apply cutoffs.
+
+        Its exome coverage (60%) is under the build high coverage cutoff (70) and
+        over the apply one (50), so it trains the low coverage model, unless the
+        coverage model is skipped, and the high coverage model is applied to it.
+        """
+        skip, rows, _ = preprocessed
+        site = rows["syn_mid_cov"]
+        assert site.exomes_coverage == 60
+        build = site.calibrate_mu.build_model
+        assert (build is None) if skip else (build.high_or_low_coverage == "low")
+        assert site.calibrate_mu.apply_model.high_or_low_coverage == "high"
+
+    def test_globals(
+        self, preprocessed: Tuple[bool, Dict[str, hl.Struct], hl.Struct]
+    ) -> None:
+        """Test that the globals record the settings used."""
+        skip, _, g = preprocessed
         assert g.build_models_globals == hl.Struct(
             synonymous_transcript_filter_field="mane_select",
             low_cov_cutoff=None,
-            high_cov_cutoff=40,
+            high_cov_cutoff=70,
             upper_cov_cutoff=None,
-            skip_coverage_model=True,
+            skip_coverage_model=skip,
         )
-        assert g.apply_models_globals.skip_coverage_model
-        assert g.calculate_mu_globals.downsampling_idx == 1
+        assert g.apply_models_globals == hl.Struct(
+            low_cov_cutoff=None, high_cov_cutoff=50, skip_coverage_model=skip
+        )
+        mu = g.calculate_mu_globals
+        assert (mu.min_cov, mu.max_cov, mu.ac_cutoff) == (20, 40, 3)
+        assert (mu.gerp_lower_cutoff, mu.gerp_upper_cutoff) == (-1.0, 1.0)
+        assert mu.downsampling_idx == 1
         assert g.exomes_freq_meta == [{"group": "adj"}]
-        assert g.max_af == 0.001
+        assert g.max_af == 0.01
