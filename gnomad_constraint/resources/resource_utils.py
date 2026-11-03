@@ -736,7 +736,7 @@ def get_constraint_resources(
         input_resources={"gnomAD resources": input_hts},
     )
     preprocess_data = PipelineStepResourceCollection(
-        "preprocess data for downstream steps",
+        "--preprocess-data",
         output_resources={
             "temp_preprocess_data_ht": get_preprocessed_ht(**common_params),
         },
@@ -829,7 +829,7 @@ def get_constraint_resources(
         compute_constraint_metrics = PipelineStepResourceCollection(
             "--compute-constraint-metrics --skip-pre-rank-metrics",
             input_resources={
-                "pre-rank constraint metrics": {
+                "--compute-constraint-metrics": {
                     "pre_rank_constraint_metrics_ht": (
                         get_pre_rank_constraint_metrics_dataset(
                             custom_vep_annotation,

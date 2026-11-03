@@ -498,8 +498,10 @@ class TestFilterForTest:
 class TestGetConstraintResources:
     """Test the pipeline steps built by the get_constraint_resources function."""
 
-    @pytest.fixture
-    def resources(self, monkeypatch: pytest.MonkeyPatch) -> PipelineResourceCollection:
+    @staticmethod
+    def _get_resources(
+        monkeypatch: pytest.MonkeyPatch, skip_pre_rank_metrics: bool = False
+    ) -> PipelineResourceCollection:
         """
         Build the constraint pipeline resources without reading GCS.
 
@@ -517,7 +519,13 @@ class TestGetConstraintResources:
             custom_vep_annotation="transcript_consequences",
             overwrite=False,
             test=True,
+            skip_pre_rank_metrics=skip_pre_rank_metrics,
         )
+
+    @pytest.fixture
+    def resources(self, monkeypatch: pytest.MonkeyPatch) -> PipelineResourceCollection:
+        """Return the constraint pipeline resources for a test run of v4.1.1."""
+        return self._get_resources(monkeypatch)
 
     def test_export_steps_check_only_their_own_outputs(
         self, resources: PipelineResourceCollection
@@ -540,3 +548,30 @@ class TestGetConstraintResources:
                 get_release_downsampling_tsv_path(version="4.1.1", test=True)
             ]
         }
+
+    @pytest.mark.parametrize("skip_pre_rank_metrics", [False, True])
+    def test_inputs_are_keyed_by_the_flag_that_creates_them(
+        self, monkeypatch: pytest.MonkeyPatch, skip_pre_rank_metrics: bool
+    ) -> None:
+        """
+        Test that every step's inputs are keyed by the flag that creates them.
+
+        When an input is missing, gnomad_qc's error tells the user to add the key to
+        the command line, so the key has to be a pipeline flag. Regression test: the
+        preprocessing step was named "preprocess data for downstream steps", and
+        with ``--skip-pre-rank-metrics`` the pre-rank Table was keyed by
+        "pre-rank constraint metrics". The gnomAD inputs aren't created by the
+        pipeline, so they are exempt.
+        """
+        resources = self._get_resources(monkeypatch, skip_pre_rank_metrics)
+        keys = {
+            key
+            for step in resources.pipeline_steps.values()
+            for key in step.input_resources
+        }
+        assert "--preprocess-data" in keys
+        assert all(key.startswith("--") for key in keys - {"gnomAD resources"})
+        if skip_pre_rank_metrics:
+            assert list(resources.compute_constraint_metrics.input_resources) == [
+                "--compute-constraint-metrics"
+            ]
