@@ -13,6 +13,11 @@ from gnomad.resources.resource_utils import ExpressionResource, TableResource
 from gnomad_qc.resource_utils import PipelineResourceCollection
 
 import gnomad_constraint.resources.resource_utils as resource_utils
+from gnomad_constraint.resources.constants import (
+    GENCODE_VERSION_MAP,
+    VEP_VERSION_MAP,
+    VERSIONS,
+)
 from gnomad_constraint.resources.resource_utils import (
     check_param_scope,
     filter_for_test,
@@ -225,6 +230,26 @@ class TestGetVepContextHt:
         """Test that a version outside v2.1.1 and v4 raises an error."""
         with pytest.raises(ValueError, match="Not a valid gnomAD version"):
             get_vep_context_ht("3.1")
+
+
+class TestGencodeVersion:
+    """Test the GENCODE version used for each pipeline version."""
+
+    @pytest.mark.parametrize("version", [v for v in VERSIONS if v.startswith("4")])
+    def test_vep_version_has_gencode_resource(self, version: str) -> None:
+        """
+        Test that each v4 version's VEP version maps to a GENCODE resource.
+
+        ``get_gencode_ht`` takes the GENCODE version from the context Table's VEP
+        version, not from gnomad_methods' default GENCODE version, which can change
+        independently of the VEP annotations.
+        """
+        vep_version = VEP_VERSION_MAP[version]
+        assert (
+            get_vep_context_ht(version).path
+            == ref_grch38.vep_context.versions[vep_version].path
+        )
+        assert GENCODE_VERSION_MAP[vep_version] in ref_grch38.gencode.versions
 
 
 class TestGetSitesResource:

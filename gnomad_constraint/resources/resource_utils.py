@@ -27,8 +27,10 @@ from gnomad_constraint.resources.constants import (
     CUSTOM_VEP_ANNOTATIONS,
     DATA_TYPES,
     EXTENSIONS,
+    GENCODE_VERSION_MAP,
     MODEL_TYPES,
     SITES_VERSION_MAP,
+    VEP_VERSION_MAP,
     VERSIONS,
 )
 
@@ -90,9 +92,9 @@ def get_vep_context_ht(version: str) -> TableResource:
     :return: VEP context Table Resource.
     """
     if version == "2.1.1":
-        return ref_grch37.vep_context.versions["85"]
+        return ref_grch37.vep_context.versions[VEP_VERSION_MAP[version]]
     elif int(version[0]) == 4:
-        return ref_grch38.vep_context.versions["105"]
+        return ref_grch38.vep_context.versions[VEP_VERSION_MAP[version]]
     else:
         raise ValueError("Not a valid gnomAD version -- must be either 2.1.1 or 4.x!")
 
@@ -177,19 +179,18 @@ def get_gencode_ht(version: str) -> hl.Table:
     then checkpoints the result so subsequent calls read from the checkpoint.
 
     :param version: gnomAD version. If version 2, GENCODE v19 will be
-        loaded. If version 4, GENCODE v39 will be re-imported with version
+        loaded. If version 4, the GENCODE version that the context Table's VEP
+        version annotates with (v39 for VEP 105) will be re-imported with version
         fields and checkpointed.
     :return: Table of GENCODE data with version annotations.
     """
     if int(version[0]) == 2:
         return ref_grch37.gencode.ht()
     elif int(version[0]) == 4:
-        gencode_resource = ref_grch38.gencode
-        import_args = gencode_resource.versions[
-            gencode_resource.default_version
-        ].import_args
+        gencode_version = GENCODE_VERSION_MAP[VEP_VERSION_MAP[version]]
+        import_args = ref_grch38.gencode.versions[gencode_version].import_args
         ht = import_gencode(**import_args, include_version=True)
-        checkpoint_path = "gs://gnomad-tmp/gencode_v39_with_versions.ht"
+        checkpoint_path = f"gs://gnomad-tmp/gencode_{gencode_version}_with_versions.ht"
 
         return ht.checkpoint(checkpoint_path, _read_if_exists=True)
     else:

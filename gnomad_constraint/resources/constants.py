@@ -22,6 +22,18 @@ SITES_VERSION_MAP = {
 }
 """Map from constraint pipeline version to gnomAD sites release version."""
 
+VEP_VERSION_MAP = {
+    "2.1.1": "85",
+    "4.0": "105",
+    "4.1": "105",
+    "4.1.1": "105",
+    "4.1.2": "105",
+}
+"""Map from constraint pipeline version to the VEP version of its context Table."""
+
+GENCODE_VERSION_MAP = {"105": "v39"}
+"""Map from GRCh38 VEP version to the GENCODE version it annotates with."""
+
 DATA_TYPES = ["context", "exomes", "genomes"]
 """Data types used in the constraint pipeline."""
 
