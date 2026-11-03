@@ -455,6 +455,19 @@ class TestApplyConstraintModels:
         assert low.coverage_correction == pytest.approx(expected_correction)
         assert low.expected_variants[0] == pytest.approx(0.3 * expected_correction)
 
+    def test_missing_plateau_model(self) -> None:
+        """Test that a site whose model group has no plateau model raises an error.
+
+        Regression test: the lookup returned missing, so the site's expected count
+        dropped out of the sums while its observed count stayed, with no error.
+        """
+        plateau_models = {hl.Struct(cpg=True): [[0.2, 1e7]]}
+        ht = _apply_constraint_models(
+            self._ht(["high"]), hl.literal(plateau_models), None
+        )
+        with pytest.raises(Exception, match="No plateau model"):
+            ht.collect()
+
     @pytest.mark.parametrize(
         "coverage_model, expected", [(None, None), ([0.1, 0.5], [0.1, 0.5])]
     )

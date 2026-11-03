@@ -879,11 +879,21 @@ def _apply_constraint_models(
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :return: Table annotated with model outputs (``mu``,
         ``predicted_proportion_observed``, ``expected_variants``,
-        ``coverage_correction``).
+        ``coverage_correction``). Raises an error for a row whose model group has no
+        plateau model, rather than leaving its expected count missing.
     """
+    # A missing plateau model would leave the expected count missing, so it would
+    # drop out of the sums while the observed count stayed. Raise instead, as
+    # annotate_with_mu does for a missing mutation rate.
+    model_group = ht.apply_model.model_group
+    plateau_model = (
+        hl.case()
+        .when(plateau_models.contains(model_group), plateau_models[model_group])
+        .or_error(hl.format("No plateau model for model group %s", model_group))
+    )
     apply_expr = apply_models(
         ht.mu_snp,
-        plateau_models.get(ht.apply_model.model_group),
+        plateau_model,
         ht.possible_variants,
         coverage_model=coverage_model,
         coverage_expr=ht.exomes_coverage,
