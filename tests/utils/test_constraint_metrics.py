@@ -214,7 +214,7 @@ class TestComputeZScores:
     Z = {
         "T1": [1.0, -1.0, -1.0, -1.0, -1.0],
         "T2": [-1.0, -3.0, -3.0, -3.0, -3.0],
-        "T3": [2.0, 2.0, 2.0, 2.0, 2.0],
+        "T3": [3.0, 2.0, 2.0, 2.0, 2.0],
         "T4": [-2.0, 5.0, 5.0, 5.0, 5.0],
         "T5": [None, None, None, None, None],
         # Excluded from the SD: no variants, or flagged.
@@ -257,7 +257,11 @@ class TestComputeZScores:
         return hl.eval(ht.sd_raw_z), {r.transcript: r for r in ht.collect()}
 
     def test_sd_raw_z(self, result: Tuple[List[float], Dict[str, hl.Struct]]) -> None:
-        """Test the SD of raw z, mirroring negative values for every group but syn."""
+        """Test the SD of raw z, mirroring negative values for every group but syn.
+
+        The syn values aren't symmetric, so mirroring them would give a different SD
+        (1.58 rather than 1.92).
+        """
         sd, _ = result
         used = ["T1", "T2", "T3", "T4"]
         syn = [self.Z[t][0] for t in used]
