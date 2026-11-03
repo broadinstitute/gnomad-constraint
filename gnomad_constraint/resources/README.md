@@ -463,9 +463,9 @@ Pipeline-parameter globals (same as §7) plus:
     — one entry per freq-meta index. `observed_variants` is the summed
     observed count, `expected_variants` is the summed predicted expected
     count, and `predicted_proportion_observed` is the `Σ ppo·possible` sum.
-- `no_variants: bool` — true if **every** constraint group has zero observed
-  variants at the global-adj index (used to drop these rows in downstream
-  metrics steps).
+- `no_variants: bool` — true if the `syn`, `mis`, and `lof_hc` groups have zero
+  observed variants at the global-adj index. Rows with no observed and no
+  expected variants in any group are dropped.
 
 ---
 
@@ -526,8 +526,9 @@ Pipeline-parameter globals (as §9) plus:
     - `upper_bin_sextile: int32` — sextile bin (0–5).
 - `no_variants: bool` — as §9.
 - `constraint_flags: set<str>` — transcript-level QC flags: the union of the
-  `syn`, `mis`, and `lof_hc` groups' `flags`, so the `no_exp_*` and
-  `outlier_*` flags.
+  `syn`, `mis`, and `lof_hc` groups' `flags` (the `no_exp_*` and `outlier_*`
+  flags), plus `no_variants` when `no_variants` is true. Flagged transcripts are
+  left out of the percentile thresholds.
 - `constraint_bins: struct{percentile, decile, sextile}` — convenience bins
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:

@@ -1344,21 +1344,27 @@ def aggregate_by_constraint_groups(
         )
     )
 
-    # Add a 'no_variants' annotation indicating that there are zero observed variants
-    # summed across pLoF, missense, and synonymous variants.
+    # Add a 'no_variants' annotation indicating that there are zero observed
+    # synonymous, missense, and HC pLoF variants.
+    no_variants_idx = [
+        meta.index(m) for m in ({"csq_set": "syn"}, {"csq_set": "mis"}, {"lof": "hc"})
+    ]
     ht = ht.annotate(
         no_variants=hl.sum(
-            ht.constraint_groups.map(lambda x: hl.or_else(x.observed_variants[0], 0))
+            [
+                hl.or_else(ht.constraint_groups[i].observed_variants[0], 0)
+                for i in no_variants_idx
+            ]
         )
         == 0
     )
 
-    # Filter to only rows with at least 1 obs or exp across all keys in annotation_dict.
+    # Filter to only rows with at least 1 obs or exp in any constraint group.
     ht = ht.filter(
-        ~ht.no_variants
-        | hl.any(
+        hl.any(
             ht.constraint_groups.map(
-                lambda x: (hl.or_else(x.expected_variants[0], 0) > 0)
+                lambda x: (hl.or_else(x.observed_variants[0], 0) > 0)
+                | (hl.or_else(x.expected_variants[0], 0) > 0)
             )
         )
     )
@@ -1652,7 +1658,8 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
 
     Computes the standard deviation of raw z-scores (stored as a global), normalizes
     each group's raw z-score by its standard deviation, and unions the syn, mis, and
-    lof flags into a single ``constraint_flags`` set.
+    lof flags into a single ``constraint_flags`` set, adding ``no_variants`` for
+    transcripts with no observed synonymous, missense, or HC pLoF variants.
 
     :param ht: Table output by :func:`_annotate_oe_ci_z`.
     :return: Table with ``z_score`` and ``constraint_flags`` annotations.
@@ -1690,9 +1697,9 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     )
 
     # Normalize each group's raw z-score by its SD to produce the final
-    # z_score. Also union the per-group flags from syn, mis, and lof_hc
-    # into a single transcript-level constraint_flags set (used downstream
-    # to exclude outliers from percentile threshold computation).
+    # z_score. Also union the per-group flags from syn, mis, and lof_hc, plus
+    # no_variants, into a single transcript-level constraint_flags set (used
+    # downstream to exclude outliers from percentile threshold computation).
     ht = ht.annotate(
         constraint_groups=hl.map(
             lambda x, sd_raw_z: x.annotate(
@@ -1705,6 +1712,7 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
             ht.constraint_groups[syn_idx].flags
             | ht.constraint_groups[mis_idx].flags
             | ht.constraint_groups[lof_idx].flags
+            | hl.if_else(ht.no_variants, hl.set(["no_variants"]), hl.empty_set(hl.tstr))
         ),
     )
 

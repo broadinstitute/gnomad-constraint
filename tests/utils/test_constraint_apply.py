@@ -658,7 +658,8 @@ def _constraint_groups() -> Dict:
 
     The input has per-transcript, per-consequence sums. T1 has every consequence
     type. T2 has only unobserved variants. T3 has no observed and no expected
-    variants. T4 has expected but no observed variants.
+    variants. T4 has expected but no observed variants. T5's only observed variant
+    is an LC pLoF.
     """
     # (transcript, annotation, modifier, observed, expected)
     groups = [
@@ -673,6 +674,8 @@ def _constraint_groups() -> Dict:
         ("T2", "stop_gained", "HC", 0, 2.0),
         ("T3", "synonymous_variant", "None", 0, 0.0),
         ("T4", "synonymous_variant", "None", 0, 1.5),
+        ("T5", "synonymous_variant", "None", 0, 1.0),
+        ("T5", "stop_gained", "LC", 1, 0.5),
     ]
     ht = hl.Table.parallelize(
         [
@@ -799,7 +802,18 @@ class TestAggregateByConstraintGroups:
         observed variants but some expected, so it is kept with no_variants set.
         """
         rows = _constraint_groups()["rows"]
-        assert set(rows) == {"T1", "T2", "T4"}
+        assert set(rows) == {"T1", "T2", "T4", "T5"}
         assert rows["T1"].no_variants is False
         assert rows["T2"].no_variants is True
         assert rows["T4"].no_variants is True
+
+    def test_no_variants_counts_syn_mis_and_hc_lof(self) -> None:
+        """
+        Test that no_variants counts only synonymous, missense, and HC pLoF variants.
+
+        T5's only observed variant is an LC stop_gained, which is in the classic and
+        HC+LC LoF groups but not in the syn, mis, or HC LoF groups, so no_variants
+        is set. This matches main, where no_variants summed the syn, mis, and lof
+        (HC) observed counts.
+        """
+        assert _constraint_groups()["rows"]["T5"].no_variants is True
