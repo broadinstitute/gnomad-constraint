@@ -52,17 +52,22 @@ notify() {
     printf '{"systemMessage": "%s"}\n' "$(json_escape "$@")"
 }
 
-# Check upstream at most once a day.
 today=$(date +%Y%m%d)
-[ "$(cat "$stamp" 2>/dev/null)" = "$today" ] && exit 0
+checked_today=""
+[ "$(cat "$stamp" 2>/dev/null)" = "$today" ] && checked_today=1
 
 if [ -e "$dir" ] && [ ! -f "$dir/$marker" ]; then
+    [ -n "$checked_today" ] && exit 0
     echo "$today" > "$stamp"
     notify "$dir was not installed by this repo's hook, so the hook does not" \
         "update the gnomad-pr-review skill there. To get automatic updates," \
         "move that directory aside; the next session installs a fresh copy."
     exit 0
 fi
+
+# Install whenever the skill is missing, so moving a copy aside takes effect in
+# the next session; otherwise check upstream at most once a day.
+[ -e "$dir" ] && [ -n "$checked_today" ] && exit 0
 
 # Fetch the skill's directory at the newest commit of the branch, or of main
 # once the branch is gone.
