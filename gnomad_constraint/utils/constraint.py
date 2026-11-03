@@ -865,7 +865,7 @@ def _apply_constraint_models(
     coverage_model: Optional[
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
-    log10_coverage: bool = True,
+    log10_coverage: bool = False,
 ) -> hl.Table:
     """
     Apply plateau and coverage models to a Table with ``mu_snp`` and ``apply_model``.
@@ -877,7 +877,7 @@ def _apply_constraint_models(
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``). If None, only the
         plateau models are applied and ``coverage_correction`` is 1.
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param log10_coverage: Whether to use log10 coverage. Default is False.
     :return: Table annotated with model outputs (``mu``,
         ``predicted_proportion_observed``, ``expected_variants``,
         ``coverage_correction``). Raises an error for a row whose model group has no
@@ -958,7 +958,7 @@ def create_per_variant_expected_ht(
     coverage_model: Optional[
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
-    log10_coverage: bool = True,
+    log10_coverage: bool = False,
     use_mane_select: bool = False,
 ) -> hl.Table:
     """
@@ -980,7 +980,7 @@ def create_per_variant_expected_ht(
         model group (as returned by ``build_models``).
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``).
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param log10_coverage: Whether to use log10 coverage. Default is False.
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
     :return: Per-variant expected Table.
     """
@@ -1057,7 +1057,7 @@ def create_aggregated_expected_ht(
     coverage_model: Optional[
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
-    log10_coverage: bool = True,
+    log10_coverage: bool = False,
     use_mane_select: bool = False,
     partition_hint: int = 100,
 ) -> hl.Table:
@@ -1086,7 +1086,7 @@ def create_aggregated_expected_ht(
         model group (as returned by ``build_models``).
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``).
-    :param log10_coverage: Whether to use log10 coverage. Default is True.
+    :param log10_coverage: Whether to use log10 coverage. Default is False.
     :param use_mane_select: Whether to include MANE Select as a group. Default is
         False.
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
