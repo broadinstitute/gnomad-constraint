@@ -665,7 +665,7 @@ if __name__ == "__main__":
         help=(
             "Minimum GERP score for variant to be included when calculating the"
             " mutation rate. Default is -3.9885 (precalculated on the GRCh37 context"
-            " Table to define the 95th percentile)."
+            " Table to define the 5th percentile)."
         ),
         type=float,
         default=-3.9885,
@@ -675,7 +675,7 @@ if __name__ == "__main__":
         help=(
             "Maximum GERP score for variant to be included when calculating the"
             " mutation rate. Default is 2.6607 (precalculated on the GRCh37 context"
-            " Table to define the 5th percentile)."
+            " Table to define the 95th percentile)."
         ),
         type=float,
         default=2.6607,
