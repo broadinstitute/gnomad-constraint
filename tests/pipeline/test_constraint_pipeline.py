@@ -3,6 +3,7 @@
 import logging
 import os
 from types import SimpleNamespace
+from typing import List
 from unittest import mock
 
 import hail as hl
@@ -181,6 +182,14 @@ class TestGetCoverageModel:
 
     COEFFICIENTS = [0.1, 0.02]
 
+    # Production coverage models saved as only their coefficients, with the high
+    # coverage cutoff and scale they were built with: v4.1.1 on linear AN percent,
+    # and the v2.1.1 autosome/PAR model on log10 median depth.
+    OLD_MODELS = [
+        ([-0.14479061495071816, 0.014710539963350573], 90, False),
+        ([0.2200905508803188, 0.48448910713160426], 40, True),
+    ]
+
     @staticmethod
     def _res(tmp_path: str, coverage_model: hl.expr.Expression) -> SimpleNamespace:
         """Return an apply step's resources with the coverage model written to disk."""
@@ -191,7 +200,7 @@ class TestGetCoverageModel:
     def test_skip_coverage_model(self) -> None:
         """Test that no coverage model is read when it is skipped."""
         res = SimpleNamespace(model_coverage=None)
-        assert get_coverage_model(res, True, log10_coverage=False) == (None, False)
+        assert get_coverage_model(res, True, False, 90) == (None, False)
 
     @pytest.mark.parametrize(
         "saved_log10_coverage, log10_coverage, warned",
@@ -221,22 +230,50 @@ class TestGetCoverageModel:
             ),
         )
         with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
-            coefficients, log10 = get_coverage_model(res, False, log10_coverage)
+            coefficients, log10 = get_coverage_model(res, False, log10_coverage, 90)
         assert hl.eval(coefficients) == self.COEFFICIENTS
         assert log10 == saved_log10_coverage
         assert bool(caplog.records) == warned
 
-    @pytest.mark.parametrize("log10_coverage", [False, True])
+    @pytest.mark.parametrize(
+        "coefficients, high_cov_cutoff, log10_coverage", OLD_MODELS
+    )
     def test_model_without_setting(
         self,
         tmp_path: str,
         caplog: pytest.LogCaptureFixture,
+        coefficients: List[float],
+        high_cov_cutoff: int,
         log10_coverage: bool,
     ) -> None:
         """Test that a model saved as only its coefficients uses the flag, and warns."""
-        res = self._res(tmp_path, hl.literal(self.COEFFICIENTS))
+        res = self._res(tmp_path, hl.literal(coefficients))
         with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
-            coefficients, log10 = get_coverage_model(res, False, log10_coverage)
-        assert hl.eval(coefficients) == self.COEFFICIENTS
+            result, log10 = get_coverage_model(
+                res, False, log10_coverage, high_cov_cutoff
+            )
+        assert hl.eval(result) == coefficients
         assert log10 == log10_coverage
         assert "saved without" in caplog.text
+
+    @pytest.mark.parametrize(
+        "coefficients, high_cov_cutoff, log10_coverage", OLD_MODELS
+    )
+    def test_model_without_setting_wrong_flag(
+        self,
+        tmp_path: str,
+        coefficients: List[float],
+        high_cov_cutoff: int,
+        log10_coverage: bool,
+    ) -> None:
+        """
+        Test that a flag contradicting an old model's coefficients raises an error.
+
+        The coverage model is fit to o/e scaled so high coverage sites are at 1, so
+        on the scale it was built on it gives a correction close to 1 at the high
+        coverage cutoff. On the other scale it's far from 1: -0.12 for the v4.1.1
+        model on log10 coverage, and 19.6 for the v2.1.1 model on linear coverage.
+        """
+        res = self._res(tmp_path, hl.literal(coefficients))
+        with pytest.raises(ValueError, match="look like it was built on"):
+            get_coverage_model(res, False, not log10_coverage, high_cov_cutoff)

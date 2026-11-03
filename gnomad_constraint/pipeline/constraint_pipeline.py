@@ -23,6 +23,7 @@ The constraint pipeline consists of the following parts:
 
 import argparse
 import logging
+import math
 from typing import Optional, Tuple
 
 import hail as hl
@@ -119,6 +120,7 @@ def get_coverage_model(
     res: PipelineStepResourceCollection,
     skip_coverage_model: bool,
     log10_coverage: bool,
+    high_cov_cutoff: int,
 ) -> Tuple[Optional[hl.expr.ArrayNumericExpression], bool]:
     """
     Read the coverage model and the coverage scale to apply it on.
@@ -129,10 +131,18 @@ def get_coverage_model(
     stored has only the coefficients, so ``--use-logarithmic-coverage-model`` sets
     the scale for it, with a warning.
 
+    For such a model, the coefficients are checked against the flag. The model is
+    fit to o/e scaled so high coverage sites are at 1, so on the scale it was built
+    on, its correction at the high coverage cutoff is close to 1, and on the other
+    scale it is far from 1. If the flag's scale gives the correction further from 1,
+    an error is raised.
+
     :param res: Resources of ``--apply-models-per-variant`` or
         ``--apply-models-aggregated``.
     :param skip_coverage_model: Whether ``--skip-coverage-model`` was passed.
     :param log10_coverage: Whether ``--use-logarithmic-coverage-model`` was passed.
+    :param high_cov_cutoff: Coverage at and above which sites are high coverage
+        when applying the models.
     :return: Tuple of the coverage model coefficients, or None when the coverage
         model is skipped, and whether to apply them to log10 coverage.
     """
@@ -141,6 +151,27 @@ def get_coverage_model(
 
     coverage_model = res.model_coverage.he()
     if not isinstance(coverage_model, hl.expr.StructExpression):
+        intercept, slope = hl.eval(coverage_model)
+        correction = {
+            log10: intercept
+            + slope * (math.log10(high_cov_cutoff) if log10 else high_cov_cutoff)
+            for log10 in (False, True)
+        }
+        if abs(correction[log10_coverage] - 1) > abs(
+            correction[not log10_coverage] - 1
+        ):
+            scale = {False: "linear", True: "log10"}
+            raise ValueError(
+                "The coverage model was saved without the coverage scale it was built"
+                " on, and its coefficients look like it was built on"
+                f" {scale[not log10_coverage]} coverage: at the high coverage cutoff"
+                f" ({high_cov_cutoff}), its correction is"
+                f" {correction[log10_coverage]:.3g} on {scale[log10_coverage]}"
+                f" coverage and {correction[not log10_coverage]:.3g} on"
+                f" {scale[not log10_coverage]} coverage, where it should be close to"
+                f" 1. {'Remove' if log10_coverage else 'Add'}"
+                " --use-logarithmic-coverage-model, or rebuild the models."
+            )
         logger.warning(
             "The coverage model was saved without the coverage scale it was built on,"
             " so it is applied to %s coverage, as set by"
@@ -469,7 +500,10 @@ def main(args: argparse.Namespace) -> None:
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
             coverage_model, apply_log10_coverage = get_coverage_model(
-                res, skip_coverage_model, log10_coverage
+                res,
+                skip_coverage_model,
+                log10_coverage,
+                hl.eval(ht.apply_models_globals.high_cov_cutoff),
             )
             ht = create_per_variant_expected_ht(
                 ht,
@@ -515,7 +549,10 @@ def main(args: argparse.Namespace) -> None:
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
             coverage_model, apply_log10_coverage = get_coverage_model(
-                res, skip_coverage_model, log10_coverage
+                res,
+                skip_coverage_model,
+                log10_coverage,
+                hl.eval(ht.apply_models_globals.high_cov_cutoff),
             )
             ht = create_aggregated_expected_ht(
                 ht,
@@ -933,7 +970,8 @@ if __name__ == "__main__":
             "Build the coverage model on log10 coverage instead of linear coverage."
             " The scale is saved with the model, and the model is applied on it. For"
             " a coverage model saved without the scale, pass this flag when applying"
-            " to apply it on log10 coverage."
+            " to apply it on log10 coverage; an error is raised if its coefficients"
+            " look like the other scale."
         ),
         action="store_true",
     )

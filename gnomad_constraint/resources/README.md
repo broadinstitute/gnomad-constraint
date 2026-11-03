@@ -332,7 +332,9 @@ pickled Hail expressions reread by `apply_models_globals`.
   low-coverage regime. The apply steps use the saved scale. Models built before
   the scale was saved, including v4.1.1, are only the `array<float64>` of
   coefficients, and are applied on the scale set by
-  `--use-logarithmic-coverage-model`.
+  `--use-logarithmic-coverage-model`. For these, the apply steps raise an error
+  if the model's correction at the high coverage cutoff is further from 1 on
+  that scale than on the other.
 
 These expressions are read back into `apply_models_globals.plateau_models`,
 `apply_models_globals.coverage_model` (the coefficients), and
