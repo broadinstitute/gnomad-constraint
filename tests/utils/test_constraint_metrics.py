@@ -65,25 +65,39 @@ def _bin(value: Optional[float], thresholds: List[float]) -> Optional[int]:
     return None if value is None else sum(value >= t for t in thresholds)
 
 
+def _sorted_type(t: hl.HailType) -> hl.HailType:
+    """Return ``t`` with the fields of every struct in it sorted by name."""
+    if isinstance(t, hl.tstruct):
+        return hl.tstruct(**{k: _sorted_type(t[k]) for k in sorted(t)})
+    if isinstance(t, hl.tarray):
+        return hl.tarray(_sorted_type(t.element_type))
+    if isinstance(t, hl.tset):
+        return hl.tset(_sorted_type(t.element_type))
+    return t
+
+
 def _constraint_groups_ht(
     rows: List[Dict],
     oe_info_type: hl.tstruct,
     extra_cg_fields: Dict = None,
     meta: List[Dict[str, str]] = CONSTRAINT_GROUP_META,
+    key: Tuple[str, ...] = ("transcript",),
 ) -> hl.Table:
-    """Return a Table keyed by ``transcript`` with a ``constraint_groups`` array.
+    """Return a Table with a ``constraint_groups`` array.
 
     :param rows: Dicts with ``transcript``, ``constraint_groups`` (one struct per
         group, each with an ``oe_info`` list) and any fields in the row type.
     :param oe_info_type: Type of each ``oe_info`` element.
     :param extra_cg_fields: Extra constraint group fields and their types.
     :param meta: Constraint group metadata. Default is ``CONSTRAINT_GROUP_META``.
+    :param key: Key fields. Default is ``("transcript",)``.
     :return: Table with the constraint group globals.
     """
     cg_type = hl.tstruct(oe_info=hl.tarray(oe_info_type), **(extra_cg_fields or {}))
     row_fields = {
         k: v
         for k, v in {
+            "gene": hl.tstr,
             "gene_id": hl.tstr,
             "mane_select": hl.tbool,
             "canonical": hl.tbool,
@@ -97,7 +111,7 @@ def _constraint_groups_ht(
         hl.tstruct(
             transcript=hl.tstr, **row_fields, constraint_groups=hl.tarray(cg_type)
         ),
-        key="transcript",
+        key=list(key),
     )
     return ht.annotate_globals(
         constraint_group_meta=meta, exomes_freq_meta=[{"group": "adj"}]
@@ -709,7 +723,7 @@ class TestComputeConstraintMetrics:
                 transcript_id=t,
                 transcript_id_version=f"{t}.3" + ("_PAR_Y" if par_y else ""),
                 gene_id_version="ENSG0.1",
-                level=2,
+                level="2",
                 transcript_type="protein_coding",
             )
 
@@ -731,7 +745,7 @@ class TestComputeConstraintMetrics:
                 transcript_id=hl.tstr,
                 transcript_id_version=hl.tstr,
                 gene_id_version=hl.tstr,
-                level=hl.tint32,
+                level=hl.tstr,
                 transcript_type=hl.tstr,
             ),
             key="interval",
@@ -763,7 +777,11 @@ class TestComputeConstraintMetrics:
 
         rows = [
             dict(
+                gene=f"GENE{i}",
+                gene_id=f"ENSG{i}",
                 transcript=t,
+                canonical=True,
+                mane_select=True,
                 no_variants=False,
                 constraint_groups=[
                     _cg(90 + 2 * i, 100.0),
@@ -784,18 +802,29 @@ class TestComputeConstraintMetrics:
                 "possible_variants": hl.tint64,
                 "coverage_correction": hl.tfloat64,
             },
+            key=tuple(RELEASE_KEY_ORDER),
         )
         gene_quality_ht = hl.Table.parallelize(
             [
                 dict(
                     transcript="ENST0",
-                    gene_quality_metrics=hl.Struct(exome_prop_bp_AN90=0.95),
+                    gene_quality_metrics=hl.Struct(
+                        exome_prop_bp_AN90=0.95,
+                        exome_mean_AS_MQ=60.0,
+                        exome_prop_segdup=0.0,
+                        exome_prop_LCR=0.0,
+                    ),
                     gene_flags={"low_exome_coverage"},
                 )
             ],
             hl.tstruct(
                 transcript=hl.tstr,
-                gene_quality_metrics=hl.tstruct(exome_prop_bp_AN90=hl.tfloat64),
+                gene_quality_metrics=hl.tstruct(
+                    exome_prop_bp_AN90=hl.tfloat64,
+                    exome_mean_AS_MQ=hl.tfloat64,
+                    exome_prop_segdup=hl.tfloat64,
+                    exome_prop_LCR=hl.tfloat64,
+                ),
                 gene_flags=hl.tset(hl.tstr),
             ),
             key="transcript",
@@ -844,6 +873,22 @@ class TestComputeConstraintMetrics:
             1,
         )
         assert enst2.chromosome is None
+
+    def test_row_type_matches_stored_schema(self) -> None:
+        """
+        Test that the metrics and ranking steps write the stored row type.
+
+        The release tests build the internal metrics Table from
+        ``tests/data/constraint_metrics_row_type.txt``, so it has to match what
+        ``compute_constraint_metrics`` and ``compute_constraint_percentile_bins``
+        write. Field order isn't compared.
+        """
+        ht = compute_constraint_percentile_bins(
+            compute_constraint_metrics(*self._inputs())
+        )
+        with open(os.path.join(DATA_DIR, "constraint_metrics_row_type.txt")) as f:
+            expected = hl.dtype(f.read())
+        assert _sorted_type(ht.row.dtype) == _sorted_type(expected)
 
     @pytest.mark.parametrize(
         "threshold, flag, below",

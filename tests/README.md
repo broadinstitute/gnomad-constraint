@@ -62,7 +62,9 @@ large, so its tests are split by pipeline stage into
   row type of the internal constraint metrics Table, and
   `release_tsv_columns.txt` is the header of the published v4.1.2 release TSV.
   The release test builds an empty Table with that schema and checks that
-  `prepare_release_ht` and `flatten_release_ht` produce exactly those columns.
+  `prepare_release_ht` and `flatten_release_ht` produce exactly those columns,
+  and `TestComputeConstraintMetrics` checks the row type against what
+  `compute_constraint_metrics` and `compute_constraint_percentile_bins` write.
   Update both files when the schema changes on purpose.
 
 ## Not covered yet
