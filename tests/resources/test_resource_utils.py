@@ -499,3 +499,23 @@ class TestGetConstraintResources:
             assert list(resources.compute_constraint_metrics.input_resources) == [
                 "--compute-constraint-metrics"
             ]
+
+    def test_test_run_writes_only_under_the_test_root(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """
+        Test that every step's outputs in a test run are under the test root.
+
+        Regression test for 3a5c64b: the release and gene quality outputs ignored
+        ``test``, so a ``--test --overwrite`` run wrote over the production files.
+        Checking the resources built by ``get_constraint_resources`` also catches
+        it no longer passing ``test`` to one of the path functions.
+        """
+        paths = [
+            _path(resource)
+            for step in resources.pipeline_steps.values()
+            for outputs in step.output_resources.values()
+            for resource in outputs
+        ]
+        assert paths
+        assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
