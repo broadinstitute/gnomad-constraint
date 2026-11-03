@@ -1565,6 +1565,10 @@ def _annotate_oe_ci_z(
         - ``oe_ci_gamma`` — gamma-distribution CI.
         - ``z_raw`` — raw z-score.
 
+    These are computed for every frequency entry, including the per-ancestry and
+    downsampling entries. Only the adj values are used by later steps and the
+    release, but other analyses read the others from the metrics Table.
+
     Then adds per-group ``flags`` based on z-score outlier thresholds.
 
     :param ht: Table with ``constraint_groups`` array.
