@@ -92,7 +92,7 @@ Wait for answers.
    - **Mirror CI's install order exactly.** Installing the requirements and Hail in one resolve can quietly pick an older Hail: a `dill==0.3.7` pin resolved to Hail 0.2.135, which has no `hl.qgamma`, so the gamma tests skipped without failing.
    - Print `hl.version()` and check for any feature the tests need.
    - Check whether gnomad_methods excludes the Hail version CI installs (e.g. `hail!=0.2.139` in its `requirements.txt`). That's a finding by itself.
-3. **Run the tests**, if the repo has any (gnomad_qc itself has no unit tests). Run them in the background, and force the local backend:
+3. **Run the tests**, if the repo has any (gnomad_qc itself has no unit tests; gnomad-constraint does). Run them in the background, and force the local backend:
    ```bash
    HAIL_QUERY_BACKEND=spark \
    PYSPARK_SUBMIT_ARGS="--conf spark.driver.bindAddress=127.0.0.1 --conf spark.driver.host=127.0.0.1 --driver-memory 4g pyspark-shell" \
