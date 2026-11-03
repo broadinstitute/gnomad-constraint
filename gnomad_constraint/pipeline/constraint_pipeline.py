@@ -558,7 +558,12 @@ def main(args: argparse.Namespace) -> None:
     finally:
         logger.info("Copying log to logging bucket...")
         hl.copy_log(
-            constraint_res.get_logging_path("constraint_pipeline", version=version)
+            constraint_res.get_logging_path(
+                "constraint_pipeline",
+                version=version,
+                directory_post_fix=directory_post_fix,
+                path_post_fix=path_post_fix,
+            )
         )
 
 

@@ -392,6 +392,16 @@ class TestGetLoggingPath:
             f"{TEST_ROOT}/logging/gnomad.v4.1.1.constraint.log"
         )
 
+    def test_post_fixes(self) -> None:
+        """Test that the post-fixes keep the logs of separate runs apart."""
+        path = get_logging_path(
+            "constraint", version="4.1.1", directory_post_fix="x", path_post_fix="v2"
+        )
+        assert path == (
+            "gs://gnomad-tmp/gnomad_v4.1.1_testing/constraint_x/logging/"
+            "gnomad.v4.1.1.constraint.v2.log"
+        )
+
 
 class TestFilterForTest:
     """Test the filter_for_test function."""
