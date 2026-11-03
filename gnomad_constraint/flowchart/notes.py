@@ -72,7 +72,7 @@ NOTES = {
                 "Per-context ``adj_r`` and ``syn_adj_r`` on autosomes. Carried"
                 " through to the per-variant Table but not applied."
             ),
-            "members": ["get_adj_r_ht", "get_syn_adj_r_ht"],
+            "members": ["adj_r_ht", "syn_adj_r_ht"],
         },
     ],
     "stages": [
@@ -442,10 +442,8 @@ NOTES = {
             ],
             "notes": [
                 (
-                    "``check_resource_existence`` does not cover three inputs. GERP is loaded"
-                    " with ``hl.experimental.load_dataset``, and the ``adj_r`` and"
-                    " ``syn_adj_r`` Tables are read from paths hard-coded in"
-                    " ``resource_utils.py``."
+                    "``check_resource_existence`` does not cover GERP, which is loaded with"
+                    " ``hl.experimental.load_dataset``."
                 ),
                 (
                     "Genome frequencies come from the v3.1.2 genomes sites Table even for"
@@ -828,6 +826,11 @@ NOTES = {
             ],
             "notes": [
                 (
+                    "Raises if ``--skip-coverage-model`` differs from the preprocessing"
+                    " setting, before the resource check, so a mismatch isn't reported as a"
+                    " missing coverage model."
+                ),
+                (
                     "Several rows share each (locus, alleles) key, one per transcript"
                     " consequence, including non-coding ones. The coding filter is applied"
                     " only in ``--aggregate-per-variant-expected``."
@@ -970,6 +973,11 @@ NOTES = {
             ],
             "notes": [
                 (
+                    "Raises if ``--skip-coverage-model`` differs from the preprocessing"
+                    " setting, before the resource check, so a mismatch isn't reported as a"
+                    " missing coverage model."
+                ),
+                (
                     "Expected counts equal the per-variant route's. Every variant in a"
                     " first-pass group shares ``mu_snp``, coverage and model bucket, and the"
                     " models are linear in those."
@@ -1051,6 +1059,10 @@ NOTES = {
                     "Both routes write the same ``constraint_group.ht`` path. Running one"
                     " route overwrites the other's result."
                 ),
+                (
+                    "Warns when only the other route's apply step runs in the same command,"
+                    " since the step then groups a Table that may be from an earlier run."
+                ),
             ],
         },
         "compute_gene_quality_metrics": {
@@ -1131,8 +1143,8 @@ NOTES = {
                     " coverage Table is the left side of the join."
                 ),
                 (
-                    "The GENCODE CDS, segdup and LCR Tables are read directly, not declared,"
-                    " so ``check_resource_existence`` does not check them."
+                    "The GENCODE CDS Table is built from the GENCODE GTF and read directly,"
+                    " not declared, so ``check_resource_existence`` does not check it."
                 ),
             ],
         },
