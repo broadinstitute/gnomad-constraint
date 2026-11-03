@@ -29,7 +29,9 @@ the tests that compute it are skipped.
 Test directories mirror the package. `gnomad_constraint/utils/constraint.py` is
 large, so its tests are split by pipeline stage into
 `tests/utils/test_constraint_<stage>.py`. Each tested function gets a
-`Test<FunctionName>` class.
+`Test<FunctionName>` class, with two exceptions: path helpers that take the
+same arguments share one parametrized class, and a test that checks two
+implementations against each other is named for the comparison.
 
 | Module | Covers |
 |---|---|
