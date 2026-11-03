@@ -1060,7 +1060,6 @@ class TestPrepareReleaseHt:
             percentile=[0.5] * 99, decile=[0.5] * 9, sextile=[0.5] * 5
         )
         return ht.annotate_globals(
-            version="4.1.1",
             calculate_mu_globals=hl.struct(
                 freq_meta=[{"group": "adj"}],
                 genetic_ancestry_groups=["global"],
@@ -1095,7 +1094,7 @@ class TestPrepareReleaseHt:
     @classmethod
     def release(cls, internal_ht: hl.Table) -> Tuple[hl.Table, Dict[str, hl.Struct]]:
         """Return the release Table and its rows keyed by transcript."""
-        ht = prepare_release_ht(internal_ht)
+        ht = prepare_release_ht(internal_ht, "4.1.1")
         return ht, {r.transcript: r for r in ht.collect()}
 
     def test_rows_and_key(self, release: Tuple[hl.Table, Dict[str, hl.Struct]]) -> None:
@@ -1156,14 +1155,13 @@ class TestPrepareReleaseHt:
                 assert row[name].gen_anc_obs[gen_anc] == levels
                 assert row[name].gen_anc_exp[gen_anc] == [1.5 * d for d in levels]
 
-    @pytest.mark.parametrize(
-        "release_version, expected", [(None, "4.1.1"), ("4.1.2", "4.1.2")]
-    )
-    def test_globals(
-        self, internal_ht: hl.Table, release_version: Optional[str], expected: str
-    ) -> None:
-        """Test the release globals."""
-        g = hl.eval(prepare_release_ht(internal_ht, release_version).globals)
+    def test_globals(self, internal_ht: hl.Table) -> None:
+        """Test the release globals.
+
+        The internal metrics Table has no ``version`` global, as in the pipeline,
+        so ``version`` comes only from ``release_version``.
+        """
+        g = hl.eval(prepare_release_ht(internal_ht, "4.1.2").globals)
         assert set(g) == {
             "version",
             "calculate_mu_params",
@@ -1174,7 +1172,7 @@ class TestPrepareReleaseHt:
             "sd_raw_z",
             "loeuf_percentile_thresholds",
         }
-        assert g.version == expected
+        assert g.version == "4.1.2"
         assert dict(g.calculate_mu_params) == {"ac_cutoff": 5}
         assert dict(g.build_models_params) == {"high_cov_cutoff": 40}
         assert dict(g.apply_models_params) == {"log10_coverage": True}
@@ -1255,7 +1253,7 @@ class TestFlattenReleaseHt:
 class TestPrepareReleaseMutationHt:
     """Test the prepare_release_mutation_ht function."""
 
-    def _ht(self, version: Optional[str]) -> hl.Table:
+    def _ht(self) -> hl.Table:
         """Return a mutation rate Table with internal fields and globals."""
         ht = hl.Table.parallelize(
             [
@@ -1284,7 +1282,7 @@ class TestPrepareReleaseMutationHt:
             ),
             key=["context", "ref", "alt", "methylation_level"],
         )
-        ht = ht.annotate_globals(
+        return ht.annotate_globals(
             calculate_mu_globals=hl.struct(
                 freq_meta=[{"group": "adj"}],
                 genetic_ancestry_groups=["global"],
@@ -1293,26 +1291,20 @@ class TestPrepareReleaseMutationHt:
             ),
             exomes_freq_meta=[{"group": "adj"}],
         )
-        return ht.annotate_globals(version=version) if version else ht
 
-    @pytest.mark.parametrize(
-        "version, release_version, expected",
-        [("4.1.1", None, "4.1.1"), ("4.1.1", "4.1.2", "4.1.2"), (None, None, None)],
-    )
-    def test_release_mutation_ht(
-        self,
-        version: Optional[str],
-        release_version: Optional[str],
-        expected: Optional[str],
-    ) -> None:
-        """Test the selected fields and the release globals."""
-        ht = prepare_release_mutation_ht(self._ht(version), release_version)
+    def test_release_mutation_ht(self) -> None:
+        """Test the selected fields and the release globals.
+
+        The mutation rate Table has no ``version`` global, as in the pipeline, so
+        ``version`` comes only from ``release_version``.
+        """
+        ht = prepare_release_mutation_ht(self._ht(), "4.1.2")
         assert list(ht.row_value) == ["mu", "cpg", "transition", "mutation_type"]
         assert ht.collect()[0].mu == 1e-7
 
         g = hl.eval(ht.globals)
         assert dict(g.calculate_mu_params) == {"ac_cutoff": 5}
-        assert g.get("version") == expected
+        assert g.version == "4.1.2"
         assert "exomes_freq_meta" not in g
 
 

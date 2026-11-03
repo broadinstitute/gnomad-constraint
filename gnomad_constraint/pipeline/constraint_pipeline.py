@@ -507,7 +507,7 @@ def main(args: argparse.Namespace) -> None:
 
             release_ht = prepare_release_ht(
                 constraint_ht,
-                release_version=args.release_version,
+                release_version=args.release_version or version,
             ).naive_coalesce(1000)
             release_ht.write(res.release_ht.path, overwrite=overwrite)
             logger.info("Done preparing release Table.")
@@ -520,7 +520,7 @@ def main(args: argparse.Namespace) -> None:
             mutation_ht = res.mutation_ht.ht()
             release_mutation_ht = prepare_release_mutation_ht(
                 mutation_ht,
-                release_version=args.release_version,
+                release_version=args.release_version or version,
             )
             release_mutation_ht.write(res.release_mutation_ht.path, overwrite=overwrite)
 
@@ -1038,8 +1038,8 @@ if __name__ == "__main__":
     prepare_release_args.add_argument(
         "--release-version",
         help=(
-            "Version string to set in the release Table globals. If not specified, "
-            "the existing version global is retained."
+            "Version string to set as the version global of the release Tables."
+            " Default is --version."
         ),
         type=str,
         default=None,

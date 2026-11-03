@@ -2096,7 +2096,7 @@ def _restructure_release_globals(
     freq_meta: List[Dict],
     gen_anc_ds_indices: Dict[str, List[int]],
     sd_raw_z_arr: List[float],
-    release_version: Optional[str],
+    release_version: str,
 ) -> hl.Table:
     """
     Restructure globals for public release.
@@ -2112,8 +2112,7 @@ def _restructure_release_globals(
         keyed by genetic ancestry, with arrays of integer downsampling levels
         matching the order of ``gen_anc_obs`` / ``gen_anc_exp`` in the rows.
         - ``max_af`` is preserved unchanged if present.
-        - ``version`` is set to ``release_version`` if provided, otherwise
-        carried over from the existing global.
+        - ``version`` is set to ``release_version``.
 
     :param ht: Table whose globals are being restructured.
     :param field_names: Internal name for each constraint group (parallel to
@@ -2125,8 +2124,7 @@ def _restructure_release_globals(
         no downsampling data is present.
     :param sd_raw_z_arr: Evaluated ``sd_raw_z`` global array, parallel to
         ``field_names``.
-    :param release_version: Version string for the ``version`` global. When
-        *None*, the existing ``version`` global is retained if present.
+    :param release_version: Version string for the ``version`` global.
     :return: Table with release-formatted globals.
     """
     # Convert sd_raw_z from a positional array (parallel to
@@ -2145,13 +2143,7 @@ def _restructure_release_globals(
 
     # Build the release globals dict. select_globals at the end replaces
     # all internal globals with just these.
-    global_kwargs = {}
-
-    # Set the release version string.
-    if release_version is not None:
-        global_kwargs["version"] = release_version
-    elif "version" in ht.globals:
-        global_kwargs["version"] = ht.globals.version
+    global_kwargs = {"version": release_version}
 
     # Rename pipeline parameter globals (e.g. calculate_mu_globals ->
     # calculate_mu_params) and strip internal-only sub-fields like
@@ -2188,7 +2180,7 @@ def _restructure_release_globals(
 
 def prepare_release_ht(
     ht: hl.Table,
-    release_version: Optional[str] = None,
+    release_version: str,
 ) -> hl.Table:
     """
     Prepare the constraint metrics Table for public release.
@@ -2216,8 +2208,7 @@ def prepare_release_ht(
         transcript annotations (``transcript_id_version``, ``level``, etc.)
         and gene quality metric annotations (``gene_quality_metrics``,
         ``gene_flags``).
-    :param release_version: Version string for the ``version`` global. When
-        *None*, the existing ``version`` global is retained if present.
+    :param release_version: Version string for the ``version`` global.
     :return: Release-formatted Table.
     """
     # Rename GENCODE fields to release names (e.g. transcript_id_version ->
@@ -2264,7 +2255,7 @@ def prepare_release_ht(
 
 def prepare_release_mutation_ht(
     ht: hl.Table,
-    release_version: Optional[str] = None,
+    release_version: str,
 ) -> hl.Table:
     """
     Prepare the mutation rate Table for public release.
@@ -2277,8 +2268,6 @@ def prepare_release_mutation_ht(
     :param ht: Mutation rate Table produced by
         :func:`calculate_mu_by_downsampling`.
     :param release_version: Version string for the ``version`` global.
-        When *None*, the existing ``version`` global is retained if
-        present.
     :return: Release-formatted mutation rate Table.
     """
     # Keep only the scalar mutation rate and the trinucleotide-class flags.
@@ -2290,11 +2279,7 @@ def prepare_release_mutation_ht(
     )
 
     # Restructure globals.
-    global_kwargs: Dict[str, Any] = {}
-    if release_version is not None:
-        global_kwargs["version"] = release_version
-    elif "version" in ht.globals:
-        global_kwargs["version"] = ht.globals.version
+    global_kwargs: Dict[str, Any] = {"version": release_version}
 
     # Rename calculate_mu_globals → calculate_mu_params, dropping
     # internal-only sub-fields (freq_meta, genetic_ancestry_groups,
