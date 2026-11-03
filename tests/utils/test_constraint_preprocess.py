@@ -255,7 +255,21 @@ class TestGetAnnotationsForComputingMu:
 class TestGetExomeCoverageExpr:
     """Test the get_exome_coverage_expr function."""
 
-    def _ht(self, coverage_fields: Dict[str, Any]) -> hl.Table:
+    AN_PERCENT = {
+        "autosome": 75,
+        "autosome_boundary": 99,
+        "chrx_nonpar": 50,
+        "chry_nonpar": 50,
+        "chrx_par": 50,
+        "missing_an": None,
+    }
+
+    def _ht(
+        self,
+        coverage_fields: Dict[str, Any],
+        strata_meta: List[Dict[str, str]] = AN_STRATA_META,
+        strata_sample_count: List[int] = AN_STRATA_SAMPLE_COUNT,
+    ) -> hl.Table:
         """Return sites on an autosome, chrX/chrY non-PAR, and the chrX PAR."""
         rows = [
             dict(
@@ -288,8 +302,8 @@ class TestGetExomeCoverageExpr:
         return ht.annotate_globals(
             an_globals=hl.struct(
                 exomes=hl.struct(
-                    strata_meta=AN_STRATA_META,
-                    strata_sample_count=AN_STRATA_SAMPLE_COUNT,
+                    strata_meta=strata_meta,
+                    strata_sample_count=strata_sample_count,
                 )
             )
         )
@@ -307,14 +321,35 @@ class TestGetExomeCoverageExpr:
         result is truncated to an integer.
         """
         cov = self._coverage(self._ht({"median_approx": 30}), "AN_percent")
-        assert cov == {
-            "autosome": 75,
-            "autosome_boundary": 99,
-            "chrx_nonpar": 50,
-            "chry_nonpar": 50,
-            "chrx_par": 50,
-            "missing_an": None,
-        }
+        assert cov == self.AN_PERCENT
+
+    def test_an_percent_strata_order(self) -> None:
+        """
+        Test that the AN strata are looked up by their metadata, not their position.
+
+        Regression test: the adj stratum was assumed to be first.
+        """
+        ht = self._ht(
+            {"median_approx": 30},
+            strata_meta=AN_STRATA_META[1:] + AN_STRATA_META[:1],
+            strata_sample_count=AN_STRATA_SAMPLE_COUNT[1:] + AN_STRATA_SAMPLE_COUNT[:1],
+        )
+        assert self._coverage(ht, "AN_percent") == self.AN_PERCENT
+
+    def test_an_percent_missing_sex_stratum(self) -> None:
+        """
+        Test that an AN Table without the XX or XY stratum raises an error.
+
+        Regression test: the missing stratum's index was missing, so every chrX and
+        chrY non-PAR site got missing coverage, and was later dropped, with no error.
+        """
+        ht = self._ht(
+            {"median_approx": 30},
+            strata_meta=AN_STRATA_META[:2],
+            strata_sample_count=AN_STRATA_SAMPLE_COUNT[:2],
+        )
+        with pytest.raises(ValueError, match="XY"):
+            get_exome_coverage_expr(ht, "AN_percent")
 
     def test_an(self) -> None:
         """Test that the AN metric is the exome allele number."""

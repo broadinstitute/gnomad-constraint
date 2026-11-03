@@ -407,9 +407,11 @@ def get_exome_coverage_expr(
         # Calculate total allele number from strata_sample_count and annotate
         # exomes_AN_percent (percent samples with AN).
         an_sample_count = ht.an_globals.exomes.strata_sample_count
-        an_meta = ht.an_globals.exomes.strata_meta
+        an_meta = hl.eval(ht.an_globals.exomes.strata_meta)
 
         # Get total AN count taking into account XX and XY samples for X and Y non-PAR.
+        # A missing stratum raises a ValueError here.
+        adj_index = an_meta.index(ADJ_FREQ_META)
         xx_index = an_meta.index({**ADJ_FREQ_META, "sex": "XX"})
         xy_index = an_meta.index({**ADJ_FREQ_META, "sex": "XY"})
         xx_an_sample_count = an_sample_count[xx_index]
@@ -418,7 +420,7 @@ def get_exome_coverage_expr(
             hl.case()
             .when(ht.locus.in_x_nonpar(), (xx_an_sample_count * 2) + xy_an_sample_count)
             .when(ht.locus.in_y_nonpar(), xy_an_sample_count)
-            .default(an_sample_count[0] * 2)  # Index 0 is adj (all samples).
+            .default(an_sample_count[adj_index] * 2)
         )
 
         cov_expr = hl.int((ht.AN.exomes / an_count) * 100)
