@@ -145,6 +145,7 @@ NOTES = {
                 "prepare_release",
                 "prepare_release_mutation_rate",
                 "export_release_tsv",
+                "export_release_downsampling_tsv",
             ],
         },
     ],
@@ -1237,9 +1238,9 @@ NOTES = {
                     " ranked, not the thresholds."
                 ),
                 (
-                    "``get_gencode_ht`` re-imports the GTF and checkpoints it to a fixed"
-                    " ``gs://gnomad-tmp/gencode_v39_with_versions.ht``, which is read if"
-                    " present. It is not a declared input."
+                    "``get_gencode_ht`` re-imports the GTF and checkpoints it to"
+                    " ``gs://gnomad-tmp/gencode_{version}_with_versions.ht`` (v39 for VEP"
+                    " 105), which is read if present. It is not a declared input."
                 ),
             ],
         },
@@ -1354,7 +1355,7 @@ NOTES = {
             ],
         },
         "export_release_tsv": {
-            "summary": "Flat release TSV, LOEUF thresholds TSV, downsampling TSV",
+            "summary": "Flat release TSV and LOEUF thresholds TSV",
             "ops": [
                 {
                     "tag": "rowexpr",
@@ -1376,21 +1377,8 @@ NOTES = {
                         " ``loeuf_percentile_thresholds.tsv``."
                     ),
                 },
-                {
-                    "tag": "explode",
-                    "text": (
-                        "``--export-release-downsampling-tsv``: one row per (transcript, genetic"
-                        " ancestry, downsampling), with obs and exp columns for ``syn``, ``mis``,"
-                        " ``lof_hc_lc`` and ``lof``. Export the ``.downsampling.tsv.bgz``."
-                    ),
-                },
             ],
             "notes": [
-                (
-                    "``--export-release-downsampling-tsv`` needs a release built from a run"
-                    " with ``--include-downsamplings``. Otherwise the ``downsamplings``"
-                    " global is absent and the step fails."
-                ),
                 (
                     "In the thresholds TSV, ``bin`` k is the k-th boundary, counting from 1."
                     " A transcript whose LOEUF is at or above it is in bin k or higher, with"
@@ -1400,6 +1388,25 @@ NOTES = {
                     "The thresholds come from flag-free MANE Select transcripts, while"
                     " ``lof.oe_ci.upper_bin_*`` is rank-based over the ranked set. The two"
                     " need not agree for a given transcript."
+                ),
+            ],
+        },
+        "export_release_downsampling_tsv": {
+            "summary": "Per-ancestry downsampling counts TSV",
+            "ops": [
+                {
+                    "tag": "explode",
+                    "text": (
+                        "One row per (transcript, genetic ancestry, downsampling), with obs"
+                        " and exp columns for ``syn``, ``mis``, ``lof_hc_lc`` and ``lof``."
+                        " Export the ``.downsampling.tsv.bgz``."
+                    ),
+                },
+            ],
+            "notes": [
+                (
+                    "Needs a release built from a run with ``--include-downsamplings``."
+                    " Otherwise the ``downsamplings`` global is absent and the step fails."
                 ),
             ],
         },
@@ -1725,9 +1732,10 @@ NOTES = {
         "get_gencode_ht": {
             "notes": [
                 (
-                    "Imports the resource's default GENCODE version but always checkpoints to"
-                    " ``gencode_v39_with_versions.ht``, read if present. A version change"
-                    " would silently reuse the old checkpoint."
+                    "Imports the GENCODE version that the context Table's VEP version"
+                    " annotates with (``GENCODE_VERSION_MAP``, v39 for VEP 105) and"
+                    " checkpoints it to ``gencode_{version}_with_versions.ht``, read if"
+                    " present."
                 ),
             ],
         },
@@ -1791,8 +1799,7 @@ NOTES = {
         "model_plateau": {
             "summary": (
                 "Dict keyed by ``{cpg, genomic_region}``. Each value holds one"
-                " ``[intercept, slope]`` pair per exome frequency entry. README §5 has"
-                " the pair order reversed."
+                " ``[intercept, slope]`` pair per exome frequency entry."
             ),
             "readme": "5-plateauhe-and-coveragehe",
         },
