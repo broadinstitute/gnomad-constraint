@@ -31,8 +31,9 @@ from gnomad.utils.constraint import (
     calculate_gerp_cutoffs,
     explode_downsamplings_oe,
 )
-from gnomad.utils.file_utils import print_global_struct
+from gnomad.utils.file_utils import file_exists, print_global_struct
 from gnomad.utils.reference_genome import get_reference_genome
+from gnomad_qc.resource_utils import PipelineStepResourceCollection
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
@@ -93,6 +94,29 @@ def check_skip_coverage_model(
             f" preprocessed with skip_coverage_model={preprocess_skip}. Use the same"
             " setting as --preprocess-data."
         )
+
+
+def check_apply_models_resources(
+    res: PipelineStepResourceCollection, skip_coverage_model: bool
+) -> None:
+    """
+    Check an apply-models step's ``--skip-coverage-model`` setting, then its resources.
+
+    The setting is checked first, against the preprocessed Table if it exists. With
+    a mismatch the coverage model is missing, and the resource check would report it
+    as a missing ``--build-models`` output instead of as the mismatch.
+
+    :param res: Resources of ``--apply-models-per-variant`` or
+        ``--apply-models-aggregated``.
+    :param skip_coverage_model: Whether ``--skip-coverage-model`` was passed.
+    :return: None.
+    """
+    preprocessed_ht = res.temp_preprocess_data_ht
+    if file_exists(preprocessed_ht.path):
+        check_skip_coverage_model(
+            preprocessed_ht.ht().apply_models_globals, skip_coverage_model
+        )
+    res.check_resource_existence()
 
 
 def check_constraint_group_input(
@@ -346,14 +370,13 @@ def main(args):
                 "compute the per-variant expected variant count..."
             )
             res = resources.apply_models_per_variant
-            res.check_resource_existence()
+            check_apply_models_resources(res, skip_coverage_model)
 
             # Use new shuffle method to prevent shuffle errors.
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
-            check_skip_coverage_model(ht.apply_models_globals, skip_coverage_model)
             ht = create_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
@@ -391,13 +414,12 @@ def main(args):
         if args.apply_models_aggregated:
             logger.info("Aggregating counts and applying models on aggregated data...")
             res = resources.apply_models_aggregated
-            res.check_resource_existence()
+            check_apply_models_resources(res, skip_coverage_model)
 
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
-            check_skip_coverage_model(ht.apply_models_globals, skip_coverage_model)
             ht = create_aggregated_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
