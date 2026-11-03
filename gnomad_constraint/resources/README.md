@@ -12,8 +12,8 @@ resources (VEP context, sites,
 coverage, methylation, GERP, GENCODE, `all_sites_an`) see
 [`gnomad.resources.grch38`](https://github.com/broadinstitute/gnomad_methods/tree/main/gnomad/resources/grch38).
 
-> **Scope.** This README documents v4.1.1. Older versions (`2.1.1`, `4.0`,
-> `4.1`) follow the same general layout but partition some artifacts by
+> **Scope.** This README documents v4.1.1. Older versions (`4.0`, `4.1`)
+> follow the same general layout but partition some artifacts by
 > genomic region (e.g. `*.autosome_par.ht`, `*.chrx_nonpar.ht`,
 > `*.chry_nonpar.ht`). v4.1.1 keeps all regions in one Table and labels each
 > site with a `genomic_region` annotation (`autosome_or_par`, `chrx_nonpar`, or

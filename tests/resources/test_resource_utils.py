@@ -1,10 +1,7 @@
 """Tests for the resource utility module."""
 
-from types import SimpleNamespace
 from typing import Any, Callable, Dict, List
 
-import gnomad.resources.grch37.gnomad as gnomad_grch37
-import gnomad.resources.grch37.reference_data as ref_grch37
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
 import hail as hl
@@ -12,7 +9,6 @@ import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 from gnomad_qc.resource_utils import PipelineResourceCollection
 
-import gnomad_constraint.resources.resource_utils as resource_utils
 from gnomad_constraint.resources.constants import (
     GENCODE_VERSION_MAP,
     VEP_VERSION_MAP,
@@ -34,7 +30,6 @@ from gnomad_constraint.resources.resource_utils import (
     get_gene_quality_metrics_ht,
     get_lof_threshold_tsv_path,
     get_logging_path,
-    get_methylation_ht,
     get_models,
     get_mutation_ht,
     get_per_variant_expected_dataset,
@@ -177,6 +172,7 @@ class TestCheckParamScope:
             ({"custom_vep_annotation": "worst_csq"}, "custom_vep_annotation must be"),
             ({"extension": "csv"}, "extension must be one of"),
             ({"version": "3.1"}, "The requested version doesn't exist"),
+            ({"version": "2.1.1"}, "The requested version doesn't exist"),
         ],
     )
     def test_invalid_argument(self, kwargs: Dict[str, str], message: str) -> None:
@@ -184,24 +180,11 @@ class TestCheckParamScope:
         with pytest.raises(ValueError, match=message):
             check_param_scope(**kwargs)
 
-    @pytest.mark.parametrize(
-        "version, build",
-        [
-            ("2.1.1", "GRCh37"),
-            ("4.0", "GRCh38"),
-            ("4.1", "GRCh38"),
-            ("4.1.1", "GRCh38"),
-            ("4.1.2", "GRCh38"),
-        ],
-    )
-    def test_returns_build(self, version: str, build: str) -> None:
-        """Test that a valid version returns its genome build."""
-        assert check_param_scope(version=version) == build
-
-    def test_no_version(self) -> None:
-        """Test that valid arguments without a version return None."""
+    def test_valid_arguments(self) -> None:
+        """Test that valid arguments return None."""
         assert (
             check_param_scope(
+                version="4.1.1",
                 model_type="plateau",
                 custom_vep_annotation="transcript_consequences",
                 extension="ht",
@@ -214,31 +197,26 @@ class TestCheckParamScope:
 class TestGetVepContextHt:
     """Test the get_vep_context_ht function."""
 
-    @pytest.mark.parametrize(
-        "version, expected",
-        [
-            ("2.1.1", ref_grch37.vep_context.versions["85"]),
-            ("4.0", ref_grch38.vep_context.versions["105"]),
-            ("4.1.1", ref_grch38.vep_context.versions["105"]),
-        ],
-    )
-    def test_version_mapping(self, version: str, expected: TableResource) -> None:
-        """Test that v2 uses the VEP 85 context and v4 the VEP 105 context."""
+    @pytest.mark.parametrize("version", ["4.0", "4.1.1"])
+    def test_version_mapping(self, version: str) -> None:
+        """Test that v4 versions use the VEP 105 context."""
+        expected = ref_grch38.vep_context.versions["105"]
         assert get_vep_context_ht(version).path == expected.path
 
-    def test_invalid_version(self) -> None:
-        """Test that a version outside v2.1.1 and v4 raises an error."""
-        with pytest.raises(ValueError, match="Not a valid gnomAD version"):
-            get_vep_context_ht("3.1")
+    @pytest.mark.parametrize("version", ["2.1.1", "3.1"])
+    def test_invalid_version(self, version: str) -> None:
+        """Test that a version outside v4 raises an error."""
+        with pytest.raises(ValueError, match="The requested version doesn't exist"):
+            get_vep_context_ht(version)
 
 
 class TestGencodeVersion:
     """Test the GENCODE version used for each pipeline version."""
 
-    @pytest.mark.parametrize("version", [v for v in VERSIONS if v.startswith("4")])
+    @pytest.mark.parametrize("version", VERSIONS)
     def test_vep_version_has_gencode_resource(self, version: str) -> None:
         """
-        Test that each v4 version's VEP version maps to a GENCODE resource.
+        Test that each version's VEP version maps to a GENCODE resource.
 
         ``get_gencode_ht`` takes the GENCODE version from the context Table's VEP
         version, not from gnomad_methods' default GENCODE version, which can change
@@ -258,16 +236,6 @@ class TestGetSitesResource:
     @pytest.mark.parametrize(
         "data_type, version, expected",
         [
-            (
-                "exomes",
-                "2.1.1",
-                gnomad_grch37.public_release("exomes").versions["2.1.1"],
-            ),
-            (
-                "genomes",
-                "2.1.1",
-                gnomad_grch37.public_release("genomes").versions["2.1.1"],
-            ),
             ("exomes", "4.0", gnomad_grch38.public_release("exomes").versions["4.0"]),
             ("exomes", "4.1", gnomad_grch38.public_release("exomes").versions["4.1"]),
             (
@@ -314,37 +282,15 @@ class TestGetCoverageHt:
     @pytest.mark.parametrize(
         "data_type, version, expected",
         [
-            ("exomes", "2.1.1", gnomad_grch37.coverage("exomes")),
-            ("genomes", "2.1.1", gnomad_grch37.coverage("genomes")),
             ("exomes", "4.1.1", gnomad_grch38.coverage("exomes")),
             ("genomes", "4.1.1", gnomad_grch38.coverage("genomes")),
         ],
     )
     def test_build_mapping(self, data_type: str, version: str, expected: Any) -> None:
-        """Test that the coverage resource comes from the version's genome build."""
+        """Test that the coverage resource is gnomAD's GRCh38 coverage."""
         resource = get_coverage_ht(data_type, version)
         assert resource.path == expected.path
         assert list(resource.versions) == list(expected.versions)
-
-
-class TestGetMethylationHt:
-    """Test the get_methylation_ht function."""
-
-    @pytest.mark.parametrize(
-        "build, expected",
-        [
-            ("GRCh37", ref_grch37.methylation_sites),
-            ("GRCh38", ref_grch38.methylation_sites),
-        ],
-    )
-    def test_build_mapping(self, build: str, expected: TableResource) -> None:
-        """Test that each build returns its methylation resource."""
-        assert get_methylation_ht(build) is expected
-
-    def test_invalid_build(self) -> None:
-        """Test that an unknown build raises an error."""
-        with pytest.raises(ValueError, match="Build must be one of"):
-            get_methylation_ht("hg19")
 
 
 class TestGetModels:
@@ -473,22 +419,11 @@ class TestFilterForTest:
             key="locus",
         )
 
-    @pytest.mark.parametrize(
-        "build, keep, drop",
-        [
-            (
-                "GRCh38",
-                ["chr20:100", "chrX:100", "chrY:2800000"],
-                ["chr1:100", "chr19:100", "chr21:100"],
-            ),
-            ("GRCh37", ["20:100", "X:100", "Y:2800000"], ["1:100", "21:100"]),
-        ],
-    )
-    def test_default_keeps_chr20_x_y(
-        self, build: str, keep: List[str], drop: List[str]
-    ) -> None:
+    def test_default_keeps_chr20_x_y(self) -> None:
         """Test that the default test subset is chr20, chrX, and chrY."""
-        ht = filter_for_test(self._ht(keep + drop, build))
+        keep = ["chr20:100", "chrX:100", "chrY:2800000"]
+        drop = ["chr1:100", "chr19:100", "chr21:100"]
+        ht = filter_for_test(self._ht(keep + drop, "GRCh38"))
         assert sorted(str(r.locus) for r in ht.collect()) == sorted(keep)
 
     def test_gene_list(self) -> None:
@@ -499,17 +434,6 @@ class TestFilterForTest:
         keep = ["chr1:55039447", "chr20:50931436", "chrX:13740000", "chrY:2950000"]
         drop = ["chr1:55039446", "chr20:50931437", "chr20:100", "chrX:100"]
         ht = filter_for_test(self._ht(keep + drop, "GRCh38"), use_gene_list=True)
-        assert sorted(str(r.locus) for r in ht.collect()) == sorted(keep)
-
-    def test_gene_list_grch37(self) -> None:
-        """Test that the gene list uses the GRCh37 gene intervals for GRCh37 Tables.
-
-        Regression test: the reference genome object was compared to the string
-        "GRCh37", which is never equal, so GRCh37 Tables got the GRCh38 intervals.
-        """
-        keep = ["1:55505149", "X:13760000"]
-        drop = ["1:55505148", "20:100"]
-        ht = filter_for_test(self._ht(keep + drop, "GRCh37"), use_gene_list=True)
         assert sorted(str(r.locus) for r in ht.collect()) == sorted(keep)
 
     def test_keeps_non_locus_fields(self) -> None:
@@ -525,20 +449,9 @@ class TestGetConstraintResources:
 
     @staticmethod
     def _get_resources(
-        monkeypatch: pytest.MonkeyPatch, skip_pre_rank_metrics: bool = False
+        skip_pre_rank_metrics: bool = False,
     ) -> PipelineResourceCollection:
-        """
-        Build the constraint pipeline resources without reading GCS.
-
-        ``get_constraint_resources`` reads the VEP context Table only to get its
-        reference genome, so it is replaced with an empty GRCh38 Table.
-        """
-        context_ht = hl.Table.parallelize([], hl.tstruct(locus=hl.tlocus("GRCh38")))
-        monkeypatch.setattr(
-            resource_utils,
-            "get_vep_context_ht",
-            lambda version: SimpleNamespace(ht=lambda: context_ht),
-        )
+        """Return the constraint pipeline resources for a test run of v4.1.1."""
         return get_constraint_resources(
             version="4.1.1",
             custom_vep_annotation="transcript_consequences",
@@ -548,9 +461,9 @@ class TestGetConstraintResources:
         )
 
     @pytest.fixture
-    def resources(self, monkeypatch: pytest.MonkeyPatch) -> PipelineResourceCollection:
+    def resources(self) -> PipelineResourceCollection:
         """Return the constraint pipeline resources for a test run of v4.1.1."""
-        return self._get_resources(monkeypatch)
+        return self._get_resources()
 
     def test_export_steps_check_only_their_own_outputs(
         self, resources: PipelineResourceCollection
@@ -576,7 +489,7 @@ class TestGetConstraintResources:
 
     @pytest.mark.parametrize("skip_pre_rank_metrics", [False, True])
     def test_inputs_are_keyed_by_the_flag_that_creates_them(
-        self, monkeypatch: pytest.MonkeyPatch, skip_pre_rank_metrics: bool
+        self, skip_pre_rank_metrics: bool
     ) -> None:
         """
         Test that every step's inputs are keyed by the flag that creates them.
@@ -588,7 +501,7 @@ class TestGetConstraintResources:
         "pre-rank constraint metrics". The gnomAD inputs aren't created by the
         pipeline, so they are exempt.
         """
-        resources = self._get_resources(monkeypatch, skip_pre_rank_metrics)
+        resources = self._get_resources(skip_pre_rank_metrics)
         keys = {
             key
             for step in resources.pipeline_steps.values()

@@ -7,14 +7,13 @@
 EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 """Valid file extensions for constraint pipeline resources."""
 
-VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1", "4.1.2"]
+VERSIONS = ["4.0", "4.1", "4.1.1", "4.1.2"]
 """Supported gnomAD constraint pipeline versions."""
 
 CURRENT_VERSION = "4.1.1"
 """Current default gnomAD constraint pipeline version."""
 
 SITES_VERSION_MAP = {
-    "2.1.1": "2.1.1",
     "4.0": "4.0",
     "4.1": "4.1",
     "4.1.1": "4.1",
@@ -23,7 +22,6 @@ SITES_VERSION_MAP = {
 """Map from constraint pipeline version to gnomAD sites release version."""
 
 VEP_VERSION_MAP = {
-    "2.1.1": "85",
     "4.0": "105",
     "4.1": "105",
     "4.1.1": "105",
@@ -32,7 +30,7 @@ VEP_VERSION_MAP = {
 """Map from constraint pipeline version to the VEP version of its context Table."""
 
 GENCODE_VERSION_MAP = {"105": "v39"}
-"""Map from GRCh38 VEP version to the GENCODE version it annotates with."""
+"""Map from VEP version to the GENCODE version it annotates with."""
 
 DATA_TYPES = ["context", "exomes", "genomes"]
 """Data types used in the constraint pipeline."""

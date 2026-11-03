@@ -37,7 +37,7 @@ large, so its tests are split by pipeline stage into
 | `utils/test_constraint_apply.py` | Applying the models with and without a coverage model, the per-variant and aggregated expected paths (checked against each other), and `aggregate_by_constraint_groups` |
 | `utils/test_constraint_metrics.py` | o/e, both CIs, z-scores and flags, transcript selection, ranks and percentile bins, pLI per LoF group, `compute_constraint_metrics`, and the release Tables (values, globals, and the published TSV columns) |
 | `utils/test_constraint_gene_quality.py` | Coverage, mapping quality, segdup/LCR, and flag thresholds in `compute_gene_quality_metrics` |
-| `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), and `filter_for_test` |
+| `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
 | `pipeline/test_constraint_pipeline.py` | The `--skip-coverage-model` consistency check |
 
 ## How these tests are written
@@ -70,5 +70,3 @@ large, so its tests are split by pipeline stage into
 Anything that reads real inputs or outputs on GCS: `get_gencode_ht`,
 `get_gencode_cds_ht`, `get_gerp_ht`, the adj_r resources, and the pipeline
 `main()`, whose argument parser is only built under `if __name__ == "__main__"`.
-`get_constraint_resources` reads the VEP context Table only for its reference
-genome, so its step wiring is tested with that read replaced by an empty Table.

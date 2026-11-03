@@ -117,13 +117,6 @@ def main(args):
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
-    if version == "2.1.1":
-        raise ValueError(
-            "Version 2.1.1 is no longer supported by this constraint pipeline script."
-            "Please refer to Commit 39928d1 for the last version of the script that"
-            "supports v2.1.1."
-        )
-
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
     models = ["plateau", "coverage"] if not skip_coverage_model else ["plateau"]
