@@ -424,6 +424,7 @@ def main(args):
                 ),
                 log10_coverage=log10_coverage,
                 use_mane_select=True,
+                partition_hint=args.apply_models_aggregated_partition_hint,
             )
             ht.write(res.aggregated_expected_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -845,6 +846,15 @@ if __name__ == "__main__":
             " --aggregate-by-constraint-groups --use-aggregated-expected afterward."
         ),
         action="store_true",
+    )
+    parser.add_argument(
+        "--apply-models-aggregated-partition-hint",
+        help=(
+            "Target number of partitions for the group_by that sums the observed and"
+            " possible counts in --apply-models-aggregated. Default is 100."
+        ),
+        type=int,
+        default=100,
     )
 
     aggregate_per_variant_expected_args = parser.add_argument_group(
