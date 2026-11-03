@@ -232,13 +232,17 @@ into `compute_mu.genomes_freq` / `calibrate_mu.exomes_freq`), plus:
 - `compute_mu: struct` — fields used to fit the mutation-rate model on the
   *genome* SNVs:
   - `genomes_freq: array<struct{AC, AF, AN, homozygote_count}>` — genomes freq
-    array (parallel to `calculate_mu_globals.freq_meta`).
+    array (parallel to `calculate_mu_globals.freq_meta`). No later step reads
+    it; it is kept for analyses that start from this Table.
   - `observed_variants: array<int32>` — observed counts (one per freq entry).
   - `possible_variants: int32` — count of possible SNVs at this site (always 1
     for context rows; used by aggregation).
 - `calibrate_mu: struct` — fields used to *apply* mu (i.e. calibrate by
   comparison to *exome* SNVs):
-  - `exomes_freq: array<struct{AC, AF, AN, homozygote_count}>`
+  - `exomes_freq: array<struct{AC, AF, AN, homozygote_count}>` — exomes freq
+    array (parallel to `exomes_freq_meta`), missing for variants that fail the
+    exome filters. No later step reads it; it is kept for analyses that start
+    from this Table.
   - `observed_variants: array<int32>`
   - `possible_variants: int32`
   - `build_model: struct{high_or_low_coverage: str, model_group: struct{cpg: bool, genomic_region: str}}`

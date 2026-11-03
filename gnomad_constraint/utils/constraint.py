@@ -246,7 +246,9 @@ def get_annotations_for_computing_mu(
     The function will return the following annotations:
 
         - genomes_freq: Frequency array for the genomes dataset, filtered to the
-          requested genetic ancestries and downsampling level.
+          requested genetic ancestries and downsampling level. No later pipeline
+          step reads it; it is kept for analyses that start from the preprocessed
+          or per-variant Table.
         - observed_variants: This annotation is an array, where each element
           corresponds to whether the variant is observed in the genomes dataset for the
           frequency group at the corresponding index in the ``genomes_freq`` array.
@@ -448,6 +450,10 @@ def get_exomes_observed_and_possible(
     the observed and possible variant counts for the exomes dataset. The struct includes
     the following fields:
 
+        - exomes_freq: Frequency array for the exomes dataset, filtered to the
+          requested genetic ancestries and downsamplings, and missing for variants
+          that fail the exome filters. No later pipeline step reads it; it is kept
+          for analyses that start from the preprocessed or per-variant Table.
         - observed_variants: This annotation is an array, where each element corresponds
           to whether the variant is observed in the exomes dataset for the frequency
           group at the corresponding index in the ``exomes_freq`` array and has an
