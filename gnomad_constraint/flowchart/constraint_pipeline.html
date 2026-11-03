@@ -1647,7 +1647,7 @@ var TABLES = {"collected":"2026-10-21","hail_version":"0.2.134-952ae203dbbe","ta
   (function header() {
     var m = CODE.meta;
     document.getElementById("eyebrow").textContent =
-      "broadinstitute / gnomad-constraint · v" + m.version + " · " + m.build + " · VEP " + m.custom_vep_annotation;
+      "broadinstitute / gnomad-constraint · v" + m.version + " · " + m.build;
 
     var reposEl = document.getElementById("repos");
     ["gnomad_constraint", "gnomad_methods"].forEach(function (k) {
@@ -1693,8 +1693,8 @@ var TABLES = {"collected":"2026-10-21","hail_version":"0.2.134-952ae203dbbe","ta
     foot += TABLES
       ? "<p>Table schemas, row counts, and previews were read from GCS on " + esc(TABLES.collected) + " (Hail " + esc(TABLES.hail_version) + ").</p>"
       : "<p>Table schemas and previews have not been collected into this page yet (<code>--collect</code> on Dataproc, then <code>--inject-tables</code>).</p>";
-    foot += "<p>Resource paths are for v" + esc(m.version) + " with <code>--custom-vep-annotation " + esc(m.custom_vep_annotation) +
-      "</code>; <code>--test</code>, <code>--directory-post-fix</code>, and <code>--path-post-fix</code> change them.</p>";
+    foot += "<p>Resource paths are for v" + esc(m.version) +
+      "; <code>--test</code>, <code>--directory-post-fix</code>, and <code>--path-post-fix</code> change them.</p>";
     document.getElementById("foot").innerHTML = foot;
   })();
 

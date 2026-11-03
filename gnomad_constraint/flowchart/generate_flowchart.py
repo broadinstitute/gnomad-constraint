@@ -70,9 +70,6 @@ HTML_PATH = str(pathlib.Path(__file__).with_name("constraint_pipeline.html"))
 PIPELINE_MODULE = "gnomad_constraint.pipeline.constraint_pipeline"
 """Module whose ``main()`` defines the pipeline steps."""
 
-CUSTOM_VEP_ANNOTATION = "transcript_consequences"
-"""VEP annotation the documented resource paths are built for (the CLI default)."""
-
 BUILD = "GRCh38"
 """Reference build of every version the pipeline still supports (v4.x)."""
 
@@ -729,7 +726,6 @@ def load_pipeline_steps(**kwargs: Any) -> Dict[str, Any]:
     """
     params = {
         "version": CURRENT_VERSION,
-        "custom_vep_annotation": CUSTOM_VEP_ANNOTATION,
         "overwrite": False,
         "test": False,
         **kwargs,
@@ -940,7 +936,6 @@ def extract(allow_dirty: bool = False) -> Dict[str, Any]:
         "meta": {
             "generated": datetime.date.today().isoformat(),
             "version": CURRENT_VERSION,
-            "custom_vep_annotation": CUSTOM_VEP_ANNOTATION,
             "build": BUILD,
             "repos": repos,
             "resource_flags": sorted(

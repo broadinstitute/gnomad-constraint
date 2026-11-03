@@ -841,10 +841,6 @@ NOTES = {
                     " or sums them. Expected counts have no regional correction."
                 ),
                 (
-                    "``use_mane_select=True`` is hard-coded, so ``--custom-vep-annotation"
-                    " worst_csq_by_gene`` raises a ValueError here."
-                ),
-                (
                     "With ``--skip-coverage-model``, sites below"
                     " ``--apply-model-high-cov-definition`` (default 90) have no apply model."
                     " They are dropped from both observed and expected counts."
@@ -2039,14 +2035,6 @@ NOTES = {
                     "Off by default, so the coverage model is linear in coverage, even though"
                     " ``build_models`` itself defaults to log10. Not checked between steps:"
                     " pass the same value to ``--build-models`` and ``--apply-models-*``."
-                ),
-            ],
-        },
-        "custom_vep_annotation": {
-            "notes": [
-                (
-                    "Both apply steps hard-code ``use_mane_select=True``, so"
-                    " ``worst_csq_by_gene`` raises a ValueError there."
                 ),
             ],
         },
