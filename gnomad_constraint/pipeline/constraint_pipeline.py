@@ -683,11 +683,13 @@ if __name__ == "__main__":
     preprocess_args.add_argument(
         "--exome-coverage-metric",
         help=(
-            "Name of metric to use to assess exome coverage, such as 'median', 'AN', or"
-            "'AN_percent'. Default is 'AN_percent'."
+            "Metric to use for exome coverage: 'median' (median depth), 'AN' (allele"
+            " number), or 'AN_percent' (percent of samples with a genotype). Default is"
+            " 'AN_percent'."
         ),
         type=str,
         default="AN_percent",
+        choices=["median", "AN", "AN_percent"],
     )
     preprocess_args.add_argument(
         "--pipeline-low-coverage-filter",
