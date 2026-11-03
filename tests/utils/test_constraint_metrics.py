@@ -616,7 +616,9 @@ class TestComputePliScores:
     def test_scores_per_group(self) -> None:
         """Test that each LoF group gets scores from its own counts.
 
-        Regression test: ``lof_hc_lc`` used to get a copy of the HC LoF scores.
+        Regression test: ``lof_hc_lc`` used to get a copy of the HC LoF scores. T4
+        has 0 of 15 expected HC LoF variants but 30 of 35 HC+LC, so its HC pLI is
+        high and its HC+LC pLI low, which also catches the two being swapped.
         """
         rows = self._ht().collect()
         names = [_get_constraint_group_name(m) for m in CONSTRAINT_GROUP_META]
@@ -634,13 +636,11 @@ class TestComputePliScores:
                 else:
                     assert g.pLI + g.pNull + g.pRec == pytest.approx(1.0)
 
-        differs = [
-            r
-            for r in rows
-            if r.constraint_groups[3].pLI is not None
-            and r.constraint_groups[3].pLI != r.constraint_groups[4].pLI
-        ]
-        assert differs
+        t4 = dict(
+            zip(names, next(r for r in rows if r.transcript == "T4").constraint_groups)
+        )
+        assert t4["lof_hc"].pLI > 0.9
+        assert t4["lof_hc_lc"].pLI < 0.1
 
     def test_constrained_transcript_is_lof_intolerant(self) -> None:
         """Test that a transcript with no observed of 20 expected LoF has a high pLI."""
