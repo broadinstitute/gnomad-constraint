@@ -1727,8 +1727,9 @@ def compute_constraint_percentile_bins(
         transcripts for filtering when determining ranks. Default is True.
     :return: Table with rank, decile, and percentile bin annotations.
     """
-    # Assign each transcript a dense rank (0-based) for its gamma OE upper
-    # CI within each constraint group, plus rank-based decile/sextile bins.
+    # Assign each transcript a 0-based rank for its gamma OE upper CI within each
+    # constraint group (ties get different, arbitrary ranks), plus rank-based
+    # decile/sextile bins.
     # Only MANE Select (or canonical) transcripts are ranked.
     ht = add_oe_upper_rank_and_bins(ht, use_mane_select_over_canonical)
 
