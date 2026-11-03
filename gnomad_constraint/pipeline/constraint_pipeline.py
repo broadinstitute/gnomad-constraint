@@ -471,7 +471,7 @@ def main(args):
                     res.pre_rank_constraint_metrics_ht.path,
                 )
             else:
-                ht = res.constraint_group_ht.ht(read_args={"_n_partitions": 10000})
+                ht = res.constraint_group_ht.ht()
                 compute_constraint_metrics(
                     ht=ht,
                     gencode_ht=constraint_res.get_gencode_ht(version),
