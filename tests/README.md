@@ -67,7 +67,8 @@ large, so its tests are split by pipeline stage into
 
 ## Not covered yet
 
-Anything that reads real inputs or outputs on GCS: `get_constraint_resources`,
-`get_gencode_ht`, `get_gencode_cds_ht`, `get_gerp_ht`, the adj_r resources, and the
-pipeline `main()`, whose argument parser is only built under
-`if __name__ == "__main__"`.
+Anything that reads real inputs or outputs on GCS: `get_gencode_ht`,
+`get_gencode_cds_ht`, `get_gerp_ht`, the adj_r resources, and the pipeline
+`main()`, whose argument parser is only built under `if __name__ == "__main__"`.
+`get_constraint_resources` reads the VEP context Table only for its reference
+genome, so its step wiring is tested with that read replaced by an empty Table.

@@ -476,29 +476,32 @@ def main(args):
             release_mutation_ht.export(res.release_mutation_tsv)
             logger.info("Done preparing and exporting release mutation rate Table.")
 
-        if args.export_release_tsv or args.export_release_downsampling_tsv:
+        if args.export_release_tsv:
             res = resources.export_release_tsv
             res.check_resource_existence()
             release_ht = res.release_ht.ht()
 
-            if args.export_release_tsv:
-                logger.info("Exporting release TSV...")
-                flatten_release_ht(release_ht).export(res.release_tsv)
-                logger.info("Done exporting release TSV.")
+            logger.info("Exporting release TSV...")
+            flatten_release_ht(release_ht).export(res.release_tsv)
+            logger.info("Done exporting release TSV.")
 
-                logger.info("Exporting LoF OE CI upper bin thresholds TSV...")
-                lof_bin_thresholds_to_ht(release_ht).export(res.lof_threshold_tsv)
-                logger.info("Done exporting LoF threshold TSV.")
+            logger.info("Exporting LoF OE CI upper bin thresholds TSV...")
+            lof_bin_thresholds_to_ht(release_ht).export(res.lof_threshold_tsv)
+            logger.info("Done exporting LoF threshold TSV.")
 
-            if args.export_release_downsampling_tsv:
-                logger.info("Exporting release downsampling TSV...")
-                downsampling_ht = explode_downsamplings_oe(
-                    release_ht,
-                    downsampling_meta=hl.eval(release_ht.downsamplings),
-                    metrics=["syn", "mis", "lof_hc_lc", "lof"],
-                )
-                downsampling_ht.export(res.release_downsampling_tsv)
-                logger.info("Done exporting release downsampling TSV.")
+        if args.export_release_downsampling_tsv:
+            res = resources.export_release_downsampling_tsv
+            res.check_resource_existence()
+            release_ht = res.release_ht.ht()
+
+            logger.info("Exporting release downsampling TSV...")
+            downsampling_ht = explode_downsamplings_oe(
+                release_ht,
+                downsampling_meta=hl.eval(release_ht.downsamplings),
+                metrics=["syn", "mis", "lof_hc_lc", "lof"],
+            )
+            downsampling_ht.export(res.release_downsampling_tsv)
+            logger.info("Done exporting release downsampling TSV.")
 
     finally:
         logger.info("Copying log to logging bucket...")

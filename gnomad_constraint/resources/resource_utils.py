@@ -888,10 +888,16 @@ def get_constraint_resources(
             "release_tsv": get_release_constraint_tsv_path(
                 **common_params, path_post_fix=path_post_fix
             ),
-            "release_downsampling_tsv": get_release_downsampling_tsv_path(
+            "lof_threshold_tsv": get_lof_threshold_tsv_path(
                 **common_params, path_post_fix=path_post_fix
             ),
-            "lof_threshold_tsv": get_lof_threshold_tsv_path(
+        },
+        pipeline_input_steps=[prepare_release],
+    )
+    export_release_downsampling_tsv = PipelineStepResourceCollection(
+        "--export-release-downsampling-tsv",
+        output_resources={
+            "release_downsampling_tsv": get_release_downsampling_tsv_path(
                 **common_params, path_post_fix=path_post_fix
             ),
         },
@@ -916,6 +922,7 @@ def get_constraint_resources(
             "prepare_release": prepare_release,
             "prepare_release_mutation_rate": prepare_release_mutation_rate,
             "export_release_tsv": export_release_tsv,
+            "export_release_downsampling_tsv": export_release_downsampling_tsv,
         }
     )
 

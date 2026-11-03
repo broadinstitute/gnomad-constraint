@@ -1,5 +1,6 @@
 """Tests for the resource utility module."""
 
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, List
 
 import gnomad.resources.grch37.gnomad as gnomad_grch37
@@ -9,7 +10,9 @@ import gnomad.resources.grch38.reference_data as ref_grch38
 import hail as hl
 import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
+from gnomad_qc.resource_utils import PipelineResourceCollection
 
+import gnomad_constraint.resources.resource_utils as resource_utils
 from gnomad_constraint.resources.resource_utils import (
     check_param_scope,
     filter_for_test,
@@ -20,6 +23,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_constraint_data,
     get_constraint_group_ht,
     get_constraint_metrics_dataset,
+    get_constraint_resources,
     get_constraint_root,
     get_coverage_ht,
     get_gene_quality_metrics_ht,
@@ -489,3 +493,50 @@ class TestFilterForTest:
         ht = filter_for_test(ht.annotate(value=hl.int32(1)))
         assert list(ht.key) == ["locus"]
         assert [r.value for r in ht.collect()] == [1]
+
+
+class TestGetConstraintResources:
+    """Test the pipeline steps built by the get_constraint_resources function."""
+
+    @pytest.fixture
+    def resources(self, monkeypatch: pytest.MonkeyPatch) -> PipelineResourceCollection:
+        """
+        Build the constraint pipeline resources without reading GCS.
+
+        ``get_constraint_resources`` reads the VEP context Table only to get its
+        reference genome, so it is replaced with an empty GRCh38 Table.
+        """
+        context_ht = hl.Table.parallelize([], hl.tstruct(locus=hl.tlocus("GRCh38")))
+        monkeypatch.setattr(
+            resource_utils,
+            "get_vep_context_ht",
+            lambda version: SimpleNamespace(ht=lambda: context_ht),
+        )
+        return get_constraint_resources(
+            version="4.1.1",
+            custom_vep_annotation="transcript_consequences",
+            overwrite=False,
+            test=True,
+        )
+
+    def test_export_steps_check_only_their_own_outputs(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """
+        Test that each release export flag checks only the files it writes.
+
+        Regression test: both export flags used to share one step, so once either
+        had run, the other refused to run without ``--overwrite`` because the first
+        one's files already existed.
+        """
+        assert resources.export_release_tsv.output_resources == {
+            "--export-release-tsv": [
+                get_release_constraint_tsv_path(version="4.1.1", test=True),
+                get_lof_threshold_tsv_path(version="4.1.1", test=True),
+            ]
+        }
+        assert resources.export_release_downsampling_tsv.output_resources == {
+            "--export-release-downsampling-tsv": [
+                get_release_downsampling_tsv_path(version="4.1.1", test=True)
+            ]
+        }
