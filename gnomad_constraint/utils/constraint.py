@@ -1170,6 +1170,10 @@ def calculate_mu_by_downsampling(
     :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
     :return: Mutation rate Table.
     """
+    # Only sites in the mutation rate site set have compute_mu counts; the rest add
+    # nothing to the sums, so drop them before grouping.
+    ht = ht.filter(hl.is_defined(ht.compute_mu.possible_variants))
+
     # Count the observed variants in the entire Table and in each downsampling grouped
     # by context, ref, alt, and 'additional_grouping'.
     ht = count_observed_and_possible_by_group(
@@ -1560,6 +1564,10 @@ def _annotate_oe_ci_z(
         - ``oe_ci_discretized_poisson`` — discretized Poisson CI.
         - ``oe_ci_gamma`` — gamma-distribution CI.
         - ``z_raw`` — raw z-score.
+
+    These are computed for every frequency entry, including the per-ancestry and
+    downsampling entries. Only the adj values are used by later steps and the
+    release, but other analyses read the others from the metrics Table.
 
     Then adds per-group ``flags`` based on z-score outlier thresholds.
 
