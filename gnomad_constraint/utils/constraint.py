@@ -740,8 +740,9 @@ def prepare_ht_for_constraint_calculations(
         additional_grouping_exprs={"genomic_region": ht.genomic_region},
     )
 
-    # Annotate the Table with the computed annotations, and select only the relevant
-    # fields.
+    # Add the computed annotations, keeping every field of the input Table except
+    # ``freq``, which is replaced by the genomes and exomes frequency arrays in
+    # compute_mu and calibrate_mu. Downstream analyses read the kept fields.
     ht = ht.annotate(
         exomes_coverage=exomes_coverage_expr,
         compute_mu=compute_mu_expr,
@@ -968,6 +969,10 @@ def create_per_variant_expected_ht(
     the rows that have an apply model annotation. The Table is then annotated with the
     expected number of variants using ``apply_models``. See the function
     ``apply_models`` for more information on the expected annotations.
+
+    The Table keeps every field of the input Table and every consequence, including
+    the non-coding ones that ``aggregate_per_variant_expected_ht`` drops, because
+    downstream analyses read the per-variant Table directly.
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
