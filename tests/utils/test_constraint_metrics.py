@@ -107,13 +107,15 @@ def _constraint_groups_ht(
 class TestAnnotateOeCiZ:
     """Test the _annotate_oe_ci_z function."""
 
-    Z_THRESHOLDS = {"syn": (-3.0, 3.0), "mis": (-3.0, None), "lof": (-3.0, None)}
+    # The mis and LoF lower thresholds differ, so swapping them would show.
+    Z_THRESHOLDS = {"syn": (-3.0, 3.0), "mis": (-4.0, None), "lof": (-6.0, None)}
 
     # (observed, expected) used for every group of the transcript.
     COUNTS = {
         "T_ok": (18, 20.0),
         "T_depleted": (0, 25.0),
         "T_excess": (50, 25.0),
+        "T_strong_excess": (75, 25.0),
         "T_no_exp": (0, 0.0),
         "T_missing_exp": (3, None),
     }
@@ -185,9 +187,11 @@ class TestAnnotateOeCiZ:
             ("T_ok", [set()] * 5),
             # z = 5: only syn has an upper threshold.
             ("T_depleted", [{"outlier_syn"}, set(), set(), set(), set()]),
-            # z = -5: every group has a lower threshold, and LoF groups share one.
+            # z = -5: below the syn and mis lower thresholds, but not the LoF one.
+            ("T_excess", [{"outlier_syn"}, {"outlier_mis"}, set(), set(), set()]),
+            # z = -10: below every lower threshold, and the LoF groups share one.
             (
-                "T_excess",
+                "T_strong_excess",
                 [{"outlier_syn"}, {"outlier_mis"}] + [{"outlier_lof"}] * 3,
             ),
             ("T_no_exp", [{"no_exp_syn"}, {"no_exp_mis"}] + [{"no_exp_lof"}] * 3),
@@ -431,20 +435,22 @@ class TestAnnotateConstraintPercentileBins:
 
     METRIC_GROUP_IDX = {"syn": 0, "mis": 1, "lof": 4}
 
+    # Each group's value is offset differently, so binning the wrong group shows.
+    GROUP_OFFSETS = [0.0, 0.1, 0.2, 0.3, 0.4]
+
     @pytest.mark.parametrize("value", [0.0, 0.5, 0.555, 0.99, 1.5, None])
     def test_bins(self, value: Optional[float]) -> None:
         """Test that each bin is the number of thresholds met, missing if no value."""
+        values = [None if value is None else value + o for o in self.GROUP_OFFSETS]
         rows = [
             dict(
                 transcript="T1",
                 constraint_groups=[
                     hl.Struct(
-                        oe_info=[
-                            hl.Struct(oe_ci_gamma=hl.Struct(lower=0.0, upper=value))
-                        ]
+                        oe_info=[hl.Struct(oe_ci_gamma=hl.Struct(lower=0.0, upper=v))]
                     )
-                ]
-                * 5,
+                    for v in values
+                ],
             )
         ]
         ht = _constraint_groups_ht(rows, hl.tstruct(oe_ci_gamma=CI_TYPE))
@@ -453,23 +459,29 @@ class TestAnnotateConstraintPercentileBins:
         ht = annotate_constraint_percentile_bins(ht, thresholds, self.METRIC_GROUP_IDX)
         bins = ht.collect()[0].constraint_bins
         for gran in CONSTRAINT_GRANULARITIES:
-            for metric in ["syn", "mis", "lof"]:
-                assert bins[gran][metric] == _bin(value, thresholds[(gran, metric)])
+            for metric, idx in self.METRIC_GROUP_IDX.items():
+                assert bins[gran][metric] == _bin(
+                    values[idx], thresholds[(gran, metric)]
+                )
 
 
 class TestComputeConstraintPercentileBins:
     """Test the compute_constraint_percentile_bins function."""
+
+    # Index of each metric's group, and the factor its values are scaled by.
+    METRICS = {"syn": (0, 1.0), "mis": (1, 2.0), "lof": (2, 3.0)}
 
     @pytest.fixture(scope="class")
     @classmethod
     def result(cls) -> Tuple[hl.Struct, List[hl.Struct]]:
         """Return the thresholds global and the binned rows.
 
-        The 30 MANE Select transcripts have values from 0.05 to 1.5. The outliers
-        (flagged) and unselected transcripts (neither MANE Select nor canonical)
-        have a value of 100, so including either in the thresholds would show. Only
-        the syn, mis, and HC LoF groups are included, since each group is ranked
-        separately.
+        The 30 MANE Select transcripts have syn values from 0.05 to 1.5, and their
+        mis and LoF values are two and three times as large, so using the wrong
+        group for a metric would show. The outliers (flagged) and unselected
+        transcripts (neither MANE Select nor canonical) have a value of 100 in every
+        group, so including either in the thresholds would show. Only the syn, mis,
+        and HC LoF groups are included, since each group is ranked separately.
         """
         transcripts = (
             [(f"ENSTM{i}", 0.05 * (i + 1), True, set()) for i in range(30)]
@@ -490,13 +502,17 @@ class TestComputeConstraintPercentileBins:
                     hl.Struct(
                         oe_info=[
                             hl.Struct(
-                                oe_ci_discretized_poisson=hl.Struct(lower=0.0, upper=v),
-                                oe_ci_gamma=hl.Struct(lower=0.0, upper=v),
+                                oe_ci_discretized_poisson=hl.Struct(
+                                    lower=0.0, upper=v if v == 100 else v * f
+                                ),
+                                oe_ci_gamma=hl.Struct(
+                                    lower=0.0, upper=v if v == 100 else v * f
+                                ),
                             )
                         ]
                     )
-                ]
-                * 3,
+                    for _, f in cls.METRICS.values()
+                ],
             )
             for t, v, mane, flags in transcripts
         ]
@@ -509,25 +525,27 @@ class TestComputeConstraintPercentileBins:
     def test_thresholds(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
         """Test the thresholds global: shape, order, and excluded transcripts."""
         thresholds, _ = result
-        for metric in ["syn", "mis", "lof"]:
+        for metric, (_, factor) in self.METRICS.items():
             for gran, bins in CONSTRAINT_GRANULARITIES.items():
                 t = thresholds[metric][gran]
                 assert len(t) == len(bins)
                 assert t == sorted(t)
                 # Outliers and unselected transcripts (value 100) are excluded.
-                assert max(t) <= 1.5
+                assert max(t) <= 1.5 * factor
+                # Each metric's thresholds come from its own group.
+                assert t == pytest.approx([x * factor for x in thresholds.syn[gran]])
 
     def test_bins(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
         """Test that every transcript, including excluded ones, is binned."""
         thresholds, rows = result
         for row in rows:
-            value = row.constraint_groups[0].oe_info[0].oe_ci_gamma.upper
             for gran in CONSTRAINT_GRANULARITIES:
-                for metric in ["syn", "mis", "lof"]:
+                for metric, (idx, _) in self.METRICS.items():
+                    value = row.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
                     assert row.constraint_bins[gran][metric] == _bin(
                         value, thresholds[metric][gran]
                     )
-            if value == 100:
+            if row.constraint_groups[0].oe_info[0].oe_ci_gamma.upper == 100:
                 assert row.constraint_bins.decile.lof == 9
 
     def test_ranks(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
@@ -719,10 +737,9 @@ class TestComputeConstraintMetrics:
             key="interval",
         )
 
-    @pytest.fixture(scope="class")
     @classmethod
-    def result(cls) -> Tuple[List[float], Dict[str, hl.Struct]]:
-        """Return the sd_raw_z global and the metrics rows keyed by transcript."""
+    def _inputs(cls) -> Tuple[hl.Table, hl.Table, hl.Table]:
+        """Return the constraint group, GENCODE, and gene quality input Tables."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64,
             predicted_proportion_observed=hl.tfloat64,
@@ -783,7 +800,13 @@ class TestComputeConstraintMetrics:
             ),
             key="transcript",
         )
-        ht = compute_constraint_metrics(ht, cls._gencode_ht(), gene_quality_ht)
+        return ht, cls._gencode_ht(), gene_quality_ht
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def result(cls) -> Tuple[List[float], Dict[str, hl.Struct]]:
+        """Return the sd_raw_z global and the metrics rows keyed by transcript."""
+        ht = compute_constraint_metrics(*cls._inputs())
         return hl.eval(ht.sd_raw_z), {r.transcript: r for r in ht.collect()}
 
     def test_metrics(self, result: Tuple[List[float], Dict[str, hl.Struct]]) -> None:
@@ -821,6 +844,41 @@ class TestComputeConstraintMetrics:
             1,
         )
         assert enst2.chromosome is None
+
+    @pytest.mark.parametrize(
+        "threshold, flag, below",
+        [
+            ("raw_z_outlier_threshold_lower_lof", "outlier_lof", True),
+            ("raw_z_outlier_threshold_lower_missense", "outlier_mis", True),
+            ("raw_z_outlier_threshold_lower_syn", "outlier_syn", True),
+            ("raw_z_outlier_threshold_upper_syn", "outlier_syn", False),
+        ],
+    )
+    def test_outlier_thresholds(self, threshold: str, flag: str, below: bool) -> None:
+        """
+        Test that each outlier threshold argument applies to its own groups.
+
+        The threshold under test is 0 and the others are far outside the data, so
+        only the matching groups are flagged: those with more variants than
+        expected for a lower threshold, or fewer for an upper one.
+        """
+        thresholds = {
+            "raw_z_outlier_threshold_lower_lof": -1e6,
+            "raw_z_outlier_threshold_lower_missense": -1e6,
+            "raw_z_outlier_threshold_lower_syn": -1e6,
+            "raw_z_outlier_threshold_upper_syn": 1e6,
+            threshold: 0.0,
+        }
+        ht = compute_constraint_metrics(*self._inputs(), **thresholds)
+        n_flagged = 0
+        for row in ht.collect():
+            for name, cg in zip(GROUP_NAMES, row.constraint_groups):
+                z = cg.oe_info[0].z_raw
+                group_flag = "outlier_" + ("lof" if name.startswith("lof") else name)
+                flagged = group_flag == flag and (z < 0 if below else z > 0)
+                assert cg.flags == ({flag} if flagged else set())
+                n_flagged += flagged
+        assert n_flagged
 
 
 class TestPrepareReleaseHt:
