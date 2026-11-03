@@ -103,8 +103,9 @@ def prepare_context_ht(
         field).
     :param methylation_ht: Methylation sites Table.
     :param gerp_ht: GERP scores Table.
-    :param adj_r_ht: Table with adj_r annotation keyed by locus.
-    :param syn_adj_r_ht: Table with synonymous DNM adj_r annotation keyed by locus.
+    :param adj_r_ht: Table with adj_r annotation keyed by interval.
+    :param syn_adj_r_ht: Table with synonymous DNM adj_r annotation keyed by
+        interval.
     :param sfs_bin_cutoffs: Allele frequency upper bounds defining site frequency
         spectrum bins. Default is ``SFS_BIN_CUTOFFS``.
     :return: Annotated context Table.
