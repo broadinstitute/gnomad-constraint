@@ -805,7 +805,8 @@ NOTES = {
                     "tag": "rowexpr",
                     "text": (
                         "Apply the models: ``ppo = mu_snp * slope + intercept`` per freq entry,"
-                        " from the plateau model of the row's ``apply_model.model_group``."
+                        " from the plateau model of the row's ``apply_model.model_group``"
+                        " (a group with no plateau model fails with ``No plateau model``)."
                         " ``coverage_correction`` is 0 at zero coverage, the coverage model for"
                         " low-coverage rows, and 1 otherwise. ``expected_variants = ppo *"
                         " possible * coverage_correction``."
@@ -1635,8 +1636,8 @@ NOTES = {
         "create_aggregated_expected_ht": {
             "notes": [
                 (
-                    "The first ``group_by`` uses ``partition_hint`` 100, which the pipeline"
-                    " does not expose as a flag."
+                    "The first ``group_by``'s partition hint is"
+                    " ``--apply-models-aggregated-partition-hint`` (default 100)."
                 ),
                 (
                     "Multiplies ``mu_snp``, ``predicted_proportion_observed`` and"
