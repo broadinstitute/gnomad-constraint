@@ -1,7 +1,7 @@
 """Tests for the constraint metrics and release functions in ``gnomad_constraint.utils.constraint``."""
 
 import os
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import hail as hl
 import numpy as np
@@ -712,7 +712,14 @@ class TestComputeConstraintMetrics:
     def _gencode_ht() -> hl.Table:
         """Return GENCODE features for ENST0 and the PAR transcript ENST1."""
 
-        def _feature(t, contig, start, end, feature, par_y=False):
+        def _feature(
+            t: str,
+            contig: str,
+            start: int,
+            end: int,
+            feature: str,
+            par_y: bool = False,
+        ) -> Dict[str, Any]:
             return dict(
                 interval=hl.Interval(
                     hl.Locus(contig, start, "GRCh38"),
@@ -760,7 +767,7 @@ class TestComputeConstraintMetrics:
             expected_variants=hl.tfloat64,
         )
 
-        def _cg(obs, exp):
+        def _cg(obs: int, exp: float) -> hl.Struct:
             return hl.Struct(
                 mu_snp=1e-7,
                 mu=1e-7,
@@ -962,7 +969,7 @@ class TestPrepareReleaseHt:
             pLI=hl.tfloat64,
         )
 
-        def _oe_info(i, obs, exp):
+        def _oe_info(i: int, obs: int, exp: float) -> hl.Struct:
             return hl.Struct(
                 observed_variants=obs,
                 expected_variants=exp,
@@ -972,7 +979,7 @@ class TestPrepareReleaseHt:
                 z_raw=float(i),
             )
 
-        def _cg(i, possible):
+        def _cg(i: int, possible: int) -> hl.Struct:
             # oe_info: adj, then the downsamplings, where obs is the downsampling.
             ds = [int(m["downsampling"]) for m in cls.FREQ_META[1:]]
             has_pli = GROUP_NAMES[i] in ("lof_hc", "lof_hc_lc")
@@ -994,7 +1001,7 @@ class TestPrepareReleaseHt:
                 pLI=0.01 * (i + 1) if has_pli else None,
             )
 
-        def _row(t, possible):
+        def _row(t: str, possible: List[int]) -> Dict[str, Any]:
             return dict(
                 gene="GENE",
                 gene_id="ENSG1",

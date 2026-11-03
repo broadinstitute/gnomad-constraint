@@ -880,7 +880,9 @@ def _context_inputs() -> Dict[str, Any]:
         key=["locus", "alleles"],
     )
 
-    def _locus_ht(field_values: Dict[str, Any], dtypes: Dict[str, hl.HailType]):
+    def _locus_ht(
+        field_values: Dict[str, Any], dtypes: Dict[str, hl.HailType]
+    ) -> hl.Table:
         return hl.Table.parallelize(
             [dict(locus=loci[n], **field_values[n]) for n in field_values],
             hl.tstruct(locus=hl.tlocus("GRCh38"), **dtypes),
