@@ -79,9 +79,16 @@ MU_SNP = {False: 1e-8, True: 1e-7}
 
 PLATEAU_MODELS = {
     hl.Struct(cpg=False, genomic_region="autosome_or_par"): [[0.1, 2e7], [0.05, 1e7]],
-    hl.Struct(cpg=True, genomic_region="autosome_or_par"): [[0.2, 1e6], [0.1, 5e5]],
+    hl.Struct(cpg=True, genomic_region="autosome_or_par"): [[0.2, 2e6], [0.1, 1e6]],
+    hl.Struct(cpg=False, genomic_region="chrx_nonpar"): [[0.05, 1.5e7], [0.025, 7.5e6]],
 }
-"""One [intercept, slope] model per frequency group, so both give ppo [0.3, 0.15]."""
+"""
+One [intercept, slope] model per frequency group.
+
+With the fixture's mutation rates, the autosome non-CpG model gives ppo [0.3, 0.15],
+the CpG model [0.4, 0.2], and the chrX non-PAR model [0.2, 0.1], so a site's
+expected counts show which model it got.
+"""
 
 COVERAGE_MODEL = (0.1, 0.5)
 """[intercept, slope] of the coverage model on log10 coverage."""
@@ -107,14 +114,15 @@ def _csq(
     lof: Optional[str] = None,
     canonical: Optional[int] = 1,
     mane_select: Optional[str] = "NM_1",
+    gene: str = "G1",
 ) -> hl.Struct:
-    """Return a VEP transcript consequence for gene G1."""
+    """Return a VEP transcript consequence, for gene G1 by default."""
     return hl.Struct(
         most_severe_consequence=consequence,
         lof=lof,
         polyphen_prediction=None,
-        gene_symbol="G1",
-        gene_id="ENSG1",
+        gene_symbol=gene,
+        gene_id=f"ENS{gene}",
         transcript_id=transcript,
         canonical=canonical,
         mane_select=mane_select,
@@ -129,16 +137,25 @@ def _variant(
     possible: Optional[int],
     csqs: List[hl.Struct],
     has_apply_model: bool = True,
+    skip_coverage_model: bool = False,
+    contig: str = "chr1",
+    genomic_region: str = "autosome_or_par",
 ) -> Dict:
-    """Return a preprocessed context row."""
+    """Return a preprocessed context row.
+
+    With ``skip_coverage_model``, low coverage sites get no apply model, as in
+    preprocessing with ``--skip-coverage-model``.
+    """
+    if skip_coverage_model and coverage is not None and coverage < 40:
+        has_apply_model = False
     apply_model = None
     if has_apply_model and coverage is not None:
         apply_model = hl.Struct(
             high_or_low_coverage="high" if coverage >= 40 else "low",
-            model_group=hl.Struct(cpg=sub["cpg"], genomic_region="autosome_or_par"),
+            model_group=hl.Struct(cpg=sub["cpg"], genomic_region=genomic_region),
         )
     return dict(
-        locus=hl.Locus("chr1", pos, "GRCh38"),
+        locus=hl.Locus(contig, pos, "GRCh38"),
         alleles=[sub["ref"], sub["alt"]],
         **sub,
         exomes_coverage=coverage,
@@ -151,16 +168,23 @@ def _variant(
     )
 
 
-def _preprocessed_ht() -> hl.Table:
+def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
     """Return a small Table shaped like ``prepare_ht_for_constraint_calculations``.
 
-    One gene with a MANE Select transcript (T1) and a second transcript (T2).
-    Synonymous variants are at high and low coverage, so the coverage model
-    changes their expected count. The last four rows are dropped before the
+    One gene with a MANE Select transcript (T1) and a second transcript (T2), and a
+    chrX non-PAR gene (G2, transcript TX). Synonymous variants are at high and low
+    coverage, so the coverage model changes their expected count. Three of the
+    synonymous variants share their substitution, coverage, transcript, and
+    consequence, so the aggregated path sums them into one row with three possible
+    variants before applying the models. The last four rows are dropped before the
     models are applied, or by the coding-consequence filter.
+
+    :param skip_coverage_model: Whether to give low coverage sites no apply model,
+        as preprocessing does with ``--skip-coverage-model``. Default is False.
     """
+    variant = functools.partial(_variant, skip_coverage_model=skip_coverage_model)
     rows = [
-        _variant(
+        variant(
             1,
             NON_CPG,
             HIGH_COV,
@@ -171,12 +195,25 @@ def _preprocessed_ht() -> hl.Table:
                 _csq("missense_variant", "T2", canonical=None, mane_select=None),
             ],
         ),
-        _variant(2, NON_CPG, LOW_COV, [0, 0], 1, [_csq("synonymous_variant")]),
-        _variant(3, CPG, HIGH_COV, [1, 1], 1, [_csq("missense_variant")]),
-        _variant(4, CPG, LOW_COV, [0, 0], 1, [_csq("stop_gained", lof="HC")]),
-        _variant(5, NON_CPG, HIGH_COV, [1, 0], 1, [_csq("stop_gained", lof="LC")]),
+        variant(2, NON_CPG, LOW_COV, [0, 0], 1, [_csq("synonymous_variant")]),
+        variant(3, CPG, HIGH_COV, [1, 1], 1, [_csq("missense_variant")]),
+        variant(4, CPG, LOW_COV, [0, 0], 1, [_csq("stop_gained", lof="HC")]),
+        variant(5, NON_CPG, HIGH_COV, [1, 0], 1, [_csq("stop_gained", lof="LC")]),
+        # Same substitution, coverage, transcript, and consequence as position 1.
+        variant(10, NON_CPG, HIGH_COV, [0, 0], 1, [_csq("synonymous_variant")]),
+        variant(11, NON_CPG, HIGH_COV, [1, 1], 1, [_csq("synonymous_variant")]),
+        variant(
+            3_000_000,
+            NON_CPG,
+            HIGH_COV,
+            [1, 0],
+            1,
+            [_csq("synonymous_variant", "TX", gene="G2")],
+            contig="chrX",
+            genomic_region="chrx_nonpar",
+        ),
         # No apply model: outside both coverage models.
-        _variant(
+        variant(
             6,
             NON_CPG,
             30,
@@ -186,11 +223,11 @@ def _preprocessed_ht() -> hl.Table:
             has_apply_model=False,
         ),
         # Not possible: e.g. a common variant.
-        _variant(7, NON_CPG, HIGH_COV, [0, 0], 0, [_csq("synonymous_variant")]),
+        variant(7, NON_CPG, HIGH_COV, [0, 0], 0, [_csq("synonymous_variant")]),
         # Exome coverage undefined: observed and possible are missing.
-        _variant(8, NON_CPG, None, None, None, [_csq("synonymous_variant")]),
+        variant(8, NON_CPG, None, None, None, [_csq("synonymous_variant")]),
         # Non-coding consequence.
-        _variant(9, NON_CPG, HIGH_COV, [1, 0], 1, [_csq("intron_variant")]),
+        variant(9, NON_CPG, HIGH_COV, [1, 0], 1, [_csq("intron_variant")]),
     ]
     return hl.Table.parallelize(rows, PREPROCESSED_TYPE, key=["locus", "alleles"])
 
@@ -241,7 +278,7 @@ def _prepared(use_mane_select: bool) -> Tuple[List[str], List[str], List[hl.Stru
 def _per_variant_expected(coverage_model: Optional[Tuple[float, float]]) -> Dict:
     """Return the fields, globals, and rows of ``create_per_variant_expected_ht``."""
     ht = create_per_variant_expected_ht(
-        _preprocessed_ht(),
+        _preprocessed_ht(skip_coverage_model=coverage_model is None),
         _mutation_ht(),
         hl.literal(PLATEAU_MODELS),
         _coverage_model_expr(coverage_model),
@@ -261,9 +298,10 @@ def _path_sums(path: str, coverage_model: Optional[Tuple[float, float]]) -> Dict
     ``path`` is "per_variant" (apply the models per variant, then aggregate) or
     "aggregated" (aggregate the counts, then apply the models).
     """
+    preprocessed_ht = _preprocessed_ht(skip_coverage_model=coverage_model is None)
     if path == "per_variant":
         ht = create_per_variant_expected_ht(
-            _preprocessed_ht(),
+            preprocessed_ht,
             _mutation_ht(),
             hl.literal(PLATEAU_MODELS),
             _coverage_model_expr(coverage_model),
@@ -272,7 +310,7 @@ def _path_sums(path: str, coverage_model: Optional[Tuple[float, float]]) -> Dict
         ht = aggregate_per_variant_expected_ht(ht)
     else:
         ht = create_aggregated_expected_ht(
-            _preprocessed_ht(),
+            preprocessed_ht,
             _mutation_ht(),
             hl.literal(PLATEAU_MODELS),
             _coverage_model_expr(coverage_model),
@@ -318,6 +356,9 @@ class TestPrepareHtForApplyModels:
             (4, "T1"),
             (5, "T1"),
             (9, "T1"),
+            (10, "T1"),
+            (11, "T1"),
+            (3_000_000, "TX"),
         ]
 
     def test_promotes_calibrate_mu_fields(self) -> None:
@@ -422,33 +463,53 @@ class TestApplyConstraintModels:
 class TestCreatePerVariantExpectedHt:
     """Test the create_per_variant_expected_ht function."""
 
-    @pytest.mark.parametrize(
-        "coverage_model, low_cov_correction",
-        [(COVERAGE_MODEL, LOW_COV_CORRECTION), (None, 1.0)],
-    )
-    def test_expected_per_variant(
-        self,
-        coverage_model: Optional[Tuple[float, float]],
-        low_cov_correction: float,
+    @pytest.mark.parametrize("coverage_model", [COVERAGE_MODEL, None])
+    def test_high_coverage_site(
+        self, coverage_model: Optional[Tuple[float, float]]
     ) -> None:
-        """Test mu, expected, and coverage correction at high and low coverage.
-
-        Without a coverage model, the low coverage site is not corrected.
-        """
-        rows = _per_variant_expected(coverage_model)["rows"]
-        high, low = rows[(1, "T1")], rows[(2, "T1")]
-
+        """Test mu, expected, and coverage correction at a high coverage site."""
+        high = _per_variant_expected(coverage_model)["rows"][(1, "T1")]
         assert high.mu_snp == pytest.approx(MU_SNP[False])
         assert high.coverage_correction == pytest.approx(1.0)
         assert high.mu == pytest.approx(MU_SNP[False])
         assert high.predicted_proportion_observed == pytest.approx([0.3, 0.15])
         assert high.expected_variants == pytest.approx([0.3, 0.15])
 
-        assert low.coverage_correction == pytest.approx(low_cov_correction)
-        assert low.mu == pytest.approx(MU_SNP[False] * low_cov_correction)
+    @pytest.mark.parametrize(
+        "site, ppo",
+        [
+            # CpG on an autosome.
+            ((3, "T1"), [0.4, 0.2]),
+            # Non-CpG in chrX non-PAR.
+            ((3_000_000, "TX"), [0.2, 0.1]),
+        ],
+    )
+    def test_plateau_model_lookup(
+        self, site: Tuple[int, str], ppo: List[float]
+    ) -> None:
+        """Test that each high coverage site gets the plateau model for its group."""
+        row = _per_variant_expected(COVERAGE_MODEL)["rows"][site]
+        assert row.predicted_proportion_observed == pytest.approx(ppo)
+        assert row.expected_variants == pytest.approx(ppo)
+
+    def test_low_coverage_site(self) -> None:
+        """Test that the coverage model corrects a low coverage site."""
+        low = _per_variant_expected(COVERAGE_MODEL)["rows"][(2, "T1")]
+        assert low.coverage_correction == pytest.approx(LOW_COV_CORRECTION)
+        assert low.mu == pytest.approx(MU_SNP[False] * LOW_COV_CORRECTION)
         assert low.expected_variants == pytest.approx(
-            [0.3 * low_cov_correction, 0.15 * low_cov_correction]
+            [0.3 * LOW_COV_CORRECTION, 0.15 * LOW_COV_CORRECTION]
         )
+
+    def test_low_coverage_site_without_coverage_model(self) -> None:
+        """Test that low coverage sites are dropped without a coverage model.
+
+        With ``--skip-coverage-model``, preprocessing gives low coverage sites no
+        apply model, so they have no expected counts.
+        """
+        rows = _per_variant_expected(None)["rows"]
+        assert (1, "T1") in rows
+        assert (2, "T1") not in rows
 
     def test_drops_promoted_calibrate_mu_fields(self) -> None:
         """Test that only the nested calibrate_mu struct keeps the counts."""
@@ -480,15 +541,17 @@ class TestAggregatePerVariantExpectedHt:
             ("T1", "stop_gained", "HC"),
             ("T1", "stop_gained", "LC"),
             ("T2", "missense_variant", "None"),
+            ("TX", "synonymous_variant", "None"),
         }
 
+        # Three high coverage synonymous variants and one low coverage one.
         syn = rows[("T1", "synonymous_variant", "None")]
-        assert syn.observed_variants == [1, 0]
-        assert syn.possible_variants == 2
-        assert syn.mu_snp == pytest.approx(2 * MU_SNP[False])
-        assert syn.coverage_correction == pytest.approx(1 + LOW_COV_CORRECTION)
+        assert syn.observed_variants == [2, 1]
+        assert syn.possible_variants == 4
+        assert syn.mu_snp == pytest.approx(4 * MU_SNP[False])
+        assert syn.coverage_correction == pytest.approx(3 + LOW_COV_CORRECTION)
         assert syn.expected_variants == pytest.approx(
-            [0.3 * (1 + LOW_COV_CORRECTION), 0.15 * (1 + LOW_COV_CORRECTION)]
+            [0.3 * (3 + LOW_COV_CORRECTION), 0.15 * (3 + LOW_COV_CORRECTION)]
         )
 
     def test_unobserved_group_sums_to_zero(self) -> None:
@@ -509,7 +572,7 @@ class TestAggregatePerVariantExpectedHt:
             ht, include_mu_annotations_in_grouping=True
         )
         assert list(ht.key) == [*MU_GROUPING, *GROUPINGS]
-        assert ht.count() == 5
+        assert ht.count() == 6
 
 
 class TestCreateAggregatedExpectedHt:
@@ -537,7 +600,9 @@ class TestPerVariantAndAggregatedPathsAgree:
     """Test that the per-variant and aggregated paths give the same sums.
 
     The two paths apply the models at different stages: per variant and then
-    summed, or to summed counts. Every summed field should agree.
+    summed, or to summed counts. Every summed field should agree. The aggregated
+    path multiplies by the summed possible count, which the three synonymous
+    variants that share a row test.
     """
 
     @pytest.mark.parametrize("coverage_model", [COVERAGE_MODEL, None])

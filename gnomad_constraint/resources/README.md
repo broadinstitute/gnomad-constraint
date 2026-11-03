@@ -4,14 +4,16 @@ This package wires every Hail Table produced by the constraint pipeline to a
 canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
-This document is the schema reference for every **pipeline output** of the v4.1.1
-constraint pipeline. Schemas were captured by running `ht.describe()` against
-the live tables on GCS. For upstream **input** resources (VEP context, sites,
+This document is the schema reference for every **pipeline output** of the
+constraint pipeline. The schemas were first captured with `ht.describe()` from
+the v4.1.1 tables on GCS and have been updated by hand as the pipeline changed,
+so the released v4.1.1 tables differ from them in places. For upstream **input**
+resources (VEP context, sites,
 coverage, methylation, GERP, GENCODE, `all_sites_an`) see
 [`gnomad.resources.grch38`](https://github.com/broadinstitute/gnomad_methods/tree/main/gnomad/resources/grch38).
 
-> **Scope.** This README documents v4.1.1. Older versions (`2.1.1`, `4.0`,
-> `4.1`) follow the same general layout but partition some artifacts by
+> **Scope.** This README documents v4.1.1. Older versions (`4.0`, `4.1`)
+> follow the same general layout but partition some artifacts by
 > genomic region (e.g. `*.autosome_par.ht`, `*.chrx_nonpar.ht`,
 > `*.chry_nonpar.ht`). v4.1.1 keeps all regions in one Table and labels each
 > site with a `genomic_region` annotation (`autosome_or_par`, `chrx_nonpar`, or
@@ -79,8 +81,8 @@ Parameters passed to `calculate_mu_by_downsampling`.
   `{downsampling, group, pop}` entry per downsampling × genetic-ancestry-group.
 - `ac_cutoff: int32` — variants with `AC > ac_cutoff` are excluded from mu
   calculation (typical value: 5).
-- `min_cov: int32` — minimum mean exome coverage filter for mu sites (15).
-- `max_cov: int32` — maximum mean exome coverage filter (60).
+- `min_cov: int32` — minimum mean genome coverage filter for mu sites (15).
+- `max_cov: int32` — maximum mean genome coverage filter (60).
 - `gerp_lower_cutoff: float64` — lower GERP bound for the mu site set (−3.9885).
 - `gerp_upper_cutoff: float64` — upper GERP bound (2.6607).
 - `genetic_ancestry_groups: array<str>` — gen-anc groups used for downsampling
@@ -222,12 +224,15 @@ see [Shared structures](#shared-structures).
 ### Rows
 Carries every annotated_context row field *except* `freq` (which is split
 into `compute_mu.genomes_freq` / `calibrate_mu.exomes_freq`), plus:
-- `exomes_coverage: int32` — `coverage.exomes.median_approx` clamped to the
-  `[low_cov_cutoff, high_cov_cutoff]` model bands.
+- `exomes_coverage: int32` — exome coverage from `get_exome_coverage_expr`,
+  set by `--exome-coverage-metric`: the percent of exome samples with a
+  genotype (`AN_percent`, the default), the median coverage (`median`), or the
+  allele number (`AN`). It isn't clamped; the model coverage cutoffs are
+  applied to it when assigning `build_model` and `apply_model`.
 - `compute_mu: struct` — fields used to fit the mutation-rate model on the
   *genome* SNVs:
   - `genomes_freq: array<struct{AC, AF, AN, homozygote_count}>` — genomes freq
-    array (parallel to `exomes_freq_meta`).
+    array (parallel to `calculate_mu_globals.freq_meta`).
   - `observed_variants: array<int32>` — observed counts (one per freq entry).
   - `possible_variants: int32` — count of possible SNVs at this site (always 1
     for context rows; used by aggregation).
@@ -290,7 +295,7 @@ Same shared pipeline parameter globals as `mutation_rate.ht`.
 - `genomic_region: str` — `autosome_or_par` / `chrx_nonpar` / `chry_nonpar`.
 - `build_model: struct{high_or_low_coverage: str, model_group: struct{cpg: bool, genomic_region: str}}`
   — the (coverage-band × cpg × region) bucket whose plateau model this row trains.
-- `exomes_coverage: int32` — clamped median exome coverage bin.
+- `exomes_coverage: int32` — exome coverage, as in §2; rows are grouped by it.
 - `observed_variants: array<int64>` — aggregated observed SNV counts per freq entry.
 - `possible_variants: int64` — aggregated possible SNV count.
 - `mu_snp: float64` — joined-in mu_snp for this (context, ref, alt, methylation).
@@ -312,10 +317,10 @@ pickled Hail expressions reread by `apply_models_globals`.
 
 ### Types and meaning
 - `plateau.he : dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
-  — for each (cpg, genomic_region) bucket, a list of `[slope, intercept]`
-  pairs parallel to `mutation_rate.mu` (one entry per freq-meta index). The
-  inner ordering follows `freq_meta`, so element `downsampling_idx` is the
-  canonical fit.
+  — for each (cpg, genomic_region) bucket, a list of `[intercept, slope]`
+  pairs parallel to `exomes_freq_meta` (one entry per exome frequency index).
+  The global-adj fit is at the index of `{group: adj}` in `exomes_freq_meta`;
+  `calculate_mu_globals.downsampling_idx` instead indexes the genome mutation rates.
 - `coverage.he : array<float64>` — `[intercept, slope]` of the linear
   regression mapping (log10) median exome coverage to the multiplicative
   coverage correction in the low-coverage regime.
@@ -352,7 +357,8 @@ applied-model fields:
 - `gene: str`, `gene_id: str`, `transcript: str` — VEP transcript identity.
 - `canonical: bool`, `mane_select: bool` — transcript flags.
 - `mu_snp: float64` — joined per-context mu (scalar).
-- `mu: float64` — `mu_snp * possible_variants` (the per-variant mu mass).
+- `mu: float64` — `mu_snp * possible_variants * coverage_correction` (the
+  per-variant mu mass, with the coverage correction).
 - `predicted_proportion_observed: array<float64>` — plateau-applied predicted
   observed proportion per freq entry (one element per `freq_meta` row).
 - `expected_variants: array<float64>` — `predicted_proportion_observed *
@@ -379,7 +385,8 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`.
 - `annotation, modifier, gene, gene_id, transcript, canonical, mane_select` — key.
 - `mu_snp: float64` — summed `mu_snp * possible_variants` (i.e. total per-context
   mu mass over the bucket; despite the name, this is no longer a per-SNV rate).
-- `mu: float64` — summed per-variant `mu` (`mu_snp * possible` over bucket).
+- `mu: float64` — summed per-variant `mu` (`mu_snp * possible *
+  coverage_correction` over the bucket).
 - `observed_variants: array<int64>` — summed observed counts per freq entry.
 - `possible_variants: int64` — total possible SNV count in the bucket.
 - `predicted_proportion_observed: array<float64>` — `Σ predicted_proportion_observed
@@ -413,7 +420,7 @@ apply-then-aggregate (§7) results; the canonical downstream input is §7.
 ## 9. `constraint_group.ht`
 
 Pre-metric per-transcript table organized into constraint groups (`syn`, `mis`,
-`lof_hc`, `lof_hc_lc`, plus any additional groupings). Produced by
+`lof_classic`, `lof_hc_lc`, `lof_hc`, plus any additional groupings). Produced by
 `--aggregate-by-constraint-groups` /
 [`aggregate_by_constraint_groups`](../utils/constraint.py).
 
@@ -424,10 +431,10 @@ Pre-metric per-transcript table organized into constraint groups (`syn`, `mis`,
 ### Globals
 Pipeline-parameter globals (same as §7) plus:
 - `constraint_group_meta: array<dict<str,str>>` — one dict per
-  `constraint_groups[i]` describing the group's filter (e.g. `{annotation:
-  synonymous_variant}`, `{annotation: missense_variant}`,
-  `{annotation: lof, modifier: HC}`, `{annotation: lof, modifier: HC_LC}`).
-  Position in this array matches position in the row-level
+  `constraint_groups[i]` describing the group's filter: `{csq_set: syn}`,
+  `{csq_set: mis}`, `{lof: classic}` (stop gained, splice donor, and splice
+  acceptor variants), `{lof: hc_lc}` (LOFTEE HC or LC), and `{lof: hc}`
+  (LOFTEE HC). Position in this array matches position in the row-level
   `constraint_groups` array.
 
 ### Rows
@@ -435,7 +442,7 @@ Pipeline-parameter globals (same as §7) plus:
 - `constraint_groups: array<struct>` — one element per metadata entry in
   `constraint_group_meta`, each carrying summed counts:
   - `mu_snp: float64` — `Σ mu_snp · possible` over variants in this group.
-  - `mu: float64` — `Σ mu` (i.e. `Σ mu_snp · possible`).
+  - `mu: float64` — `Σ mu` (i.e. `Σ mu_snp · possible · coverage_correction`).
   - `possible_variants: int64` — total possible SNVs.
   - `coverage_correction: float64` — `Σ coverage_correction · possible`.
   - `oe_info: array<struct{observed_variants: int64, predicted_proportion_observed: float64, expected_variants: float64}>`
@@ -484,8 +491,12 @@ Pipeline-parameter globals (as §9) plus:
       CI using a discretized-Poisson estimator.
     - `oe_ci_gamma: struct{lower: float64, upper: float64}` — OE CI using a
       Gamma estimator (the LOEUF estimator).
-    - `z_raw: float64` — `(observed - expected) / sqrt(expected)`.
-  - `flags: set<str>` — per-group QC flags (e.g. low observed, low expected).
+    - `z_raw: float64` — `(expected - observed) / sqrt(expected)`, so it is
+      positive when there are fewer variants than expected.
+  - `flags: set<str>` — per-group QC flags: `no_exp_{syn,mis,lof}` when the
+    expected count is missing or 0, and `outlier_{syn,mis,lof}` when `z_raw`
+    is outside the group's outlier thresholds. Every LoF group uses the `lof`
+    name and thresholds.
   - `z_score: float64` — `z_raw / sd_raw_z[group_idx]`, taken at the
     canonical (global-adj) freq index.
   - `pNull: float64`, `pRec: float64`, `pLI: float64` — pNull / pRec / pLI
@@ -500,8 +511,9 @@ Pipeline-parameter globals (as §9) plus:
     - `upper_bin_decile: int32` — decile bin (0–9).
     - `upper_bin_sextile: int32` — sextile bin (0–5).
 - `no_variants: bool` — as §9.
-- `constraint_flags: set<str>` — transcript-level QC flags
-  (`no_variants`, `not_in_gencode`, `outlier_*`, etc.).
+- `constraint_flags: set<str>` — transcript-level QC flags: the union of the
+  `syn`, `mis`, and `lof_hc` groups' `flags`, so the `no_exp_*` and
+  `outlier_*` flags.
 - `constraint_bins: struct{percentile, decile, sextile}` — convenience bins
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:
@@ -511,7 +523,8 @@ Pipeline-parameter globals (as §9) plus:
   - `exome_prop_segdup: float64` — fraction of transcript CDS in segmental
     duplications.
   - `exome_prop_LCR: float64` — fraction in low-complexity regions.
-- `gene_flags: set<str>` — joined-in from §11 (e.g. low coverage, high segdup).
+- `gene_flags: set<str>` — joined-in from §11 (`low_exome_coverage`,
+  `low_exome_mapping_quality`).
 - `level: str`, `transcript_type: str`, `chromosome: str`,
   `start_position: int32`, `end_position: int32`,
   `gene_id_version: str`, `transcript_id_version: str`,
@@ -535,8 +548,9 @@ by `--compute-gene-quality-metrics`.
 - `transcript: str` — key.
 - `gene_quality_metrics: struct{exome_prop_bp_AN90, exome_mean_AS_MQ, exome_prop_segdup, exome_prop_LCR}`
   — see §10 for the individual fields.
-- `gene_flags: set<str>` — transcript-level flags derived from the above
-  (e.g. `low_exome_coverage`, `high_segdup_overlap`).
+- `gene_flags: set<str>` — transcript-level flags derived from the above:
+  `low_exome_coverage` when `exome_prop_bp_AN90` < 0.1, and
+  `low_exome_mapping_quality` when `exome_mean_AS_MQ` < 50.
 
 ---
 
@@ -604,8 +618,9 @@ Each constraint group is exposed as a named struct (group names from
 **Common sub-fields** on every `{syn,mis,lof_hc_lc,lof}` struct
 (`RELEASE_CG_SELECT` order):
 
-- `mu: float64` — total mu mass for this group (renamed from `mu_snp` per
-  `RELEASE_CG_RENAME`).
+- `mu: float64` — total mu mass for this group, without the coverage
+  correction: the internal `mu_snp` sum, renamed per `RELEASE_CG_RENAME`. It
+  replaces the internal `mu`, which includes the coverage correction.
 - `possible: int64` — total possible SNVs (from `possible_variants`).
 - `obs: int64` — observed SNV count at the global-adj index.
 - `exp: float64` — expected SNV count at the global-adj index.
@@ -699,23 +714,23 @@ constraint baseline rather than the general per-context baseline.
 
 ---
 
-## Regenerating this README
+## Updating this README
 
-The schemas above were captured against live GCS tables for version `4.1.1`.
-To refresh after a pipeline rerun:
+After a change to an output's schema, describe the output of a `--test` run and
+update its section. In a Hail session with access to GCS:
 
-```bash
-source /Users/jgoodric/miniconda3/etc/profile.d/conda.sh && conda activate hail
-export PATH="/Users/jgoodric/google-cloud-sdk/bin:$PATH"
-python -c "
+```python
 import hail as hl
-hl.init(quiet=True, idempotent=True)
-ht = hl.read_table('<gcs path>')
+
+from gnomad_constraint.resources.resource_utils import get_constraint_metrics_dataset
+
+ht = get_constraint_metrics_dataset(
+    "transcript_consequences", version="4.1.1", test=True
+).ht()
 ht.describe()
 print(hl.eval(ht.globals))
-"
 ```
 
 The path conventions are sourced from [`get_constraint_data`](resource_utils.py)
 and [`get_constraint_root`](resource_utils.py). When in doubt, instantiate a
-resource via the corresponding `get_*` function and read `.ht().path`.
+resource via the corresponding `get_*` function and read its `.path`.

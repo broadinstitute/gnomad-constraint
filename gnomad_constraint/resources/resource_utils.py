@@ -3,8 +3,6 @@
 import logging
 from typing import List, Optional, Union
 
-import gnomad.resources.grch37.gnomad as gnomad_grch37
-import gnomad.resources.grch37.reference_data as ref_grch37
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
 import hail as hl
@@ -27,8 +25,10 @@ from gnomad_constraint.resources.constants import (
     CUSTOM_VEP_ANNOTATIONS,
     DATA_TYPES,
     EXTENSIONS,
+    GENCODE_VERSION_MAP,
     MODEL_TYPES,
     SITES_VERSION_MAP,
+    VEP_VERSION_MAP,
     VERSIONS,
 )
 
@@ -46,11 +46,9 @@ def check_param_scope(
     custom_vep_annotation: Optional[str] = None,
     extension: Optional[str] = None,
     data_type: Optional[str] = None,
-) -> Union[str, None]:
+) -> None:
     """
     Check if the specified version, genomic region, and other parameters are in the scope of the constraint pipeline.
-
-    If version is specified, return the genome build of the version as a string.
 
     :param version: One of the release versions (`VERSIONS`). Default is None.
     :param model_type: One of "plateau", "coverage". Default is None.
@@ -58,7 +56,7 @@ def check_param_scope(
         model (one of "transcript_consequences" or "worst_csq_by_gene"). Default is None.
     :param extension: File extension. Default is None.
     :param data_type: One of "exomes", "genomes". Default is None.
-    :return: Genome build of version as a string or None.
+    :return: None.
     """
     if data_type and data_type not in DATA_TYPES:
         raise ValueError(f"data_type must be one of: {DATA_TYPES}!")
@@ -70,31 +68,22 @@ def check_param_scope(
         )
     if extension and extension not in EXTENSIONS:
         raise ValueError(f"extension must be one of: {EXTENSIONS}!")
-    if version:
-        if version not in VERSIONS:
-            raise ValueError("The requested version doesn't exist!")
-        else:
-            if version.startswith("2"):
-                return "GRCh37"
-            else:
-                return "GRCh38"
+    if version and version not in VERSIONS:
+        raise ValueError("The requested version doesn't exist!")
 
 
 def get_vep_context_ht(version: str) -> TableResource:
     """
     Return VEP context Table corresponding to specified gnomAD version.
 
-    gnomAD version 2.1.1 uses build GRCh37 and VEP version 85. gnomAD v4 versions use build GRCh38 and VEP version 105.
+    gnomAD v4 versions use build GRCh38 and VEP version 105.
 
     :param version: Version of gnomAD.
     :return: VEP context Table Resource.
     """
-    if version == "2.1.1":
-        return ref_grch37.vep_context.versions["85"]
-    elif int(version[0]) == 4:
-        return ref_grch38.vep_context.versions["105"]
-    else:
-        raise ValueError("Not a valid gnomAD version -- must be either 2.1.1 or 4.x!")
+    check_param_scope(version=version)
+
+    return ref_grch38.vep_context.versions[VEP_VERSION_MAP[version]]
 
 
 def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseResource:
@@ -105,21 +94,13 @@ def get_sites_resource(data_type: str, version: str = CURRENT_VERSION) -> BaseRe
     :param version: The version of the Table. Default is CURRENT_VERSION.
     :return: Genome or exomes sites Table.
     """
-    build = check_param_scope(version=version, data_type=data_type)
-    sites_version = SITES_VERSION_MAP[version]
-    if build == "GRCh37":
-        return gnomad_grch37.public_release(data_type).versions[sites_version]
-    elif int(version[0]) == 4:
-        # Continue to use v3.1.2 for genomes as downsamplings are dropped in v4
-        # versions.
-        if data_type == "genomes":
-            return gnomad_grch38.public_release(data_type).versions["3.1.2"]
-        else:
-            return gnomad_grch38.public_release(data_type).versions[sites_version]
-    else:
-        raise ValueError(
-            "The sites resource has not been defined for the specified version!"
-        )
+    check_param_scope(version=version, data_type=data_type)
+    # Continue to use v3.1.2 for genomes as downsamplings are dropped in v4
+    # versions.
+    if data_type == "genomes":
+        return gnomad_grch38.public_release(data_type).versions["3.1.2"]
+
+    return gnomad_grch38.public_release(data_type).versions[SITES_VERSION_MAP[version]]
 
 
 def get_gerp_ht(build: str) -> hl.Table:
@@ -134,21 +115,6 @@ def get_gerp_ht(build: str) -> hl.Table:
     )
 
 
-def get_methylation_ht(build: str) -> TableResource:
-    """
-    Retrieve methylation data TableResource.
-
-    :param build: Build of the reference genomes to use. One of "GRCh37" or "GRCh38".
-    :return: TableResource of methylation data for the specified build.
-    """
-    if build == "GRCh37":
-        return ref_grch37.methylation_sites
-    elif build == "GRCh38":
-        return ref_grch38.methylation_sites
-    else:
-        raise ValueError("Build must be one of 'GRCh37' or 'GRCh38'.")
-
-
 def get_coverage_ht(
     data_type: str,
     version: str = CURRENT_VERSION,
@@ -161,11 +127,9 @@ def get_coverage_ht(
         `CURRENT_VERSION`.
     :return: TableResource of coverage Table.
     """
-    build = check_param_scope(version=version, data_type=data_type)
-    if build == "GRCh37":
-        return gnomad_grch37.coverage(data_type)
-    else:
-        return gnomad_grch38.coverage(data_type)
+    check_param_scope(version=version, data_type=data_type)
+
+    return gnomad_grch38.coverage(data_type)
 
 
 def get_gencode_ht(version: str) -> hl.Table:
@@ -176,24 +140,18 @@ def get_gencode_ht(version: str) -> hl.Table:
     ``transcript_id_version`` and ``gene_id_version`` fields are present,
     then checkpoints the result so subsequent calls read from the checkpoint.
 
-    :param version: gnomAD version. If version 2, GENCODE v19 will be
-        loaded. If version 4, GENCODE v39 will be re-imported with version
+    :param version: gnomAD version. The GENCODE version that the context Table's
+        VEP version annotates with (v39 for VEP 105) is re-imported with version
         fields and checkpointed.
     :return: Table of GENCODE data with version annotations.
     """
-    if int(version[0]) == 2:
-        return ref_grch37.gencode.ht()
-    elif int(version[0]) == 4:
-        gencode_resource = ref_grch38.gencode
-        import_args = gencode_resource.versions[
-            gencode_resource.default_version
-        ].import_args
-        ht = import_gencode(**import_args, include_version=True)
-        checkpoint_path = "gs://gnomad-tmp/gencode_v39_with_versions.ht"
+    check_param_scope(version=version)
+    gencode_version = GENCODE_VERSION_MAP[VEP_VERSION_MAP[version]]
+    import_args = ref_grch38.gencode.versions[gencode_version].import_args
+    ht = import_gencode(**import_args, include_version=True)
+    checkpoint_path = f"gs://gnomad-tmp/gencode_{gencode_version}_with_versions.ht"
 
-        return ht.checkpoint(checkpoint_path, _read_if_exists=True)
-    else:
-        raise ValueError("Version must be within gnomAD v2 or v4.")
+    return ht.checkpoint(checkpoint_path, _read_if_exists=True)
 
 
 def get_gencode_cds_ht(
@@ -601,16 +559,6 @@ def get_logging_path(name: str, **kwargs) -> str:
     )
 
 
-def get_checkpoint_path(name: str, **kwargs) -> TableResource:
-    """
-    Create a checkpoint TableResource.
-
-    :param name: Name of intermediate Table.
-    :return: Output checkpoint TableResource.
-    """
-    return get_constraint_data(name, sub_dir="checkpoint_files", test=True, **kwargs)
-
-
 def filter_for_test(
     ht: hl.Table,
     use_gene_list: bool = False,
@@ -625,24 +573,14 @@ def filter_for_test(
     """
     rg = get_reference_genome(ht.locus)
     if use_gene_list:
-        if rg.name == "GRCh37":
-            keep_regions = [
-                "1:55505149-55530526",  # PCSK9
-                "20:49505585-49547958",  # ADNP
-                "20:853296-896977",  # ANGPT4
-                "X:13752832-13787480",  # OFD1
-                "X:57313139-57515629",  # FAAH2
-                "Y:2803112-2850547",  # ZFY
-            ]
-        else:
-            keep_regions = [
-                "chr1:55039447-55064852",  # PCSK9
-                "chr20:50888916-50931437",  # ADNP
-                "chr20:869900-916334",  # ANGPT4
-                "chrX:13734743-13777955",  # OFD1
-                "chrX:57286706-57489193",  # FAAH2
-                "chrY:2935281-2982506",  # ZFY
-            ]
+        keep_regions = [
+            "chr1:55039447-55064852",  # PCSK9
+            "chr20:50888916-50931437",  # ADNP
+            "chr20:869900-916334",  # ANGPT4
+            "chrX:13734743-13777955",  # OFD1
+            "chrX:57286706-57489193",  # FAAH2
+            "chrY:2935281-2982506",  # ZFY
+        ]
         keep = [hl.parse_locus_interval(c, reference_genome=rg) for c in keep_regions]
     else:
         keep = [
@@ -712,14 +650,10 @@ def get_constraint_resources(
         overwrite=overwrite,
     )
 
-    # Create resource collection for each step of the constraint pipeline.
-    context_res = get_vep_context_ht(version)
-    context_build = get_reference_genome(context_res.ht().locus).name
-
     # Make dictionary for prepare_context input Tables.
     input_hts = {
-        "context_ht": context_res,
-        "methylation_ht": get_methylation_ht(context_build),
+        "context_ht": get_vep_context_ht(version),
+        "methylation_ht": ref_grch38.methylation_sites,
     }
     for d in ["exomes", "genomes"]:
         input_hts[f"{d}_coverage_ht"] = get_coverage_ht(d, version)
@@ -740,7 +674,7 @@ def get_constraint_resources(
         input_resources={"gnomAD resources": input_hts},
     )
     preprocess_data = PipelineStepResourceCollection(
-        "preprocess data for downstream steps",
+        "--preprocess-data",
         output_resources={
             "temp_preprocess_data_ht": get_preprocessed_ht(**common_params),
         },
@@ -844,7 +778,7 @@ def get_constraint_resources(
         compute_constraint_metrics = PipelineStepResourceCollection(
             "--compute-constraint-metrics --skip-pre-rank-metrics",
             input_resources={
-                "pre-rank constraint metrics": {
+                "--compute-constraint-metrics": {
                     "pre_rank_constraint_metrics_ht": (
                         get_pre_rank_constraint_metrics_dataset(
                             custom_vep_annotation,
@@ -903,10 +837,16 @@ def get_constraint_resources(
             "release_tsv": get_release_constraint_tsv_path(
                 **common_params, path_post_fix=path_post_fix
             ),
-            "release_downsampling_tsv": get_release_downsampling_tsv_path(
+            "lof_threshold_tsv": get_lof_threshold_tsv_path(
                 **common_params, path_post_fix=path_post_fix
             ),
-            "lof_threshold_tsv": get_lof_threshold_tsv_path(
+        },
+        pipeline_input_steps=[prepare_release],
+    )
+    export_release_downsampling_tsv = PipelineStepResourceCollection(
+        "--export-release-downsampling-tsv",
+        output_resources={
+            "release_downsampling_tsv": get_release_downsampling_tsv_path(
                 **common_params, path_post_fix=path_post_fix
             ),
         },
@@ -931,6 +871,7 @@ def get_constraint_resources(
             "prepare_release": prepare_release,
             "prepare_release_mutation_rate": prepare_release_mutation_rate,
             "export_release_tsv": export_release_tsv,
+            "export_release_downsampling_tsv": export_release_downsampling_tsv,
         }
     )
 

@@ -1,102 +1,220 @@
-# gnomad-constraint Claude Reference
+# CLAUDE.md
+
+Guidance for Claude Code when working in this repository. The repo layout, the
+pipeline steps, and how to install and run things are in [README.md](README.md).
+
+## Project Overview
+
+gnomad-constraint computes the gnomAD gene and transcript constraint metrics
+(observed and expected variant counts, o/e and its confidence interval, pLI, and
+z-scores) and the mutation rate table they are built on. Expected counts are
+computed per variant and aggregated by transcript and constraint group. The
+pipeline is one `argparse` script whose steps read and write Hail Tables on GCS
+and run on Dataproc.
+
+**This is a pipeline repo, not a library.** Nothing outside this repo imports it.
+A transformation that is Table or expression in, Table or expression out, with no
+file I/O, is a candidate for
+[gnomad_methods](https://github.com/broadinstitute/gnomad_methods)
+(`gnomad.utils.constraint` holds most of the shared constraint logic); if it's
+general, put it there.
+
+Two tightly coupled dependencies:
+
+- **gnomad_methods**: shared resources and utilities, installed from GitHub at
+  the commit pinned in `requirements.txt`. Its constraint API changes often, so
+  the code here only works with the pinned commit. Moving the pin is a code
+  change: check every import and call into `gnomad.utils.constraint`.
+- **Hail**: behavior and performance differ across versions, and files written
+  by a newer Hail can't be read by an older one. The allowed range is in
+  `requirements.txt`.
+
+## Finding Code and APIs
+
+Discover names and signatures at point of use rather than relying on memory or
+this file:
+
+- **Dataset paths** come from `get_*` functions in
+  `gnomad_constraint/resources/resource_utils.py`. They take `version` and
+  `test`, and most also take the directory and path post-fixes; `test` sends
+  output to `gs://gnomad-tmp/gnomad_v{version}_testing/`. Constants live in
+  `gnomad_constraint/resources/constants.py`, and
+  `gnomad_constraint/resources/README.md` has the schema of every output.
+  Public gnomAD releases and reference data (VEP context, methylation, GERP,
+  GENCODE) come from `gnomad.resources.grch38`; check there before adding a
+  resource.
+- **Shared utilities**: check gnomad_methods before writing a helper. A local
+  gnomad_methods checkout is often on an unrelated branch, so confirm which copy
+  your imports resolve to, and that it matches the pinned commit, before
+  debugging it.
+- **Pipeline steps**: each step is a flag in
+  `gnomad_constraint/pipeline/constraint_pipeline.py`, handled by its own block
+  in `main()`. Read that block before changing the step.
+
+## Commands
+
+Setup, formatting, and the exact CI checks are in README.md and
+`.github/workflows/ci.yml`. Two things that are easy to get wrong:
+
+- `requirements-dev.txt` is generated. Edit `requirements-dev.in` and run
+  `pip-compile requirements-dev.in` with Python 3.11 (the version CI runs) and
+  pip-tools 7.4 or later; never edit the `.txt` by hand.
+- Run the pre-commit hooks on the files you changed before committing:
+  `pre-commit run --files <files>`.
+- Run the unit tests with `python -m pytest`. The gamma confidence interval
+  tests need Hail 0.2.137 or later and are skipped on older versions.
+
+## How Code Is Executed
+
+Steps are submitted to a Dataproc cluster with `hailctl dataproc submit`, usually
+one step flag at a time, not run locally on real data. README.md has the
+submission command. When submitting:
+
+- Package `gnomad_constraint`, `gnomad_qc`, and `gnomad_methods` into a single
+  zip passed to `--pyfiles`. With more than one file, hailctl repackages them and
+  nests the packages incorrectly.
+- Zip gnomad_methods **at the commit pinned in `requirements.txt`**. Without it,
+  the cluster runs whatever gnomad_methods it has installed.
+- `--calculate-gerp-cutoffs` saves nothing: its cutoffs are only used by
+  `--preprocess-data` in the same command. Submitted on its own, preprocessing
+  silently uses the default cutoffs.
+- Run a step with `--test` (chr20, chrX, and chrY) or `--test-gene-list` (six
+  genes) and check the output before running it at full scale.
+
+Machine-specific notes (environment paths, cluster names) belong in the
+gitignored `CLAUDE.local.md`.
 
 ## Code Style
 
-### Formatting
-
-Code is formatted with **black** (preview mode, line length 88), **isort** (profile `"black"`), and **autopep8** (aggressive=1, ignoring E201/E202/E203/E731). Linting uses **pylint** and **pydocstyle** (PEP 257 convention, ignoring D100/D104). Config is in `pyproject.toml`.
-
-```bash
-# Manual formatting
-black gnomad_constraint/
-isort --profile black gnomad_constraint/
-```
-
-### Docstrings
-
-Use **Sphinx-style** (`:param:`, `:return:`) docstrings following the gnomad_methods convention (see gnomad_mnv CLAUDE.md for full examples).
-
-### Type Annotations
-
-- **All functions** must have type annotations on parameters and return values.
-- Use `typing.List`, `typing.Optional`, etc. for generic types.
-- For Hail expression parameters, use `hl.expr.StructExpression`, `hl.expr.BooleanExpression`, etc.
-- For Hail table/matrix types, use `hl.Table`, `hl.MatrixTable`.
-
-## Tests
-
-Unit tests live in `tests/`, mirroring the package layout; tests for `gnomad_constraint/utils/constraint.py` are split by pipeline stage into `tests/utils/test_constraint_{preprocess,apply,metrics,gene_quality}.py`. Run them with `python -m pytest` (Hail >= 0.2.137 for the gamma CI tests); CI runs them on every pull request. See `tests/README.md` for conventions.
-
-- Add or update a test with every bug fix, and say what it guards against in the test docstring. A known, unfixed bug gets an `xfail(strict=True)` test that asserts the correct behavior.
-- Build fixtures with `hl.Table.parallelize`; tests must not read from GCS.
-- Test classes are `Test<FunctionName>`, and every test has a docstring and `-> None` (pydocstyle runs on `tests/`).
-- If the internal constraint metrics schema or the release columns change on purpose, update `tests/data/constraint_metrics_row_type.txt` and `tests/data/release_tsv_columns.txt`.
-
-## Key Constants (`constants.py`)
+- black (preview mode, line length 88), isort (`black` profile), and autopep8,
+  configured in `pyproject.toml` and `.pre-commit-config.yaml`. pydocstyle uses
+  the PEP 257 convention. R code under `gnomad_constraint/plots/` goes through
+  styler and lintr.
+- Every function has type annotations. Use `Optional[...]` when the default is
+  `None`, and never use mutable defaults. Hail types are `hl.Table`,
+  `hl.MatrixTable`, and `hl.expr.*Expression`.
+- Sphinx-style docstrings with the summary on the line after the opening
+  `"""`, and `:param:` and `:return:` for every argument and return value:
 
 ```python
-VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1", "4.1.2"]
-CURRENT_VERSION = "4.1.1"
-DATA_TYPES = ["context", "exomes", "genomes"]
-MODEL_TYPES = ["plateau", "coverage"]
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-COVERAGE_CUTOFF = 40
-CUSTOM_VEP_ANNOTATIONS = ["transcript_consequences", "worst_csq_by_gene"]
-MU_GROUPING = ("context", "ref", "alt", "methylation_level")
+def my_function(ht: hl.Table, max_af: Optional[float] = None) -> hl.Table:
+    """
+    Short imperative summary line.
+
+    Extended description if needed. Use ``double backticks`` for field and code
+    references.
+
+    :param ht: Input Table with ``freq`` field.
+    :param max_af: Maximum allele frequency threshold. Default is None.
+    :return: Table with ``filters`` field added.
+    """
 ```
 
-## Known Gotchas
+- Write new functions in `utils/` as transformations (Tables in, Tables out), and
+  keep reads, writes, and checkpoints to resource paths in the pipeline script.
+  Checkpointing to a temporary file (`new_temp_file`) inside a function is fine.
 
-- **MU_GROUPING lives in constants**: `gnomad_constraint.resources.resource_utils` does NOT export `MU_GROUPING`. Import it from `gnomad_constraint.resources.constants`.
-- **Genomic regions are labels, not separate Tables**: `prepare_context_ht` annotates each site with `genomic_region` (`"autosome_or_par"`, `"chrx_nonpar"`, or `"chry_nonpar"`), and all three stay in the same Tables. Filter on `"autosome_or_par"`, not `"autosome_par"`. `adj_r` and `syn_adj_r` are only defined on autosomes.
-- **Coverage metric**: `--exome-coverage-metric` sets how exome coverage is measured (`AN_percent` by default; also `median` or `AN`). This affects model building and application.
-- **Genomes v3.1.2 for v4**: Even in v4, the genomes sites resource uses v3.1.2 (downsamplings dropped in v4).
-- **Hail `hl.init` tmp_dir**: Pipeline uses `gs://gnomad-tmp-4day` as the Hail temp directory. Ensure this bucket exists and is writable.
-- **`ht.get()` doesn't exist on Hail Tables**: Use `field in ht.row` to check field existence.
-- **constraint_metrics.ht pLoF lacks adj_r**: The pre-computed `constraint_metrics.ht` has `lof.exp` WITHOUT the regional depletion correction (`adj_r`). To get adj_r-corrected pLoF, compute it from the per-SNV table by filtering to LOFTEE HC + `possible_variants == 1` and aggregating with `expected_variants[0] * adj_r`.
-- **The flowchart is checked in CI**: `gnomad_constraint/flowchart/constraint_pipeline.html` is generated from the pipeline's steps, flags, resources, and function calls. After changing any of those (or the docstring of a gnomad-constraint function a step reaches), commit, then run `python -m gnomad_constraint.flowchart.generate_flowchart --extract`; CI's `--check` fails otherwise. Hand-written prose lives in `gnomad_constraint/flowchart/notes.py`, keyed by step, function, flag, and resource names, so renaming any of them means updating the notes too.
-- **Table version awareness**: Undated tables (e.g., `annotate_with_oe.ht`) and dated tables (e.g., `annotate_with_oe.12_23_25.ht`) may have different schemas and column names. Always verify which version you're using.
+## Hail Notes
 
-## Hail / Dataproc Best Practices
+- **Lazy evaluation drives most surprises.** `.count()`, `.collect()`,
+  `hl.eval()`, `.show()`, and `.aggregate()` execute the whole upstream plan.
+  Never call `.count()` just to log on a large Table; checkpoint first, after
+  which `.count()` only reads metadata.
+- After filtering a large Table down to a small subset, checkpoint it and
+  `naive_coalesce()` the checkpointed result, or the empty partitions skew
+  downstream `group_by` aggregations.
+- `order_by` drops the key. To join ranked results back, `add_index()` before
+  ordering and key the result by that index; `hl.scan.count()` after `order_by`
+  assigns 0-based ranks in one pass.
+- All elements of a Hail array must have the same type. Put per-element metadata
+  that only some elements have on the parent struct instead.
+- Hail Tables have no `.get()`; check for a field with `field in ht.row`.
+- Hail defaults to GRCh37; set the reference genome explicitly for v4 (GRCh38).
+- The pipeline uses `gs://gnomad-tmp-4day` as the Hail tmp dir.
 
-- **Never use `.count()` for logging on large tables**: `count()` forces a full table materialization. On a large per-SNV table this triggers a massive Spark job and can cause shuffle failures. Use it only when the result is actually needed for computation.
-- **Use `naive_coalesce()` after aggressive filters**: When filtering a large table down to a small subset (e.g., LOFTEE HC LoF from all variants), most partitions become empty. This causes shuffle skew in downstream `group_by` aggregations. Call `naive_coalesce(200)` after the filter to rebalance.
-- **Per-SNV table `calibrate_mu` struct**: The per-variant expected table (`gnomad.v4.1.per_variant_expected.coverage_corrected.with_downsamplings.ht`) stores transcript-level fields (`gene`, `transcript`, `canonical`, `modifier`, `observed_variants`, `expected_variants`, `possible_variants`) inside a `calibrate_mu` struct. Flatten it with `ht = ht.annotate(**ht.calibrate_mu)` before accessing those fields.
-- **Log full row field lists for debugging**: When debugging schema issues, log `list(ht.row)` (all fields), not `list(ht.row)[:20]` (truncated). Important fields like `calibrate_mu` may be beyond the first 20.
-- **`order_by` destroys the key — use `add_index` to rekey cheaply**: After `ht.order_by(expr)`, the table is unkeyed. To rejoin ranked results back to the original table, call `ht.add_index("_rank_idx")` before ordering, then `rank_ht.key_by("_rank_idx")` after. Rejoining via an integer index is an O(1) lookup vs a full key scan.
-- **`hl.scan.count()` for rank assignment**: After `order_by`, annotate with `hl.scan.count()` to assign 0-based ascending ranks in a single pass: `ht = ht.order_by(ht.val).annotate(rank=hl.scan.count())`.
-- **Checkpoint small select-then-order tables, not the full wide table**: When computing ranks for many `(group, field)` combinations, select only the columns needed (`ht.select("_rank_idx", _val=expr)`), order, rank, checkpoint, and join results back in one pass. Avoids checkpointing the full wide table once per iteration.
-- **`.count()` after checkpoint is free**: `count()` on a checkpointed table reads already-materialized metadata rather than re-executing the query. Place `count()` after a checkpoint to avoid computing the table twice.
-- **Python list comprehensions over Hail arrays for indexed access**: When you need to index a Hail array with a known Python integer (e.g., `ht.constraint_groups[i]`), use a Python list comprehension rather than `hl.enumerate` + lambda. This also allows Python-time dict lookups like `rank_hts[(i, key)]` inside the expression.
-- **`hl.Table.parallelize` to reconstruct a small HT from collected data**: `hl.Table.parallelize(hl.eval(ht.my_array_global), schema=ht.my_array_global.dtype.element_type).key_by(...)` reconstructs a small Hail Table from a global array without re-running any jobs.
-- **Hail array elements must share the same struct schema**: All elements of a Hail array field must have identical types. You cannot annotate only `array[0]` with extra fields while leaving `array[1+]` unchanged — Hail will reject the mixed schema. Instead, promote such metadata to the parent struct level (e.g., add a `{field}_rank` struct directly on the constraint group rather than inside `oe_info[0]`).
+## Testing and Validation
 
-## Dataproc Submission
+Unit tests in `tests/` run in CI; `tests/README.md` describes their layout and
+conventions. Add or update a test with every bug fix and say in its docstring
+what it guards against; a known, unfixed bug gets an `xfail(strict=True)` test
+that asserts the correct behavior. Fixtures are built with
+`hl.Table.parallelize`, and tests never read from GCS.
 
-**Important**: hailctl repackages `--pyfiles` into a temp zip using `os.walk`, which nests packages incorrectly. Use the single-zip workaround (same as gnomad_mnv):
+Unit tests don't replace running the pipeline. Validate a change to a step by
+running it with `--test` and inspecting the output. A passing `--test` run is
+necessary but not sufficient: out-of-memory and shuffle failures only appear at
+full scale. Say what you ran and at what scale rather than calling a change
+verified.
 
-```bash
-# Build a single zip with correct top-level package structure
-# Exclude non-Python files (.RData, renv/, images, notebooks) to keep zip small
-cd <gnomad-constraint root> && \
-  rm -f /tmp/pyfiles.zip && \
-  zip -r /tmp/pyfiles.zip gnomad_constraint/ -x '*.pyc' '*__pycache__*' '*.RData' '*/renv/*' '*.DS_Store' '*.png' '*.pdf' '*.ipynb' && \
-  cd <gnomad_qc root> && \
-  zip -r /tmp/pyfiles.zip gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store' '*.ipynb'
+## Pull Requests
 
-# Submit to cluster (single zip = used directly, not repackaged)
-hailctl dataproc submit <CLUSTER> \
-  gnomad_constraint/pipeline/constraint_pipeline.py \
-  --pyfiles /tmp/pyfiles.zip \
-  -- --compute-constraint-metrics --test --overwrite
-```
+**Run the `/review` skill on every pull request before requesting review from a
+team member** (Ben Weisburd's skill:
+https://github.com/bw2/claude-code-review-skill). A SessionStart hook in
+`.claude/settings.json` clones it into `~/.claude/skills/review` the first time
+you open this repo and pulls updates after that, so there is nothing to install
+by hand. If you already have a modified or hand-copied skill there, the hook
+leaves it alone and tells you so at session start. Set
+`GNOMAD_SKIP_REVIEW_HOOK=1` to turn the hook off. Work through what it reports,
+and note in the PR description that it was run and what you did or did not act
+on. Human review time is the scarce resource here; don't spend it on things the
+skill would have caught.
 
-## gnomad_methods / gnomad_qc API
+For a large PR, especially one that changes released metrics, the
+`/gnomad-pr-review` skill does a deeper multi-agent review and writes a ranked
+`REVIEW.md` with a draft comment per finding. It only runs when invoked by name.
 
-See the gnomad_mnv CLAUDE.md for shared API reference (`public_release`, `TableResource`, `get_gnomad_v4_vds`, etc.). Key constraint-specific imports:
+**If a change alters the structure of the repo, update the repo layout table in
+the README in the same pull request.** If a change alters a release Table's
+fields or globals, update its description in `release_readme/` too.
 
-```python
-from gnomad.utils.constraint import build_models, compute_pli, oe_confidence_interval
-from gnomad.resources.grch38.gnomad import public_release, DOWNSAMPLINGS, all_sites_an
-from gnomad_qc.resource_utils import PipelineResourceCollection, PipelineStepResourceCollection
-```
+## Attribution
+
+- When Claude Code or another agent helped with a commit, add exactly one
+  `Assisted-by: AGENT:MODEL` trailer, e.g.
+  `Assisted-by: ClaudeCode:claude-opus-5-5`.
+- `Co-authored-by:` is for people, not agents. Never add a
+  `Co-Authored-By: Claude ...` or similar agent trailer, even if the harness
+  adds one by default.
+
+## Never Do This
+
+- **Never overwrite a production output when testing.** Use `--test`, which
+  writes to the testing bucket; `--overwrite` on a production path replaces
+  released or expensive-to-regenerate Tables.
+- **Never delete data outside temp buckets.**
+- **Never hardcode a `gs://` dataset path** outside `resource_utils.py`; add a
+  `get_*` function instead. The `hl.init` tmp dir is the exception.
+- **Never shut down a Dataproc cluster without checking with the user first.**
+
+## Repo Gotchas
+
+- Genomic regions are labels, not separate Tables: `prepare_context_ht` labels
+  each site `autosome_or_par`, `chrx_nonpar`, or `chry_nonpar`, and all three stay
+  in the same Tables. Filter on `autosome_or_par`, not `autosome_par`.
+- `adj_r` and `syn_adj_r` are annotated on the context Table but never applied by
+  the pipeline, and they are only defined on autosomes. Expected counts and o/e
+  in the metrics and release Tables are not adj_r-corrected.
+- For v4, the genomes sites resource is still v3.1.2, because v4 genomes have no
+  downsamplings.
+- `--exome-coverage-metric` (`AN_percent` by default, or `median` or `AN`) and
+  `--skip-coverage-model` are applied at `--preprocess-data` and change both model
+  building and model application. Later steps raise an error if
+  `--skip-coverage-model` doesn't match the preprocessed Table.
+- `--compute-constraint-metrics` needs Hail 0.2.137 or later (`hl.qgamma`, used
+  for the gamma confidence interval).
+- `gnomad_constraint/flowchart/constraint_pipeline.html` is generated from the
+  pipeline's steps, flags, resources, and function calls, and CI's `--check`
+  fails when it's stale. After changing any of those, or the docstring of a
+  function a step reaches, commit, then run
+  `python -m gnomad_constraint.flowchart.generate_flowchart --extract`. Its prose
+  lives in `gnomad_constraint/flowchart/notes.py`, keyed by step, function, flag,
+  and resource names, so renaming one of them means updating the notes too.
+
+## Maintaining CLAUDE.md
+
+When you discover a gotcha, non-obvious behavior, or convention, propose it to
+the user rather than adding it yourself: say what you learned and which section
+it belongs in. Keep entries short and durable. Document patterns and how to find
+things, not inventories of functions, paths, or the repo layout, which belong in
+README.md or the code.

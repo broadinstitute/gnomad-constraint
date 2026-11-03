@@ -65,25 +65,39 @@ def _bin(value: Optional[float], thresholds: List[float]) -> Optional[int]:
     return None if value is None else sum(value >= t for t in thresholds)
 
 
+def _sorted_type(t: hl.HailType) -> hl.HailType:
+    """Return ``t`` with the fields of every struct in it sorted by name."""
+    if isinstance(t, hl.tstruct):
+        return hl.tstruct(**{k: _sorted_type(t[k]) for k in sorted(t)})
+    if isinstance(t, hl.tarray):
+        return hl.tarray(_sorted_type(t.element_type))
+    if isinstance(t, hl.tset):
+        return hl.tset(_sorted_type(t.element_type))
+    return t
+
+
 def _constraint_groups_ht(
     rows: List[Dict],
     oe_info_type: hl.tstruct,
     extra_cg_fields: Dict = None,
     meta: List[Dict[str, str]] = CONSTRAINT_GROUP_META,
+    key: Tuple[str, ...] = ("transcript",),
 ) -> hl.Table:
-    """Return a Table keyed by ``transcript`` with a ``constraint_groups`` array.
+    """Return a Table with a ``constraint_groups`` array.
 
     :param rows: Dicts with ``transcript``, ``constraint_groups`` (one struct per
         group, each with an ``oe_info`` list) and any fields in the row type.
     :param oe_info_type: Type of each ``oe_info`` element.
     :param extra_cg_fields: Extra constraint group fields and their types.
     :param meta: Constraint group metadata. Default is ``CONSTRAINT_GROUP_META``.
+    :param key: Key fields. Default is ``("transcript",)``.
     :return: Table with the constraint group globals.
     """
     cg_type = hl.tstruct(oe_info=hl.tarray(oe_info_type), **(extra_cg_fields or {}))
     row_fields = {
         k: v
         for k, v in {
+            "gene": hl.tstr,
             "gene_id": hl.tstr,
             "mane_select": hl.tbool,
             "canonical": hl.tbool,
@@ -97,7 +111,7 @@ def _constraint_groups_ht(
         hl.tstruct(
             transcript=hl.tstr, **row_fields, constraint_groups=hl.tarray(cg_type)
         ),
-        key="transcript",
+        key=list(key),
     )
     return ht.annotate_globals(
         constraint_group_meta=meta, exomes_freq_meta=[{"group": "adj"}]
@@ -107,19 +121,22 @@ def _constraint_groups_ht(
 class TestAnnotateOeCiZ:
     """Test the _annotate_oe_ci_z function."""
 
-    Z_THRESHOLDS = {"syn": (-3.0, 3.0), "mis": (-3.0, None), "lof": (-3.0, None)}
+    # The mis and LoF lower thresholds differ, so swapping them would show.
+    Z_THRESHOLDS = {"syn": (-3.0, 3.0), "mis": (-4.0, None), "lof": (-6.0, None)}
 
     # (observed, expected) used for every group of the transcript.
     COUNTS = {
         "T_ok": (18, 20.0),
         "T_depleted": (0, 25.0),
         "T_excess": (50, 25.0),
+        "T_strong_excess": (75, 25.0),
         "T_no_exp": (0, 0.0),
         "T_missing_exp": (3, None),
     }
 
     @pytest.fixture(scope="class")
-    def rows(self) -> Dict[str, hl.Struct]:
+    @classmethod
+    def rows(cls) -> Dict[str, hl.Struct]:
         """Return the annotated rows keyed by transcript."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64, expected_variants=hl.tfloat64
@@ -136,10 +153,10 @@ class TestAnnotateOeCiZ:
                 ]
                 * len(CONSTRAINT_GROUP_META),
             )
-            for t, (obs, exp) in self.COUNTS.items()
+            for t, (obs, exp) in cls.COUNTS.items()
         ]
         ht = _annotate_oe_ci_z(
-            _constraint_groups_ht(rows, oe_info_type), self.Z_THRESHOLDS
+            _constraint_groups_ht(rows, oe_info_type), cls.Z_THRESHOLDS
         )
         return {r.transcript: r for r in ht.collect()}
 
@@ -184,9 +201,11 @@ class TestAnnotateOeCiZ:
             ("T_ok", [set()] * 5),
             # z = 5: only syn has an upper threshold.
             ("T_depleted", [{"outlier_syn"}, set(), set(), set(), set()]),
-            # z = -5: every group has a lower threshold, and LoF groups share one.
+            # z = -5: below the syn and mis lower thresholds, but not the LoF one.
+            ("T_excess", [{"outlier_syn"}, {"outlier_mis"}, set(), set(), set()]),
+            # z = -10: below every lower threshold, and the LoF groups share one.
             (
-                "T_excess",
+                "T_strong_excess",
                 [{"outlier_syn"}, {"outlier_mis"}] + [{"outlier_lof"}] * 3,
             ),
             ("T_no_exp", [{"no_exp_syn"}, {"no_exp_mis"}] + [{"no_exp_lof"}] * 3),
@@ -213,7 +232,7 @@ class TestComputeZScores:
     Z = {
         "T1": [1.0, -1.0, -1.0, -1.0, -1.0],
         "T2": [-1.0, -3.0, -3.0, -3.0, -3.0],
-        "T3": [2.0, 2.0, 2.0, 2.0, 2.0],
+        "T3": [3.0, 2.0, 2.0, 2.0, 2.0],
         "T4": [-2.0, 5.0, 5.0, 5.0, 5.0],
         "T5": [None, None, None, None, None],
         # Excluded from the SD: no variants, or flagged.
@@ -232,7 +251,8 @@ class TestComputeZScores:
     }
 
     @pytest.fixture(scope="class")
-    def result(self) -> Tuple[List[float], Dict[str, hl.Struct]]:
+    @classmethod
+    def result(cls) -> Tuple[List[float], Dict[str, hl.Struct]]:
         """Return the sd_raw_z global and the annotated rows keyed by transcript."""
         rows = [
             dict(
@@ -241,12 +261,12 @@ class TestComputeZScores:
                 constraint_groups=[
                     hl.Struct(
                         oe_info=[hl.Struct(z_raw=z)],
-                        flags=self.FLAGS.get(t, [set()] * 5)[i],
+                        flags=cls.FLAGS.get(t, [set()] * 5)[i],
                     )
                     for i, z in enumerate(zs)
                 ],
             )
-            for t, zs in self.Z.items()
+            for t, zs in cls.Z.items()
         ]
         ht = _constraint_groups_ht(
             rows, hl.tstruct(z_raw=hl.tfloat64), {"flags": hl.tset(hl.tstr)}
@@ -255,7 +275,11 @@ class TestComputeZScores:
         return hl.eval(ht.sd_raw_z), {r.transcript: r for r in ht.collect()}
 
     def test_sd_raw_z(self, result: Tuple[List[float], Dict[str, hl.Struct]]) -> None:
-        """Test the SD of raw z, mirroring negative values for every group but syn."""
+        """Test the SD of raw z, mirroring negative values for every group but syn.
+
+        The syn values aren't symmetric, so mirroring them would give a different SD
+        (1.58 rather than 1.92).
+        """
         sd, _ = result
         used = ["T1", "T2", "T3", "T4"]
         syn = [self.Z[t][0] for t in used]
@@ -353,7 +377,8 @@ class TestAddOeUpperRankAndBins:
     }
 
     @pytest.fixture(scope="class")
-    def rows(self) -> Dict[str, hl.Struct]:
+    @classmethod
+    def rows(cls) -> Dict[str, hl.Struct]:
         """Return the ranked constraint group keyed by transcript."""
         oe_info_type = hl.tstruct(
             oe_ci_discretized_poisson=CI_TYPE, oe_ci_gamma=CI_TYPE
@@ -375,7 +400,7 @@ class TestAddOeUpperRankAndBins:
                     )
                 ],
             )
-            for t, (g, m, gu, p) in self.TRANSCRIPTS.items()
+            for t, (g, m, gu, p) in cls.TRANSCRIPTS.items()
         ]
         ht = add_oe_upper_rank_and_bins(_constraint_groups_ht(rows, oe_info_type))
         return {r.transcript: r.constraint_groups[0] for r in ht.collect()}
@@ -424,20 +449,22 @@ class TestAnnotateConstraintPercentileBins:
 
     METRIC_GROUP_IDX = {"syn": 0, "mis": 1, "lof": 4}
 
+    # Each group's value is offset differently, so binning the wrong group shows.
+    GROUP_OFFSETS = [0.0, 0.1, 0.2, 0.3, 0.4]
+
     @pytest.mark.parametrize("value", [0.0, 0.5, 0.555, 0.99, 1.5, None])
     def test_bins(self, value: Optional[float]) -> None:
         """Test that each bin is the number of thresholds met, missing if no value."""
+        values = [None if value is None else value + o for o in self.GROUP_OFFSETS]
         rows = [
             dict(
                 transcript="T1",
                 constraint_groups=[
                     hl.Struct(
-                        oe_info=[
-                            hl.Struct(oe_ci_gamma=hl.Struct(lower=0.0, upper=value))
-                        ]
+                        oe_info=[hl.Struct(oe_ci_gamma=hl.Struct(lower=0.0, upper=v))]
                     )
-                ]
-                * 5,
+                    for v in values
+                ],
             )
         ]
         ht = _constraint_groups_ht(rows, hl.tstruct(oe_ci_gamma=CI_TYPE))
@@ -446,22 +473,29 @@ class TestAnnotateConstraintPercentileBins:
         ht = annotate_constraint_percentile_bins(ht, thresholds, self.METRIC_GROUP_IDX)
         bins = ht.collect()[0].constraint_bins
         for gran in CONSTRAINT_GRANULARITIES:
-            for metric in ["syn", "mis", "lof"]:
-                assert bins[gran][metric] == _bin(value, thresholds[(gran, metric)])
+            for metric, idx in self.METRIC_GROUP_IDX.items():
+                assert bins[gran][metric] == _bin(
+                    values[idx], thresholds[(gran, metric)]
+                )
 
 
 class TestComputeConstraintPercentileBins:
     """Test the compute_constraint_percentile_bins function."""
 
+    # Index of each metric's group, and the factor its values are scaled by.
+    METRICS = {"syn": (0, 1.0), "mis": (1, 2.0), "lof": (2, 3.0)}
+
     @pytest.fixture(scope="class")
-    def result(self) -> Tuple[hl.Struct, List[hl.Struct]]:
+    @classmethod
+    def result(cls) -> Tuple[hl.Struct, List[hl.Struct]]:
         """Return the thresholds global and the binned rows.
 
-        The 30 MANE Select transcripts have values from 0.05 to 1.5. The outliers
-        (flagged) and unselected transcripts (neither MANE Select nor canonical)
-        have a value of 100, so including either in the thresholds would show. Only
-        the syn, mis, and HC LoF groups are included, since each group is ranked
-        separately.
+        The 30 MANE Select transcripts have syn values from 0.05 to 1.5, and their
+        mis and LoF values are two and three times as large, so using the wrong
+        group for a metric would show. The outliers (flagged) and unselected
+        transcripts (neither MANE Select nor canonical) have a value of 100 in every
+        group, so including either in the thresholds would show. Only the syn, mis,
+        and HC LoF groups are included, since each group is ranked separately.
         """
         transcripts = (
             [(f"ENSTM{i}", 0.05 * (i + 1), True, set()) for i in range(30)]
@@ -482,13 +516,17 @@ class TestComputeConstraintPercentileBins:
                     hl.Struct(
                         oe_info=[
                             hl.Struct(
-                                oe_ci_discretized_poisson=hl.Struct(lower=0.0, upper=v),
-                                oe_ci_gamma=hl.Struct(lower=0.0, upper=v),
+                                oe_ci_discretized_poisson=hl.Struct(
+                                    lower=0.0, upper=v if v == 100 else v * f
+                                ),
+                                oe_ci_gamma=hl.Struct(
+                                    lower=0.0, upper=v if v == 100 else v * f
+                                ),
                             )
                         ]
                     )
-                ]
-                * 3,
+                    for _, f in cls.METRICS.values()
+                ],
             )
             for t, v, mane, flags in transcripts
         ]
@@ -501,25 +539,27 @@ class TestComputeConstraintPercentileBins:
     def test_thresholds(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
         """Test the thresholds global: shape, order, and excluded transcripts."""
         thresholds, _ = result
-        for metric in ["syn", "mis", "lof"]:
+        for metric, (_, factor) in self.METRICS.items():
             for gran, bins in CONSTRAINT_GRANULARITIES.items():
                 t = thresholds[metric][gran]
                 assert len(t) == len(bins)
                 assert t == sorted(t)
                 # Outliers and unselected transcripts (value 100) are excluded.
-                assert max(t) <= 1.5
+                assert max(t) <= 1.5 * factor
+                # Each metric's thresholds come from its own group.
+                assert t == pytest.approx([x * factor for x in thresholds.syn[gran]])
 
     def test_bins(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
         """Test that every transcript, including excluded ones, is binned."""
         thresholds, rows = result
         for row in rows:
-            value = row.constraint_groups[0].oe_info[0].oe_ci_gamma.upper
             for gran in CONSTRAINT_GRANULARITIES:
-                for metric in ["syn", "mis", "lof"]:
+                for metric, (idx, _) in self.METRICS.items():
+                    value = row.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
                     assert row.constraint_bins[gran][metric] == _bin(
                         value, thresholds[metric][gran]
                     )
-            if value == 100:
+            if row.constraint_groups[0].oe_info[0].oe_ci_gamma.upper == 100:
                 assert row.constraint_bins.decile.lof == 9
 
     def test_ranks(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
@@ -608,7 +648,9 @@ class TestComputePliScores:
     def test_scores_per_group(self) -> None:
         """Test that each LoF group gets scores from its own counts.
 
-        Regression test: ``lof_hc_lc`` used to get a copy of the HC LoF scores.
+        Regression test: ``lof_hc_lc`` used to get a copy of the HC LoF scores. T4
+        has 0 of 15 expected HC LoF variants but 30 of 35 HC+LC, so its HC pLI is
+        high and its HC+LC pLI low, which also catches the two being swapped.
         """
         rows = self._ht().collect()
         names = [_get_constraint_group_name(m) for m in CONSTRAINT_GROUP_META]
@@ -626,13 +668,11 @@ class TestComputePliScores:
                 else:
                     assert g.pLI + g.pNull + g.pRec == pytest.approx(1.0)
 
-        differs = [
-            r
-            for r in rows
-            if r.constraint_groups[3].pLI is not None
-            and r.constraint_groups[3].pLI != r.constraint_groups[4].pLI
-        ]
-        assert differs
+        t4 = dict(
+            zip(names, next(r for r in rows if r.transcript == "T4").constraint_groups)
+        )
+        assert t4["lof_hc"].pLI > 0.9
+        assert t4["lof_hc_lc"].pLI < 0.1
 
     def test_constrained_transcript_is_lof_intolerant(self) -> None:
         """Test that a transcript with no observed of 20 expected LoF has a high pLI."""
@@ -668,7 +708,8 @@ class TestComputeConstraintMetrics:
         )
     }
 
-    def _gencode_ht(self) -> hl.Table:
+    @staticmethod
+    def _gencode_ht() -> hl.Table:
         """Return GENCODE features for ENST0 and the PAR transcript ENST1."""
 
         def _feature(t, contig, start, end, feature, par_y=False):
@@ -682,7 +723,7 @@ class TestComputeConstraintMetrics:
                 transcript_id=t,
                 transcript_id_version=f"{t}.3" + ("_PAR_Y" if par_y else ""),
                 gene_id_version="ENSG0.1",
-                level=2,
+                level="2",
                 transcript_type="protein_coding",
             )
 
@@ -704,15 +745,15 @@ class TestComputeConstraintMetrics:
                 transcript_id=hl.tstr,
                 transcript_id_version=hl.tstr,
                 gene_id_version=hl.tstr,
-                level=hl.tint32,
+                level=hl.tstr,
                 transcript_type=hl.tstr,
             ),
             key="interval",
         )
 
-    @pytest.fixture(scope="class")
-    def result(self) -> Tuple[List[float], Dict[str, hl.Struct]]:
-        """Return the sd_raw_z global and the metrics rows keyed by transcript."""
+    @classmethod
+    def _inputs(cls) -> Tuple[hl.Table, hl.Table, hl.Table]:
+        """Return the constraint group, GENCODE, and gene quality input Tables."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64,
             predicted_proportion_observed=hl.tfloat64,
@@ -736,7 +777,11 @@ class TestComputeConstraintMetrics:
 
         rows = [
             dict(
+                gene=f"GENE{i}",
+                gene_id=f"ENSG{i}",
                 transcript=t,
+                canonical=True,
+                mane_select=True,
                 no_variants=False,
                 constraint_groups=[
                     _cg(90 + 2 * i, 100.0),
@@ -746,7 +791,7 @@ class TestComputeConstraintMetrics:
                     _cg(obs, exp),
                 ],
             )
-            for i, (t, (obs, exp)) in enumerate(self.LOF.items())
+            for i, (t, (obs, exp)) in enumerate(cls.LOF.items())
         ]
         ht = _constraint_groups_ht(
             rows,
@@ -757,23 +802,40 @@ class TestComputeConstraintMetrics:
                 "possible_variants": hl.tint64,
                 "coverage_correction": hl.tfloat64,
             },
+            key=tuple(RELEASE_KEY_ORDER),
         )
         gene_quality_ht = hl.Table.parallelize(
             [
                 dict(
                     transcript="ENST0",
-                    gene_quality_metrics=hl.Struct(exome_prop_bp_AN90=0.95),
+                    gene_quality_metrics=hl.Struct(
+                        exome_prop_bp_AN90=0.95,
+                        exome_mean_AS_MQ=60.0,
+                        exome_prop_segdup=0.0,
+                        exome_prop_LCR=0.0,
+                    ),
                     gene_flags={"low_exome_coverage"},
                 )
             ],
             hl.tstruct(
                 transcript=hl.tstr,
-                gene_quality_metrics=hl.tstruct(exome_prop_bp_AN90=hl.tfloat64),
+                gene_quality_metrics=hl.tstruct(
+                    exome_prop_bp_AN90=hl.tfloat64,
+                    exome_mean_AS_MQ=hl.tfloat64,
+                    exome_prop_segdup=hl.tfloat64,
+                    exome_prop_LCR=hl.tfloat64,
+                ),
                 gene_flags=hl.tset(hl.tstr),
             ),
             key="transcript",
         )
-        ht = compute_constraint_metrics(ht, self._gencode_ht(), gene_quality_ht)
+        return ht, cls._gencode_ht(), gene_quality_ht
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def result(cls) -> Tuple[List[float], Dict[str, hl.Struct]]:
+        """Return the sd_raw_z global and the metrics rows keyed by transcript."""
+        ht = compute_constraint_metrics(*cls._inputs())
         return hl.eval(ht.sd_raw_z), {r.transcript: r for r in ht.collect()}
 
     def test_metrics(self, result: Tuple[List[float], Dict[str, hl.Struct]]) -> None:
@@ -812,6 +874,57 @@ class TestComputeConstraintMetrics:
         )
         assert enst2.chromosome is None
 
+    def test_row_type_matches_stored_schema(self) -> None:
+        """
+        Test that the metrics and ranking steps write the stored row type.
+
+        The release tests build the internal metrics Table from
+        ``tests/data/constraint_metrics_row_type.txt``, so it has to match what
+        ``compute_constraint_metrics`` and ``compute_constraint_percentile_bins``
+        write. Field order isn't compared.
+        """
+        ht = compute_constraint_percentile_bins(
+            compute_constraint_metrics(*self._inputs())
+        )
+        with open(os.path.join(DATA_DIR, "constraint_metrics_row_type.txt")) as f:
+            expected = hl.dtype(f.read())
+        assert _sorted_type(ht.row.dtype) == _sorted_type(expected)
+
+    @pytest.mark.parametrize(
+        "threshold, flag, below",
+        [
+            ("raw_z_outlier_threshold_lower_lof", "outlier_lof", True),
+            ("raw_z_outlier_threshold_lower_missense", "outlier_mis", True),
+            ("raw_z_outlier_threshold_lower_syn", "outlier_syn", True),
+            ("raw_z_outlier_threshold_upper_syn", "outlier_syn", False),
+        ],
+    )
+    def test_outlier_thresholds(self, threshold: str, flag: str, below: bool) -> None:
+        """
+        Test that each outlier threshold argument applies to its own groups.
+
+        The threshold under test is 0 and the others are far outside the data, so
+        only the matching groups are flagged: those with more variants than
+        expected for a lower threshold, or fewer for an upper one.
+        """
+        thresholds = {
+            "raw_z_outlier_threshold_lower_lof": -1e6,
+            "raw_z_outlier_threshold_lower_missense": -1e6,
+            "raw_z_outlier_threshold_lower_syn": -1e6,
+            "raw_z_outlier_threshold_upper_syn": 1e6,
+            threshold: 0.0,
+        }
+        ht = compute_constraint_metrics(*self._inputs(), **thresholds)
+        n_flagged = 0
+        for row in ht.collect():
+            for name, cg in zip(GROUP_NAMES, row.constraint_groups):
+                z = cg.oe_info[0].z_raw
+                group_flag = "outlier_" + ("lof" if name.startswith("lof") else name)
+                flagged = group_flag == flag and (z < 0 if below else z > 0)
+                assert cg.flags == ({flag} if flagged else set())
+                n_flagged += flagged
+        assert n_flagged
+
 
 class TestPrepareReleaseHt:
     """Test the values in the release Table built by prepare_release_ht."""
@@ -826,7 +939,8 @@ class TestPrepareReleaseHt:
     ]
 
     @pytest.fixture(scope="class")
-    def internal_ht(self) -> hl.Table:
+    @classmethod
+    def internal_ht(cls) -> hl.Table:
         """Return an internal metrics Table with distinct values for every group."""
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64,
@@ -860,7 +974,7 @@ class TestPrepareReleaseHt:
 
         def _cg(i, possible):
             # oe_info: adj, then the downsamplings, where obs is the downsampling.
-            ds = [int(m["downsampling"]) for m in self.FREQ_META[1:]]
+            ds = [int(m["downsampling"]) for m in cls.FREQ_META[1:]]
             has_pli = GROUP_NAMES[i] in ("lof_hc", "lof_hc_lc")
             return hl.Struct(
                 mu_snp=float(i + 1),
@@ -956,7 +1070,7 @@ class TestPrepareReleaseHt:
                 groupings=["gene"],
                 log10_coverage=True,
             ),
-            exomes_freq_meta=self.FREQ_META,
+            exomes_freq_meta=cls.FREQ_META,
             downsamplings=[10, 100],
             max_af=0.001,
             constraint_group_meta=CONSTRAINT_GROUP_META,
@@ -971,7 +1085,8 @@ class TestPrepareReleaseHt:
         )
 
     @pytest.fixture(scope="class")
-    def release(self, internal_ht: hl.Table) -> Tuple[hl.Table, Dict[str, hl.Struct]]:
+    @classmethod
+    def release(cls, internal_ht: hl.Table) -> Tuple[hl.Table, Dict[str, hl.Struct]]:
         """Return the release Table and its rows keyed by transcript."""
         ht = prepare_release_ht(internal_ht)
         return ht, {r.transcript: r for r in ht.collect()}

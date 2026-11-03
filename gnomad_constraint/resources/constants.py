@@ -7,20 +7,30 @@
 EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 """Valid file extensions for constraint pipeline resources."""
 
-VERSIONS = ["2.1.1", "4.0", "4.1", "4.1.1", "4.1.2"]
+VERSIONS = ["4.0", "4.1", "4.1.1", "4.1.2"]
 """Supported gnomAD constraint pipeline versions."""
 
 CURRENT_VERSION = "4.1.1"
 """Current default gnomAD constraint pipeline version."""
 
 SITES_VERSION_MAP = {
-    "2.1.1": "2.1.1",
     "4.0": "4.0",
     "4.1": "4.1",
     "4.1.1": "4.1",
     "4.1.2": "4.1",
 }
 """Map from constraint pipeline version to gnomAD sites release version."""
+
+VEP_VERSION_MAP = {
+    "4.0": "105",
+    "4.1": "105",
+    "4.1.1": "105",
+    "4.1.2": "105",
+}
+"""Map from constraint pipeline version to the VEP version of its context Table."""
+
+GENCODE_VERSION_MAP = {"105": "v39"}
+"""Map from VEP version to the GENCODE version it annotates with."""
 
 DATA_TYPES = ["context", "exomes", "genomes"]
 """Data types used in the constraint pipeline."""
@@ -38,13 +48,6 @@ VEP annotation.
 
 "worst_csq_by_gene" option will annotate the Table with 'annotation', 'gene', and
 'coverage' annotations using 'worst_csq_by_gene' VEP annotation.
-"""
-
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-"""
-Population labels from gnomAD.
-
-Abbreviations stand for: global (all populations), African-American/African, Latino, East Asian, Non-Finnish European, and South Asian.
 """
 
 SFS_BIN_CUTOFFS = (0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5)
@@ -124,9 +127,6 @@ GENCODE_FIELD_RENAMES = {
 
 PLI_EXPECTED_VALUES = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
 """Expected o/e values for the pLI model (null, recessive, loss-of-function intolerant)."""
-
-CONSTRAINT_METRICS = ["lof", "mis", "syn"]
-"""Constraint metrics for which percentile thresholds are computed."""
 
 CONSTRAINT_GRANULARITIES = {
     "percentile": list(range(1, 100)),
