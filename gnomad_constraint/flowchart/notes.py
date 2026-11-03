@@ -1154,8 +1154,7 @@ NOTES = {
                 {
                     "tag": "rowexpr",
                     "text": (
-                        "Re-read ``constraint_group.ht`` into 10,000 partitions. For every group"
-                        " and freq entry, compute ``oe = obs / exp``, gamma and"
+                        "For every group and freq entry, compute ``oe = obs / exp``, gamma and"
                         " discretized-Poisson 90% CIs, and ``z_raw``."
                     ),
                 },
