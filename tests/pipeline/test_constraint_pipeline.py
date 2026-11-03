@@ -7,13 +7,14 @@ from unittest import mock
 
 import hail as hl
 import pytest
-from gnomad.resources.resource_utils import TableResource
+from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
 from gnomad_constraint.pipeline.constraint_pipeline import (
     check_apply_models_resources,
     check_constraint_group_input,
     check_gerp_cutoffs_step,
     check_skip_coverage_model,
+    get_coverage_model,
     get_release_downsamplings,
 )
 
@@ -173,3 +174,69 @@ class TestGetReleaseDownsamplings:
         """
         with pytest.raises(ValueError, match="--include-downsamplings"):
             get_release_downsamplings(hl.utils.range_table(1))
+
+
+class TestGetCoverageModel:
+    """Test the get_coverage_model function."""
+
+    COEFFICIENTS = [0.1, 0.02]
+
+    @staticmethod
+    def _res(tmp_path: str, coverage_model: hl.expr.Expression) -> SimpleNamespace:
+        """Return an apply step's resources with the coverage model written to disk."""
+        path = os.path.join(tmp_path, "coverage.he")
+        hl.experimental.write_expression(coverage_model, path)
+        return SimpleNamespace(model_coverage=ExpressionResource(path))
+
+    def test_skip_coverage_model(self) -> None:
+        """Test that no coverage model is read when it is skipped."""
+        res = SimpleNamespace(model_coverage=None)
+        assert get_coverage_model(res, True, log10_coverage=False) == (None, False)
+
+    @pytest.mark.parametrize(
+        "saved_log10_coverage, log10_coverage, warned",
+        [(True, False, False), (True, True, False), (False, False, False)]
+        + [(False, True, True)],
+    )
+    def test_saved_setting(
+        self,
+        tmp_path: str,
+        caplog: pytest.LogCaptureFixture,
+        saved_log10_coverage: bool,
+        log10_coverage: bool,
+        warned: bool,
+    ) -> None:
+        """
+        Test that the coverage scale saved with the model is used.
+
+        Regression test: only the coefficients were saved, and building and applying
+        each read ``--use-logarithmic-coverage-model``, so leaving the flag off one of
+        the two commands applied the model on the wrong coverage scale with no error.
+        The flag can only ask for log10, so passing it for a linear model warns.
+        """
+        res = self._res(
+            tmp_path,
+            hl.struct(
+                coefficients=self.COEFFICIENTS, log10_coverage=saved_log10_coverage
+            ),
+        )
+        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+            coefficients, log10 = get_coverage_model(res, False, log10_coverage)
+        assert hl.eval(coefficients) == self.COEFFICIENTS
+        assert log10 == saved_log10_coverage
+        assert bool(caplog.records) == warned
+
+    @pytest.mark.parametrize("log10_coverage", [False, True])
+    def test_model_without_setting(
+        self,
+        tmp_path: str,
+        caplog: pytest.LogCaptureFixture,
+        log10_coverage: bool,
+    ) -> None:
+        """Test that a model saved as only its coefficients uses the flag, and warns."""
+        res = self._res(tmp_path, hl.literal(self.COEFFICIENTS))
+        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+            coefficients, log10 = get_coverage_model(res, False, log10_coverage)
+        assert hl.eval(coefficients) == self.COEFFICIENTS
+        assert log10 == log10_coverage
+        assert "saved without" in caplog.text

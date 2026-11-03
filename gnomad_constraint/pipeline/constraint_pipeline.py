@@ -23,6 +23,7 @@ The constraint pipeline consists of the following parts:
 
 import argparse
 import logging
+from typing import Optional, Tuple
 
 import hail as hl
 from gnomad.utils.constraint import (
@@ -112,6 +113,54 @@ def check_apply_models_resources(
             preprocessed_ht.ht().apply_models_globals, skip_coverage_model
         )
     res.check_resource_existence()
+
+
+def get_coverage_model(
+    res: PipelineStepResourceCollection,
+    skip_coverage_model: bool,
+    log10_coverage: bool,
+) -> Tuple[Optional[hl.expr.ArrayNumericExpression], bool]:
+    """
+    Read the coverage model and the coverage scale to apply it on.
+
+    ``--build-models`` saves the coverage model as a struct of its ``coefficients``
+    (``[intercept, slope]``) and the ``log10_coverage`` setting it was built with,
+    and the model is applied on that scale. A model saved before the setting was
+    stored has only the coefficients, so ``--use-logarithmic-coverage-model`` sets
+    the scale for it, with a warning.
+
+    :param res: Resources of ``--apply-models-per-variant`` or
+        ``--apply-models-aggregated``.
+    :param skip_coverage_model: Whether ``--skip-coverage-model`` was passed.
+    :param log10_coverage: Whether ``--use-logarithmic-coverage-model`` was passed.
+    :return: Tuple of the coverage model coefficients, or None when the coverage
+        model is skipped, and whether to apply them to log10 coverage.
+    """
+    if skip_coverage_model:
+        return None, log10_coverage
+
+    coverage_model = res.model_coverage.he()
+    if not isinstance(coverage_model, hl.expr.StructExpression):
+        logger.warning(
+            "The coverage model was saved without the coverage scale it was built on,"
+            " so it is applied to %s coverage, as set by"
+            " --use-logarithmic-coverage-model. Rebuild the models to save the scale"
+            " with them.",
+            "log10" if log10_coverage else "linear",
+        )
+        return coverage_model, log10_coverage
+
+    saved_log10_coverage = hl.eval(coverage_model.log10_coverage)
+    if log10_coverage and not saved_log10_coverage:
+        logger.warning(
+            "--use-logarithmic-coverage-model is ignored: the coverage model was built"
+            " on linear coverage."
+        )
+    logger.info(
+        "Applying the coverage model to %s coverage, the scale it was built on.",
+        "log10" if saved_log10_coverage else "linear",
+    )
+    return coverage_model.coefficients, saved_log10_coverage
 
 
 def check_gerp_cutoffs_step(
@@ -394,8 +443,14 @@ def main(args: argparse.Namespace) -> None:
                 plateau_models, res.model_plateau.path, overwrite=overwrite
             )
             if not args.skip_coverage_model:
+                # Save the coverage scale with the model, so it's applied on the same
+                # scale.
                 hl.experimental.write_expression(
-                    coverage_model, res.model_coverage.path, overwrite=overwrite
+                    hl.struct(
+                        coefficients=coverage_model, log10_coverage=log10_coverage
+                    ),
+                    res.model_coverage.path,
+                    overwrite=overwrite,
                 )
 
             logger.info("Done building models.")
@@ -413,12 +468,15 @@ def main(args: argparse.Namespace) -> None:
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
+            coverage_model, apply_log10_coverage = get_coverage_model(
+                res, skip_coverage_model, log10_coverage
+            )
             ht = create_per_variant_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
                 res.model_plateau.he(),
-                coverage_model=None if skip_coverage_model else res.model_coverage.he(),
-                log10_coverage=log10_coverage,
+                coverage_model=coverage_model,
+                log10_coverage=apply_log10_coverage,
                 use_mane_select=True,
             )
             ht.write(res.per_variant_apply_ht.path, overwrite=overwrite)
@@ -456,14 +514,15 @@ def main(args: argparse.Namespace) -> None:
 
             ht = res.temp_preprocess_data_ht.ht()
             print_global_struct(ht.apply_models_globals)
+            coverage_model, apply_log10_coverage = get_coverage_model(
+                res, skip_coverage_model, log10_coverage
+            )
             ht = create_aggregated_expected_ht(
                 ht,
                 res.mutation_ht.ht().select("mu_snp"),
                 res.model_plateau.he(),
-                coverage_model=(
-                    None if skip_coverage_model else res.model_coverage.he()
-                ),
-                log10_coverage=log10_coverage,
+                coverage_model=coverage_model,
+                log10_coverage=apply_log10_coverage,
                 use_mane_select=True,
                 partition_hint=args.apply_models_aggregated_partition_hint,
             )
@@ -871,8 +930,10 @@ if __name__ == "__main__":
     build_models_args.add_argument(
         "--use-logarithmic-coverage-model",
         help=(
-            "Use a logarithmic model for low coverage sites when building and applying "
-            "the coverage model."
+            "Build the coverage model on log10 coverage instead of linear coverage."
+            " The scale is saved with the model, and the model is applied on it. For"
+            " a coverage model saved without the scale, pass this flag when applying"
+            " to apply it on log10 coverage."
         ),
         action="store_true",
     )
