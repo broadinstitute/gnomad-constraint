@@ -11,3 +11,4 @@ pylint
 # Hail 0.2.136 and later (requirements.txt) require dill 0.4; without this floor
 # pylint's dependency resolves to dill 0.3.x.
 dill>=0.4.0
+pytest

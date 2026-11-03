@@ -15,6 +15,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      # The tests start Hail, whose bundled Spark and Hadoop jars fail on the
+      # runner's default Java (23+); use Java 11.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
       - name: Use pip cache
         uses: actions/cache@v3
         with:
@@ -40,15 +47,17 @@ jobs:
       - name: Source renv activate
         run: Rscript -e 'source("gnomad_constraint/renv/activate.R")'
       - name: Check formatting
-        run: black --check --preview gnomad_constraint
+        run: black --check --preview gnomad_constraint tests
       - name: Check imports
-        run: isort --check-only gnomad_constraint
+        run: isort --check-only gnomad_constraint tests
       - name: Check docstrings
         run: pydocstyle
       - name: Check comment formatting
-        run: autopep8 --exit-code --diff gnomad_constraint
+        run: autopep8 --exit-code --diff gnomad_constraint tests
       - name: Run Pylint
         run: PYTHONPATH=$(pwd):$PYTHONPATH pylint --disable=W gnomad_constraint
+      - name: Run tests
+        run: python -m pytest
       - name: Run styler
         run: Rscript -e "styler::style_dir('gnomad_constraint/plots/')"
       - name: Run lintr

@@ -36,6 +36,9 @@ disable = [
   "unused-variable",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.black]
 target-version = ["py310", "py311"]
 preview = true
