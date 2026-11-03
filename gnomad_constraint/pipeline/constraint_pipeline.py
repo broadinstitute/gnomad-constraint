@@ -156,7 +156,7 @@ def check_constraint_group_input(
         )
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     """Execute the constraint pipeline."""
     hl.init(
         log="/constraint_pipeline.log",
