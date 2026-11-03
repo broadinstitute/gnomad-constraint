@@ -1170,6 +1170,10 @@ def calculate_mu_by_downsampling(
     :param total_mu: The per-generation mutation rate. Default is 1.2e-08.
     :return: Mutation rate Table.
     """
+    # Only sites in the mutation rate site set have compute_mu counts; the rest add
+    # nothing to the sums, so drop them before grouping.
+    ht = ht.filter(hl.is_defined(ht.compute_mu.possible_variants))
+
     # Count the observed variants in the entire Table and in each downsampling grouped
     # by context, ref, alt, and 'additional_grouping'.
     ht = count_observed_and_possible_by_group(

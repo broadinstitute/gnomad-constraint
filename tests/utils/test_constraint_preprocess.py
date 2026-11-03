@@ -688,7 +688,7 @@ class TestCreateTrainingSet:
 class TestCalculateMuByDownsampling:
     """Test the calculate_mu_by_downsampling function."""
 
-    def _ht(self) -> hl.Table:
+    def _ht(self, extra_sites: Tuple = ()) -> hl.Table:
         """Return sites in two substitution groups with per-group observed counts."""
         # context, ref, alt, observed (adj, downsampling), possible.
         sites = [
@@ -699,6 +699,7 @@ class TestCalculateMuByDownsampling:
             ("ACA", "C", "A", [1, 0], 1),
             ("ACA", "C", "A", [0, 0], 1),
             ("ACA", "C", "A", None, None),
+            *extra_sites,
         ]
         rows = [
             dict(
@@ -748,6 +749,21 @@ class TestCalculateMuByDownsampling:
         assert tv.possible_variants == 2 and tv.observed_variants == [1, 0]
         assert tv.mu == pytest.approx([correction[0] * 0.5, 0.0])
         assert tv.mu_snp == pytest.approx(0.0)
+
+    def test_substitution_without_mutation_rate_sites(self) -> None:
+        """Test that a substitution with no mutation rate sites gets no row.
+
+        Only sites with ``compute_mu`` counts are summed. Grouping every site gave
+        such a substitution a row with no possible variants and a missing mutation
+        rate; either way, looking it up later fails with "Missing mu".
+        """
+        # A transversion with no site in the mutation rate site set.
+        ht = self._ht(extra_sites=[("AAA", "A", "C", None, None)])
+        rows = calculate_mu_by_downsampling(ht).collect()
+        assert {(r.context, r.ref, r.alt) for r in rows} == {
+            ("ACG", "C", "T"),
+            ("ACA", "C", "A"),
+        }
 
     def test_mutation_type(self) -> None:
         """Test that mutation type annotations are added."""
