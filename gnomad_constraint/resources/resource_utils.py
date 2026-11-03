@@ -559,16 +559,6 @@ def get_logging_path(name: str, **kwargs) -> str:
     )
 
 
-def get_checkpoint_path(name: str, **kwargs) -> TableResource:
-    """
-    Create a checkpoint TableResource.
-
-    :param name: Name of intermediate Table.
-    :return: Output checkpoint TableResource.
-    """
-    return get_constraint_data(name, sub_dir="checkpoint_files", test=True, **kwargs)
-
-
 def filter_for_test(
     ht: hl.Table,
     use_gene_list: bool = False,

@@ -50,13 +50,6 @@ VEP annotation.
 'coverage' annotations using 'worst_csq_by_gene' VEP annotation.
 """
 
-POPS = ("global", "afr", "amr", "eas", "nfe", "sas")
-"""
-Population labels from gnomAD.
-
-Abbreviations stand for: global (all populations), African-American/African, Latino, East Asian, Non-Finnish European, and South Asian.
-"""
-
 SFS_BIN_CUTOFFS = (0, 1e-6, 2e-6, 4e-6, 2e-5, 5e-5, 5e-4, 5e-3, 0.5)
 """Allele frequency upper bounds defining site frequency spectrum bins.
 
@@ -134,9 +127,6 @@ GENCODE_FIELD_RENAMES = {
 
 PLI_EXPECTED_VALUES = {"Null": 1.0, "Rec": 0.706, "LI": 0.207}
 """Expected o/e values for the pLI model (null, recessive, loss-of-function intolerant)."""
-
-CONSTRAINT_METRICS = ["lof", "mis", "syn"]
-"""Constraint metrics for which percentile thresholds are computed."""
 
 CONSTRAINT_GRANULARITIES = {
     "percentile": list(range(1, 100)),

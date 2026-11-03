@@ -20,7 +20,6 @@ from gnomad_constraint.resources.resource_utils import (
     get_aggregated_expected,
     get_aggregated_per_variant_expected,
     get_annotated_context_ht,
-    get_checkpoint_path,
     get_constraint_data,
     get_constraint_group_ht,
     get_constraint_metrics_dataset,
@@ -391,19 +390,6 @@ class TestGetLoggingPath:
         """Test that log files always go under the test root."""
         assert get_logging_path("constraint", version="4.1.1") == (
             f"{TEST_ROOT}/logging/gnomad.v4.1.1.constraint.log"
-        )
-
-
-class TestGetCheckpointPath:
-    """Test the get_checkpoint_path function."""
-
-    def test_always_under_test_root(self) -> None:
-        """Test that checkpoints always go under the test root."""
-        resource = get_checkpoint_path("tmp", version="4.1.1", directory_post_fix="x")
-        assert isinstance(resource, TableResource)
-        assert resource.path == (
-            "gs://gnomad-tmp/gnomad_v4.1.1_testing/constraint_x/checkpoint_files/"
-            "gnomad.v4.1.1.tmp.ht"
         )
 
 
