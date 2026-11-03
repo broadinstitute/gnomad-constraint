@@ -48,12 +48,9 @@ import logging
 import pathlib
 import re
 import subprocess
-import types
 from typing import Any, Dict, List, Optional, Set, Tuple
-from unittest import mock
 
 import hail as hl
-from gnomad.resources.resource_utils import BaseResource
 
 import gnomad_constraint.pipeline.constraint_pipeline as constraint_pipeline
 import gnomad_constraint.resources.resource_utils as constraint_res
@@ -726,21 +723,10 @@ def load_pipeline_steps(**kwargs: Any) -> Dict[str, Any]:
     """
     Build the pipeline's resource collection without reading any table.
 
-    ``get_constraint_resources`` reads the VEP context Table only to get its
-    reference build. Every supported version is GRCh38, so that read is replaced
-    with ``BUILD``, which lets this run without GCS access.
-
     :param kwargs: Keyword arguments to ``get_constraint_resources`` that differ
         from the defaults.
     :return: The collection's steps keyed by step name.
     """
-    real_get_vep_context_ht = constraint_res.get_vep_context_ht
-
-    def _get_vep_context_ht(version: str) -> BaseResource:
-        res = copy.copy(real_get_vep_context_ht(version))
-        res.ht = mock.MagicMock()
-        return res
-
     params = {
         "version": CURRENT_VERSION,
         "custom_vep_annotation": CUSTOM_VEP_ANNOTATION,
@@ -748,14 +734,7 @@ def load_pipeline_steps(**kwargs: Any) -> Dict[str, Any]:
         "test": False,
         **kwargs,
     }
-    with mock.patch.object(
-        constraint_res, "get_vep_context_ht", _get_vep_context_ht
-    ), mock.patch.object(
-        constraint_res,
-        "get_reference_genome",
-        return_value=types.SimpleNamespace(name=BUILD),
-    ):
-        return constraint_res.get_constraint_resources(**params).pipeline_steps
+    return constraint_res.get_constraint_resources(**params).pipeline_steps
 
 
 def describe_step_resources(steps: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
