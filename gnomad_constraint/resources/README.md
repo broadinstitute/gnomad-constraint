@@ -337,7 +337,10 @@ and `apply_models_globals.coverage_model` on every downstream apply step.
 ## 6. `per_variant_expected.ht`
 
 Per-SNV expected counts, produced by `--apply-models-per-variant`. One row per
-locus×allele pair, exploded through `transcript_consequences`.
+locus×allele pair, exploded through `transcript_consequences`. It keeps every
+preprocessed field and every consequence, including the non-coding ones that
+`--aggregate-per-variant-expected` drops, because downstream analyses read this
+Table directly.
 
 - **Path:** `gs://gnomad/v{version}/constraint/apply_models/transcript_consequences/gnomad.v{version}.per_variant_expected.ht`
 - **Resource fn:** [`get_per_variant_expected_dataset`](resource_utils.py)

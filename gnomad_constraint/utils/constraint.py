@@ -740,8 +740,9 @@ def prepare_ht_for_constraint_calculations(
         additional_grouping_exprs={"genomic_region": ht.genomic_region},
     )
 
-    # Annotate the Table with the computed annotations, and select only the relevant
-    # fields.
+    # Add the computed annotations, keeping every field of the input Table except
+    # ``freq``, which is replaced by the genomes and exomes frequency arrays in
+    # compute_mu and calibrate_mu. Downstream analyses read the kept fields.
     ht = ht.annotate(
         exomes_coverage=exomes_coverage_expr,
         compute_mu=compute_mu_expr,
@@ -879,11 +880,21 @@ def _apply_constraint_models(
     :param log10_coverage: Whether to use log10 coverage. Default is True.
     :return: Table annotated with model outputs (``mu``,
         ``predicted_proportion_observed``, ``expected_variants``,
-        ``coverage_correction``).
+        ``coverage_correction``). Raises an error for a row whose model group has no
+        plateau model, rather than leaving its expected count missing.
     """
+    # A missing plateau model would leave the expected count missing, so it would
+    # drop out of the sums while the observed count stayed. Raise instead, as
+    # annotate_with_mu does for a missing mutation rate.
+    model_group = ht.apply_model.model_group
+    plateau_model = (
+        hl.case()
+        .when(plateau_models.contains(model_group), plateau_models[model_group])
+        .or_error(hl.format("No plateau model for model group %s", model_group))
+    )
     apply_expr = apply_models(
         ht.mu_snp,
-        plateau_models.get(ht.apply_model.model_group),
+        plateau_model,
         ht.possible_variants,
         coverage_model=coverage_model,
         coverage_expr=ht.exomes_coverage,
@@ -959,6 +970,10 @@ def create_per_variant_expected_ht(
     expected number of variants using ``apply_models``. See the function
     ``apply_models`` for more information on the expected annotations.
 
+    The Table keeps every field of the input Table and every consequence, including
+    the non-coding ones that ``aggregate_per_variant_expected_ht`` drops, because
+    downstream analyses read the per-variant Table directly.
+
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
     :param plateau_models: Plateau models for the constraint calculations, keyed by
@@ -1011,10 +1026,10 @@ def aggregate_per_variant_expected_ht(
         ],
     ]
 
-    # The per-variant table from create_per_variant_expected_ht nests
-    # transcript-level fields (gene, transcript, canonical, annotation, etc.)
-    # inside a `calibrate_mu` struct. Promote them to top-level so they can
-    # be used as grouping keys.
+    # The grouping fields (gene, transcript, annotation, etc.) are top-level, but
+    # the observed and possible counts are inside the `calibrate_mu` struct with
+    # the exomes frequency array and model groups. Promote them so they can be
+    # summed.
     if "calibrate_mu" in ht.row:
         ht = ht.annotate(**ht.calibrate_mu)
 
@@ -1139,9 +1154,14 @@ def calculate_mu_by_downsampling(
         - ref - the reference allele.
         - alt - the alternate base.
         - methylation_level - methylation_level.
-        - downsampling_counts_{gen_anc} - variant counts in downsamplings for genetic
-          ancestry groups in ``gen_ancs``.
-        - mu_snp - SNP mutation rate.
+        - observed_variants - observed counts, one per entry of
+          ``calculate_mu_globals.freq_meta`` (the adj frequency and the
+          downsamplings).
+        - possible_variants - possible variant count.
+        - proportion_observed - ``observed_variants / possible_variants``, per entry.
+        - mu - scaled mutation rate, per entry.
+        - mu_snp - SNP mutation rate, the ``mu`` entry at
+          ``calculate_mu_globals.downsampling_idx``.
         - annotations added by ``annotate_mutation_type``.
 
     :param ht: Table returned by ``prepare_ht_for_constraint_calculations``.
@@ -1234,13 +1254,13 @@ def add_oe_upper_rank_and_bins(
         with no canonical fallback. Default is False.
     :param bin_granularities: Mapping of bin name to multiplier used to assign each
         transcript to a bin (``hl.int(rank * multiplier / n_transcripts)``). Each entry
-        produces a ``bin_{name}`` field. Default is
+        produces an ``upper_bin_{name}`` field. Default is
         ``{"percentile": 100, "decile": 10, "sextile": 6}``.
     :return: Input table with ``oe_ci_{ci}_rank`` fields added at the constraint-group
         level (e.g., ``oe_ci_discretized_poisson_rank``, ``oe_ci_gamma_rank``), each
-        a struct with ``rank`` and ``bin_{name}`` fields for every entry in
-        ``bin_granularities``. Transcripts excluded from ranking have these fields set
-        to missing.
+        a struct with ``upper_rank`` and ``upper_bin_{name}`` fields for every entry
+        in ``bin_granularities``. Transcripts excluded from ranking have these fields
+        set to missing.
     """
     ci_fields = ["discretized_poisson", "gamma"]
 
