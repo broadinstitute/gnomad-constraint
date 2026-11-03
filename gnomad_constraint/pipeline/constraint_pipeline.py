@@ -821,7 +821,7 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-    cov_model_type = build_models_args.add_argument(
+    build_models_args.add_argument(
         "--use-logarithmic-coverage-model",
         help=(
             "Use a logarithmic model for low coverage sites when building and applying "
@@ -872,8 +872,6 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
-
-    aggregate_per_variant_expected_args._group_actions.append(cov_model_type)
 
     aggregate_by_constraint_groups_args = parser.add_argument_group(
         "Aggregate by constraint groups args",
