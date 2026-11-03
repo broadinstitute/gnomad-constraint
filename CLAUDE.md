@@ -151,6 +151,10 @@ skill would have caught.
 For a large PR, especially one that changes released metrics, the
 `/gnomad-pr-review` skill does a deeper multi-agent review and writes a ranked
 `REVIEW.md` with a draft comment per finding. It only runs when invoked by name.
+It is Mike Wilson's skill from gnomad_qc, which reviews PRs in all three gnomAD
+repos, so this repo ships no copy: a second SessionStart hook installs it into
+`~/.claude/skills/gnomad-pr-review` and keeps it updated, and
+`GNOMAD_SKIP_REVIEW_HOOK=1` turns that hook off too.
 
 **If a change alters the structure of the repo, update the repo layout table in
 the README in the same pull request.** If a change alters a release Table's
