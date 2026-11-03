@@ -39,14 +39,14 @@ gs://gnomad/v{version}/constraint/
 ├── models/
 │   ├── gnomad.v{version}.plateau.he
 │   └── gnomad.v{version}.coverage.he
-├── apply_models/{transcript_consequences|worst_csq_by_gene}/
+├── apply_models/transcript_consequences/
 │   ├── gnomad.v{version}.per_variant_expected.ht
 │   ├── gnomad.v{version}.per_variant_expected.aggregated.ht
 │   ├── gnomad.v{version}.aggregated_expected.ht
 │   └── gnomad.v{version}.constraint_group.ht
 ├── metrics/
 │   ├── gnomad.v{version}.gene_quality_metrics.ht
-│   └── {transcript_consequences|worst_csq_by_gene}/
+│   └── transcript_consequences/
 │       ├── gnomad.v{version}.constraint_metrics_pre_rank.ht
 │       └── gnomad.v{version}.constraint_metrics.ht
 └── release/
@@ -333,10 +333,9 @@ and `apply_models_globals.coverage_model` on every downstream apply step.
 ## 6. `per_variant_expected.ht`
 
 Per-SNV expected counts, produced by `--apply-models-per-variant`. One row per
-locus×allele pair, exploded through `transcript_consequences` (or per-gene if
-the `worst_csq_by_gene` variant is built).
+locus×allele pair, exploded through `transcript_consequences`.
 
-- **Path:** `gs://gnomad/v{version}/constraint/apply_models/{vep_annot}/gnomad.v{version}.per_variant_expected.ht`
+- **Path:** `gs://gnomad/v{version}/constraint/apply_models/transcript_consequences/gnomad.v{version}.per_variant_expected.ht`
 - **Resource fn:** [`get_per_variant_expected_dataset`](resource_utils.py)
 - **Key:** `locus`, `alleles`
 
@@ -374,7 +373,7 @@ Sum of `per_variant_expected.ht` over variants within each
 `(annotation, modifier, gene, gene_id, transcript, canonical, mane_select)`
 tuple. Produced by `--aggregate-per-variant-expected`.
 
-- **Path:** `gs://gnomad/v{version}/constraint/apply_models/{vep_annot}/gnomad.v{version}.per_variant_expected.aggregated.ht`
+- **Path:** `gs://gnomad/v{version}/constraint/apply_models/transcript_consequences/gnomad.v{version}.per_variant_expected.aggregated.ht`
 - **Resource fn:** [`get_aggregated_per_variant_expected`](resource_utils.py)
 - **Key:** `annotation, modifier, gene, gene_id, transcript, canonical, mane_select`
 
@@ -403,7 +402,7 @@ Alternative path: aggregate *first*, then apply models. Produced by
 `--apply-models-aggregated` and has the same schema as
 `per_variant_expected.aggregated.ht`.
 
-- **Path:** `gs://gnomad/v{version}/constraint/apply_models/{vep_annot}/gnomad.v{version}.aggregated_expected.ht`
+- **Path:** `gs://gnomad/v{version}/constraint/apply_models/transcript_consequences/gnomad.v{version}.aggregated_expected.ht`
 - **Resource fn:** [`get_aggregated_expected`](resource_utils.py)
 - **Key:** identical to §7.
 
@@ -424,7 +423,7 @@ Pre-metric per-transcript table organized into constraint groups (`syn`, `mis`,
 `--aggregate-by-constraint-groups` /
 [`aggregate_by_constraint_groups`](../utils/constraint.py).
 
-- **Path:** `gs://gnomad/v{version}/constraint/apply_models/{vep_annot}/gnomad.v{version}.constraint_group.ht`
+- **Path:** `gs://gnomad/v{version}/constraint/apply_models/transcript_consequences/gnomad.v{version}.constraint_group.ht`
 - **Resource fn:** [`get_constraint_group_ht`](resource_utils.py)
 - **Key:** `gene, gene_id, transcript, canonical, mane_select`
 
@@ -462,7 +461,7 @@ raw and standardized z-scores, percentile/decile/sextile bins. Produced by
 `--compute-constraint-metrics`. This is the *internal* metrics table; the
 public release table (§12) is a renamed/flattened projection.
 
-- **Path:** `gs://gnomad/v{version}/constraint/metrics/{vep_annot}/gnomad.v{version}.constraint_metrics.ht`
+- **Path:** `gs://gnomad/v{version}/constraint/metrics/transcript_consequences/gnomad.v{version}.constraint_metrics.ht`
 - **Resource fn:** [`get_constraint_metrics_dataset`](resource_utils.py)
 - **Key:** `gene, gene_id, transcript, canonical, mane_select`
 

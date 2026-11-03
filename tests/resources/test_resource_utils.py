@@ -168,7 +168,6 @@ class TestCheckParamScope:
         [
             ({"data_type": "transcripts"}, "data_type must be one of"),
             ({"model_type": "linear"}, "model_type must be one of"),
-            ({"custom_vep_annotation": "worst_csq"}, "custom_vep_annotation must be"),
             ({"extension": "csv"}, "extension must be one of"),
             ({"version": "3.1"}, "The requested version doesn't exist"),
             ({"version": "2.1.1"}, "The requested version doesn't exist"),
@@ -185,7 +184,6 @@ class TestCheckParamScope:
             check_param_scope(
                 version="4.1.1",
                 model_type="plateau",
-                custom_vep_annotation="transcript_consequences",
                 extension="ht",
                 data_type="exomes",
             )
@@ -356,31 +354,31 @@ class TestPipelineStepPaths:
         assert _path(func(version="4.1.1", test=True)) == f"{TEST_ROOT}/{path}"
 
     @pytest.mark.parametrize("func, sub_dir, name", VEP_FUNCS)
-    @pytest.mark.parametrize(
-        "custom_vep_annotation", ["transcript_consequences", "worst_csq_by_gene"]
-    )
-    def test_custom_vep_annotation_subdir(
-        self, func: Callable, sub_dir: str, name: str, custom_vep_annotation: str
+    def test_transcript_consequences_subdir(
+        self, func: Callable, sub_dir: str, name: str
     ) -> None:
-        """Test that the VEP annotation adds a subdirectory and post-fixes apply."""
-        out = func(
-            custom_vep_annotation,
-            version="4.1.1",
-            directory_post_fix="ukb",
-            path_post_fix="v2",
-        )
+        """Test that the outputs are under ``transcript_consequences`` and post-fixes apply.
+
+        The subdirectory is left from when the VEP annotation was an option, and is
+        kept so the paths of existing outputs don't change.
+        """
+        out = func(version="4.1.1", directory_post_fix="ukb", path_post_fix="v2")
         assert out.path == (
-            f"gs://gnomad/v4.1.1/constraint_ukb/{sub_dir}/{custom_vep_annotation}/"
+            f"gs://gnomad/v4.1.1/constraint_ukb/{sub_dir}/transcript_consequences/"
             f"gnomad.v4.1.1.{name}.v2.ht"
         )
 
     @pytest.mark.parametrize("func, sub_dir, name", VEP_FUNCS)
-    def test_invalid_custom_vep_annotation(
+    def test_vep_annotation_is_not_an_option(
         self, func: Callable, sub_dir: str, name: str
     ) -> None:
-        """Test that an unknown VEP annotation raises an error."""
-        with pytest.raises(ValueError, match="custom_vep_annotation must be"):
-            func("worst_csq", version="4.1.1")
+        """Test that a VEP annotation can no longer be chosen.
+
+        ``worst_csq_by_gene`` never ran end to end on v4: the metrics, ranking, and
+        release steps need transcripts. See issue #62.
+        """
+        with pytest.raises(TypeError):
+            func(custom_vep_annotation="worst_csq_by_gene", version="4.1.1")
 
 
 class TestGetLoggingPath:
@@ -440,7 +438,6 @@ class TestGetConstraintResources:
         """Return the constraint pipeline resources for a test run of v4.1.1."""
         return get_constraint_resources(
             version="4.1.1",
-            custom_vep_annotation="transcript_consequences",
             overwrite=False,
             test=True,
             skip_pre_rank_metrics=skip_pre_rank_metrics,

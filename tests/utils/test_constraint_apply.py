@@ -2,7 +2,7 @@
 
 import functools
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import hail as hl
 import pytest
@@ -367,14 +367,27 @@ class TestPrepareHtForApplyModels:
         for field in ["observed_variants", "possible_variants", "apply_model"]:
             assert field in fields
 
-    def test_worst_csq_by_gene_with_mane_select(self) -> None:
-        """Test that MANE Select grouping is rejected for worst_csq_by_gene."""
-        with pytest.raises(ValueError, match="mane_select"):
-            _prepare_ht_for_apply_models(
-                _preprocessed_ht(),
-                custom_vep_annotation="worst_csq_by_gene",
-                use_mane_select=True,
-            )
+    @pytest.mark.parametrize(
+        "func, args",
+        [
+            (_prepare_ht_for_apply_models, ()),
+            (create_per_variant_expected_ht, ("mutation_ht", "plateau_models", None)),
+            (create_aggregated_expected_ht, ("mutation_ht", "plateau_models", None)),
+        ],
+    )
+    def test_vep_annotation_is_not_an_option(self, func: Callable, args: Tuple) -> None:
+        """Test that the models can only be applied to the transcript consequences.
+
+        ``worst_csq_by_gene`` never ran end to end on v4: the metrics, ranking, and
+        release steps need transcripts. See issue #62.
+        """
+        inputs = {
+            "mutation_ht": _mutation_ht(),
+            "plateau_models": hl.literal(PLATEAU_MODELS),
+        }
+        args = [inputs.get(a, a) for a in args]
+        with pytest.raises(TypeError, match="custom_vep_annotation"):
+            func(_preprocessed_ht(), *args, custom_vep_annotation="worst_csq_by_gene")
 
 
 class TestApplyConstraintModels:

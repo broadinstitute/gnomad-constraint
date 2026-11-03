@@ -63,6 +63,7 @@ from gnomad_constraint.resources.constants import (
     RELEASE_PIPELINE_PARAM_GLOBALS,
     RELEASE_TOP_LEVEL_ANNOTATIONS,
     SFS_BIN_CUTOFFS,
+    VEP_ANNOTATION,
 )
 
 logging.basicConfig(
@@ -824,7 +825,6 @@ def create_training_set(
 
 def _prepare_ht_for_apply_models(
     ht: hl.Table,
-    custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
 ) -> Tuple[hl.Table, List[str]]:
     """
@@ -835,28 +835,18 @@ def _prepare_ht_for_apply_models(
     to per-transcript rows.
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
-    :param custom_vep_annotation: Custom VEP annotation to use. Default is
-        ``"transcript_consequences"``.
     :param use_mane_select: Whether to include MANE Select as a group. Default is
         False.
     :return: Tuple of (prepared Table, list of VEP grouping field names).
     """
-    if custom_vep_annotation == "worst_csq_by_gene" and use_mane_select:
-        raise ValueError(
-            "'mane_select' cannot be set to True when custom_vep_annotation is set"
-            " to 'worst_csq_by_gene'."
-        )
-    include_canonical_group = custom_vep_annotation != "worst_csq_by_gene"
-    include_mane_select_group = include_canonical_group and use_mane_select
-
     ht = ht.annotate(**ht.calibrate_mu)
     ht = ht.filter(hl.is_defined(ht.apply_model) & (ht.possible_variants > 0))
 
     ht, groupings = annotate_exploded_vep_for_constraint_groupings(
         ht=ht,
-        vep_annotation=custom_vep_annotation,
-        include_canonical_group=include_canonical_group,
-        include_mane_select_group=include_mane_select_group,
+        vep_annotation=VEP_ANNOTATION,
+        include_canonical_group=True,
+        include_mane_select_group=use_mane_select,
     )
 
     return ht, groupings
@@ -952,7 +942,6 @@ def create_per_variant_expected_ht(
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
     log10_coverage: bool = True,
-    custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
 ) -> hl.Table:
     """
@@ -971,16 +960,12 @@ def create_per_variant_expected_ht(
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``).
     :param log10_coverage: Whether to use log10 coverage. Default is True.
-    :param custom_vep_annotation: Custom VEP annotation to use. Default is
-        ``"transcript_consequences"``.
     :param use_mane_select: Whether to include MANE Select as a group. Default is False.
     :return: Per-variant expected Table.
     """
     calibrate_mu_fields = set(ht.calibrate_mu.keys())
 
-    ht, groupings = _prepare_ht_for_apply_models(
-        ht, custom_vep_annotation, use_mane_select
-    )
+    ht, groupings = _prepare_ht_for_apply_models(ht, use_mane_select)
 
     ht = annotate_with_mu(ht, mutation_ht)
     ht = _apply_constraint_models(ht, plateau_models, coverage_model, log10_coverage)
@@ -1052,7 +1037,6 @@ def create_aggregated_expected_ht(
         Union[Tuple[float, float], hl.expr.ArrayNumericExpression]
     ],
     log10_coverage: bool = True,
-    custom_vep_annotation: str = "transcript_consequences",
     use_mane_select: bool = False,
     partition_hint: int = 100,
 ) -> hl.Table:
@@ -1082,17 +1066,13 @@ def create_aggregated_expected_ht(
     :param coverage_model: Coverage model for the constraint calculations as
         ``[intercept, slope]`` (as returned by ``build_models``).
     :param log10_coverage: Whether to use log10 coverage. Default is True.
-    :param custom_vep_annotation: Custom VEP annotation to use. Default is
-        ``"transcript_consequences"``.
     :param use_mane_select: Whether to include MANE Select as a group. Default is
         False.
     :param partition_hint: Target number of partitions for aggregation. Default is 100.
     :return: Table with aggregated expected variant counts, compatible with
         ``aggregate_by_constraint_groups``.
     """
-    ht, groupings = _prepare_ht_for_apply_models(
-        ht, custom_vep_annotation, use_mane_select
-    )
+    ht, groupings = _prepare_ht_for_apply_models(ht, use_mane_select)
 
     # Filter to coding consequences.
     ht = ht.filter(hl.set(CSQ_CODING).contains(ht.annotation))
