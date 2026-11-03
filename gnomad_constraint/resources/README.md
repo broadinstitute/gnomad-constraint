@@ -4,9 +4,11 @@ This package wires every Hail Table produced by the constraint pipeline to a
 canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
-This document is the schema reference for every **pipeline output** of the v4.1.1
-constraint pipeline. Schemas were captured by running `ht.describe()` against
-the live tables on GCS. For upstream **input** resources (VEP context, sites,
+This document is the schema reference for every **pipeline output** of the
+constraint pipeline. The schemas were first captured with `ht.describe()` from
+the v4.1.1 tables on GCS and have been updated by hand as the pipeline changed,
+so the released v4.1.1 tables differ from them in places. For upstream **input**
+resources (VEP context, sites,
 coverage, methylation, GERP, GENCODE, `all_sites_an`) see
 [`gnomad.resources.grch38`](https://github.com/broadinstitute/gnomad_methods/tree/main/gnomad/resources/grch38).
 
@@ -699,23 +701,23 @@ constraint baseline rather than the general per-context baseline.
 
 ---
 
-## Regenerating this README
+## Updating this README
 
-The schemas above were captured against live GCS tables for version `4.1.1`.
-To refresh after a pipeline rerun:
+After a change to an output's schema, describe the output of a `--test` run and
+update its section. In a Hail session with access to GCS:
 
-```bash
-source /Users/jgoodric/miniconda3/etc/profile.d/conda.sh && conda activate hail
-export PATH="/Users/jgoodric/google-cloud-sdk/bin:$PATH"
-python -c "
+```python
 import hail as hl
-hl.init(quiet=True, idempotent=True)
-ht = hl.read_table('<gcs path>')
+
+from gnomad_constraint.resources.resource_utils import get_constraint_metrics_dataset
+
+ht = get_constraint_metrics_dataset(
+    "transcript_consequences", version="4.1.1", test=True
+).ht()
 ht.describe()
 print(hl.eval(ht.globals))
-"
 ```
 
 The path conventions are sourced from [`get_constraint_data`](resource_utils.py)
 and [`get_constraint_root`](resource_utils.py). When in doubt, instantiate a
-resource via the corresponding `get_*` function and read `.ht().path`.
+resource via the corresponding `get_*` function and read its `.path`.
