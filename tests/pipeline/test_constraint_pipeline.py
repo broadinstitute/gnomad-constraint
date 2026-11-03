@@ -13,6 +13,7 @@ from gnomad_constraint.pipeline.constraint_pipeline import (
     check_apply_models_resources,
     check_constraint_group_input,
     check_skip_coverage_model,
+    get_release_downsamplings,
 )
 
 
@@ -126,3 +127,25 @@ class TestCheckConstraintGroupInput:
                 use_aggregated_expected=use_aggregated_expected,
             )
         assert bool(caplog.records) == warned
+
+
+class TestGetReleaseDownsamplings:
+    """Test the get_release_downsamplings function."""
+
+    def test_downsamplings(self) -> None:
+        """Test that the downsampling levels are returned."""
+        ht = hl.utils.range_table(1).annotate_globals(
+            downsamplings=hl.struct(nfe=[10, 100])
+        )
+        assert get_release_downsamplings(ht) == hl.Struct(nfe=[10, 100])
+
+    def test_no_downsamplings(self) -> None:
+        """
+        Test that a release Table without downsamplings raises a clear error.
+
+        Regression test: without ``--include-downsamplings`` at preprocessing, the
+        release Table has no ``downsamplings`` global, and the downsampling export
+        failed with an AttributeError.
+        """
+        with pytest.raises(ValueError, match="--include-downsamplings"):
+            get_release_downsamplings(hl.utils.range_table(1))

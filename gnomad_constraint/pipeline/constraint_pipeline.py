@@ -114,6 +114,25 @@ def check_apply_models_resources(
     res.check_resource_existence()
 
 
+def get_release_downsamplings(release_ht: hl.Table) -> hl.Struct:
+    """
+    Return the downsampling levels of the release Table.
+
+    The release Table only has a ``downsamplings`` global when preprocessing used
+    ``--include-downsamplings``.
+
+    :param release_ht: Release constraint metrics Table.
+    :return: Downsampling levels for each genetic ancestry group.
+    """
+    if "downsamplings" not in release_ht.globals:
+        raise ValueError(
+            "The release Table has no downsamplings global, so there is no"
+            " downsampling TSV to export. Rerun --preprocess-data with"
+            " --include-downsamplings, then the steps after it."
+        )
+    return hl.eval(release_ht.downsamplings)
+
+
 def check_constraint_group_input(
     aggregate_per_variant_expected: bool,
     apply_models_aggregated: bool,
@@ -549,7 +568,7 @@ def main(args: argparse.Namespace) -> None:
             logger.info("Exporting release downsampling TSV...")
             downsampling_ht = explode_downsamplings_oe(
                 release_ht,
-                downsampling_meta=hl.eval(release_ht.downsamplings),
+                downsampling_meta=get_release_downsamplings(release_ht),
                 metrics=["syn", "mis", "lof_hc_lc", "lof"],
             )
             downsampling_ht.export(res.release_downsampling_tsv)
