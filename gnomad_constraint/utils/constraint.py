@@ -1143,7 +1143,7 @@ def create_aggregated_expected_ht(
 
 def calculate_mu_by_downsampling(
     ht: hl.Table,
-    additional_grouping: Tuple[str] = ("methylation_level",),
+    additional_grouping: Tuple[str, ...] = ("methylation_level",),
     total_mu: float = 1.2e-08,
 ) -> hl.Table:
     """
