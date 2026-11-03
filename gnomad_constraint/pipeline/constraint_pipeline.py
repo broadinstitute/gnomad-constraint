@@ -579,13 +579,19 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--directory-post-fix",
-        help="Post-fix to append to the output directory path.",
+        help="Post-fix to append to the output directory path, for every output.",
         type=str,
         default=None,
     )
     parser.add_argument(
         "--path-post-fix",
-        help="Post-fix to append to the output file path.",
+        help=(
+            "Post-fix to append to output file names. Applies to the outputs from"
+            " --create-training-set onward (training set, models, expected counts,"
+            " constraint groups, constraint metrics, and the release constraint"
+            " metrics Table and TSVs), but not to the annotated context, preprocessed,"
+            " gene quality metrics, mutation rate, or release mutation rate outputs."
+        ),
         type=str,
         default=None,
     )

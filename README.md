@@ -69,7 +69,9 @@ has the full layout and the schema of every output. With `--test` (chr20, chrX,
 and chrY only) or `--test-gene-list` (six genes), every output, including the
 release files, goes to `gs://gnomad-tmp/gnomad_v{version}_testing/constraint/`
 instead, so a test run never touches production outputs. `--directory-post-fix`
-and `--path-post-fix` keep separate runs of the same version apart.
+and `--path-post-fix` keep separate runs of the same version apart. The directory
+post-fix applies to every output; the path post-fix only to the outputs from
+`--create-training-set` onward, except the release mutation rate files.
 
 ### Release constraint metrics Table
 
