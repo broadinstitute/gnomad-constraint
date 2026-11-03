@@ -81,8 +81,8 @@ Parameters passed to `calculate_mu_by_downsampling`.
   `{downsampling, group, pop}` entry per downsampling × genetic-ancestry-group.
 - `ac_cutoff: int32` — variants with `AC > ac_cutoff` are excluded from mu
   calculation (typical value: 5).
-- `min_cov: int32` — minimum mean exome coverage filter for mu sites (15).
-- `max_cov: int32` — maximum mean exome coverage filter (60).
+- `min_cov: int32` — minimum mean genome coverage filter for mu sites (15).
+- `max_cov: int32` — maximum mean genome coverage filter (60).
 - `gerp_lower_cutoff: float64` — lower GERP bound for the mu site set (−3.9885).
 - `gerp_upper_cutoff: float64` — upper GERP bound (2.6607).
 - `genetic_ancestry_groups: array<str>` — gen-anc groups used for downsampling
@@ -224,12 +224,15 @@ see [Shared structures](#shared-structures).
 ### Rows
 Carries every annotated_context row field *except* `freq` (which is split
 into `compute_mu.genomes_freq` / `calibrate_mu.exomes_freq`), plus:
-- `exomes_coverage: int32` — `coverage.exomes.median_approx` clamped to the
-  `[low_cov_cutoff, high_cov_cutoff]` model bands.
+- `exomes_coverage: int32` — exome coverage from `get_exome_coverage_expr`,
+  set by `--exome-coverage-metric`: the percent of exome samples with a
+  genotype (`AN_percent`, the default), the median coverage (`median`), or the
+  allele number (`AN`). It isn't clamped; the model coverage cutoffs are
+  applied to it when assigning `build_model` and `apply_model`.
 - `compute_mu: struct` — fields used to fit the mutation-rate model on the
   *genome* SNVs:
   - `genomes_freq: array<struct{AC, AF, AN, homozygote_count}>` — genomes freq
-    array (parallel to `exomes_freq_meta`).
+    array (parallel to `calculate_mu_globals.freq_meta`).
   - `observed_variants: array<int32>` — observed counts (one per freq entry).
   - `possible_variants: int32` — count of possible SNVs at this site (always 1
     for context rows; used by aggregation).
@@ -292,7 +295,7 @@ Same shared pipeline parameter globals as `mutation_rate.ht`.
 - `genomic_region: str` — `autosome_or_par` / `chrx_nonpar` / `chry_nonpar`.
 - `build_model: struct{high_or_low_coverage: str, model_group: struct{cpg: bool, genomic_region: str}}`
   — the (coverage-band × cpg × region) bucket whose plateau model this row trains.
-- `exomes_coverage: int32` — clamped median exome coverage bin.
+- `exomes_coverage: int32` — exome coverage, as in §2; rows are grouped by it.
 - `observed_variants: array<int64>` — aggregated observed SNV counts per freq entry.
 - `possible_variants: int64` — aggregated possible SNV count.
 - `mu_snp: float64` — joined-in mu_snp for this (context, ref, alt, methylation).
@@ -354,7 +357,8 @@ applied-model fields:
 - `gene: str`, `gene_id: str`, `transcript: str` — VEP transcript identity.
 - `canonical: bool`, `mane_select: bool` — transcript flags.
 - `mu_snp: float64` — joined per-context mu (scalar).
-- `mu: float64` — `mu_snp * possible_variants` (the per-variant mu mass).
+- `mu: float64` — `mu_snp * possible_variants * coverage_correction` (the
+  per-variant mu mass, with the coverage correction).
 - `predicted_proportion_observed: array<float64>` — plateau-applied predicted
   observed proportion per freq entry (one element per `freq_meta` row).
 - `expected_variants: array<float64>` — `predicted_proportion_observed *
@@ -381,7 +385,8 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`.
 - `annotation, modifier, gene, gene_id, transcript, canonical, mane_select` — key.
 - `mu_snp: float64` — summed `mu_snp * possible_variants` (i.e. total per-context
   mu mass over the bucket; despite the name, this is no longer a per-SNV rate).
-- `mu: float64` — summed per-variant `mu` (`mu_snp * possible` over bucket).
+- `mu: float64` — summed per-variant `mu` (`mu_snp * possible *
+  coverage_correction` over the bucket).
 - `observed_variants: array<int64>` — summed observed counts per freq entry.
 - `possible_variants: int64` — total possible SNV count in the bucket.
 - `predicted_proportion_observed: array<float64>` — `Σ predicted_proportion_observed
@@ -437,7 +442,7 @@ Pipeline-parameter globals (same as §7) plus:
 - `constraint_groups: array<struct>` — one element per metadata entry in
   `constraint_group_meta`, each carrying summed counts:
   - `mu_snp: float64` — `Σ mu_snp · possible` over variants in this group.
-  - `mu: float64` — `Σ mu` (i.e. `Σ mu_snp · possible`).
+  - `mu: float64` — `Σ mu` (i.e. `Σ mu_snp · possible · coverage_correction`).
   - `possible_variants: int64` — total possible SNVs.
   - `coverage_correction: float64` — `Σ coverage_correction · possible`.
   - `oe_info: array<struct{observed_variants: int64, predicted_proportion_observed: float64, expected_variants: float64}>`
@@ -486,7 +491,8 @@ Pipeline-parameter globals (as §9) plus:
       CI using a discretized-Poisson estimator.
     - `oe_ci_gamma: struct{lower: float64, upper: float64}` — OE CI using a
       Gamma estimator (the LOEUF estimator).
-    - `z_raw: float64` — `(observed - expected) / sqrt(expected)`.
+    - `z_raw: float64` — `(expected - observed) / sqrt(expected)`, so it is
+      positive when there are fewer variants than expected.
   - `flags: set<str>` — per-group QC flags (e.g. low observed, low expected).
   - `z_score: float64` — `z_raw / sd_raw_z[group_idx]`, taken at the
     canonical (global-adj) freq index.
@@ -606,8 +612,9 @@ Each constraint group is exposed as a named struct (group names from
 **Common sub-fields** on every `{syn,mis,lof_hc_lc,lof}` struct
 (`RELEASE_CG_SELECT` order):
 
-- `mu: float64` — total mu mass for this group (renamed from `mu_snp` per
-  `RELEASE_CG_RENAME`).
+- `mu: float64` — total mu mass for this group, without the coverage
+  correction: the internal `mu_snp` sum, renamed per `RELEASE_CG_RENAME`. It
+  replaces the internal `mu`, which includes the coverage correction.
 - `possible: int64` — total possible SNVs (from `possible_variants`).
 - `obs: int64` — observed SNV count at the global-adj index.
 - `exp: float64` — expected SNV count at the global-adj index.
