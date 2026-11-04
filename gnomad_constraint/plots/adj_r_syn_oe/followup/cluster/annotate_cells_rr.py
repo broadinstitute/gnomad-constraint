@@ -9,12 +9,6 @@ import argparse
 
 import hail as hl
 
-ROOTS = {
-    "full": "gs://gnomad-tmp/jg/rr_full",
-    "qcexcl": "gs://gnomad-tmp/jg/rr_full_qcexcl",
-}
-CUTOFFS = {"bonferroni": "bonferroni", "1e-2": "1e-2", "ridge": "ridge"}
-
 
 def main(args: argparse.Namespace) -> None:
     """Annotate the cells and export them."""
