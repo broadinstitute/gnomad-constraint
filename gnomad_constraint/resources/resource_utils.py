@@ -652,8 +652,7 @@ def get_dnm_cohort_resources() -> Dict[str, Union[str, TableResource]]:
     """
     rmc_ref = "gs://regional_missense_constraint/resources/{build}/reference_data"
     satterstrom_ref = (
-        f"{rmc_ref.format(build='GRCh38')}/"
-        "Satterstrom_2026_{}_dnv_SNV_indel.txt.gz"
+        f"{rmc_ref.format(build='GRCh38')}/" "Satterstrom_2026_{}_dnv_SNV_indel.txt.gz"
     )
     return {
         "decode_psychencode": (
@@ -796,6 +795,21 @@ def get_genomic_features_ht(
     """
     return get_constraint_data(
         _get_rr_name("genomic_features13_1kb", corrected_window_coords),
+        sub_dir="regional_rate",
+        **kwargs,
+    )
+
+
+def get_variant_rate_ht(include_cpg: bool = False, **kwargs) -> TableResource:
+    """
+    Return TableResource of the per-variant Roulette rate multipliers over coding sites.
+
+    :param include_cpg: Whether CpG contexts have Roulette multipliers (otherwise 1).
+        Default is False.
+    :return: TableResource of the per-variant rate Table.
+    """
+    return get_constraint_data(
+        "roulette_variant_rates" + (".with_cpg" if include_cpg else ""),
         sub_dir="regional_rate",
         **kwargs,
     )
@@ -1070,6 +1084,7 @@ def get_constraint_resources(
     path_post_fix: Optional[str] = None,
     output_root: Optional[str] = None,
     regional_rr_ht: Optional[TableResource] = None,
+    variant_rate_ht: Optional[TableResource] = None,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -1094,6 +1109,8 @@ def get_constraint_resources(
     :param regional_rr_ht: Optional regional rr Table resource (keyed by interval
         with an ``adj_r`` dict) used by ``--aggregate-per-variant-expected``.
         Default is None.
+    :param variant_rate_ht: Optional per-variant mutation rate Table resource applied
+        with rr by ``--aggregate-per-variant-expected``. Default is None.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -1216,7 +1233,16 @@ def get_constraint_resources(
             {
                 "regional_rate_pipeline.py --compute-rr": {
                     "regional_rr_ht": regional_rr_ht
-                }
+                },
+                **(
+                    {
+                        "regional_rate_pipeline.py --import-variant-rates": {
+                            "variant_rate_ht": variant_rate_ht
+                        }
+                    }
+                    if variant_rate_ht is not None
+                    else {}
+                ),
             }
             if regional_rr_ht is not None
             else None
@@ -1428,6 +1454,9 @@ def get_regional_rate_resources(
     include_xy_features: bool = False,
     extra_features_paths: Optional[List[str]] = None,
     loeuf_ht: Optional[TableResource] = None,
+    roulette_vcf_paths: Optional[List[str]] = None,
+    variant_rate_include_cpg: bool = False,
+    use_variant_rates: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the regional rate pipeline.
@@ -1464,6 +1493,12 @@ def get_regional_rate_resources(
     :param loeuf_ht: Optional constraint Table resource (metrics or release format)
         used to bin transcripts by LOEUF decile when evaluating cutoffs. Default is
         None.
+    :param roulette_vcf_paths: Roulette rate VCFs imported by
+        ``--import-variant-rates``. Default is None.
+    :param variant_rate_include_cpg: Whether the per-variant rate Table gives CpG
+        contexts Roulette multipliers. Default is False.
+    :param use_variant_rates: Whether the rr training set and rr use the per-variant
+        rate Table (``--use-variant-rates``). Default is False.
     :return: PipelineResourceCollection containing resources for all steps of the
         regional rate pipeline.
     """
@@ -1503,10 +1538,27 @@ def get_regional_rate_resources(
         "prepare_syn_dnms.py --prepare-syn-dnms",
         output_resources={"syn_dnm_ht": get_syn_dnm_ht(**out_params)},
     )
+    import_variant_rates = PipelineStepResourceCollection(
+        "--import-variant-rates",
+        output_resources={
+            "variant_rate_ht": get_variant_rate_ht(
+                include_cpg=variant_rate_include_cpg, **out_params
+            )
+        },
+        input_resources={
+            "Roulette rate VCFs": {
+                f"roulette_vcf_{i}": p for i, p in enumerate(roulette_vcf_paths or [])
+            },
+            "constraint_pipeline.py --prepare-context-ht": {
+                "annotated_context_ht": constraint_inputs["annotated_context_ht"]
+            },
+        },
+    )
+    rate_steps = [import_variant_rates] if use_variant_rates else []
     create_rr_training_set = PipelineStepResourceCollection(
         "--create-rr-training-set",
         output_resources={"rr_training_ht": get_rr_training_ht(**coords_params)},
-        pipeline_input_steps=[import_genomic_features, prepare_syn_dnms],
+        pipeline_input_steps=[import_genomic_features, prepare_syn_dnms, *rate_steps],
         add_input_resources={
             "constraint_pipeline.py --prepare-context-ht": {
                 "annotated_context_ht": constraint_inputs["annotated_context_ht"]
@@ -1542,7 +1594,7 @@ def get_regional_rate_resources(
     compute_rr = PipelineStepResourceCollection(
         "--compute-rr",
         output_resources=rr_hts,
-        pipeline_input_steps=[import_genomic_features, train_rr_models],
+        pipeline_input_steps=[import_genomic_features, train_rr_models, *rate_steps],
         add_input_resources={
             "constraint_pipeline.py --apply-models-per-variant": {
                 "per_variant_expected_ht": constraint_inputs["per_variant_expected_ht"]
@@ -1591,6 +1643,7 @@ def get_regional_rate_resources(
     rr_pipeline.add_steps(
         {
             "import_genomic_features": import_genomic_features,
+            "import_variant_rates": import_variant_rates,
             "create_rr_training_set": create_rr_training_set,
             "train_rr_models": train_rr_models,
             "compute_rr": compute_rr,

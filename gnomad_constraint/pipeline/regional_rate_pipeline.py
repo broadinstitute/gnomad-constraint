@@ -13,6 +13,10 @@ read-only inputs; the constraint models are not re-fit or re-applied.
 
 The rr pipeline consists of the following steps:
     - --import-genomic-features: import the 1kb regional genomic feature matrices.
+    - --import-variant-rates: import Roulette's per-variant mutation rates over coding
+      sites as multipliers on the trinucleotide mutation rates. With
+      --use-variant-rates, the rr models are fit on top of them (as a fixed offset)
+      and the constraint pipeline applies them with rr (--variant-rate-ht-path).
     - --create-rr-training-set: create the DNM / non-mutated background training set.
     - --train-rr-models: run the univariate feature screen and fit the per-context
       models for each feature selection cutoff (optionally chromosome-split).
@@ -37,6 +41,7 @@ from hail.utils.misc import new_temp_file
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
+    CPG_CONTEXTS,
     CURRENT_VERSION,
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
@@ -45,6 +50,7 @@ from gnomad_constraint.resources.constants import (
     RR_STATSMODELS_VERSION,
     RR_TRAINING_N_PARTITIONS,
     RR_XY_MASKED_FEATURES,
+    VARIANT_RATE_MULTIPLIER_FIELD,
     VERSIONS,
 )
 from gnomad_constraint.resources.resource_utils import (
@@ -63,6 +69,7 @@ from gnomad_constraint.utils.regional_rate import (
     fit_rr_models,
     get_syn_mane_select_ht,
     get_syn_sites_ht,
+    get_variant_rate_ht,
     import_genomic_features,
     normalize_rr_ht,
     remove_qc_flagged_genes,
@@ -113,6 +120,7 @@ def _get_rr_globals(
     factors: Optional[Dict[str, float]],
     models_ht_path: str,
     features_ht_path: str,
+    variant_rate_ht_path: Optional[str] = None,
 ) -> hl.expr.StructExpression:
     """
     Get the ``rr_globals`` global of an rr Table.
@@ -125,6 +133,8 @@ def _get_rr_globals(
     :param factors: Normalization factors, or None if rr was not normalized.
     :param models_ht_path: Path of the rr model Table.
     :param features_ht_path: Path of the genomic feature Table.
+    :param variant_rate_ht_path: Path of the per-variant rate Table the rr models
+        were fit on top of, or None. Default is None.
     :return: Struct expression of rr parameters.
     """
     calibrated = factors is not None
@@ -143,6 +153,11 @@ def _get_rr_globals(
         ),
         models_ht_path=models_ht_path,
         features_ht_path=features_ht_path,
+        variant_rate_ht_path=(
+            hl.missing(hl.tstr)
+            if variant_rate_ht_path is None
+            else hl.str(variant_rate_ht_path)
+        ),
     )
 
 
@@ -157,6 +172,7 @@ def _compute_and_write_rr(
     out_of_fold: bool,
     models_ht_path: str,
     features_ht_path: str,
+    variant_rate_ht_path: Optional[str] = None,
 ) -> None:
     """
     Compute the rr Table of one cutoff, normalize it if requested, and write it.
@@ -172,6 +188,8 @@ def _compute_and_write_rr(
     :param out_of_fold: Whether to use the chromosome-split models.
     :param models_ht_path: Path of the rr model Table.
     :param features_ht_path: Path of the genomic feature Table.
+    :param variant_rate_ht_path: Path of the per-variant rate Table the rr models
+        were fit on top of, or None. Default is None.
     :return: None.
     """
     rr_ht = compute_rr_ht(features_ht, models, masked_features, out_of_fold)
@@ -197,6 +215,7 @@ def _compute_and_write_rr(
             factors,
             models_ht_path,
             features_ht_path,
+            variant_rate_ht_path,
         )
     )
     rr_ht = rr_ht.checkpoint(out_path, overwrite=args.overwrite)
@@ -248,6 +267,9 @@ def main(args):
         include_xy_features=args.include_xy_features,
         extra_features_paths=args.extra_features_paths,
         loeuf_ht=TableResource(args.loeuf_ht_path) if args.loeuf_ht_path else None,
+        roulette_vcf_paths=args.roulette_vcf_paths,
+        variant_rate_include_cpg=args.variant_rate_include_cpg,
+        use_variant_rates=args.use_variant_rates,
     )
 
     syn_hts: Dict[str, hl.Table] = {}
@@ -297,6 +319,78 @@ def main(args):
                 )
             logger.info("Done importing regional genomic feature matrices.")
 
+        if args.import_variant_rates:
+            logger.info("Importing Roulette's per-variant mutation rates...")
+            res = resources.import_variant_rates
+            res.check_resource_existence()
+
+            # Roulette's VCFs name the autosomes without "chr" and have no samples.
+            mt = hl.import_vcf(
+                args.roulette_vcf_paths,
+                reference_genome="GRCh38",
+                contig_recoding={str(c): f"chr{c}" for c in range(1, 23)},
+                force_bgz=True,
+                drop_samples=True,
+            )
+            roulette_ht = mt.rows()
+            roulette_ht = roulette_ht.select(
+                roulette_mu=roulette_ht.info.MR, roulette_filters=roulette_ht.filters
+            )
+            context_ht = res.annotated_context_ht.ht()
+            if test:
+                context_ht = filter_for_test(context_ht, use_gene_list=test_gene_list)
+            # Coding exons of every GENCODE transcript, padded to keep splice sites.
+            cds_ht = constraint_res.get_gencode_ht(version)
+            cds_ht = cds_ht.filter(cds_ht.feature == "CDS")
+            cds_ht = cds_ht.key_by(
+                interval=hl.locus_interval(
+                    cds_ht.interval.start.contig,
+                    hl.max(cds_ht.interval.start.position - args.coding_padding, 1),
+                    cds_ht.interval.end.position + args.coding_padding,
+                    includes_end=True,
+                    reference_genome="GRCh38",
+                    invalid_missing=True,
+                )
+            ).select()
+            cds_ht = cds_ht.filter(hl.is_defined(cds_ht.interval))
+            ht = get_variant_rate_ht(
+                roulette_ht,
+                context_ht,
+                cds_ht,
+                include_cpg=args.variant_rate_include_cpg,
+            )
+            ht = ht.checkpoint(res.variant_rate_ht.path, overwrite=overwrite)
+            cls = hl.if_else(
+                ht.ref == "A",
+                "A/T",
+                hl.if_else(
+                    hl.literal(set(CPG_CONTEXTS)).contains(ht.context),
+                    "CpG",
+                    "C non-CpG",
+                ),
+            )
+            stats = ht.aggregate(
+                hl.agg.group_by(
+                    cls,
+                    hl.struct(
+                        n=hl.agg.count(),
+                        n_with_rate=hl.agg.count_where(
+                            hl.is_defined(ht[VARIANT_RATE_MULTIPLIER_FIELD])
+                        ),
+                        quantiles=hl.agg.approx_quantiles(
+                            ht[VARIANT_RATE_MULTIPLIER_FIELD],
+                            [0.05, 0.25, 0.5, 0.75, 0.95],
+                        ),
+                    ),
+                )
+            )
+            logger.info(
+                "Coding variants and multiplier quantiles (5%%, 25%%, 50%%, 75%%, 95%%)"
+                " per class:\n%s",
+                "\n".join(f"    {c}: {s}" for c, s in sorted(stats.items())),
+            )
+            logger.info("Done importing Roulette's per-variant mutation rates.")
+
         if args.create_rr_training_set:
             logger.info("Creating the rr training set...")
             res = resources.create_rr_training_set
@@ -320,6 +414,9 @@ def main(args):
                 background_sites=args.background_sites,
                 background_unit=args.background_unit,
                 context_sampling=args.background_context_sampling,
+                variant_rate_ht=(
+                    res.variant_rate_ht.ht() if args.use_variant_rates else None
+                ),
             )
             if args.exclude_qc_flagged_genes:
                 ht = remove_qc_flagged_genes(ht, hl.read_table(args.loeuf_ht_path))
@@ -389,6 +486,20 @@ def main(args):
                 if args.apply_rr_safeguards
                 else None
             )
+            variant_rate_ht_path = None
+            if args.use_variant_rates:
+                # rr is applied with the per-variant multipliers, so normalize it on
+                # expected counts that include them.
+                variant_rate_ht_path = res.variant_rate_ht.path
+                if syn_ht is not None:
+                    rate_ht = res.variant_rate_ht.ht()
+                    syn_ht = syn_ht.annotate(
+                        **{
+                            VARIANT_RATE_MULTIPLIER_FIELD: rate_ht[syn_ht.key][
+                                VARIANT_RATE_MULTIPLIER_FIELD
+                            ]
+                        }
+                    )
 
             for cutoff in cutoffs:
                 models = [m for m in all_models if m.cutoff == cutoff]
@@ -406,6 +517,7 @@ def main(args):
                     "masked_features": masked_features,
                     "models_ht_path": res.rr_models_ht.path,
                     "features_ht_path": res.genomic_features_ht.path,
+                    "variant_rate_ht_path": variant_rate_ht_path,
                 }
                 _compute_and_write_rr(
                     out_path=getattr(res, f"rr_ht_{cutoff}").path,
@@ -601,6 +713,57 @@ if __name__ == "__main__":
         help="Additional feature matrix paths to import.",
         nargs="+",
         default=None,
+    )
+
+    variant_rate_args = parser.add_argument_group(
+        "Per-variant mutation rate args",
+        "Arguments used for importing and using Roulette's per-variant rates.",
+    )
+    variant_rate_args.add_argument(
+        "--import-variant-rates",
+        help=(
+            "Import Roulette's per-variant mutation rates (--roulette-vcf-paths) over"
+            " coding sites as multipliers on the trinucleotide mutation rates."
+        ),
+        action="store_true",
+    )
+    variant_rate_args.add_argument(
+        "--roulette-vcf-paths",
+        help=(
+            "Roulette rate VCFs (e.g."
+            " <bucket>/{1..22}_rate_v5.2_TFBS_correction_all.vcf.bgz, copied from"
+            " http://genetics.bwh.harvard.edu/downloads/Vova/Roulette/)."
+        ),
+        nargs="+",
+        default=None,
+    )
+    variant_rate_args.add_argument(
+        "--coding-padding",
+        help=(
+            "Bases added to each side of the GENCODE coding exons kept by"
+            " --import-variant-rates. Default is 10."
+        ),
+        type=int,
+        default=10,
+    )
+    variant_rate_args.add_argument(
+        "--variant-rate-include-cpg",
+        help=(
+            "Give CpG contexts Roulette multipliers too. By default they get 1, since"
+            " their Roulette rates mostly carry methylation, which the mutation rates"
+            " already model."
+        ),
+        action="store_true",
+    )
+    variant_rate_args.add_argument(
+        "--use-variant-rates",
+        help=(
+            "Fit the rr models on top of the per-variant rates: --create-rr-training-set"
+            " adds the log multiplier as a fixed offset, and --compute-rr normalizes rr"
+            " on expected counts that include the multipliers. Apply the rr Tables"
+            " with constraint_pipeline.py --variant-rate-ht-path."
+        ),
+        action="store_true",
     )
 
     training_set_args = parser.add_argument_group(

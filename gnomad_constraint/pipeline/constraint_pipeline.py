@@ -159,6 +159,14 @@ def main(args):
                 output_root=output_root,
             )
         logger.info("Using regional rr Table: %s", regional_rr_ht.path)
+    variant_rate_ht = None
+    if args.variant_rate_ht_path is not None:
+        if skip_regional_rr:
+            raise ValueError(
+                "--variant-rate-ht-path can't be used with --skip-regional-rr."
+            )
+        variant_rate_ht = TableResource(args.variant_rate_ht_path)
+        logger.info("Using per-variant rate Table: %s", variant_rate_ht.path)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
@@ -175,6 +183,7 @@ def main(args):
         path_post_fix,
         output_root=output_root,
         regional_rr_ht=regional_rr_ht,
+        variant_rate_ht=variant_rate_ht,
     )
 
     try:
@@ -390,6 +399,12 @@ def main(args):
                 apply_regional_rr=True,
                 rr_ht=None if skip_regional_rr else res.regional_rr_ht.ht(),
                 rr_ht_path=None if skip_regional_rr else res.regional_rr_ht.path,
+                variant_rate_ht=(
+                    None if variant_rate_ht is None else res.variant_rate_ht.ht()
+                ),
+                variant_rate_ht_path=(
+                    None if variant_rate_ht is None else res.variant_rate_ht.path
+                ),
             )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
@@ -889,6 +904,17 @@ if __name__ == "__main__":
             "Optional path to a regional rr Table keyed by 'interval' with an 'adj_r'"
             " dict mapping trinucleotide context to rr. Overrides the rr Table"
             " resolved from the --regional-rr-* arguments."
+        ),
+        type=str,
+        default=None,
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--variant-rate-ht-path",
+        help=(
+            "Optional per-variant mutation rate Table (regional_rate_pipeline.py"
+            " --import-variant-rates) applied with rr: expected counts are also"
+            " multiplied by its 'variant_rate_multiplier'. Use it with an rr Table fit"
+            " on top of the same rates (--use-variant-rates)."
         ),
         type=str,
         default=None,

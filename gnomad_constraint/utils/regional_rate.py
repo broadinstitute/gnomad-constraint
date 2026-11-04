@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import hail as hl
 import numpy as np
 import pandas as pd
+import scipy.optimize
+import scipy.special
 import scipy.stats
 import statsmodels.api as sm
 from gnomad.resources.resource_utils import TableResource
@@ -47,6 +49,8 @@ from gnomad_constraint.resources.constants import (
     GENOMIC_FEATURE_WINDOW_BEDS,
     GENOMIC_FEATURES,
     METHYLATION_CORRELATED_FEATURES,
+    MU_GROUPING,
+    ROULETTE_LOW_QUALITY_FILTERS,
     RR_BONFERRONI_CUTOFF,
     RR_CONTEXTS,
     RR_FEATURE_SELECTION_ALPHA,
@@ -55,6 +59,7 @@ from gnomad_constraint.resources.constants import (
     RR_RIDGE_PENALTY,
     RR_SCREEN_FEATURE_ORDER,
     RR_VARIANT_MODIFIERS,
+    VARIANT_RATE_MULTIPLIER_FIELD,
 )
 
 logging.basicConfig(
@@ -75,6 +80,13 @@ MODEL_FOLD_ALL = "all"
 
 ENSEMBL_TRANSCRIPT_PREFIX = "ENST"
 """Prefix of Ensembl transcript IDs (RefSeq MANE Select transcripts are excluded)."""
+
+RR_RATE_OFFSET_FIELD = "rate_offset"
+"""
+rr training field holding the log per-variant rate multiplier, used as a fixed offset.
+
+See ``VARIANT_RATE_MULTIPLIER_FIELD``.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +405,73 @@ def get_syn_sites_ht(context_ht: hl.Table) -> hl.Table:
     return ht.select("context", "ref", "alt", "methylation_level")
 
 
+def get_variant_rate_ht(
+    roulette_ht: hl.Table,
+    context_ht: hl.Table,
+    coding_intervals_ht: hl.Table,
+    include_cpg: bool = False,
+) -> hl.Table:
+    """
+    Get per-variant mutation rate multipliers over coding sites from Roulette's rates.
+
+    Roulette (Seplyarskiy et al. 2023) gives a mutation rate for every possible SNV,
+    learned from gnomAD rare variants with the pentanucleotide context, wider
+    sequence context, methylation, transcription and an empirical regional rate.
+    Rates at sites with a ``ROULETTE_LOW_QUALITY_FILTERS`` filter are not used.
+
+    The multiplier of a variant is its Roulette rate divided by the average Roulette
+    rate of the coding variants in its mutation rate group (``MU_GROUPING``: context,
+    ref, alt and methylation level), so it only carries what the trinucleotide
+    mutation rates leave out. With ``include_cpg`` False, CpG contexts get a
+    multiplier of 1: their Roulette rates mostly carry methylation, which the
+    mutation rates already model.
+
+    :param roulette_ht: Roulette rates keyed by ``locus`` and ``alleles`` with
+        ``roulette_mu`` (the MR field of its VCFs) and ``roulette_filters``.
+    :param context_ht: Annotated context Table with ``context``, ``ref``, ``alt``
+        and ``methylation_level``.
+    :param coding_intervals_ht: Table keyed by ``interval`` of the coding regions to
+        keep.
+    :param include_cpg: Whether CpG contexts get Roulette multipliers. Default is
+        False.
+    :return: Table keyed by ``locus`` and ``alleles`` with ``roulette_mu``,
+        ``roulette_filters``, the ``MU_GROUPING`` fields and
+        ``VARIANT_RATE_MULTIPLIER_FIELD`` (missing where Roulette's rate isn't
+        used), with a ``variant_rate_globals`` global.
+    """
+    ht = roulette_ht.filter(hl.is_defined(coding_intervals_ht[roulette_ht.locus]))
+    ht = ht.annotate(**context_ht.select(*MU_GROUPING)[ht.key])
+    ht = ht.filter(hl.is_defined(ht.context))
+    low = hl.literal(set(ROULETTE_LOW_QUALITY_FILTERS))
+    rate = hl.or_missing(
+        hl.len(ht.roulette_filters.intersection(low)) == 0, ht.roulette_mu
+    )
+    ht = ht.annotate(_rate=rate)
+    ht = ht.checkpoint(new_temp_file("roulette_coding", "ht"))
+
+    group = hl.struct(**{f: ht[f] for f in MU_GROUPING})
+    means = ht.aggregate(
+        hl.agg.filter(
+            hl.is_defined(ht._rate), hl.agg.group_by(group, hl.agg.mean(ht._rate))
+        )
+    )
+    means_expr = hl.literal(means, hl.tdict(group.dtype, hl.tfloat64))
+    is_cpg = hl.literal(set(CPG_CONTEXTS)).contains(ht.context)
+    multiplier = ht._rate / means_expr.get(group)
+    if not include_cpg:
+        multiplier = hl.if_else(is_cpg, 1.0, multiplier)
+    ht = ht.annotate(**{VARIANT_RATE_MULTIPLIER_FIELD: multiplier}).drop("_rate")
+
+    return ht.annotate_globals(
+        variant_rate_globals=hl.struct(
+            source="Roulette v5.2 (MR)",
+            include_cpg=include_cpg,
+            unused_filters=ROULETTE_LOW_QUALITY_FILTERS,
+            n_groups=len(means),
+        )
+    )
+
+
 def create_rr_training_ht(
     syn_sites_ht: hl.Table,
     syn_dnm_ht: hl.Table,
@@ -403,6 +482,7 @@ def create_rr_training_ht(
     background_sites: str = "absent_from_gnomad",
     background_unit: str = "locus",
     context_sampling: Optional[str] = None,
+    variant_rate_ht: Optional[hl.Table] = None,
 ) -> hl.Table:
     """
     Create the rr training Table of synonymous DNM and non-mutated background sites.
@@ -426,6 +506,12 @@ def create_rr_training_ht(
           same expected total as the plain sample. Each context's model only sees
           its own context, so this should only move each model's intercept.
 
+    With ``variant_rate_ht`` (:func:`get_variant_rate_ht`), every site gets
+    ``RR_RATE_OFFSET_FIELD``: the log of its per-variant rate multiplier (1 where it
+    has none), used as a fixed offset by the rr models. A one-row-per-locus
+    background site gets the mean multiplier of the possible synonymous variants at
+    its locus, since it stands for any of them.
+
     :param syn_sites_ht: Possible synonymous SNVs (:func:`get_syn_sites_ht`).
     :param syn_dnm_ht: Synonymous DNM Table (:func:`combine_syn_dnms`).
     :param exomes_sites_ht: gnomAD exomes sites Table.
@@ -435,8 +521,11 @@ def create_rr_training_ht(
     :param background_sites: "absent_from_gnomad" (default) or "all".
     :param background_unit: "locus" (default) or "variant".
     :param context_sampling: None (default), "proportional" or "even".
+    :param variant_rate_ht: Optional per-variant rate multiplier Table. Default is
+        None.
     :return: Training Table keyed by ``locus`` with ``alleles``, ``context``, ``y``,
-        ``row_idx``, and the feature columns.
+        ``row_idx``, the feature columns and, with ``variant_rate_ht``,
+        ``RR_RATE_OFFSET_FIELD``.
     """
     if background_sites not in {"absent_from_gnomad", "all"}:
         raise ValueError(f"Unknown background_sites: {background_sites}!")
@@ -480,8 +569,27 @@ def create_rr_training_ht(
 
     ht = dnm_ht.union(bg_ht)
     features_ht = features_ht.select(*GENOMIC_FEATURE_COLUMNS)
+    ht = ht.annotate(**features_ht[ht.locus])
 
-    return ht.annotate(**features_ht[ht.locus])
+    if variant_rate_ht is not None:
+        rate_ht = variant_rate_ht.select(
+            m=hl.or_else(variant_rate_ht[VARIANT_RATE_MULTIPLIER_FIELD], 1.0)
+        )
+        m_expr = hl.or_else(rate_ht[ht.locus, ht.alleles].m, 1.0)
+        if background_unit == "locus":
+            # The sites are keyed by locus and alleles, so grouping by locus doesn't
+            # shuffle.
+            locus_ht = syn_sites_ht.select(
+                m=hl.or_else(rate_ht[syn_sites_ht.key].m, 1.0)
+            )
+            locus_ht = locus_ht.key_by("locus").collect_by_key("sites")
+            locus_ht = locus_ht.select(m=hl.mean(locus_ht.sites.m))
+            m_expr = hl.if_else(
+                ht.y == 1, m_expr, hl.or_else(locus_ht[ht.locus].m, 1.0)
+            )
+        ht = ht.annotate(**{RR_RATE_OFFSET_FIELD: hl.log(m_expr)})
+
+    return ht
 
 
 def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
@@ -529,11 +637,18 @@ def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
 
     :param ht: rr training Table (:func:`create_rr_training_ht`).
     :return: DataFrame with ``locus`` (as "contig:position"), ``context``, ``y``,
-        ``row_idx``, and the feature columns.
+        ``row_idx``, the feature columns and ``RR_RATE_OFFSET_FIELD`` if ``ht`` has
+        it.
     """
+    offset = [RR_RATE_OFFSET_FIELD] if RR_RATE_OFFSET_FIELD in ht.row else []
     ht = ht.key_by()
     ht = ht.select(
-        "context", "y", "row_idx", *GENOMIC_FEATURE_COLUMNS, locus=hl.str(ht.locus)
+        "context",
+        "y",
+        "row_idx",
+        *GENOMIC_FEATURE_COLUMNS,
+        *offset,
+        locus=hl.str(ht.locus),
     )
     df = ht.to_pandas()
     # to_pandas returns nullable extension dtypes (e.g. Float64); use NumPy dtypes
@@ -542,7 +657,7 @@ def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
         {
             "y": "int64",
             "row_idx": "int64",
-            **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, "float64"),
+            **dict.fromkeys([*GENOMIC_FEATURE_COLUMNS, *offset], "float64"),
         }
     )
     df = df.sort_values(["y", "row_idx"], ascending=[False, True], kind="stable")
@@ -730,11 +845,44 @@ def get_rr_model_features(selected_df: pd.DataFrame, context: str) -> List[str]:
     return list(sel["feature"] + "_" + sel["window"])
 
 
+def _fit_logistic_with_offset(
+    x: np.ndarray, y: np.ndarray, offset: np.ndarray, penalty: float
+) -> Tuple[np.ndarray, bool]:
+    """
+    Fit a logistic regression with a fixed offset and an optional ridge penalty.
+
+    Minimizes sum(log loss) + penalty / 2 * sum(coef ** 2) with the logit
+    ``intercept + offset + x @ coef``; the intercept is not penalized.
+
+    :param x: Features.
+    :param y: Outcome (0 or 1).
+    :param offset: Fixed logit offset of each row.
+    :param penalty: Total ridge penalty (0 for no penalty).
+    :return: Tuple of the parameters (intercept first) and whether the fit converged.
+    """
+
+    def objective(theta: np.ndarray) -> Tuple[float, np.ndarray]:
+        eta = theta[0] + offset + x @ theta[1:]
+        resid = scipy.special.expit(eta) - y
+        loss = np.sum(np.logaddexp(0, eta) - y * eta)
+        grad = np.concatenate([[resid.sum()], x.T @ resid + penalty * theta[1:]])
+        return loss + penalty / 2 * theta[1:] @ theta[1:], grad
+
+    p0 = np.mean(y)
+    theta0 = np.concatenate([[np.log(p0 / (1 - p0))], np.zeros(x.shape[1])])
+    res = scipy.optimize.minimize(
+        objective, theta0, jac=True, method="L-BFGS-B", options={"maxiter": 10000}
+    )
+
+    return res.x, bool(res.success)
+
+
 def fit_rr_context_model(
     df: pd.DataFrame,
     features: List[str],
     ridge_penalty: Optional[float] = None,
     ridge_per_dnm: bool = False,
+    offset_col: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Fit the rr logistic model of one context.
@@ -749,6 +897,11 @@ def fit_rr_context_model(
     unpenalized. The PCA rotation is orthogonal, so this is the same ridge fit as on
     the z-scored features.
 
+    With ``offset_col`` (the log per-variant rate multiplier, see
+    :func:`create_rr_training_ht`), the column is a fixed offset in the logit, so the
+    features only fit what the multiplier misses. The fit then uses
+    :func:`_fit_logistic_with_offset`, with the same penalty (or none).
+
     The PCA is folded into the model coefficients so that the linear predictor of a
     window is ``intercept + sum(coefs * (x - mean) / sd)``. As in the legacy models,
     ``sd`` is the ddof=1 standard deviation (applied at prediction) while the model
@@ -762,10 +915,13 @@ def fit_rr_context_model(
         (unpenalized, as in the legacy models).
     :param ridge_per_dnm: Whether ``ridge_penalty`` is per DNM instead of per site
         (see :func:`is_rr_ridge_per_dnm`). Default is False.
+    :param offset_col: Optional column of ``df`` with a fixed logit offset. Default
+        is None.
     :return: Dictionary of model parameters, or None if there is no training data.
     """
-    df_1 = df[df["y"] == 1][["locus", *features]].dropna()
-    df_0 = df[df["y"] == 0][["locus", *features]].dropna()
+    cols = ["locus", *features, *([offset_col] if offset_col else [])]
+    df_1 = df[df["y"] == 1][cols].dropna()
+    df_0 = df[df["y"] == 0][cols].dropna()
     if df_1.empty or df_0.empty:
         return None
     df_01 = pd.concat([df_1.assign(group=1), df_0.assign(group=0)])
@@ -775,7 +931,15 @@ def fit_rr_context_model(
     x_scaled = x.apply(scipy.stats.zscore)
     pca = IncrementalPCA(n_components=len(features))
     x_pca = pca.fit_transform(x_scaled)
-    if ridge_penalty is None:
+    if offset_col:
+        n_scale = int(np.sum(y)) if ridge_per_dnm else len(y)
+        params, converged = _fit_logistic_with_offset(
+            x_pca,
+            y.to_numpy(),
+            df_01[offset_col].to_numpy(),
+            0.0 if ridge_penalty is None else n_scale * ridge_penalty,
+        )
+    elif ridge_penalty is None:
         fit = sm.Logit(y, sm.add_constant(x_pca, has_constant="add")).fit_regularized(
             method="l1", alpha=0.0, disp=False
         )
@@ -803,21 +967,28 @@ def fit_rr_context_model(
         "n_dnm": int(len(df_1)),
         "n_background": int(len(df_0)),
         "converged": converged,
+        "rate_offset": offset_col is not None,
     }
 
 
-def predict_rr_model(model: Dict[str, Any], df: pd.DataFrame) -> np.ndarray:
+def predict_rr_model(
+    model: Dict[str, Any], df: pd.DataFrame, offset: Optional[np.ndarray] = None
+) -> np.ndarray:
     """
     Predict the DNM probability of sites with a fitted rr model.
 
     :param model: Model parameters (:func:`fit_rr_context_model`).
     :param df: DataFrame with the model feature columns.
+    :param offset: Optional fixed logit offset of each site, for models fit with
+        one. Default is None.
     :return: Predicted probabilities.
     """
     z = (df[model["features"]].to_numpy() - np.asarray(model["mean"])) / np.asarray(
         model["sd"]
     )
     eta = model["intercept"] + z @ np.asarray(model["coefs"])
+    if offset is not None:
+        eta = eta + np.asarray(offset)
 
     return 1.0 / (1.0 + np.exp(-eta))
 
@@ -839,6 +1010,10 @@ def fit_rr_models(
     held-out log loss of an intercept-only model (``null_log_loss``), and AUC are
     returned.
 
+    If ``df`` has ``RR_RATE_OFFSET_FIELD`` (see :func:`create_rr_training_ht`), every
+    model is fit with it as a fixed offset, and the held-out predictions include it
+    (the intercept-only baseline does not).
+
     :param df: Training DataFrame (:func:`rr_training_ht_to_pandas`).
     :param screen_df: Feature screen DataFrame (:func:`run_rr_feature_screen`).
     :param cutoffs: Feature selection cutoff tokens.
@@ -850,6 +1025,9 @@ def fit_rr_models(
     """
     df = df.assign(_fold=df["locus"].str.split(":").str[0].map(_chrom_fold))
     folds = [MODEL_FOLD_ALL, *(RR_FOLDS if cv_chrom_split else [])]
+    offset_col = RR_RATE_OFFSET_FIELD if RR_RATE_OFFSET_FIELD in df.columns else None
+    if offset_col:
+        logger.info("Fitting the rr models with the per-variant rate offset.")
 
     models = []
     metrics = []
@@ -870,7 +1048,7 @@ def fit_rr_models(
                     else ctx_df[ctx_df["_fold"] != fold]
                 )
                 model = fit_rr_context_model(
-                    train_df, features, ridge_penalty, ridge_per_dnm
+                    train_df, features, ridge_penalty, ridge_per_dnm, offset_col
                 )
                 if model is None:
                     continue
@@ -881,10 +1059,14 @@ def fit_rr_models(
                     n_modeled += 1
                     continue
 
-                test_df = ctx_df[ctx_df["_fold"] == fold][["y", *features]].dropna()
+                test_df = ctx_df[ctx_df["_fold"] == fold][
+                    ["y", *features, *([offset_col] if offset_col else [])]
+                ].dropna()
                 if test_df["y"].nunique() < 2:
                     continue
-                pred = predict_rr_model(model, test_df)
+                pred = predict_rr_model(
+                    model, test_df, test_df[offset_col] if offset_col else None
+                )
                 # Intercept-only baseline: the DNM rate of the training sites.
                 null_pred = np.full(
                     len(test_df),
@@ -934,6 +1116,7 @@ def rr_models_to_ht(models: List[Dict[str, Any]]) -> hl.Table:
         n_dnm=hl.tint32,
         n_background=hl.tint32,
         converged=hl.tbool,
+        rate_offset=hl.tbool,
     )
 
     return hl.Table.parallelize(models, schema=schema).key_by(
@@ -1090,6 +1273,10 @@ def compute_rr_normalization_factors(
     Select sites of the per-variant expected Table (unadjusted adj expected) that
     fall in an rr window: ``sum(exp * rr) / sum(exp)``.
 
+    If ``syn_ht`` has ``VARIANT_RATE_MULTIPLIER_FIELD`` (rr fit on top of per-variant
+    rates), the factor is ``sum(exp * multiplier * rr) / sum(exp)``, so that rr
+    applied with the multiplier keeps each context's total expected count.
+
     :param syn_ht: Synonymous MANE Select per-variant rows
         (:func:`get_syn_mane_select_ht`).
     :param rr_ht: rr Table (:func:`compute_rr_ht`).
@@ -1098,12 +1285,20 @@ def compute_rr_normalization_factors(
     ht = syn_ht
     rr_expr = rr_ht[ht.locus].adj_r.get(ht.context)
     exp_expr = ht.exp
+    m_expr = (
+        hl.or_else(ht[VARIANT_RATE_MULTIPLIER_FIELD], 1.0)
+        if VARIANT_RATE_MULTIPLIER_FIELD in ht.row
+        else 1.0
+    )
     sums = ht.aggregate(
         hl.agg.filter(
             hl.is_defined(rr_expr) & hl.is_defined(exp_expr),
             hl.agg.group_by(
                 ht.context,
-                hl.struct(num=hl.agg.sum(exp_expr * rr_expr), den=hl.agg.sum(exp_expr)),
+                hl.struct(
+                    num=hl.agg.sum(exp_expr * m_expr * rr_expr),
+                    den=hl.agg.sum(exp_expr),
+                ),
             ),
         )
     )

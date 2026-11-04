@@ -65,6 +65,7 @@ from gnomad_constraint.resources.constants import (
     RELEASE_UNADJ_FIELDS,
     SFS_BIN_CUTOFFS,
     UNADJ_EXPECTED_FIELD,
+    VARIANT_RATE_MULTIPLIER_FIELD,
 )
 
 logging.basicConfig(
@@ -957,6 +958,8 @@ def annotate_regional_rr_expected(
     ht: hl.Table,
     rr_ht: Optional[hl.Table] = None,
     rr_ht_path: Optional[str] = None,
+    variant_rate_ht: Optional[hl.Table] = None,
+    variant_rate_ht_path: Optional[str] = None,
 ) -> hl.Table:
     """
     Apply the regional mutation rate adjustment (rr) to per-variant expected counts.
@@ -974,11 +977,17 @@ def annotate_regional_rr_expected(
         - ``expected_variants``: ``unadj_expected * regional_rr``. All frequency
           elements of the array are scaled by the same rr.
 
+    With ``variant_rate_ht`` (a per-variant mutation rate Table, e.g. from Roulette,
+    that rr was fit on top of), each row also gets ``VARIANT_RATE_MULTIPLIER_FIELD``
+    (1.0 for variants without one), and ``expected_variants`` is
+    ``unadj_expected * regional_rr * multiplier``.
+
     The ``mu_snp``, ``mu``, ``predicted_proportion_observed``, and
     ``coverage_correction`` annotations are not modified.
 
-    A ``regional_rr_globals`` global is added with ``applied``, ``rr_ht_path``, and
-    (when ``rr_ht`` has an ``rr_globals`` global) ``rr_params``.
+    A ``regional_rr_globals`` global is added with ``applied``, ``rr_ht_path``,
+    ``variant_rate_ht_path``, and (when ``rr_ht`` has an ``rr_globals`` global)
+    ``rr_params``.
 
     :param ht: Per-variant expected Table keyed by ``locus`` and ``alleles`` with
         ``context`` and ``expected_variants`` annotations.
@@ -986,22 +995,43 @@ def annotate_regional_rr_expected(
         dict mapping trinucleotide context to rr. Default is None.
     :param rr_ht_path: Optional path of ``rr_ht``, recorded in the globals. Default is
         None.
+    :param variant_rate_ht: Optional per-variant mutation rate Table keyed by
+        ``locus`` and ``alleles`` with ``VARIANT_RATE_MULTIPLIER_FIELD``. Default is
+        None.
+    :param variant_rate_ht_path: Optional path of ``variant_rate_ht``, recorded in the
+        globals. Default is None.
     :return: Table with the rr-adjusted expected variant counts.
     """
-    path_expr = hl.missing(hl.tstr) if rr_ht_path is None else hl.str(rr_ht_path)
+
+    def _path(path: Optional[str]) -> hl.expr.StringExpression:
+        return hl.missing(hl.tstr) if path is None else hl.str(path)
+
     if rr_ht is None:
         rr_expr = hl.float64(1.0)
-        rr_globals = hl.struct(applied=False, rr_ht_path=path_expr)
+        rr_globals = hl.struct(applied=False, rr_ht_path=_path(rr_ht_path))
     else:
         rr_expr = hl.or_else(rr_ht.select("adj_r")[ht.locus].adj_r.get(ht.context), 1.0)
-        rr_globals = hl.struct(applied=True, rr_ht_path=path_expr)
-        if "rr_globals" in rr_ht.globals:
-            rr_globals = rr_globals.annotate(rr_params=rr_ht.index_globals().rr_globals)
+        rr_globals = hl.struct(applied=True, rr_ht_path=_path(rr_ht_path))
+    rr_globals = rr_globals.annotate(variant_rate_ht_path=_path(variant_rate_ht_path))
+    if rr_ht is not None and "rr_globals" in rr_ht.globals:
+        rr_globals = rr_globals.annotate(rr_params=rr_ht.index_globals().rr_globals)
 
     ht = ht.annotate(regional_rr=rr_expr)
+    if variant_rate_ht is not None:
+        rate_ht = variant_rate_ht.select(VARIANT_RATE_MULTIPLIER_FIELD)
+        ht = ht.annotate(
+            **{
+                VARIANT_RATE_MULTIPLIER_FIELD: hl.or_else(
+                    rate_ht[ht.locus, ht.alleles][VARIANT_RATE_MULTIPLIER_FIELD], 1.0
+                )
+            }
+        )
+    adj_expr = ht.regional_rr
+    if variant_rate_ht is not None:
+        adj_expr = adj_expr * ht[VARIANT_RATE_MULTIPLIER_FIELD]
     ht = ht.annotate(
         **{UNADJ_EXPECTED_FIELD: ht.expected_variants},
-        expected_variants=ht.expected_variants * ht.regional_rr,
+        expected_variants=ht.expected_variants * adj_expr,
     )
 
     return ht.annotate_globals(regional_rr_globals=rr_globals)
@@ -1014,6 +1044,8 @@ def aggregate_per_variant_expected_ht(
     apply_regional_rr: bool = False,
     rr_ht: Optional[hl.Table] = None,
     rr_ht_path: Optional[str] = None,
+    variant_rate_ht: Optional[hl.Table] = None,
+    variant_rate_ht_path: Optional[str] = None,
 ) -> hl.Table:
     """
     Aggregate the per-variant expected Table.
@@ -1038,6 +1070,10 @@ def aggregate_per_variant_expected_ht(
         :func:`annotate_regional_rr_expected`. Default is None.
     :param rr_ht_path: Optional path of ``rr_ht``, recorded in the globals. Default is
         None.
+    :param variant_rate_ht: Optional per-variant mutation rate Table applied with rr.
+        See :func:`annotate_regional_rr_expected`. Default is None.
+    :param variant_rate_ht_path: Optional path of ``variant_rate_ht``, recorded in the
+        globals. Default is None.
     :return: Table with the observed and expected counts.
     """
     # Build the grouping key: optionally include mutation rate annotations
@@ -1071,7 +1107,9 @@ def aggregate_per_variant_expected_ht(
     # the models are not re-applied). The interval join is ordered on locus, so it
     # does not shuffle.
     if apply_regional_rr:
-        ht = annotate_regional_rr_expected(ht, rr_ht, rr_ht_path)
+        ht = annotate_regional_rr_expected(
+            ht, rr_ht, rr_ht_path, variant_rate_ht, variant_rate_ht_path
+        )
 
     # Narrow to just the grouping keys and the fields we need to sum,
     # dropping everything else to minimize shuffle size.

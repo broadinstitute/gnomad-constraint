@@ -364,6 +364,26 @@ models over 0.05-1 for both the DDD+ASD and the Satterstrom 2026 training sets (
 gnomAD data used to choose it).
 """
 
+VARIANT_RATE_MULTIPLIER_FIELD = "variant_rate_multiplier"
+"""
+Field of a per-variant mutation rate Table (e.g. from Roulette) applied with rr.
+
+The multiplier is the variant's rate relative to the average rate of the variants in
+its mutation rate group (``MU_GROUPING``), so it only adds what the trinucleotide
+mutation rates leave out. It multiplies the per-variant expected counts along with
+rr, and enters the rr models as a fixed offset so that rr only learns what the
+multiplier misses.
+"""
+
+ROULETTE_LOW_QUALITY_FILTERS = ["low", "SFS_bump"]
+"""
+Roulette VCF filters whose rates are not used (the variant's multiplier is 1).
+
+"low" marks low-quality regions by gnomAD sequencing metrics and "SFS_bump"
+pentamer contexts with an abnormal site frequency spectrum. "TFBS" sites are kept,
+as in Roulette's own high-quality set.
+"""
+
 RR_BACKGROUND_FRACTION = 0.05
 """Fraction of non-mutated synonymous sites sampled as the rr training background."""
 
