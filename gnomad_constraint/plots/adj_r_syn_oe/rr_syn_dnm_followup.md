@@ -1,5 +1,36 @@
 # Synonymous-DNM regional rate (rr): where things stand (2026-11-04)
 
+## Contents
+
+- [Resources](#resources)
+- [The problem, in plain terms](#the-problem-in-plain-terms)
+- [Recommendation](#recommendation)
+- [What a good outcome looks like](#what-a-good-outcome-looks-like)
+- [Next steps for the team](#next-steps-for-the-team)
+- [Remaining decisions](#remaining-decisions)
+- [Questions from the Slack thread, answered](#questions-from-the-slack-thread-answered)
+- [Pipelines at a glance](#pipelines-at-a-glance)
+- [How the rr model works](#how-the-rr-model-works)
+- [The regional features rr uses](#the-regional-features-rr-uses)
+- [How each version performs](#how-each-version-performs)
+- [The training background: what the DNMs are compared with](#the-training-background-what-the-dnms-are-compared-with)
+  - [Removing poorly covered or mapped genes from training](#removing-poorly-covered-or-mapped-genes-from-training)
+- [What the leftover noise is](#what-the-leftover-noise-is)
+- [The synonymous outliers](#the-synonymous-outliers)
+  - [What explains them besides size](#what-explains-them-besides-size)
+  - [Why the histone genes are outliers, and whether rr can capture them](#why-the-histone-genes-are-outliers-and-whether-rr-can-capture-them)
+- [Scripts, figures and tables](#scripts-figures-and-tables)
+- [Still worth trying or looking at](#still-worth-trying-or-looking-at)
+
+## Resources
+
+- **Ruchit's reports and their Slack threads:**
+  - [`rr_syn_dnm_report.html`](ruchit_reports/rr_syn_dnm_report.html) (v1, 10/16): [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1792179470507199)
+  - [`rr_syn_dnm_report.v2.html`](ruchit_reports/rr_syn_dnm_report.v2.html) (10/19–21): [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1792615503898679)
+  - [`rr_followup_tests_report.html`](ruchit_reports/rr_followup_tests_report.html) (10/27): [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1793130471776509?thread_ts=1793122617.080069&cid=C07NGV3UQKA)
+  - GitHub shows HTML as source; download a file and open it in a browser to read it.
+- **Code, figures and tables for this report:** [Scripts, figures and tables](#scripts-figures-and-tables).
+
 ## The problem, in plain terms
 
 ![The problem and the fix, in concept](followup/rr_concept.png)
@@ -138,7 +169,7 @@ Questions raised in the Slack threads on the [initial report](https://atgu.slack
 
 <a id="strength-details"></a>
 <details>
-<summary><b>More on the strength question:</b> why rr comes out too strong, the alternatives tried, and ridge against the cutoff-and-α options</summary>
+<summary><b>Click to expand: more on the strength question.</b> Why rr comes out too strong, the alternatives tried, and ridge against the cutoff-and-α options</summary>
 
 rr as fitted predicts bigger differences between regions than gnomAD shows. Below: why that happens and why correcting it is standard, the alternatives to a single strength adjustment that were tried, and the ridge fit against Ruchit's cutoff-and-α options.
 
@@ -217,7 +248,7 @@ Code: [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.
 
 <a id="dnm-sets-details"></a>
 <details>
-<summary><b>More on the DNM sets:</b> what changed between them, what "worse" meant, and the evidence that the fitting rule is the cause</summary>
+<summary><b>Click to expand: more on the DNM sets.</b> What changed between them, what "worse" meant, and the evidence that the fitting rule is the cause</summary>
 
 The new DNMs aren't worse. Choosing features by p-value and then fitting them without a penalty made the bigger set look worse. With a fit that doesn't screen features, the two sets perform the same.
 
@@ -279,6 +310,27 @@ rr comes from one logistic regression per trinucleotide context: the site's base
 - **From the model to rr:** for each window the model gives a probability of a DNM, p(window) = σ(β₀ + β·z), where z are the window's z-scored features and β₀ is the probability at average features. rr is the ratio to the average window, σ(β₀ + β·z) / σ(β₀). DNMs are rare, so this is close to exp(β·z): how much more or less mutable the window is than average, for that context.
 - **Applying it:** rr is normalized so that its expected-weighted mean over exome synonymous sites is 1 in each context, then multiplied onto each variant's expected count after the plateau and coverage models.
 - **Why the 1:0 ratio doesn't matter:** how many background sites are sampled only moves the intercept β₀, which cancels in rr. What matters is which sites the background includes.
+
+![One logistic regression per context: three contexts drawn in full, and the range of rr for all 32](followup/rr_logistic_fits.png)
+
+What the fitted models look like:
+- **a–c: the logistic picture** for the context with the most DNMs in each class.
+  - Each dot is a site at y = 1 (DNM) or y = 0 (background), placed by its regional score s = β·z from the model fit on the other half of the chromosomes.
+  - The curve is drawn as if DNMs and background were sampled in equal numbers. That only moves the intercept (see the bullet above), and it puts the curve in the middle of the panel.
+- **The models work in the nearly straight middle of the S** (the insets show the whole curve).
+  - The middle 90% of sites have scores within about ±0.1–0.2, so their rr runs from about 0.93 to 1.10–1.15 (0.95–1.06 at CpG).
+  - DNM and background sites overlap almost completely. One site's window says little; rr matters because a gene sums hundreds of sites.
+  - The open circles, the share of DNMs in each score decile on held-out chromosomes, rise with the curve.
+- **d: every context's range of rr.** A/T and other C contexts span similar ranges, and CpG contexts the narrowest. GAA, with only 143 DNMs, is the widest.
+
+These are local fits: the Satterstrom DNMs, ridge with a penalty of 10 per DNM, and the background built from the exported MANE Select cells, the same approximation as in [The training background](#the-training-background-what-the-dnms-are-compared-with). Code: [rr_logistic_fits.py](followup/rr_logistic_fits.py). Results: [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv), [rr_logistic_fits.contexts.tsv](followup/rr_logistic_fits.contexts.tsv), [rr_logistic_fits.points.tsv](followup/rr_logistic_fits.points.tsv).
+
+<details>
+<summary><b>Click to expand: all 32 contexts' logistic regressions</b></summary>
+
+![Every context's logistic regression](followup/rr_logistic_fits.all_contexts.png)
+
+</details>
 
 ## The regional features rr uses
 
@@ -347,7 +399,7 @@ Panels a and c–f come from [Ruchit's v2 report](ruchit_reports/rr_syn_dnm_repo
 - **j:** Ruchit's rr and the recommended rr behave the same. They remove about a third of the LOEUF rise (decile 9: 1.11 → 1.07–1.08) and stay within 1.01–1.05 by s_het.
 
 <details>
-<summary>Panels g–j with the explained outliers removed</summary>
+<summary><b>Click to expand: panels g–j with the explained outliers removed</b></summary>
 
 ![Synonymous obs/exp by LOEUF and s_het decile, explained outliers removed](followup/rr_by_decile.explained_removed.png)
 
@@ -416,6 +468,18 @@ How this was run:
 - **Smaller checks:**
   - Applying rr before saturation (expected = n × (1 − (1 − q)^rr)) weakens rr and doesn't help.
   - Dropping rr at CpG changes nothing (2.52), so the CpG rr adds little to gnomAD fit here.
+
+![The same logistic regressions under each training background](followup/rr_logistic_fits.backgrounds.png)
+
+The same logistic regressions as in [How the rr model works](#how-the-rr-model-works), fit under each background ([rr_logistic_fits.py](followup/rr_logistic_fits.py), [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv)):
+- **a–c. The background moves each curve up or down; it barely changes the slope.**
+  - Sampling by context changes how many background rows a context has. Its curve sits higher or lower but rises at the same rate.
+  - All sites adds the sites gnomAD has seen. That lowers the curve and, in C contexts, flattens it a little.
+- **d–f. So rr barely changes.** rr is the curve divided by its value at the average window, so the height cancels. The four backgrounds' rr lines lie almost on top of each other; all sites is slightly flatter for other C contexts (the 1.16× of panel b above).
+- **Where DNMs fall (circles, held-out chromosomes):**
+  - In other C contexts, DNMs follow the rr.
+  - In CpG contexts, DNMs rise more steeply than the rr. By DNMs alone, the CpG rr is if anything too weak, yet it is far too strong for gnomAD (slope 0.30). The likely reason is saturation: half of the possible CpG synonymous variants are already seen in gnomAD, so their counts can't rise much further.
+  - In A/T contexts, DNMs show no trend. On held-out chromosomes, the A/T rr doesn't predict where DNMs fall (slope 0.01 ± 0.19 in a Poisson fit of DNM counts per cell, from [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv)). That fits its gnomAD slope of 0.64 (too strong). It is one more reason to look at one strength per class, and worth testing no rr at all in A/T contexts.
 
 **"Unmutated is the best way to get absent from de novo."** In this cohort there is one synonymous DNM per thousand possible synonymous variants, so a random sample of sites is already 99.9% absent from de novo. "Absent from gnomAD" is a different condition: no mutation in the population's history, which also depends on mutation rate and coverage. In theory that biases rr, but in this data it works as well as, or slightly better than, all sites.
 
@@ -559,7 +623,7 @@ Size decides which genes cross |z| > 8, not why they have extra variants: gnomAD
 Code: [outlier_drivers.py](followup/outlier_drivers.py). Results: [outlier_drivers.all_genes.tsv](followup/outlier_drivers.all_genes.tsv), [outlier_drivers.covariates.tsv](followup/outlier_drivers.covariates.tsv), [outlier_drivers.dnm_by_oe_decile.tsv](followup/outlier_drivers.dnm_by_oe_decile.tsv), [outlier_drivers.downsampling.tsv](followup/outlier_drivers.downsampling.tsv), [outlier_drivers.genes.tsv](followup/outlier_drivers.genes.tsv), [outlier_drivers.groups.tsv](followup/outlier_drivers.groups.tsv), [outlier_drivers.regions.tsv](followup/outlier_drivers.regions.tsv).
 
 <details>
-<summary>Table: the 47 genes, sorted by z</summary>
+<summary><b>Click to expand: table of the 47 genes, sorted by z</b></summary>
 
 | Gene | Chr | Group | Syn obs | Syn exp (ridge) | Obs/exp | z (ridge) | DNMs obs / exp | Missense also high | Release outlier flag | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -626,18 +690,46 @@ The counts are recomputed from Ruchit's evaluation export: all 18,406 Ensembl MA
 **What we know**
 - **The excess:** the 54 genes of the chr6p22 histone cluster carry about 1.85 times the expected synonymous variants (2.1 times at non-CpG sites, 1.3 times at CpG). 24 of them are outliers under every rr.
 - **It is the genes, not the region.** The 33 non-histone genes interleaved in the same stretch sit at 0.92.
-- **DNMs show it, more strongly.** There are 63 synonymous DNMs against 22 expected (2.8 times): 5.2 times at non-CpG sites and 1.15 times at CpG.
+- **DNMs show it, more strongly.** There are 63 synonymous DNMs against 22 expected (2.8 times): 5.2 times at non-CpG sites and 1.15 times at CpG. Most of that DNM excess copies a paralog's base, though (see [Do the extra variants copy a paralog?](#do-the-extra-variants-copy-a-paralog)).
 - **a. It looks like a higher rate that saturates.** In gnomAD the excess is about 3 times in 1,000–5,000 exomes and falls to 1.9 times at 500,000, the same in every ancestry group. A rate about 3 times higher does this: once a site has been seen, more mutation there adds nothing. The level in small samples matches the DNM excess.
   - The 46 non-histone outliers, for comparison, stay flat at about 1.5 times, close to their own DNM excess (1.45).
   - A fixed set of artifact variants would also fall with sample size, so this alone doesn't rule artifacts out. The DNM excess is harder to explain that way, because a DNM call needs a variant absent from both parents.
 
-**Possible causes (untested)**
+**Possible causes**
 1. **Gene conversion between histone paralogs.**
    - Histone genes come in many near-identical copies that exchange sequence by gene conversion. Their proteins are almost identical, so the copies differ mostly at synonymous sites.
    - A conversion copies a stretch from another copy and changes several of those sites at once. That would raise synonymous variation more than missense, mostly away from CpG, and could produce clustered DNMs.
    - Several histone DNMs sit within tens of bp of each other in the same gene (H4C5, H4C12, H3C1). The DNM files used here have no sample IDs, so it isn't known whether they are in the same person.
+   - **Tested below:** it accounts for a fifth of the gnomAD excess at most, but for most of the DNM excess.
 2. **Transcription during replication.** Replication-dependent histone genes are among the most highly transcribed genes while DNA is being copied. Conflicts between transcription and replication are a known source of mutation.
 3. **Mis-mapped paralog reads.** Reads from one copy placed on another would create false variants in both gnomAD and DNM calls. Mapping quality is normal for these genes, so this is less likely, but it isn't ruled out.
+   - **Tested below:** there's no sign of it in gnomAD's filters. For DNMs it can't be told apart from gene conversion.
+
+#### Do the extra variants copy a paralog?
+
+![Paralog-copying test for the histone genes](followup/rr_histone_conversion.png)
+
+The test, on the 72 histone genes:
+- **Paralog alleles:** each gene's protein is aligned to every other member of its family (H1, H2A, H2B, H3, H4). Each possible synonymous variant is then marked by whether its alt is the base a paralog carries at that position, and whether it is the most similar paralog's base.
+- **The logic:** gene conversion, or reads from a paralog placed on the wrong copy, would favour those alleles. A higher point-mutation rate would not.
+
+What it shows:
+- **a. In gnomAD, the excess is almost as large at alleles no paralog carries.**
+  - Expected counts come from the rate in the 33 nearby non-histone genes for the same mutation type.
+  - Against that, alleles that copy no paralog are at 1.67 times, alleles that copy a paralog at 1.80 times, and alleles that copy the closest paralog at 1.90 times.
+- **c. Within the genes, copying alleles are seen a little more often.**
+  - The odds ratio is 1.30 (1.21–1.41) against other alleles of the same mutation type. With Roulette's own rate for each variant as a covariate it is 1.28, so the effect isn't just more mutable sites.
+  - It is strongest in H2B (1.67) and absent in H4 (1.10).
+  - That makes about 880 extra variants: a fifth of the roughly 3,990 the histone genes carry above expectation.
+- **b. In DNMs, the excess is almost all at copying alleles.**
+  - 58 of 62 DNMs copy a paralog: 4.4 times expected. The 4 that don't are at 1.1 times (95% interval 0.3–2.8).
+  - These are the DNMs from every cohort in the pipeline's DNM Table, at the variants Roulette covers. Expected counts are Roulette's rate per variant, scaled to the genome-wide DNM count.
+- **No sign of mis-mapping in gnomAD.** Copying alleles fail gnomAD's filters no more often than others (11% against 13% of calls). Only one site in these genes fails the inbreeding-coefficient filter.
+- **What it means:**
+  - Most of the gnomAD excess isn't paralog-templated. It is a higher rate at alleles of every kind, which fits the saturation pattern in panel a above.
+  - The DNM excess mostly is paralog-templated: de novo gene conversion, or DNM calls made from a paralog's reads (the two can't be told apart here). So the DNMs confirm the gnomAD excess less directly than they seemed to. That also explains why a DNM-learned histone factor (2.84) overcorrects (panel b above).
+
+Code: [histone_gene_conversion.py](followup/histone_gene_conversion.py). Results: [histone_gene_conversion.excess.tsv](followup/histone_gene_conversion.excess.tsv), [histone_gene_conversion.tests.tsv](followup/histone_gene_conversion.tests.tsv), [histone_gene_conversion.paralog_identity.tsv](followup/histone_gene_conversion.paralog_identity.tsv), [histone_gene_conversion.roulette_mu_by_context.tsv](followup/histone_gene_conversion.roulette_mu_by_context.tsv), [histone_gene_conversion.sites.tsv.gz](followup/histone_gene_conversion.sites.tsv.gz).
 
 **Can rr capture it?**
 - **Not with regional features.** The interleaved non-histone genes are normal, so any regional feature that raises the histone genes would wrongly raise their neighbours too.
@@ -646,9 +738,8 @@ The counts are recomputed from Ruchit's evaluation export: all 18,406 Ensembl MA
   - Applying it before saturation gives 0.87, and doing it by CpG status gives 0.72.
   - The DNM excess is larger than what gnomAD shows, even after allowing for saturation.
 - **Options that would work:**
-  - **Flag the cluster's genes.** They already carry `outlier_syn`. A gene flag would keep their missense and LoF metrics from being read as constraint.
-  - **A gene-level adjustment** from each gene's own synonymous obs/exp, shrunk toward 1. It would handle the histone genes along with the other gene-level excess the DNMs confirm.
-  - **A position-level test of the gene-conversion idea:** check whether gnomAD variants and DNMs in these genes fall where the paralogs differ. If they do, the excess is real but not point mutation, and a flag is the right call.
+  - **Flag the cluster's genes.** They already carry `outlier_syn`. A gene flag would keep their missense and LoF metrics from being read as constraint. It is still the simplest call.
+  - **A gene-level adjustment** from each gene's own synonymous obs/exp, shrunk toward 1. The paralog test supports it: the gnomAD excess applies to alleles of every kind, which is what one factor per gene assumes. Its pros and cons are in [Still worth trying or looking at](#still-worth-trying-or-looking-at).
 
 Code: [histone_checks.py](followup/histone_checks.py). Results: [histone_checks.dnm_factor.tsv](followup/histone_checks.dnm_factor.tsv), [histone_checks.downsampling.tsv](followup/histone_checks.downsampling.tsv).
 
@@ -658,7 +749,7 @@ Everything here was run locally and is in [followup/](followup/). Each script li
 
 | Script | What it does | Tables it writes |
 |---|---|---|
-| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png) |
+| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
 | [remap_rr_to_shet.py](followup/remap_rr_to_shet.py) | Applies each rr version to Ruchit's evaluation export: obs/exp by LOEUF and s_het decile, outliers by flag, and per-gene z. | [syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv), [syn_outliers_by_flag.rr_eval_export.tsv](followup/syn_outliers_by_flag.rr_eval_export.tsv), [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) |
 | [rr_shrinkage_experiments.py](followup/rr_shrinkage_experiments.py) | Alternatives to a strength α (ridge, sample split, background approximation, fitting on gnomAD), and the recommended ridge rr scored at each strength. | [rr_shrinkage_experiments.tsv](followup/rr_shrinkage_experiments.tsv), [rr_shrinkage_experiments.pass2.tsv](followup/rr_shrinkage_experiments.pass2.tsv), [recommended_rr_metrics.tsv](followup/recommended_rr_metrics.tsv) |
 | [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.py) | Ridge against Ruchit's cutoff-and-α options, with his model-fitting code. | [ridge_vs_cutoff_alpha.tsv](followup/ridge_vs_cutoff_alpha.tsv) |
@@ -666,12 +757,15 @@ Everything here was run locally and is in [followup/](followup/). Each script li
 | [outlier_drivers.py](followup/outlier_drivers.py) | DNM, maternal-hotspot, ancestry, sample-size, within-gene and covariate checks of the synonymous outliers. | [outlier_drivers.all_genes.tsv](followup/outlier_drivers.all_genes.tsv), [outlier_drivers.covariates.tsv](followup/outlier_drivers.covariates.tsv), [outlier_drivers.dnm_by_oe_decile.tsv](followup/outlier_drivers.dnm_by_oe_decile.tsv), [outlier_drivers.downsampling.tsv](followup/outlier_drivers.downsampling.tsv), [outlier_drivers.genes.tsv](followup/outlier_drivers.genes.tsv), [outlier_drivers.groups.tsv](followup/outlier_drivers.groups.tsv), [outlier_drivers.regions.tsv](followup/outlier_drivers.regions.tsv) |
 | [decile_explained_removed.py](followup/decile_explained_removed.py) | The LOEUF and s_het decile summary with the explained outliers removed. | [syn_oe_by_decile.explained_removed.tsv](followup/syn_oe_by_decile.explained_removed.tsv), [explained_outliers_removed.tsv](followup/explained_outliers_removed.tsv) |
 | [rr_background_experiments.py](followup/rr_background_experiments.py) | Training backgrounds, strength sweeps, one strength per context class, and the ridge coefficients. | [rr_background.class_slopes.tsv](followup/rr_background.class_slopes.tsv), [rr_background.coefficients.tsv](followup/rr_background.coefficients.tsv), [rr_background.frac_seen_by_rr.tsv](followup/rr_background.frac_seen_by_rr.tsv), [rr_background.metrics.tsv](followup/rr_background.metrics.tsv), [rr_background.penalty_tuning.tsv](followup/rr_background.penalty_tuning.tsv), [rr_background.rr_absent_vs_all.tsv](followup/rr_background.rr_absent_vs_all.tsv), [rr_background.strength.tsv](followup/rr_background.strength.tsv) |
+| [rr_logistic_fits.py](followup/rr_logistic_fits.py) | What each context's logistic regression looks like under each training background, scored on held-out chromosomes. | [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv), [rr_logistic_fits.contexts.tsv](followup/rr_logistic_fits.contexts.tsv), [rr_logistic_fits.points.tsv](followup/rr_logistic_fits.points.tsv) |
+| [roulette_combo.py](followup/roulette_combo.py) | Roulette's rates alone, split into sequence and regional parts, and combined with the ridge rr; scored on gnomAD and on held-out DNMs. | [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv), [roulette_combo.v2.feature_coef.tsv](followup/roulette_combo.v2.feature_coef.tsv) |
 | [rr_training_exclusion.py](followup/rr_training_exclusion.py) | Leaving poorly covered or mapped genes out of training. | [rr_training_exclusion.class_slopes.tsv](followup/rr_training_exclusion.class_slopes.tsv), [rr_training_exclusion.metrics.tsv](followup/rr_training_exclusion.metrics.tsv) |
 | [histone_checks.py](followup/histone_checks.py) | The histone cluster's excess by sample size and ancestry, and what a DNM-learned histone factor would do. | [histone_checks.dnm_factor.tsv](followup/histone_checks.dnm_factor.tsv), [histone_checks.downsampling.tsv](followup/histone_checks.downsampling.tsv) |
+| [histone_gene_conversion.py](followup/histone_gene_conversion.py) | Whether the histone genes' extra gnomAD variants and DNMs copy a paralog's base. | [histone_gene_conversion.excess.tsv](followup/histone_gene_conversion.excess.tsv), [histone_gene_conversion.tests.tsv](followup/histone_gene_conversion.tests.tsv), [histone_gene_conversion.paralog_identity.tsv](followup/histone_gene_conversion.paralog_identity.tsv), [histone_gene_conversion.roulette_mu_by_context.tsv](followup/histone_gene_conversion.roulette_mu_by_context.tsv), [histone_gene_conversion.sites.tsv.gz](followup/histone_gene_conversion.sites.tsv.gz) |
 
 - [ridge_unflagged_outliers.tsv](followup/ridge_unflagged_outliers.tsv): the 47 non-histone outliers with their release flags, built from [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) and the release TSV.
 - **Ruchit's reports:** [`rr_syn_dnm_report.html`](ruchit_reports/rr_syn_dnm_report.html) (v1, 10/16; [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1792179470507199)), [`rr_syn_dnm_report.v2.html`](ruchit_reports/rr_syn_dnm_report.v2.html) (10/19–21; [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1792615503898679)) and [`rr_followup_tests_report.html`](ruchit_reports/rr_followup_tests_report.html) (10/27; [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1793130471776509?thread_ts=1793122617.080069&cid=C07NGV3UQKA)), in [ruchit_reports/](ruchit_reports/). GitHub shows HTML as source; download a file and open it in a browser to read it.
-- **Inputs:** Ruchit's rr evaluation export and training tables (`gs://gnomad-tmp/rp/gnomad_v4.1.1/constraint/regional_rate/`), the v4.1.2 constraint release TSV, the Satterstrom 2026 DNM files ([`get_dnm_cohort_resources`](../../resources/resource_utils.py)), gnomAD v4 s_het from Kar et al. 2026 ([Supplementary Table 3](https://zenodo.org/records/20587463)), the UCSC hg38 reference (`hg38.2bit`), and GTEx v8 median TPM. Two small inputs are checked in: the export's per-transcript table, [transcripts.tsv.bgz](followup/data/rr_eval_export/transcripts.tsv.bgz), and the ClinGen haploinsufficiency scores, [ClinGen_haploinsufficiency_gene_GRCh38.bed](followup/data/ext_clingen/ClinGen_haploinsufficiency_gene_GRCh38.bed) (from [ClinGen](https://ftp.clinicalgenome.org/ClinGen_haploinsufficiency_gene_GRCh38.bed), for the LOEUF check). The rest are not: the DNM files list individual samples and their families, the exported cells, window features and hg38 reference are tens to hundreds of MB, and the s_het table is linked rather than copied.
+- **Inputs:** Ruchit's rr evaluation export and training tables (`gs://gnomad-tmp/rp/gnomad_v4.1.1/constraint/regional_rate/`), the v4.1.2 constraint release TSV, the Satterstrom 2026 DNM files ([`get_dnm_cohort_resources`](../../resources/resource_utils.py)), gnomAD v4 s_het from Kar et al. 2026 ([Supplementary Table 3](https://zenodo.org/records/20587463)), the UCSC hg38 reference (`hg38.2bit`), GTEx v8 median TPM, Roulette's rates for high-quality synonymous variants (`all_hq_synonymous_variants.tsv.gz`, from the [Roulette downloads](http://genetics.bwh.harvard.edu/downloads/Vova/Roulette/)), the gnomAD v4.1 exome sites VCFs (read remotely from the [public bucket](https://gnomad.broadinstitute.org/downloads)), coding exons from the [Ensembl REST API](https://rest.ensembl.org), and the pipeline's synonymous DNM Table (`syn_dnm.tsv.bgz`, from the full run). Two small inputs are checked in: the export's per-transcript table, [transcripts.tsv.bgz](followup/data/rr_eval_export/transcripts.tsv.bgz), and the ClinGen haploinsufficiency scores, [ClinGen_haploinsufficiency_gene_GRCh38.bed](followup/data/ext_clingen/ClinGen_haploinsufficiency_gene_GRCh38.bed) (from [ClinGen](https://ftp.clinicalgenome.org/ClinGen_haploinsufficiency_gene_GRCh38.bed), for the LOEUF check). The rest are not: the DNM files list individual samples and their families, the exported cells, window features and hg38 reference are tens to hundreds of MB, and the s_het table is linked rather than copied.
 
 ## Still worth trying or looking at
 
@@ -680,12 +774,38 @@ Everything here was run locally and is in [followup/](followup/). Each script li
 - **One background row per locus or per variant.** The pipeline keeps one row per locus, although a locus with several synonymous alternatives has several chances for a DNM. It is the one background question the exported data can't answer. ⏳ **Pending (background runs on jg2, started 2026-11-04):** running now.
 - **A broad maternal-hotspot feature.** The rr leaves about a third of the excess in the published maternal C>G hotspot regions (8p: 1.31 → 1.20; DNMs 1.32). Try a smoothed, Mb-scale maternal DNM density, or a regional term learned from gnomAD rare variants.
 - **A gene-level adjustment.** DNMs confirm about two-thirds of the gene-to-gene spread the rr leaves. A gene's own synonymous obs/exp, shrunk toward 1, could adjust its missense and LoF expected counts.
-- **Compare with Roulette, and consider combining them.** [Roulette](https://doi.org/10.1038/s41588-023-01562-0) (Seplyarskiy et al. 2023) is a basepair-resolution mutation rate model built from the observed mutability of each trinucleotide context in 50 kb windows; the paper reports it captures 80–90% of mutation-rate variation along the genome. The questions: what does it capture that our trinucleotide model plus rr doesn't, and can one model use both our regional features and Roulette's per-site rates (for example, Roulette's rate as an offset or a feature)?
+  - **For:**
+    - One mechanism handles every gene-level excess the DNMs confirm (the histone genes, the maternal hotspot regions, the unexplained "other" outliers) without needing its cause. For the histone genes, the gnomAD excess applies to alleles of every kind (see [Do the extra variants copy a paralog?](#do-the-extra-variants-copy-a-paralog)), which is what one factor per gene assumes.
+    - Shrinkage keeps the added noise small. From the leftover noise by gene size ([residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv)), genes vary by roughly 6–12% in rate beyond chance. A typical gene (about 150 expected synonymous variants) would keep about half of its own deviation; small genes would move much less.
+    - It wouldn't pull down constrained genes. Synonymous obs/exp is about 1.01 in LOEUF deciles 0–6 and 1.01–1.04 in every s_het decile ([syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv)).
+  - **Against, and what it could break:**
+    - Synonymous obs/exp becomes about 1 by construction, so it can no longer check the model. Checks would need held-out halves of each gene's sites, or DNMs, and `outlier_syn` would have to be computed before adjusting.
+    - **False constraint where the excess is an artifact.** In repeat or segdup genes, mis-mapped synonymous calls would raise expected LoF, while LoF calls there are often filtered, so the gene would look constrained. Those genes need excluding or flagging instead.
+    - One factor per gene ignores mutation type. An excess from a maternal C>G hotspot doesn't carry over to LoF sites, many of which are CpG transitions. Splitting by context class adds noise.
+    - It mostly moves the unconstrained end (LOEUF decile 9 has synonymous obs/exp 1.11), so LOEUF deciles would shift. LOEUF's interval should include the factor's uncertainty.
+    - It has to be applied after rr and re-estimated whenever rr changes (for example with Roulette).
+- **Combine Roulette with the DNM rr.** [Roulette](https://doi.org/10.1038/s41588-023-01562-0) (Seplyarskiy et al. 2023) gives a rate for every possible SNV, learned from gnomAD v3 genome rare variants. It uses the pentanucleotide, wider sequence, methylation, transcription and an empirical regional rate (the observed mutability of each trinucleotide in 50 kb windows). A local test with its published rates for all high-quality synonymous variants ([roulette_combo.py](followup/roulette_combo.py), [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv), [roulette_combo.v2.feature_coef.tsv](followup/roulette_combo.v2.feature_coef.tsv)):
+  - **Roulette alone, outside CpG, removes more than twice as much noise as the ridge rr:** held-out 2.91 (no correction) → 2.52 (ridge) → 2.00 (Roulette). On the outcome-free core set: 3.50 → 2.87 → 2.01.
+  - **The DNMs back it, independently of gnomAD.** On held-out DNMs, Roulette's slope is near 1 (A/T 0.94, other C 1.13), and it gains 17–30 log-likelihood units per 1,000 DNMs. The ridge rr gains 3 or less, and nothing in A/T contexts.
+  - **Most of the DNM gain is wider sequence context; most of the gnomAD gain is regional.** Roulette's rate splits into a heptamer part (what the three bases on either side add to our trinucleotide rates) and a regional part.
+    - The heptamer part carries most of the DNM gain in A/T contexts, but little of the gene-level gnomAD gain (2.84), because it averages out over a gene.
+    - The regional part carries most of the gnomAD gain (2.05).
+  - **The best combination fits our ridge on top of Roulette:** Roulette as a fixed offset, with the ridge learning only what Roulette misses.
+    - Held-out noise is about the same as Roulette alone (1.995 against 1.998). Outcome-free noise is the lowest of any version (1.93), and unflagged outliers drop from 76 to 40.
+    - Multiplying the two without refitting over-corrects (slopes 0.70–0.73). Adding Roulette as one more ridge feature barely helps (2.46), because the penalty shrinks its coefficient about tenfold.
+  - **Not at CpG.** Roulette's CpG rates mostly carry methylation, which our expected counts already model. Applied there too, noise rises to 4.13.
+  - **Caveats:**
+    - Roulette's regional rate is estimated from gnomAD rare variants, so part of its gnomAD gain is gnomAD fitting gnomAD. The DNM test is the independent check.
+    - It is a cell-level approximation (Roulette's average per window and context), on the autosomes only, and Roulette has no rates at its low-quality sites.
+  - **What a pipeline version needs:**
+    - Roulette's per-variant rates (its per-chromosome VCFs) joined to the context Table.
+    - Normalized within each trinucleotide change and applied outside CpG after the plateau and coverage models.
+    - The ridge rr refit with log Roulette as an offset.
 - **Recover the missing X/Y features**, or confirm they can't be recovered. Only this could make an X/Y correction worth more than about 1%.
 - **Split the leftover noise into its two parts** (see [What the leftover noise is](#what-the-leftover-noise-is)). The site-level part belongs to the mutation model. The gene-level part could be reached by a nonlinear model trained on gnomAD rare variants, which removed 13% more locally.
 - **Open threads on the synonymous outliers** (see [The synonymous outliers](#the-synonymous-outliers)):
   - **The 11 "other" outliers** (HSP90AA1, EP300, MECP2, WFS1, MED16 and others): DNMs confirm the excess (1.73), but nothing measured explains it.
-  - **Histone genes:** check whether the extra variants and DNMs sit where the paralogs differ, then flag them or adjust them gene by gene.
+  - **Histone genes:** the paralog test found the gnomAD excess at alleles of every kind, and the DNM excess mostly at alleles that copy a paralog (see [Do the extra variants copy a paralog?](#do-the-extra-variants-copy-a-paralog)). Flag them, or adjust them gene by gene.
   - **Repeat and segdup genes the QC flags miss** (FLG, MUC genes, olfactory receptors, PSG2, CT47B1, ACTG1, HSPA8): DNMs don't confirm their excess. Consider a flag.
   - **`low_exome_coverage` genes:** they all have too many variants, which suggests the coverage correction pulls expected counts too low. DNMs can't test this, because the DNM cohorts lose calls there too (DNM obs/exp 0.29).
   - **The outlier cutoff:** a size-aware rule, since a fixed |z| > 8 favours long genes.

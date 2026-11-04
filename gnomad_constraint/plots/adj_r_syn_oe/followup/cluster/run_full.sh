@@ -27,20 +27,31 @@ chain() {
   run "${name}_5_rr" regional_rate_pipeline.py --compute-rr --apply-rr-safeguards --out-of-fold --feature-pval-cutoffs $CUT --output-root "$root"
 }
 
-run A_1_dnms prepare_syn_dnms.py --prepare-syn-dnms --output-root "$A" || exit 1
-run A_2_features regional_rate_pipeline.py --import-genomic-features --output-root "$A" || exit 1
+# gsutil's ** only works as a whole path segment, so list the regional_rate folder.
+hts() { gsutil ls -d "$1/*/constraint/regional_rate/*.ht" 2>/dev/null | sed 's#/$##'; }
+done_ht() { hts "$1" | grep -q "$2" && gsutil -q stat "$(hts "$1" | grep "$2" | head -1)/_SUCCESS"; }
+
+# The utilities come from the zip, so rebuild it from the current code.
+rm -f "$ZIP"
+(cd /Users/jgoodric/PycharmProjects/gnomad-constraint && zip -rq "$ZIP" gnomad_constraint/ -x 'gnomad_constraint/experimental/*' 'gnomad_constraint/plots/*' 'gnomad_constraint/flowchart/*' 'gnomad_constraint/renv/*' '*.pyc' '*__pycache__*' '*.RData' '*.DS_Store' '*.png' '*.pdf' '*.ipynb' '*.Rproj.user*')
+(cd /Users/jgoodric/PycharmProjects/gnomad_qc && zip -rq "$ZIP" gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store' '*.ipynb')
+(cd /Users/jgoodric/PycharmProjects/gnomad_methods && zip -rq "$ZIP" gnomad/ -x '*.pyc' '*__pycache__*' '*.DS_Store')
+
+# Steps 1 and 2 are skipped when an earlier attempt already wrote their Tables.
+done_ht "$A" syn_dnm.ht || run A_1_dnms prepare_syn_dnms.py --prepare-syn-dnms --output-root "$A" || exit 1
+done_ht "$A" genomic_features || run A_2_features regional_rate_pipeline.py --import-genomic-features --output-root "$A" || exit 1
 
 echo "=== copying the DNM and feature Tables to $B"
-for ht in $(gsutil ls -d "$A/**.ht" 2>/dev/null | grep -E 'syn_dnm|genomic_features' | sed 's#/$##' | sort -u); do
-  case "$ht" in *.ht/*) continue;; esac
+for ht in $(hts "$A" | grep -E 'syn_dnm|genomic_features'); do
   dst="${ht/$A/$B}"
+  if gsutil -q stat "$dst/_SUCCESS"; then echo "    $dst already there"; continue; fi
   echo "    $ht -> $dst"
   gsutil -q -m cp -r "$ht" "$(dirname "$dst")/" || exit 1
 done
-for f in $(gsutil ls "$A/**syn_dnm*.tsv*" 2>/dev/null); do gsutil -q cp "$f" "${f/$A/$B}"; done
+for f in $(gsutil ls "$A/*/constraint/regional_rate/*syn_dnm*.tsv*" 2>/dev/null); do gsutil -q cp -n "$f" "${f/$A/$B}"; done
 
 chain "$A" A & PA=$!
 chain "$B" B --exclude-qc-flagged-genes & PB=$!
 wait $PA; RA=$?; wait $PB; RB=$?
 echo "=== $(date '+%H:%M:%S') finished: baseline rc=$RA, QC-excluded rc=$RB"
-gsutil ls -d "$A/**rr_1kb*.ht" "$B/**rr_1kb*.ht" 2>/dev/null | grep -v '\.ht/' | sort -u
+{ hts "$A"; hts "$B"; } | grep rr_1kb

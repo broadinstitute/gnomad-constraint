@@ -23,7 +23,8 @@ submit() {
   fi
   echo "=== $(date '+%H:%M:%S') done $tag"
 }
-ht_of() { gsutil ls -d "$A/**$1*.ht" 2>/dev/null | sed 's#/$##' | grep -v '\.ht/' | head -1; }
+# gsutil's ** only works as a whole path segment, so list the regional_rate folder.
+ht_of() { gsutil ls -d "$A/*/constraint/regional_rate/*$1*.ht" 2>/dev/null | sed 's#/$##' | head -1; }
 wait_for() {  # wait_for NAME_PATTERN
   local ht=""
   while :; do ht=$(ht_of "$1"); [ -n "$ht" ] && gsutil -q stat "$ht/_SUCCESS" && break; sleep 60; done
@@ -43,6 +44,8 @@ arm() {  # arm NAME OPTIONS...
   submit "${name}_training" "$P/regional_rate_pipeline.py" --create-rr-training-set --output-root "$root" "$@" && train_and_rr "$name" "$root"
 }
 
+# SKIP_SETUP=1 resumes after the zip, package install and synthetic test already ran.
+if [ -z "${SKIP_SETUP:-}" ]; then
 while [ "$(gcloud dataproc clusters describe $CLUSTER --format='value(status.state)' 2>/dev/null)" != RUNNING ]; do sleep 30; done
 echo "=== $CLUSTER is running"
 rm -f "$ZIP"
@@ -52,11 +55,12 @@ rm -f "$ZIP"
 submit bg_install "$F/cluster/install_driver_packages.py" || exit 1
 submit bg_test "$F/cluster/test_background_options.py" || exit 1
 tr '\r' '\n' < "$D/logs/bg_test.log" | grep -E "^variants|background rows"
+fi
 
 echo "=== waiting for the full run's DNM and feature Tables"
 DNM=$(wait_for syn_dnm); FEAT=$(wait_for genomic_features)
 echo "    $DNM"; echo "    $FEAT"
-for f in $(gsutil ls "$A/**syn_dnm*.tsv*" 2>/dev/null); do for n in all_locus absent_variant all_variant ctx_proportional ctx_even absent_locus; do gsutil -q cp "$f" "${f/$A/$OUT/$n}"; done; done
+for f in $(gsutil ls "$A/*/constraint/regional_rate/*syn_dnm*.tsv*" 2>/dev/null); do for n in all_locus absent_variant all_variant ctx_proportional ctx_even absent_locus; do gsutil -q cp "$f" "${f/$A/$OUT/$n}"; done; done
 
 ( arm all_locus --background-sites all &&
   arm absent_variant --background-unit variant &&
@@ -66,4 +70,4 @@ for f in $(gsutil ls "$A/**syn_dnm*.tsv*" 2>/dev/null); do for n in all_locus ab
   { TRAIN=$(wait_for rr_training); echo "    $TRAIN"; copy_inputs "$OUT/absent_locus" "$DNM" "$FEAT" "$TRAIN" && train_and_rr absent_locus "$OUT/absent_locus"; } ) & P2=$!
 wait $P1; R1=$?; wait $P2; R2=$?
 echo "=== $(date '+%H:%M:%S') finished: chain 1 rc=$R1, chain 2 rc=$R2"
-gsutil ls -d "$OUT/**rr_1kb*.ht" 2>/dev/null | grep -v '\.ht/' | sort -u
+gsutil ls -d "$OUT/*/*/constraint/regional_rate/*rr_1kb*.ht" 2>/dev/null

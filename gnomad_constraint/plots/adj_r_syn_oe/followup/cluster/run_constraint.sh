@@ -27,7 +27,7 @@ submit() {
 }
 
 rr_path() {  # rr_path ROOT CUTOFF [oof]
-  gsutil ls -d "$1/**rr_1kb.fs_$2*.ht" 2>/dev/null | sed 's#/$##' | grep -v '\.ht/' | sort -u |
+  gsutil ls -d "$1/*/constraint/regional_rate/*rr_1kb.fs_$2.*ht" 2>/dev/null | sed 's#/$##' | sort -u |
     if [ "${3:-}" = oof ]; then grep -i 'oof\|out_of_fold'; else grep -v -i 'oof\|out_of_fold'; fi | head -1
 }
 
@@ -48,4 +48,4 @@ for v in ridge_qcexcl bonferroni_full ridge_full bonferroni_qcexcl; do
     --aggregate-by-constraint-groups --compute-constraint-metrics --prepare-release --export-release-tsv --output-root "$OUT/$v" || exit 1
 done
 echo "=== $(date '+%H:%M:%S') all done"
-gsutil ls "$OUT/**.tsv*" 2>/dev/null
+gsutil ls "$OUT/*/*/constraint/**" 2>/dev/null | grep "\.tsv"

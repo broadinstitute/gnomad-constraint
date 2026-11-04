@@ -4,7 +4,8 @@ Some performance values are copied from Ruchit Panchal's rr_syn_dnm_report.v2.ht
 (sections 1, 3, 5, 8, 9 and 10). The other panels read the tables written by the
 analysis scripts in this directory (remap_rr_to_shet.py, rr_shrinkage_experiments.py,
 residual_noise.py, outlier_drivers.py, decile_explained_removed.py,
-rr_background_experiments.py and histone_checks.py).
+rr_background_experiments.py, rr_logistic_fits.py, histone_checks.py and
+histone_gene_conversion.py).
 """
 
 import os
@@ -36,6 +37,8 @@ SYN_FILL, SYN_EDGE = "#cde2fb", "#2a78d6"
 NEW_FILL, NEW_EDGE = "#fbe1d6", "#eb6834"
 RR_FILL, RR_EDGE = "#fdf0cc", "#eda100"
 REC_FILL, REC_EDGE = "#ffffff", REC_C
+
+CLASS_C = {"A/T": "#1a9e6e", "C non-CpG": "#8f84e0", "CpG": "#d9622b"}
 
 THEORY = dict(color=INK2, lw=1.3, ls=(0, (1, 2)))
 CHANCE_FLOOR = 0.70
@@ -2791,7 +2794,7 @@ def draw_background():
     pairs = pd.read_csv(
         os.path.join(OUT_DIR, "rr_background.rr_absent_vs_all.tsv"), sep="\t"
     )
-    class_c = {"A/T": "#1a9e6e", "C non-CpG": "#8f84e0", "CpG": "#d9622b"}
+    class_c = CLASS_C
     backgrounds = [
         ("absent", "Absent from gnomAD (current rule)"),
         (
@@ -2981,6 +2984,440 @@ def draw_background():
     plt.close(fig)
 
 
+LOGIT_EXAMPLES = ["CAG", "CCT", "CCG"]
+"""The context with the most DNMs in each class."""
+
+LOGIT_BACKGROUNDS = [
+    ("absent", "Absent from gnomAD (current rule)", REC_C, "-"),
+    (
+        "absent_context_matched",
+        "Absent, sampled by context in proportion to all sites",
+        "#2a78d6",
+        (0, (5, 2)),
+    ),
+    (
+        "absent_equal_per_context",
+        "Absent, sampled evenly by context",
+        "#1baf7a",
+        (0, (1, 1.5)),
+    ),
+    ("all_sites", "All possible synonymous variants", "#eb6834", "-"),
+]
+
+
+def read_logistic_fits():
+    """Read the per-context logistic fit tables from rr_logistic_fits.py."""
+    return [
+        pd.read_csv(os.path.join(OUT_DIR, f"rr_logistic_fits.{t}.tsv"), sep="\t")
+        for t in ("bins", "points", "contexts")
+    ]
+
+
+def logistic_panel(ax, context, bins, points, ctx, rng, small=False):
+    """
+    Draw one context's logistic regression: sites at y = 0 / 1 and the fitted curve.
+
+    The curve is drawn with equal total weight for DNMs and background, which only
+    moves the intercept, so that it is centered.
+    """
+    row = ctx.set_index("context").loc[context]
+    c = CLASS_C[row["class"]]
+    lo, hi = row.score_p05, row.score_p95
+    xmax = 0.5
+    ax.axvspan(lo, hi, color=GRID, alpha=0.7, lw=0, zorder=0)
+    s = np.linspace(-xmax, xmax, 400)
+    p = 1 / (1 + np.exp(-(row.intercept_equal_weight + s)))
+    inside = (s >= lo) & (s <= hi)
+    ax.plot(s, p, color=INK2, lw=1.1 if small else 1.4, ls=(0, (2, 2)))
+    ax.plot(s[inside], p[inside], color=INK, lw=2 if small else 2.8)
+    if not small:
+        # The whole S, to show that sites only use its nearly straight middle.
+        ins = ax.inset_axes([0.04, 0.5, 0.27, 0.24])
+        sw = np.linspace(-6, 6, 300)
+        ins.plot(sw, 1 / (1 + np.exp(-(row.intercept_equal_weight + sw))), color=INK2)
+        ins.add_patch(
+            Rectangle(
+                (-xmax, 0.3), 2 * xmax, 0.4, facecolor=GRID, edgecolor=INK2, lw=0.8
+            )
+        )
+        ins.set_xlim(-6, 6)
+        ins.set_ylim(-0.05, 1.05)
+        ins.set_xticks([-5, 0, 5])
+        ins.set_yticks([0, 1])
+        ins.tick_params(labelsize=7.5, length=0, labelcolor=MUTED)
+        ins.set_facecolor(SURFACE)
+        for side in ins.spines.values():
+            side.set_color(AXIS)
+        ins.set_title(
+            "whole curve; box = this panel", fontsize=8, color=INK2, weight="normal"
+        )
+    pts = points[points.context == context]
+    for y, (y0, y1) in ((1, (1.03, 1.13)), (0, (-0.13, -0.03))):
+        v = pts[pts.y == y].score.clip(-xmax, xmax)
+        ax.scatter(
+            v,
+            rng.uniform(y0, y1, len(v)),
+            s=4 if small else 9,
+            color=c,
+            alpha=0.35,
+            lw=0,
+        )
+    b = bins[(bins.context == context) & (bins.background == "absent")]
+    ax.scatter(
+        b.score,
+        b.observed_p_equal_weight,
+        s=12 if small else 32,
+        color=SURFACE,
+        edgecolor=INK,
+        lw=0.9 if small else 1.2,
+        zorder=3,
+    )
+    ax.set_xlim(-xmax, xmax)
+    ax.set_ylim(-0.2, 1.2)
+    ax.set_yticks([0, 0.5, 1])
+    style_axis(ax, grid_axis="y")
+    if small:
+        ax.set_title(
+            f"{context}  ({row.dnms:.0f})", fontsize=9.5, color=INK, weight="bold"
+        )
+        ax.tick_params(labelsize=8)
+        return
+    ax.text(
+        -xmax + 0.05,
+        1.16,
+        "DNM sites (y = 1)",
+        fontsize=8.8,
+        color=INK2,
+        va="bottom",
+    )
+    ax.text(
+        -xmax + 0.05,
+        -0.16,
+        "background sites (y = 0)",
+        fontsize=8.8,
+        color=INK2,
+        va="top",
+    )
+    ax.text(
+        hi + 0.04,
+        0.2,
+        f"shaded: middle 90%\nof sites, rr {np.exp(lo):.2f}–{np.exp(hi):.2f}",
+        fontsize=8.8,
+        color=INK2,
+    )
+
+
+def draw_logistic_fits():
+    """Draw the per-context logistic regressions, from rr_logistic_fits.py."""
+    bins, points, ctx = read_logistic_fits()
+    rng = np.random.default_rng(0)
+    fig = plt.figure(figsize=(15, 9.6))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.9], hspace=0.62, wspace=0.16)
+    fig.subplots_adjust(left=0.07, right=0.98, top=0.9, bottom=0.12)
+    fig.suptitle(
+        "One logistic regression per context: how far the regional score moves a "
+        "site's chance of being a DNM",
+        x=0.07,
+        ha="left",
+        fontsize=13,
+        weight="bold",
+    )
+    for i, context in enumerate(LOGIT_EXAMPLES):
+        ax = fig.add_subplot(gs[0, i])
+        logistic_panel(ax, context, bins, points, ctx, rng)
+        row = ctx.set_index("context").loc[context]
+        ax.set_title(
+            f"{'abc'[i]}  {context} ({row['class']}): {row.dnms:.0f} DNMs", pad=14
+        )
+        ax.set_xlabel("regional score s = β·z (log-odds; rr ≈ eˢ)")
+        if i == 0:
+            ax.set_ylabel(
+                "chance a site is a DNM\n(drawn with equal numbers of DNMs and"
+                " background)"
+            )
+    fig.text(
+        0.07,
+        0.505,
+        "solid: the fitted curve where sites fall · dashed: the same curve beyond them"
+        " · open circles: share of DNMs in each score decile, on held-out chromosomes",
+        fontsize=9,
+        color=INK2,
+    )
+
+    ax = fig.add_subplot(gs[1, :])
+    ctx = ctx.assign(
+        order=ctx["class"].map({c: i for i, c in enumerate(CLASS_C)})
+    ).sort_values(["order", "context"])
+    x = np.arange(len(ctx)) + 0.8 * ctx.order.to_numpy()
+    for xi, (_, r) in zip(x, ctx.iterrows()):
+        c = CLASS_C[r["class"]]
+        ax.plot(
+            [xi, xi],
+            [np.exp(r.score_p05), np.exp(r.score_p95)],
+            color=c,
+            lw=4,
+            solid_capstyle="round",
+        )
+    for c in CLASS_C:
+        xs = x[ctx["class"].to_numpy() == c]
+        ax.text(xs.min() - 0.3, 1.49, c, fontsize=10, color=INK, weight="bold")
+    ax.axhline(1, color=AXIS, lw=1, zorder=0)
+    ax.set_xticks(
+        x, [f"{r.context} ({r.dnms:.0f})" for _, r in ctx.iterrows()], rotation=90
+    )
+    ax.tick_params(axis="x", labelsize=8.8, labelcolor=INK2)
+    ax.set_ylim(0.75, 1.55)
+    ax.set_xlim(x.min() - 0.8, x.max() + 0.8)
+    ax.set_ylabel("rr of the middle 90%\nof possible sites")
+    ax.set_title(
+        "d  Every context's model: the range of rr it gives the middle 90% of possible"
+        " synonymous sites (DNMs per context in brackets)"
+    )
+    style_axis(ax, grid_axis="y")
+    fig.savefig(os.path.join(OUT_DIR, "rr_logistic_fits.png"), dpi=170)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(4, 8, figsize=(17, 9.5), sharex=True, sharey=True)
+    fig.subplots_adjust(
+        left=0.05, right=0.99, top=0.9, bottom=0.08, hspace=0.45, wspace=0.12
+    )
+    fig.suptitle(
+        "Every context's logistic regression (DNMs in brackets; colour = context"
+        " class; drawn with equal numbers of DNMs and background)",
+        x=0.05,
+        ha="left",
+        fontsize=12.5,
+        weight="bold",
+    )
+    for ax, (_, r) in zip(axes.ravel(), ctx.iterrows()):
+        logistic_panel(ax, r.context, bins, points, ctx, rng, small=True)
+    fig.supxlabel("regional score s = β·z (log-odds; rr ≈ eˢ)", fontsize=10.5)
+    fig.supylabel("chance a site is a DNM", fontsize=10.5)
+    fig.savefig(os.path.join(OUT_DIR, "rr_logistic_fits.all_contexts.png"), dpi=150)
+    plt.close(fig)
+
+
+def draw_logistic_backgrounds():
+    """Draw how the logistic fits change with the training background."""
+    bins, _, ctx = read_logistic_fits()
+    cls = ctx.set_index("context")["class"]
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.subplots_adjust(
+        left=0.08, right=0.98, top=0.87, bottom=0.08, hspace=0.42, wspace=0.2
+    )
+    fig.suptitle(
+        "The same logistic regressions under each training background",
+        x=0.08,
+        ha="left",
+        fontsize=13,
+        weight="bold",
+    )
+    fig.text(
+        0.08,
+        0.925,
+        "a–c: lines = fitted curves, dots = observed share of DNMs per score decile."
+        "   d–f: lines = rr under each background; circles = DNMs per possible site"
+        " in each decile, held-out, ± 95% CI; dotted = rr equal to the DNM rate.",
+        fontsize=9.2,
+        color=INK2,
+    )
+    for i, context in enumerate(LOGIT_EXAMPLES):
+        ax = axes[0, i]
+        g = bins[bins.context == context]
+        for bg, label, c, ls in LOGIT_BACKGROUNDS:
+            b = g[g.background == bg]
+            ax.plot(b.score, b.fitted_p, color=c, ls=ls, lw=2, label=label)
+            ax.scatter(
+                b.score,
+                b.observed_p,
+                s=16,
+                color=c,
+                edgecolor=SURFACE,
+                lw=0.6,
+                zorder=3,
+            )
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.3g}"))
+        ax.yaxis.set_minor_formatter(plt.FuncFormatter(lambda v, _: f"{v:.3g}"))
+        ax.tick_params(axis="y", which="both", labelsize=8.8, labelcolor=INK2)
+        ax.set_title(f"{'abc'[i]}  {context} ({cls[context]}): the fitted curves")
+        ax.set_xlabel("regional score under the current rule's model")
+        if i == 0:
+            ax.set_ylabel("share of training rows that are DNMs\n(log scale)")
+        style_axis(ax, grid_axis="y")
+    axes[0, 0].legend(
+        loc="upper left",
+        bbox_to_anchor=(0, -0.2),
+        ncol=4,
+        frameon=False,
+        fontsize=9.5,
+        handlelength=3,
+    )
+
+    for i, c in enumerate(CLASS_C):
+        ax = axes[1, i]
+        g = bins[bins.context.map(cls) == c]
+        ref = g[g.background == "absent"]
+        tot = ref.groupby("context")[["dnms", "possible"]].sum()
+        ref = ref.assign(
+            exp_dnms=ref.possible * ref.context.map(tot.dnms / tot.possible),
+            w_rr=ref.possible * ref.rr,
+        )
+        by = ref.groupby("bin")[["dnms", "exp_dnms", "possible", "w_rr"]].sum()
+        x = by.w_rr / by.possible
+        rel = by.dnms / by.exp_dnms
+        se = np.sqrt(by.dnms) / by.exp_dnms
+        lo, hi = 0.78, 1.3
+        ax.plot([lo, hi], [lo, hi], **THEORY)
+        for bg, label, col, ls in LOGIT_BACKGROUNDS:
+            b = g[g.background == bg].assign(w_rr=lambda d: d.possible * d.rr)
+            b = b.groupby("bin")[["w_rr", "possible"]].sum()
+            ax.plot(x, b.w_rr / b.possible, color=col, ls=ls, lw=2)
+        ax.errorbar(
+            x,
+            rel,
+            yerr=1.96 * se,
+            fmt="o",
+            ms=6,
+            color=INK,
+            mfc=SURFACE,
+            mew=1.3,
+            elinewidth=1,
+            capsize=0,
+            zorder=3,
+        )
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ticks = [0.8, 0.9, 1.0, 1.1, 1.2]
+        ax.set_xticks(ticks, [f"{t:g}" for t in ticks])
+        ax.set_yticks(ticks, [f"{t:g}" for t in ticks])
+        ax.minorticks_off()
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+        ax.set_title(
+            f"{'def'[i]}  {c}, all {len(tot)} contexts: rr against where DNMs fall"
+        )
+        ax.set_xlabel("rr under the current rule (decile mean, held-out)")
+        if i == 0:
+            ax.set_ylabel(
+                "rr under each background (lines)\nDNMs per possible site, relative"
+                " (circles)"
+            )
+        style_axis(ax, grid_axis="y")
+    axes[1, 0].text(
+        0.03,
+        0.95,
+        "the four backgrounds' rr lines\nlie almost on top of each other",
+        transform=axes[1, 0].transAxes,
+        va="top",
+        fontsize=8.8,
+        color=INK2,
+    )
+    fig.savefig(os.path.join(OUT_DIR, "rr_logistic_fits.backgrounds.png"), dpi=170)
+    plt.close(fig)
+
+
+def draw_histone_conversion():
+    """Draw the histone paralog-copying test, from histone_gene_conversion.py."""
+    ex = pd.read_csv(
+        os.path.join(OUT_DIR, "histone_gene_conversion.excess.tsv"), sep="\t"
+    )
+    tests = pd.read_csv(
+        os.path.join(OUT_DIR, "histone_gene_conversion.tests.tsv"), sep="\t"
+    )
+    classes = [
+        ("copies no paralog", "alt copies no paralog"),
+        ("copies a paralog", "alt copies a paralog"),
+        ("copies the closest paralog", "alt copies the closest paralog"),
+        ("all", "all synonymous alleles"),
+    ]
+    fig, axes = plt.subplots(
+        1, 3, figsize=(16.5, 4.8), gridspec_kw={"width_ratios": [1, 1, 1.05]}
+    )
+    fig.subplots_adjust(left=0.14, right=0.98, top=0.8, bottom=0.17, wspace=0.5)
+    fig.suptitle(
+        "Do the histone genes' extra variants copy a paralog's base?",
+        x=0.14,
+        ha="left",
+        fontsize=13,
+        weight="bold",
+    )
+    y = np.arange(len(classes))[::-1]
+    for ax, (source, title, xmax) in zip(
+        axes[:2],
+        [
+            (
+                "gnomAD v4.1 exomes",
+                "a  gnomAD: observed / expected\n    (expected from nearby non-histone genes)",
+                2.8,
+            ),
+            (
+                "DNMs",
+                "b  DNMs: observed / expected\n    (expected from Roulette's rate per variant)",
+                13.5,
+            ),
+        ],
+    ):
+        for yi, (cls, _) in zip(y, classes):
+            r = ex[(ex.source == source) & (ex.alleles == cls)].iloc[0]
+            c = INK2 if cls == "all" else REC_C
+            ax.plot([r.ratio_lo, r.ratio_hi], [yi, yi], color=c, lw=1.6)
+            ax.scatter(r.ratio, yi, s=60, color=c, edgecolor=SURFACE, lw=1.2, zorder=3)
+            ax.text(
+                r.ratio_hi + xmax * 0.02,
+                yi + 0.16,
+                f"{r.ratio:.2f} ({r.observed:.0f} / {r.expected:.0f})",
+                fontsize=8.8,
+                color=INK2,
+                va="bottom",
+            )
+        ax.axvline(1, **THEORY)
+        ax.set_xlim(0, xmax)
+        ax.set_ylim(-0.6, len(classes) - 0.3)
+        ax.set_title(title)
+        ax.set_xlabel("observed / expected (95% interval)")
+        style_axis(ax)
+    axes[0].set_yticks(y, [c[1] for c in classes])
+    axes[1].set_yticks(y, [])
+
+    ax = axes[2]
+    fams = ["all histone genes", "H1", "H2A", "H2B", "H3", "H4"]
+    yf = np.arange(len(fams))[::-1]
+    for yi, fam in zip(yf, fams):
+        for dy, flag, filled in (
+            (0.13, "alt_in_paralog", True),
+            (-0.13, "alt_in_paralog, with Roulette site rate", False),
+        ):
+            r = tests[(tests.set == fam) & (tests.flag == flag)].iloc[0]
+            ax.plot(
+                [r.or_flagged_lo, r.or_flagged_hi], [yi + dy] * 2, color=REC_C, lw=1.4
+            )
+            ax.scatter(
+                r.or_flagged,
+                yi + dy,
+                s=46,
+                color=REC_C if filled else SURFACE,
+                edgecolor=REC_C,
+                lw=1.4,
+                zorder=3,
+            )
+    ax.axvline(1, **THEORY)
+    ax.set_yticks(
+        yf, [f"{f} ({tests[tests.set == f].transcripts.iloc[0]})" for f in fams]
+    )
+    ax.set_xlim(0.7, 2.1)
+    ax.set_ylim(-0.6, len(fams) - 0.4)
+    ax.set_title(
+        "c  Within the genes: paralog-copying alleles\n    against others of the same type"
+    )
+    ax.set_xlabel(
+        "odds ratio (95% interval)\nfilled: by trinucleotide · open: + Roulette site rate"
+    )
+    style_axis(ax)
+    fig.savefig(os.path.join(OUT_DIR, "rr_histone_conversion.png"), dpi=170)
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     draw_diagram()
     draw_performance()
@@ -3001,3 +3438,6 @@ if __name__ == "__main__":
     draw_histones()
     draw_problem_summary()
     draw_features()
+    draw_logistic_fits()
+    draw_logistic_backgrounds()
+    draw_histone_conversion()
