@@ -270,6 +270,11 @@ def main(args):
         roulette_vcf_paths=args.roulette_vcf_paths,
         variant_rate_include_cpg=args.variant_rate_include_cpg,
         use_variant_rates=args.use_variant_rates,
+        variant_rate_ht=(
+            TableResource(args.variant_rate_ht_path)
+            if args.variant_rate_ht_path
+            else None
+        ),
     )
 
     syn_hts: Dict[str, hl.Table] = {}
@@ -754,6 +759,16 @@ if __name__ == "__main__":
             " already model."
         ),
         action="store_true",
+    )
+    variant_rate_args.add_argument(
+        "--variant-rate-ht-path",
+        help=(
+            "With --use-variant-rates, a per-variant rate Table (keyed by locus and"
+            " alleles with 'variant_rate_multiplier') to use instead of the"
+            " --import-variant-rates output."
+        ),
+        type=str,
+        default=None,
     )
     variant_rate_args.add_argument(
         "--use-variant-rates",

@@ -1457,6 +1457,7 @@ def get_regional_rate_resources(
     roulette_vcf_paths: Optional[List[str]] = None,
     variant_rate_include_cpg: bool = False,
     use_variant_rates: bool = False,
+    variant_rate_ht: Optional[TableResource] = None,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the regional rate pipeline.
@@ -1499,6 +1500,9 @@ def get_regional_rate_resources(
         contexts Roulette multipliers. Default is False.
     :param use_variant_rates: Whether the rr training set and rr use the per-variant
         rate Table (``--use-variant-rates``). Default is False.
+    :param variant_rate_ht: Optional per-variant rate Table to use instead of the
+        output of ``--import-variant-rates`` (e.g. one built from gnomAD rare
+        variants). Default is None.
     :return: PipelineResourceCollection containing resources for all steps of the
         regional rate pipeline.
     """
@@ -1554,7 +1558,14 @@ def get_regional_rate_resources(
             },
         },
     )
-    rate_steps = [import_variant_rates] if use_variant_rates else []
+    rate_steps = (
+        [import_variant_rates] if use_variant_rates and variant_rate_ht is None else []
+    )
+    rate_inputs = (
+        {"--variant-rate-ht-path": {"variant_rate_ht": variant_rate_ht}}
+        if use_variant_rates and variant_rate_ht is not None
+        else {}
+    )
     create_rr_training_set = PipelineStepResourceCollection(
         "--create-rr-training-set",
         output_resources={"rr_training_ht": get_rr_training_ht(**coords_params)},
@@ -1566,6 +1577,7 @@ def get_regional_rate_resources(
             "gnomAD resources": {
                 "exomes_sites_ht": get_sites_resource("exomes", version)
             },
+            **rate_inputs,
         },
     )
     train_rr_models = PipelineStepResourceCollection(
@@ -1599,6 +1611,7 @@ def get_regional_rate_resources(
             "constraint_pipeline.py --apply-models-per-variant": {
                 "per_variant_expected_ht": constraint_inputs["per_variant_expected_ht"]
             },
+            **rate_inputs,
         },
     )
     evaluate_inputs = {
