@@ -2148,7 +2148,7 @@ def draw_histones():
 
 def draw_concept():
     """Draw the conceptual diagram of the problem and the rr fix."""
-    W, H = 1500, 640
+    W, H = 1500, 720
     fig = plt.figure(figsize=(W / 100, H / 100))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, W)
@@ -2157,28 +2157,29 @@ def draw_concept():
     ramp = LinearSegmentedColormap.from_list("rate", ["#f6f3ea", "#e8c39e", "#c8692c"])
 
     # Left: the problem.
-    ax.text(30, 40, "1  The problem", fontsize=13, fontweight="bold", color=INK)
+    ax.text(30, 42, "1  The problem", fontsize=17, fontweight="bold", color=INK)
     ax.text(
         30,
-        68,
-        "Expected counts come from each site's local sequence only. The real rate also varies by region.",
-        fontsize=10,
+        76,
+        "Expected counts come from each site's local sequence only.\nThe real rate also varies by region.",
+        fontsize=12.5,
         color=INK2,
+        va="top",
     )
-    x0, x1, yb = 60, 690, 120
+    x0, x1, yb = 60, 690, 160
     grad = np.linspace(0, 1, 300)[None, :]
-    ax.imshow(grad, extent=(x0, x1, yb + 34, yb), cmap=ramp, aspect="auto", zorder=1)
+    ax.imshow(grad, extent=(x0, x1, yb + 38, yb), cmap=ramp, aspect="auto", zorder=1)
     ax.add_patch(
-        Rectangle((x0, yb), x1 - x0, 34, fill=False, edgecolor=AXIS, lw=1, zorder=2)
+        Rectangle((x0, yb), x1 - x0, 38, fill=False, edgecolor=AXIS, lw=1, zorder=2)
     )
     ax.text(
-        x0, yb + 54, "lower regional mutation rate", fontsize=9, color=INK2, va="top"
+        x0, yb + 50, "lower regional mutation rate", fontsize=11.5, color=INK2, va="top"
     )
     ax.text(
         x1,
-        yb + 54,
+        yb + 50,
         "higher regional mutation rate",
-        fontsize=9,
+        fontsize=11.5,
         color=INK2,
         va="top",
         ha="right",
@@ -2186,122 +2187,121 @@ def draw_concept():
     ax.text(
         (x0 + x1) / 2,
         yb - 12,
-        "a chromosome (rate set by GC content, recombination, distance to the end, ...)",
-        fontsize=9,
+        "a chromosome (GC content, recombination, distance to the end, ...)",
+        fontsize=11.5,
         color=INK2,
         ha="center",
     )
     genes = [("gene A", 175, 0.9), ("gene B", 575, 1.1)]
-    base_y, unit = 470, 200
+    base_y, unit = 540, 190
     for name, gx, oe in genes:
         ax.add_patch(
             Rectangle(
-                (gx - 28, yb + 4),
-                56,
-                26,
+                (gx - 30, yb + 4),
+                60,
+                30,
                 facecolor=SURFACE,
                 edgecolor=INK,
-                lw=1.4,
+                lw=1.5,
                 zorder=3,
             )
         )
         ax.text(
             gx,
-            yb + 17,
+            yb + 19,
             name.split()[1],
             ha="center",
             va="center",
-            fontsize=10,
+            fontsize=13,
             fontweight="bold",
             zorder=4,
         )
         ax.text(
             gx,
-            222,
+            248,
             f"{name}: same sequence,\nso the same expected count",
             ha="center",
             va="top",
-            fontsize=9,
+            fontsize=11.5,
             color=INK2,
         )
         for dx, h, fill, edge, lab in (
-            (-38, 1.0, SURFACE, INK2, "expected"),
-            (38, oe, NONE_C, NONE_C, "observed"),
+            (-40, 1.0, SURFACE, INK2, "expected"),
+            (40, oe, NONE_C, NONE_C, "observed"),
         ):
             ax.add_patch(
                 Rectangle(
-                    (gx + dx - 28, base_y - unit * h * 0.85),
-                    56,
+                    (gx + dx - 30, base_y - unit * h * 0.85),
+                    60,
                     unit * h * 0.85,
                     facecolor=fill,
                     edgecolor=edge,
-                    lw=1.4,
+                    lw=1.5,
                     ls=(0, (3, 2)) if lab == "expected" else "-",
                 )
             )
-            ax.text(gx + dx, base_y + 16, lab, ha="center", fontsize=9, color=INK2)
+            ax.text(gx + dx, base_y + 20, lab, ha="center", fontsize=11.5, color=INK2)
         ax.text(
             gx,
-            base_y + 48,
+            base_y + 56,
             f"synonymous obs/exp = {oe:.1f}",
             ha="center",
-            fontsize=10.5,
+            fontsize=13.5,
             fontweight="bold",
         )
     ax.text(
-        175,
-        base_y + 76,
-        "looks more constrained",
-        ha="center",
-        fontsize=9.5,
-        color=INK2,
+        175, base_y + 88, "looks more constrained", ha="center", fontsize=12, color=INK2
     )
     ax.text(
-        575,
-        base_y + 76,
-        "looks less constrained",
-        ha="center",
-        fontsize=9.5,
-        color=INK2,
+        575, base_y + 88, "looks less constrained", ha="center", fontsize=12, color=INK2
     )
     ax.text(
         375,
-        base_y + 112,
-        "Neither is under selection: synonymous variants should give obs/exp = 1 everywhere.",
+        base_y + 128,
+        "Neither is under selection: synonymous obs/exp should be 1 everywhere.",
         ha="center",
-        fontsize=9.5,
+        fontsize=12.5,
         color=INK,
     )
-    ax.plot([745, 745], [30, H - 30], color=GRID, lw=1.2)
+    ax.plot([735, 735], [30, H - 30], color=GRID, lw=1.2)
 
     # Right: the fix.
     ax.text(
-        780,
-        40,
-        "2  The fix: a regional factor (rr) learned from de novo mutations",
-        fontsize=13,
+        770,
+        42,
+        "2  The fix: a regional factor (rr)",
+        fontsize=17,
         fontweight="bold",
         color=INK,
     )
-    bw, bh = 300, 74
+    ax.text(
+        770,
+        76,
+        "learned from where de novo mutations land",
+        fontsize=12.5,
+        color=INK2,
+        va="top",
+    )
+    bw, bh, fs = 335, 100, 11.5
     box(
         ax,
-        790,
-        95,
+        775,
+        120,
         bw,
         bh,
         SYN_FILL,
         SYN_EDGE,
         [
             "De novo mutations (DNMs)",
-            "where mutation actually happened in one",
+            "where mutation happened in one",
             "generation, in people not in gnomAD",
         ],
+        size=fs,
     )
     box(
         ax,
-        1150,
-        95,
+        1140,
+        120,
         bw,
         bh,
         SAME_FILL,
@@ -2309,14 +2309,15 @@ def draw_concept():
         [
             "Background sites",
             "possible synonymous sites",
-            "(currently: no variant in gnomAD)",
+            "(now: no variant in gnomAD)",
         ],
+        size=fs,
     )
     box(
         ax,
-        900,
-        225,
-        440,
+        880,
+        265,
+        490,
         bh,
         RR_FILL,
         RR_EDGE,
@@ -2325,50 +2326,53 @@ def draw_concept():
             "which regional features predict where DNMs land",
             "13 features × 4 window sizes",
         ],
+        size=fs,
         center=True,
     )
     box(
         ax,
-        900,
-        345,
-        440,
-        60,
+        880,
+        405,
+        490,
+        76,
         RR_FILL,
         RR_EDGE,
         ["rr for every 1-kb window and context", "about 0.9 to 1.1"],
+        size=fs,
         center=True,
     )
     box(
         ax,
-        900,
-        455,
-        440,
-        60,
+        880,
+        520,
+        490,
+        76,
         REC_FILL,
         REC_EDGE,
-        ["expected × rr", "applied to every variant class (synonymous, missense, LoF)"],
+        ["expected × rr", "for every variant class (synonymous, missense, LoF)"],
+        size=fs,
         center=True,
     )
-    arrow(ax, 940, 95 + bh, 1040, 225)
-    arrow(ax, 1300, 95 + bh, 1200, 225)
-    arrow(ax, 1120, 225 + bh, 1120, 345)
-    arrow(ax, 1120, 405, 1120, 455)
-    arrow(ax, 1120, 515, 1120, 548)
+    arrow(ax, 940, 120 + bh, 1050, 265)
+    arrow(ax, 1310, 120 + bh, 1200, 265)
+    arrow(ax, 1125, 265 + bh, 1125, 405)
+    arrow(ax, 1125, 481, 1125, 520)
+    arrow(ax, 1125, 596, 1125, 626)
     ax.text(
-        1120,
-        572,
-        "check on synonymous: gene A and gene B both at obs/exp ≈ 1",
+        1125,
+        652,
+        "check on synonymous: genes A and B both at obs/exp ≈ 1",
         ha="center",
-        fontsize=10.5,
+        fontsize=13,
         fontweight="bold",
         color=INK,
     )
     ax.text(
-        1120,
-        600,
-        "open questions: which DNMs, which background, how strong, and what is left over",
+        1125,
+        686,
+        "open: which DNMs, which background, how strong, what's left over",
         ha="center",
-        fontsize=9.5,
+        fontsize=11.5,
         color=INK2,
     )
 
