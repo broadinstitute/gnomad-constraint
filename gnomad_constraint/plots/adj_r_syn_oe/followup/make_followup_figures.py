@@ -2380,6 +2380,254 @@ def draw_concept():
     plt.close(fig)
 
 
+def draw_model():
+    """Draw how the rr model is set up: training rows, per-context fit, and rr."""
+    W, H = 1560, 600
+    fig = plt.figure(figsize=(W / 100, H / 100))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, W)
+    ax.set_ylim(H, 0)
+    ax.axis("off")
+
+    # 1. Training rows.
+    ax.text(
+        30,
+        40,
+        "1  Training rows (illustrative, one context: ACA)",
+        fontsize=15,
+        fontweight="bold",
+        color=INK,
+    )
+    cols = [
+        ("site", 30),
+        ("y", 175),
+        ("GC, 1 kb", 225),
+        ("male recomb., 1 Mb", 330),
+        ("…", 480),
+    ]
+    for name, x in cols:
+        ax.text(x + 8, 92, name, fontsize=11, fontweight="bold", color=INK2)
+    rows = [
+        ("chr1:1,204,331", 1, "61%", "1.9", SYN_FILL),
+        ("chr7:5,530,612", 1, "57%", "2.4", SYN_FILL),
+        ("chr3:48,101,920", 0, "44%", "0.6", SAME_FILL),
+        ("chr12:6,441,075", 0, "49%", "1.1", SAME_FILL),
+        ("chr5:140,212,804", 0, "39%", "0.4", SAME_FILL),
+    ]
+    for i, (site, y, gc, rec, fill) in enumerate(rows):
+        top = 108 + i * 44
+        ax.add_patch(
+            FancyBboxPatch(
+                (30, top),
+                470,
+                36,
+                boxstyle="round,pad=0,rounding_size=4",
+                facecolor=fill,
+                edgecolor=SURFACE,
+                lw=1,
+            )
+        )
+        for val, (_, x) in zip((site, str(y), gc, rec, "…"), cols):
+            ax.text(
+                x + 8,
+                top + 18,
+                val,
+                fontsize=11,
+                va="center",
+                color=INK,
+                fontweight="bold" if val in ("0", "1") else "normal",
+            )
+    ax.add_patch(
+        Rectangle((32, 352), 18, 14, facecolor=SYN_FILL, edgecolor=SYN_EDGE, lw=1)
+    )
+    ax.text(
+        58,
+        359,
+        "y = 1: a synonymous site where a de novo mutation was seen",
+        fontsize=11,
+        va="center",
+        color=INK,
+    )
+    ax.add_patch(
+        Rectangle((32, 380), 18, 14, facecolor=SAME_FILL, edgecolor=SAME_EDGE, lw=1)
+    )
+    ax.text(
+        58,
+        387,
+        "y = 0: a sampled possible synonymous site with no DNM",
+        fontsize=11,
+        va="center",
+        color=INK,
+    )
+    ax.text(
+        58,
+        407,
+        "and no variant in gnomAD exomes (5% sample, one row per locus)",
+        fontsize=11,
+        va="center",
+        color=INK,
+    )
+    ax.text(
+        32,
+        445,
+        "Each row carries the features of its 1-kb window:\n13 features × 4 window sizes = 52 columns.",
+        fontsize=11,
+        color=INK2,
+        va="top",
+    )
+    arrow(ax, 515, 250, 565, 250, color=MUTED, lw=1.6)
+
+    # 2. One logistic regression per context.
+    ax.text(
+        580,
+        40,
+        "2  One logistic regression per context",
+        fontsize=15,
+        fontweight="bold",
+        color=INK,
+    )
+    ax.text(
+        580,
+        70,
+        "32 contexts: a base and its two neighbours, strand-collapsed",
+        fontsize=11,
+        color=INK2,
+        va="top",
+    )
+    box(
+        ax,
+        580,
+        110,
+        420,
+        92,
+        RR_FILL,
+        RR_EDGE,
+        [
+            "log odds that y = 1",
+            "= β₀ + β₁z₁ + β₂z₂ + … + β₅₂z₅₂",
+            "z = the window's features, z-scored in the context",
+        ],
+        size=12,
+        center=True,
+    )
+    box(
+        ax,
+        580,
+        236,
+        200,
+        150,
+        NEW_FILL,
+        NEW_EDGE,
+        [
+            "Current method",
+            "screen each feature",
+            "by p-value (Bonferroni)",
+            "keep the passing ones",
+            "fit with no penalty",
+        ],
+        size=11,
+    )
+    box(
+        ax,
+        800,
+        236,
+        200,
+        150,
+        REC_FILL,
+        REC_EDGE,
+        [
+            "Ridge",
+            "no screen",
+            "all 52 columns",
+            "penalty shrinks every β",
+            "toward 0 (none to exactly 0)",
+        ],
+        size=11,
+    )
+    ax.text(
+        790,
+        410,
+        "β₀ is the log odds at average features. How many y = 0\nrows are sampled only moves β₀, which cancels in rr.",
+        fontsize=11,
+        color=INK2,
+        ha="center",
+        va="top",
+    )
+    arrow(ax, 1015, 250, 1065, 250, color=MUTED, lw=1.6)
+
+    # 3. From the model to rr (curve inset).
+    ax.text(
+        1080, 40, "3  From the model to rr", fontsize=15, fontweight="bold", color=INK
+    )
+    inset = fig.add_axes([1095 / W, 1 - 400 / H, 430 / W, 300 / H])
+    eta = np.linspace(-4.2, -1.4, 200)
+    p = 1 / (1 + np.exp(-eta))
+    inset.plot(eta, p, color=REC_C, lw=2.2)
+    b0, d = -3.0, 0.35
+    for x, lab, c in (
+        (b0, "average window", NONE_C),
+        (b0 + d, "more mutable window", REC_C),
+    ):
+        y = 1 / (1 + np.exp(-x))
+        inset.plot([x, x], [0, y], color=c, lw=1, ls=(0, (2, 2)))
+        inset.scatter([x], [y], s=60, color=c, zorder=3, edgecolor=SURFACE, lw=1)
+        inset.annotate(
+            lab,
+            (x, y),
+            xytext=(-10, 10) if x == b0 else (12, -14),
+            textcoords="offset points",
+            fontsize=10.5,
+            ha="right" if x == b0 else "left",
+            color=INK,
+        )
+    rr = (1 / (1 + np.exp(-(b0 + d)))) / (1 / (1 + np.exp(-b0)))
+    inset.text(
+        0.03,
+        0.95,
+        f"rr = p(window) / p(average window)\n     = {rr:.2f} here (exaggerated)",
+        transform=inset.transAxes,
+        fontsize=10.5,
+        va="top",
+        color=INK,
+    )
+    inset.set_xticks([b0, b0 + d], ["β₀", "β₀ + β·z"])
+    inset.set_yticks([])
+    inset.set_ylabel("probability that y = 1", fontsize=10.5, color=INK2)
+    inset.set_ylim(0, p.max() * 1.08)
+    for side in ("top", "right"):
+        inset.spines[side].set_visible(False)
+    ax.text(
+        1090,
+        440,
+        "rr = σ(β₀ + β·z) / σ(β₀) ≈ exp(β·z)",
+        fontsize=12.5,
+        fontweight="bold",
+        color=INK,
+        va="top",
+    )
+    ax.text(
+        1090,
+        470,
+        "how much more (or less) mutable this window is than an\naverage window, for this context; "
+        "real values are about 0.9–1.1",
+        fontsize=11,
+        color=INK2,
+        va="top",
+    )
+    ax.text(
+        1090,
+        526,
+        "Then: normalize so rr averages 1 over exome synonymous\nsites in each context, and multiply each variant's expected\n"
+        "count by its window's rr.",
+        fontsize=11,
+        color=INK2,
+        va="top",
+    )
+
+    fig.savefig(os.path.join(OUT_DIR, "rr_model.png"), dpi=170)
+    plt.close(fig)
+
+
 def draw_problem_summary():
     """Draw the one-row summary of the problem for the top of the report."""
     tx = pd.read_csv(
@@ -2752,6 +3000,7 @@ if __name__ == "__main__":
     draw_outlier_drivers()
     draw_background()
     draw_concept()
+    draw_model()
     draw_dnm_sets()
     draw_histones()
     draw_problem_summary()
