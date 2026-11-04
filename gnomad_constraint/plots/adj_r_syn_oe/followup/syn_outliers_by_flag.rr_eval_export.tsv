@@ -1,0 +1,35 @@
+correction	direction	flag	n
+none	deficit	low_exome_mapping_quality	129
+none	excess	unflagged	98
+none	excess	histone genes	24
+none	excess	low_exome_coverage	18
+none	deficit	unflagged	1
+adj_r	deficit	unflagged	236
+adj_r	deficit	low_exome_mapping_quality	155
+adj_r	excess	histone genes	19
+adj_r	excess	unflagged	19
+adj_r	excess	low_exome_coverage	16
+adj_r	deficit	low_exome_coverage	2
+syn_adj_r	deficit	low_exome_mapping_quality	131
+syn_adj_r	excess	unflagged	42
+syn_adj_r	excess	histone genes	23
+syn_adj_r	excess	low_exome_coverage	20
+syn_adj_r	deficit	unflagged	1
+ruchit_17k	deficit	low_exome_mapping_quality	128
+ruchit_17k	excess	unflagged	48
+ruchit_17k	excess	histone genes	23
+ruchit_17k	excess	low_exome_coverage	20
+ruchit_satterstrom	deficit	low_exome_mapping_quality	128
+ruchit_satterstrom	excess	unflagged	52
+ruchit_satterstrom	excess	histone genes	23
+ruchit_satterstrom	excess	low_exome_coverage	20
+ruchit_satterstrom	deficit	unflagged	1
+recommended	deficit	low_exome_mapping_quality	127
+recommended	excess	unflagged	46
+recommended	excess	histone genes	24
+recommended	excess	low_exome_coverage	20
+recommended	deficit	unflagged	1
+syn_adj_r_norm	deficit	low_exome_mapping_quality	127
+syn_adj_r_norm	excess	unflagged	48
+syn_adj_r_norm	excess	histone genes	24
+syn_adj_r_norm	excess	low_exome_coverage	20

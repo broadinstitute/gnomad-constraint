@@ -1,0 +1,10 @@
+removed	class	slope
+none	A/T	0.6379724608994989
+none	C non-CpG	1.2333831703274825
+none	CpG	0.30113795106534724
+qc_flagged	A/T	0.6656552315667971
+qc_flagged	C non-CpG	1.2194300616637197
+qc_flagged	CpG	0.300091128324304
+qc_flagged_or_segdup	A/T	0.5748297377425559
+qc_flagged_or_segdup	C non-CpG	1.2289387953941595
+qc_flagged_or_segdup	CpG	0.27796485349298544

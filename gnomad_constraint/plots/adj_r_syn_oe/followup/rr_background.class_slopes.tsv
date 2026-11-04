@@ -1,0 +1,49 @@
+background	application	class	slope
+absent	per-class strength	A/T	0.9998059247626083
+absent	per-class strength	C non-CpG	0.9973544667655654
+absent	per-class strength	CpG	0.9992370480812842
+absent	multiplicative	A/T	0.6379724608994989
+absent	multiplicative	C non-CpG	1.2333831703274825
+absent	multiplicative	CpG	0.30113795106534724
+absent	saturation-aware	A/T	0.6934499890827899
+absent	saturation-aware	C non-CpG	1.4677945544074897
+absent	saturation-aware	CpG	0.5084820822070331
+absent	no rr at CpG	A/T	0.6379724608994989
+absent	no rr at CpG	C non-CpG	1.2333831703274825
+absent	no rr at CpG	CpG
+absent_context_matched	multiplicative	A/T	0.5724582527898292
+absent_context_matched	multiplicative	C non-CpG	1.215856954944905
+absent_context_matched	multiplicative	CpG	0.25868631419933025
+absent_context_matched	saturation-aware	A/T	0.6201311272755184
+absent_context_matched	saturation-aware	C non-CpG	1.446842557552506
+absent_context_matched	saturation-aware	CpG	0.4403313449109424
+absent_equal_per_context	multiplicative	A/T	0.6229173809287925
+absent_equal_per_context	multiplicative	C non-CpG	1.2412137364440226
+absent_equal_per_context	multiplicative	CpG	0.25645164322331704
+absent_equal_per_context	saturation-aware	A/T	0.6820428674902665
+absent_equal_per_context	saturation-aware	C non-CpG	1.4782862092026623
+absent_equal_per_context	saturation-aware	CpG	0.442303498026951
+absent_reweighted	multiplicative	A/T	0.6277151612359225
+absent_reweighted	multiplicative	C non-CpG	1.184875434785011
+absent_reweighted	multiplicative	CpG	0.30835314834075955
+absent_reweighted	saturation-aware	A/T	0.6742790073722076
+absent_reweighted	saturation-aware	C non-CpG	1.4099677186887496
+absent_reweighted	saturation-aware	CpG	0.5143017915086732
+all_sites	per-class strength	A/T	0.9871557842826917
+all_sites	per-class strength	C non-CpG	0.992574486761508
+all_sites	per-class strength	CpG	0.9986745232626556
+all_sites	multiplicative	A/T	0.54295560062875
+all_sites	multiplicative	C non-CpG	1.5737295858187612
+all_sites	multiplicative	CpG	0.3127949447859441
+all_sites	saturation-aware	A/T	0.5850807692771266
+all_sites	saturation-aware	C non-CpG	1.8602852704435449
+all_sites	saturation-aware	CpG	0.532653189308993
+all_sites	no rr at CpG	A/T	0.54295560062875
+all_sites	no rr at CpG	C non-CpG	1.5737295858187612
+all_sites	no rr at CpG	CpG
+polymorphisms	multiplicative	A/T	-0.23528886246579148
+polymorphisms	multiplicative	C non-CpG	17.547954605298944
+polymorphisms	multiplicative	CpG	2.464666748739379
+polymorphisms	saturation-aware	A/T	-0.16551485052464218
+polymorphisms	saturation-aware	C non-CpG	20.680589194965037
+polymorphisms	saturation-aware	CpG	3.6593508173236073
