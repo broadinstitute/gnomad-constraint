@@ -435,6 +435,42 @@ def create_rr_training_ht(
     return ht.annotate(**features_ht[ht.locus])
 
 
+def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
+    """
+    Remove sites in genes with a release QC gene flag from a locus-keyed Table.
+
+    Genes flagged ``low_exome_coverage`` or ``low_exome_mapping_quality`` lose variant
+    calls in both the DNM cohorts and gnomAD, so leaving their sites in the rr
+    training set can teach the models that those regions mutate less. The span
+    (``start_position`` to ``end_position``) of every Ensembl MANE Select transcript
+    with a non-empty ``gene_flags`` is removed.
+
+    :param ht: Table keyed by ``locus`` (e.g. the rr training Table).
+    :param metrics_ht: Constraint metrics Table with ``transcript``, ``mane_select``,
+        ``gene_flags``, ``chromosome``, ``start_position`` and ``end_position``.
+    :return: ``ht`` without the sites in flagged genes.
+    """
+    flagged = metrics_ht.filter(
+        metrics_ht.mane_select
+        & metrics_ht.transcript.startswith("ENST")
+        & (hl.len(metrics_ht.gene_flags) > 0)
+        & hl.is_defined(metrics_ht.start_position)
+        & hl.is_defined(metrics_ht.end_position)
+    )
+    spans = flagged.key_by().select("chromosome", "start_position", "end_position")
+    intervals = [
+        hl.Interval(
+            hl.Locus(r.chromosome, r.start_position, reference_genome="GRCh38"),
+            hl.Locus(r.chromosome, r.end_position, reference_genome="GRCh38"),
+            includes_end=True,
+        )
+        for r in spans.collect()
+    ]
+    logger.info("Removing sites in %d QC-flagged genes.", len(intervals))
+
+    return hl.filter_intervals(ht, intervals, keep=False)
+
+
 def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
     """
     Collect the rr training Table into a pandas DataFrame in training row order.

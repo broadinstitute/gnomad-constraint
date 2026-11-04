@@ -65,6 +65,7 @@ from gnomad_constraint.utils.regional_rate import (
     get_syn_sites_ht,
     import_genomic_features,
     normalize_rr_ht,
+    remove_qc_flagged_genes,
     rr_models_to_ht,
     rr_training_ht_to_pandas,
     run_mask_ablation,
@@ -316,7 +317,10 @@ def main(args):
                 res.genomic_features_ht.ht(),
                 args.background_fraction,
                 args.background_seed,
-            ).checkpoint(new_temp_file("rr_training", "ht"))
+            )
+            if args.exclude_qc_flagged_genes:
+                ht = remove_qc_flagged_genes(ht, hl.read_table(args.loeuf_ht_path))
+            ht = ht.checkpoint(new_temp_file("rr_training", "ht"))
             # Sampled sites keep the context Table partitioning, so coalesce the
             # small training Table before writing it.
             ht = ht.naive_coalesce(RR_TRAINING_N_PARTITIONS).checkpoint(
@@ -619,6 +623,15 @@ if __name__ == "__main__":
         help=f"Seed used to sample the background. Default is {RR_BACKGROUND_SEED}.",
         type=int,
         default=RR_BACKGROUND_SEED,
+    )
+    training_set_args.add_argument(
+        "--exclude-qc-flagged-genes",
+        help=(
+            "Remove DNM and background sites in genes with a release QC gene flag"
+            " (low_exome_coverage or low_exome_mapping_quality, read from"
+            " --loeuf-ht-path) from the rr training set."
+        ),
+        action="store_true",
     )
 
     train_args = parser.add_argument_group(
