@@ -40,10 +40,12 @@ for run in full qcexcl; do
   done
 done
 printf '%s\n' "${TABLES[@]}" | paste - - - | sed 's/^/    /'
+gsutil -q stat "$OUT/syn_cells_rr_full_run.tsv.bgz" && echo "=== annotate_cells already done" ||
 submit annotate_cells $S/annotate_cells_rr.py --cells "$CELLS" "${TABLES[@]}" --out "$OUT/syn_cells_rr_full_run.tsv.bgz" || exit 1
 
 for v in ridge_qcexcl bonferroni_full ridge_full bonferroni_qcexcl; do
   cut=${v%_*}; run=${v##*_}; root=$A; [ $run = qcexcl ] && root=$B
+  if gsutil ls "$OUT/$v/**" 2>/dev/null | grep -q "\.tsv"; then echo "=== constraint_$v already done"; continue; fi
   submit "constraint_$v" "$P/constraint_pipeline.py" --aggregate-per-variant-expected --regional-rr-ht-path "$(rr_path $root $cut)" \
     --aggregate-by-constraint-groups --compute-constraint-metrics --prepare-release --export-release-tsv --output-root "$OUT/$v" || exit 1
 done

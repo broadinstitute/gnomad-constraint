@@ -6,7 +6,9 @@ the same tables as ``rr_logistic_fits.py``: ``<prefix>.points.tsv`` (a sample of
 and background sites with their scores), ``<prefix>.bins.tsv`` (DNMs and background
 sites per score decile, with the share of DNMs if both had equal total weight) and
 ``<prefix>.contexts.tsv`` (per context: DNMs, the intercept of the curve redrawn
-with equal weight, and the 5th and 95th percentiles of the background scores).
+with equal weight, the 5th and 95th percentiles of the background scores, and the
+mean score of each class with its standard error), and ``<prefix>.hist.tsv`` (per
+context and class, the share of sites in each of ``N_HIST`` score bins).
 """
 
 import argparse
@@ -21,6 +23,7 @@ from gnomad_constraint.utils.regional_rate import _chrom_fold, rr_training_ht_to
 
 N_BINS = 10
 N_POINTS = 300
+N_HIST = 60
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -46,7 +49,7 @@ def main(args: argparse.Namespace) -> None:
         if m.cutoff == args.cutoff and m.fold != "all"
     ]
     rng = np.random.default_rng(0)
-    bins, points, contexts = [], [], []
+    bins, points, contexts, hists = [], [], [], []
     for context in sorted({m.context for m in models}):
         ctx = df[df.context == context]
         parts = []
@@ -78,9 +81,22 @@ def main(args: argparse.Namespace) -> None:
                     "observed_p_equal_weight": n1[i] / (n1[i] + k * n0[i]),
                 }
             )
+        hist_edges = np.linspace(*np.quantile(s0, [0.005, 0.995]), N_HIST + 1)
         for y, s in ((1, s1), (0, s0)):
             pick = rng.choice(len(s), size=min(N_POINTS, len(s)), replace=False)
             points.append(pd.DataFrame({"context": context, "y": y, "score": s[pick]}))
+            clipped = np.clip(s, hist_edges[0], hist_edges[-1])
+            hists.append(
+                pd.DataFrame(
+                    {
+                        "context": context,
+                        "y": y,
+                        "lo": hist_edges[:-1],
+                        "hi": hist_edges[1:],
+                        "share": np.histogram(clipped, hist_edges)[0] / len(s),
+                    }
+                )
+            )
         contexts.append(
             {
                 "context": context,
@@ -89,12 +105,18 @@ def main(args: argparse.Namespace) -> None:
                 "intercept_equal_weight": a_bal,
                 "score_p05": np.quantile(s0, 0.05),
                 "score_p95": np.quantile(s0, 0.95),
+                "mean_dnm": s1.mean(),
+                "se_dnm": s1.std() / np.sqrt(len(s1)),
+                "mean_background": s0.mean(),
+                "se_background": s0.std() / np.sqrt(len(s0)),
+                "sd_background": s0.std(),
             }
         )
     for name, table in (
         ("bins", pd.DataFrame(bins)),
         ("points", pd.concat(points)),
         ("contexts", pd.DataFrame(contexts)),
+        ("hist", pd.concat(hists)),
     ):
         with hl.hadoop_open(f"{args.out_prefix}.{name}.tsv", "w") as f:
             table.to_csv(f, sep="\t", index=False)

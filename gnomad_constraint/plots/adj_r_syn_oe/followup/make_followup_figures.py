@@ -3112,6 +3112,74 @@ def logistic_panel(ax, context, bins, points, ctx, rng, small=False):
     )
 
 
+def rr_curve_panel(ax, context, bins, ctx):
+    """Draw one context's DNM rate per score decile against the model's rr."""
+    r = ctx.set_index("context").loc[context]
+    b = bins[(bins.context == context) & (bins.background == "absent")]
+    n0 = b.background_sites
+    k = b.dnms.sum() / n0.sum()
+    rel = b.dnms / n0 / k
+    se = rel * np.sqrt(1 / b.dnms.clip(lower=1) + 1 / n0)
+    s = np.linspace(b.score.min(), b.score.max(), 100)
+    ax.plot(s, np.exp(s), color=INK, lw=2.4, label="model rr (≈ eˢ)")
+    ax.errorbar(
+        b.score,
+        rel,
+        yerr=1.96 * se,
+        fmt="o",
+        color=CLASS_C[r["class"]],
+        mfc=SURFACE,
+        mew=1.4,
+        ms=7,
+        elinewidth=1.1,
+        capsize=0,
+        label="DNMs per background site, relative",
+    )
+    ax.axhline(1, color=AXIS, lw=1, zorder=0)
+    ax.set_yscale("log")
+    ticks = [0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6]
+    ax.set_yticks(ticks, [f"{t:g}" for t in ticks])
+    ax.minorticks_off()
+    ax.set_ylim(0.6, 1.75)
+    style_axis(ax, grid_axis="y")
+
+
+def score_dist_panel(ax, context, hist, ctx):
+    """Draw one context's score distributions for DNM and background sites."""
+    r = ctx.set_index("context").loc[context]
+    for y, color, label in (
+        (0, MUTED, "background sites"),
+        (1, CLASS_C[r["class"]], "DNM sites"),
+    ):
+        h = hist[(hist.context == context) & (hist.y == y)]
+        ax.plot(
+            (h.lo + h.hi) / 2,
+            h.share / (h.hi - h.lo),
+            color=color,
+            lw=2.2 if y else 1.8,
+            label=label,
+        )
+        ax.axvline(
+            r.mean_dnm if y else r.mean_background,
+            color=color,
+            lw=1.4,
+            ls=(0, (4, 2)),
+        )
+    shift = (r.mean_dnm - r.mean_background) / r.sd_background
+    ax.text(
+        0.0,
+        1.02,
+        f"means (dashed) differ by {r.mean_dnm - r.mean_background:+.3f}"
+        f" = {shift:.2f} SD of the background scores",
+        transform=ax.transAxes,
+        va="bottom",
+        fontsize=9,
+        color=INK2,
+    )
+    ax.set_ylim(bottom=0)
+    style_axis(ax, grid_axis="y")
+
+
 def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sites"):
     """
     Draw the per-context logistic regressions.
@@ -3120,10 +3188,22 @@ def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sit
     :param sites: Which sites the shaded middle 90% and panel d are over.
     """
     bins, points, ctx = read_logistic_fits(prefix)
+    hist_path = os.path.join(OUT_DIR, f"{prefix}.hist.tsv")
+    # With score histograms (cluster/export_logistic_fits.py), two more rows show
+    # the DNM rate per score decile against rr, and the two score distributions.
+    stacked = os.path.exists(hist_path)
     rng = np.random.default_rng(0)
-    fig = plt.figure(figsize=(15, 9.6))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.9], hspace=0.62, wspace=0.16)
-    fig.subplots_adjust(left=0.07, right=0.98, top=0.9, bottom=0.12)
+    if stacked:
+        hist = pd.read_csv(hist_path, sep="\t")
+        fig = plt.figure(figsize=(15, 18.5))
+        gs = fig.add_gridspec(
+            4, 3, height_ratios=[1, 0.85, 0.85, 0.9], hspace=0.6, wspace=0.16
+        )
+        fig.subplots_adjust(left=0.07, right=0.98, top=0.94, bottom=0.07)
+    else:
+        fig = plt.figure(figsize=(15, 9.6))
+        gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.9], hspace=0.62, wspace=0.16)
+        fig.subplots_adjust(left=0.07, right=0.98, top=0.9, bottom=0.12)
     fig.suptitle(
         "One logistic regression per context: how far the regional score moves a "
         "site's chance of being a DNM",
@@ -3145,16 +3225,35 @@ def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sit
                 "chance a site is a DNM\n(drawn with equal numbers of DNMs and"
                 " background)"
             )
+    note_y = ax.get_position().y0 - 0.045
     fig.text(
         0.07,
-        0.505,
+        note_y,
         "solid: the fitted curve where sites fall · dashed: the same curve beyond them"
         " · open circles: share of DNMs in each score decile, on held-out chromosomes",
         fontsize=9,
         color=INK2,
     )
+    if stacked:
+        for i, context in enumerate(LOGIT_EXAMPLES):
+            ax = fig.add_subplot(gs[1, i])
+            rr_curve_panel(ax, context, bins, ctx)
+            ax.set_title(f"{'def'[i]}  {context}: DNMs against rr, per score decile")
+            ax.set_xlabel("regional score s (decile mean, held-out)")
+            if i == 0:
+                ax.set_ylabel(
+                    "relative DNM rate\n(DNMs per background site ÷ context" " average)"
+                )
+                ax.legend(loc="upper left", frameon=False, fontsize=9)
+            ax = fig.add_subplot(gs[2, i])
+            score_dist_panel(ax, context, hist, ctx)
+            ax.set_title(f"{'ghi'[i]}  {context}: score distributions", pad=22)
+            ax.set_xlabel("regional score s (held-out)")
+            if i == 0:
+                ax.set_ylabel("density")
+                ax.legend(loc="center left", frameon=False, fontsize=9)
 
-    ax = fig.add_subplot(gs[1, :])
+    ax = fig.add_subplot(gs[3 if stacked else 1, :])
     ctx = ctx.assign(
         order=ctx["class"].map({c: i for i, c in enumerate(CLASS_C)})
     ).sort_values(["order", "context"])
@@ -3180,8 +3279,8 @@ def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sit
     ax.set_xlim(x.min() - 0.8, x.max() + 0.8)
     ax.set_ylabel(f"rr of the middle 90%\nof {sites.split()[0]} sites")
     ax.set_title(
-        f"d  Every context's model: the range of rr it gives the middle 90% of {sites}"
-        " (DNMs per context in brackets)"
+        f"{'j' if stacked else 'd'}  Every context's model: the range of rr it gives"
+        f" the middle 90% of {sites} (DNMs per context in brackets)"
     )
     style_axis(ax, grid_axis="y")
     fig.savefig(os.path.join(OUT_DIR, f"{prefix}.png"), dpi=170)

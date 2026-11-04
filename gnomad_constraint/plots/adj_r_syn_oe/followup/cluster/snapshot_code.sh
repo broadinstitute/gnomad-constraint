@@ -12,5 +12,10 @@ S=$SNAP/cluster
 rm -f "$ZIP"
 (cd "$REPO" && zip -rq "$ZIP" gnomad_constraint/ -x 'gnomad_constraint/experimental/*' 'gnomad_constraint/plots/*' 'gnomad_constraint/flowchart/*' 'gnomad_constraint/renv/*' '*.pyc' '*__pycache__*' '*.RData' '*.DS_Store' '*.png' '*.pdf' '*.ipynb' '*.Rproj.user*')
 (cd /Users/jgoodric/PycharmProjects/gnomad_qc && zip -rq "$ZIP" gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store' '*.ipynb')
-(cd /Users/jgoodric/PycharmProjects/gnomad_methods && zip -rq "$ZIP" gnomad/ -x '*.pyc' '*__pycache__*' '*.DS_Store')
-echo "=== code snapshot in $SNAP, zip $ZIP"
+# gnomad_methods from a fixed commit, not whatever branch the local checkout is on:
+# the last one before mane_select_over_canonical_filter_expr was renamed, which this
+# branch's constraint utilities still import by its old name.
+GNOMAD_METHODS_REF=${GNOMAD_METHODS_REF:-682597e9~1}
+git -C /Users/jgoodric/PycharmProjects/gnomad_methods archive "$GNOMAD_METHODS_REF" gnomad | tar -x -C "$SNAP"
+(cd "$SNAP" && zip -rq "$ZIP" gnomad/ -x '*.pyc' '*__pycache__*' '*.DS_Store')
+echo "=== code snapshot in $SNAP (gnomad_methods $GNOMAD_METHODS_REF), zip $ZIP"
