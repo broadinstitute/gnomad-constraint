@@ -51,6 +51,5 @@ submit roulette_rr "$P/regional_rate_pipeline.py" --compute-rr --apply-rr-safegu
 RATES="$R/$RD/gnomad.v4.1.1.roulette_variant_rates.ht"
 submit constraint_roulette_ridge "$P/constraint_pipeline.py" --aggregate-per-variant-expected \
   --regional-rr-ht-path "$R/$RD/gnomad.v4.1.1.syn_dnm_rr_1kb.fs_ridge.calibrated.ht" --variant-rate-ht-path "$RATES" \
-  --aggregate-by-constraint-groups --compute-constraint-metrics --prepare-release --export-release-tsv --output-root "$OUT/roulette_ridge" || exit 1
+  --aggregate-by-constraint-groups --output-root "$OUT/roulette_ridge" || exit 1
 echo "=== $(date '+%H:%M:%S') all done"
-gsutil ls "$OUT/roulette_ridge/**" 2>/dev/null | grep "\.tsv"

@@ -45,9 +45,11 @@ submit annotate_cells $S/annotate_cells_rr.py --cells "$CELLS" "${TABLES[@]}" --
 
 for v in ridge_qcexcl bonferroni_full ridge_full bonferroni_qcexcl; do
   cut=${v%_*}; run=${v##*_}; root=$A; [ $run = qcexcl ] && root=$B
-  if gsutil ls "$OUT/$v/**" 2>/dev/null | grep -q "\.tsv"; then echo "=== constraint_$v already done"; continue; fi
+  # The clusters run Hail 0.2.134, and --compute-constraint-metrics needs hl.qgamma
+  # (0.2.137+), so stop at the constraint groups; metrics run on a newer cluster.
+  if gsutil -q stat "$OUT/$v/gnomad_v4.1.1/constraint/apply_models/transcript_consequences/gnomad.v4.1.1.constraint_group.ht/_SUCCESS"; then echo "=== constraint_$v already done"; continue; fi
   submit "constraint_$v" "$P/constraint_pipeline.py" --aggregate-per-variant-expected --regional-rr-ht-path "$(rr_path $root $cut)" \
-    --aggregate-by-constraint-groups --compute-constraint-metrics --prepare-release --export-release-tsv --output-root "$OUT/$v" || exit 1
+    --aggregate-by-constraint-groups --output-root "$OUT/$v" || exit 1
 done
 echo "=== $(date '+%H:%M:%S') all done"
-gsutil ls "$OUT/*/*/constraint/**" 2>/dev/null | grep "\.tsv"
+gsutil ls -d "$OUT/*/gnomad_v4.1.1/constraint/apply_models/transcript_consequences/*.ht" 2>/dev/null
