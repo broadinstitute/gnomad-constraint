@@ -317,6 +317,9 @@ def main(args):
                 res.genomic_features_ht.ht(),
                 args.background_fraction,
                 args.background_seed,
+                background_sites=args.background_sites,
+                background_unit=args.background_unit,
+                context_sampling=args.background_context_sampling,
             )
             if args.exclude_qc_flagged_genes:
                 ht = remove_qc_flagged_genes(ht, hl.read_table(args.loeuf_ht_path))
@@ -566,7 +569,9 @@ if __name__ == "__main__":
             "Feature selection cutoff tokens: 'bonferroni' (legacy rule), raw"
             " p-value cutoffs (e.g. 1e-3 0.01), and/or 'ridge' (no feature screen;"
             " every feature in a ridge-penalized fit, with the default per-site"
-            " penalty) or 'ridge_<penalty>' (e.g. ridge_0.5). Used by"
+            " penalty), 'ridge_<penalty>' (per-site penalty, e.g. ridge_0.5) or"
+            " 'ridge_dnm_<penalty>' (penalty per DNM, e.g. ridge_dnm_10, for comparing"
+            " backgrounds of different sizes). Used by"
             " --train-rr-models, --compute-rr, and --evaluate-rr-cutoffs. Default is"
             f" {RR_BONFERRONI_CUTOFF}."
         ),
@@ -623,6 +628,35 @@ if __name__ == "__main__":
         help=f"Seed used to sample the background. Default is {RR_BACKGROUND_SEED}.",
         type=int,
         default=RR_BACKGROUND_SEED,
+    )
+    training_set_args.add_argument(
+        "--background-sites",
+        help=(
+            "Which possible synonymous sites the background is sampled from:"
+            " 'absent_from_gnomad' (legacy; not seen in gnomAD v4 exomes) or 'all'."
+            " Default is 'absent_from_gnomad'."
+        ),
+        choices=["absent_from_gnomad", "all"],
+        default="absent_from_gnomad",
+    )
+    training_set_args.add_argument(
+        "--background-unit",
+        help=(
+            "Keep one background row per 'locus' (legacy) or per possible synonymous"
+            " 'variant'. Default is 'locus'."
+        ),
+        choices=["locus", "variant"],
+        default="locus",
+    )
+    training_set_args.add_argument(
+        "--background-context-sampling",
+        help=(
+            "Sample each context at its own rate so that the background's context"
+            " totals are 'proportional' to all possible synonymous sites or 'even'"
+            " across contexts. Default is a plain random sample."
+        ),
+        choices=["proportional", "even"],
+        default=None,
     )
     training_set_args.add_argument(
         "--exclude-qc-flagged-genes",

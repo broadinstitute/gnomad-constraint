@@ -400,16 +400,31 @@ def create_rr_training_ht(
     features_ht: hl.Table,
     background_fraction: float,
     seed: int,
+    background_sites: str = "absent_from_gnomad",
+    background_unit: str = "locus",
+    context_sampling: Optional[str] = None,
 ) -> hl.Table:
     """
     Create the rr training Table of synonymous DNM and non-mutated background sites.
 
-    The background is a random sample (``background_fraction``) of the possible
-    synonymous sites that are not a DNM and are absent from the gnomAD exomes
-    sites Table, with one site kept per locus. DNM sites get ``y`` = 1 and
-    background sites ``y`` = 0. Each site is annotated with the features of the 1kb
-    window containing it. ``row_idx`` gives the locus order within each class,
-    which is the row order used to train the models.
+    By default (the legacy design), the background is a random sample
+    (``background_fraction``) of the possible synonymous sites that are not a DNM
+    and are absent from the gnomAD exomes sites Table, with one site kept per locus.
+    DNM sites get ``y`` = 1 and background sites ``y`` = 0. Each site is annotated
+    with the features of the 1kb window containing it. ``row_idx`` gives the locus
+    order within each class, which is the row order used to train the models.
+
+    The background design can be changed for comparison:
+
+        - ``background_sites="all"``: sample from every possible synonymous site
+          that isn't a DNM, not only those absent from gnomAD.
+        - ``background_unit="variant"``: keep one row per possible synonymous
+          variant (locus and alleles) instead of one per locus, matching the DNMs.
+        - ``context_sampling``: sample each context at its own rate so that the
+          background's context totals are ``"proportional"`` to all possible
+          synonymous sites (or variants) or ``"even"`` across contexts, with the
+          same expected total as the plain sample. Each context's model only sees
+          its own context, so this should only move each model's intercept.
 
     :param syn_sites_ht: Possible synonymous SNVs (:func:`get_syn_sites_ht`).
     :param syn_dnm_ht: Synonymous DNM Table (:func:`combine_syn_dnms`).
@@ -417,14 +432,48 @@ def create_rr_training_ht(
     :param features_ht: Feature Table (:func:`import_genomic_features`).
     :param background_fraction: Fraction of non-mutated sites to sample.
     :param seed: Random seed used for sampling.
+    :param background_sites: "absent_from_gnomad" (default) or "all".
+    :param background_unit: "locus" (default) or "variant".
+    :param context_sampling: None (default), "proportional" or "even".
     :return: Training Table keyed by ``locus`` with ``alleles``, ``context``, ``y``,
         ``row_idx``, and the feature columns.
     """
-    bg_ht = syn_sites_ht.anti_join(syn_dnm_ht)
-    bg_ht = bg_ht.anti_join(exomes_sites_ht.select().select_globals())
-    bg_ht = bg_ht.key_by("locus").distinct()
-    bg_ht = bg_ht.sample(background_fraction, seed=seed)
-    bg_ht = bg_ht.select("alleles", "context", y=0).add_index("row_idx")
+    if background_sites not in {"absent_from_gnomad", "all"}:
+        raise ValueError(f"Unknown background_sites: {background_sites}!")
+    if background_unit not in {"locus", "variant"}:
+        raise ValueError(f"Unknown background_unit: {background_unit}!")
+    if context_sampling not in {None, "proportional", "even"}:
+        raise ValueError(f"Unknown context_sampling: {context_sampling}!")
+
+    def _one_row_per_unit(ht: hl.Table) -> hl.Table:
+        return ht.key_by("locus").distinct() if background_unit == "locus" else ht
+
+    candidates_ht = syn_sites_ht.anti_join(syn_dnm_ht)
+    bg_ht = candidates_ht
+    if background_sites == "absent_from_gnomad":
+        bg_ht = bg_ht.anti_join(exomes_sites_ht.select().select_globals())
+    bg_ht = _one_row_per_unit(bg_ht)
+
+    if context_sampling is None:
+        bg_ht = bg_ht.sample(background_fraction, seed=seed)
+    else:
+        bg_ht = bg_ht.checkpoint(new_temp_file("rr_background_candidates", "ht"))
+        counts = bg_ht.aggregate(hl.agg.counter(bg_ht.context))
+        total = background_fraction * sum(counts.values())
+        if context_sampling == "proportional":
+            ref_ht = _one_row_per_unit(candidates_ht)
+            ref = ref_ht.aggregate(hl.agg.counter(ref_ht.context))
+            target = {c: total * ref.get(c, 0) / sum(ref.values()) for c in counts}
+        else:
+            target = {c: total / len(counts) for c in counts}
+        rates = {c: min(1.0, target[c] / n) for c, n in counts.items()}
+        logger.info("Background sampling rate per context: %s", rates)
+        bg_ht = bg_ht.filter(
+            hl.rand_unif(0, 1, seed=seed) < hl.literal(rates)[bg_ht.context]
+        )
+
+    bg_ht = bg_ht.key_by("locus").select("alleles", "context", y=0)
+    bg_ht = bg_ht.add_index("row_idx")
 
     dnm_ht = syn_dnm_ht.key_by("locus").select("alleles", "context", y=1)
     dnm_ht = dnm_ht.add_index("row_idx")
@@ -599,15 +648,34 @@ def get_rr_ridge_penalty(cutoff: str) -> Optional[float]:
     Get the ridge penalty of a feature selection token.
 
     :param cutoff: Feature selection token: ``RR_RIDGE_CUTOFF`` ("ridge", which uses
-        ``RR_RIDGE_PENALTY``), "ridge_<penalty>", or any other (non-ridge) token.
-    :return: The per-site ridge penalty, or None for a non-ridge token.
+        ``RR_RIDGE_PENALTY``), "ridge_<penalty>" (per site), "ridge_dnm_<penalty>"
+        (per DNM, see :func:`is_rr_ridge_per_dnm`), or any other (non-ridge) token.
+    :return: The ridge penalty, or None for a non-ridge token.
     """
     if cutoff == RR_RIDGE_CUTOFF:
         return RR_RIDGE_PENALTY
+    if cutoff.startswith(f"{RR_RIDGE_CUTOFF}_dnm_"):
+        return float(cutoff.rsplit("_", 1)[1])
     if cutoff.startswith(f"{RR_RIDGE_CUTOFF}_"):
         return float(cutoff.split("_", 1)[1])
 
     return None
+
+
+def is_rr_ridge_per_dnm(cutoff: str) -> bool:
+    """
+    Get whether a ridge token's penalty is scaled by the number of DNMs.
+
+    A per-site penalty (the default) gives a larger background more shrinkage,
+    because it scales with every training row. A per-DNM penalty
+    ("ridge_dnm_<penalty>") scales with the number of DNMs instead, so backgrounds of
+    different sizes get the same shrinkage; in a rare-outcome fit, the information
+    about each coefficient grows with the number of cases, not controls.
+
+    :param cutoff: Feature selection token.
+    :return: Whether the token is a per-DNM ridge token.
+    """
+    return cutoff.startswith(f"{RR_RIDGE_CUTOFF}_dnm_")
 
 
 def select_rr_features(screen_df: pd.DataFrame, cutoff: str) -> pd.DataFrame:
@@ -663,7 +731,10 @@ def get_rr_model_features(selected_df: pd.DataFrame, context: str) -> List[str]:
 
 
 def fit_rr_context_model(
-    df: pd.DataFrame, features: List[str], ridge_penalty: Optional[float] = None
+    df: pd.DataFrame,
+    features: List[str],
+    ridge_penalty: Optional[float] = None,
+    ridge_per_dnm: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     Fit the rr logistic model of one context.
@@ -689,6 +760,8 @@ def fit_rr_context_model(
     :param features: Model features (:func:`get_rr_model_features`).
     :param ridge_penalty: Optional per-site ridge penalty. Default is None
         (unpenalized, as in the legacy models).
+    :param ridge_per_dnm: Whether ``ridge_penalty`` is per DNM instead of per site
+        (see :func:`is_rr_ridge_per_dnm`). Default is False.
     :return: Dictionary of model parameters, or None if there is no training data.
     """
     df_1 = df[df["y"] == 1][["locus", *features]].dropna()
@@ -711,7 +784,8 @@ def fit_rr_context_model(
     else:
         # sklearn minimizes C * sum(log loss) + sum(coef ** 2) / 2, so C = 1 / (n *
         # penalty) gives the per-site penalty.
-        fit = LogisticRegression(C=1.0 / (len(y) * ridge_penalty), max_iter=10000)
+        n_scale = int(np.sum(y)) if ridge_per_dnm else len(y)
+        fit = LogisticRegression(C=1.0 / (n_scale * ridge_penalty), max_iter=10000)
         fit.fit(x_pca, y)
         params = np.concatenate([fit.intercept_, fit.coef_[0]])
         converged = bool(fit.n_iter_[0] < fit.max_iter)
@@ -782,6 +856,7 @@ def fit_rr_models(
     for cutoff in cutoffs:
         selected_df = select_rr_features(screen_df, cutoff)
         ridge_penalty = get_rr_ridge_penalty(cutoff)
+        ridge_per_dnm = is_rr_ridge_per_dnm(cutoff)
         n_modeled = 0
         for context in contexts:
             features = get_rr_model_features(selected_df, context)
@@ -794,7 +869,9 @@ def fit_rr_models(
                     if fold == MODEL_FOLD_ALL
                     else ctx_df[ctx_df["_fold"] != fold]
                 )
-                model = fit_rr_context_model(train_df, features, ridge_penalty)
+                model = fit_rr_context_model(
+                    train_df, features, ridge_penalty, ridge_per_dnm
+                )
                 if model is None:
                     continue
                 models.append(
