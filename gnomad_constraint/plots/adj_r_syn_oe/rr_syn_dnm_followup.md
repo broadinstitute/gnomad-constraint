@@ -3,22 +3,25 @@
 ## Contents
 
 - [Resources](#resources)
-- [The problem, in plain terms](#the-problem-in-plain-terms)
-- [Recommendation](#recommendation)
-- [What a good outcome looks like](#what-a-good-outcome-looks-like)
-- [Next steps for the team](#next-steps-for-the-team)
-- [Remaining decisions](#remaining-decisions)
+- [Summary](#summary)
+  - [The problem, in plain terms](#the-problem-in-plain-terms)
+  - [Recommendation](#recommendation)
+  - [What a good outcome looks like](#what-a-good-outcome-looks-like)
+  - [Next steps for the team](#next-steps-for-the-team)
+  - [Remaining decisions](#remaining-decisions)
 - [Questions from the Slack thread, answered](#questions-from-the-slack-thread-answered)
-- [Pipelines at a glance](#pipelines-at-a-glance)
-- [How the rr model works](#how-the-rr-model-works)
-- [The regional features rr uses](#the-regional-features-rr-uses)
-- [How each version performs](#how-each-version-performs)
-- [The training background: what the DNMs are compared with](#the-training-background-what-the-dnms-are-compared-with)
-  - [Removing poorly covered or mapped genes from training](#removing-poorly-covered-or-mapped-genes-from-training)
-- [What the leftover noise is](#what-the-leftover-noise-is)
-- [The synonymous outliers](#the-synonymous-outliers)
-  - [What explains them besides size](#what-explains-them-besides-size)
-  - [Why the histone genes are outliers, and whether rr can capture them](#why-the-histone-genes-are-outliers-and-whether-rr-can-capture-them)
+- [How rr works](#how-rr-works)
+  - [Pipelines at a glance](#pipelines-at-a-glance)
+  - [How the rr model works](#how-the-rr-model-works)
+  - [The regional features rr uses](#the-regional-features-rr-uses)
+- [Results](#results)
+  - [How each version performs](#how-each-version-performs)
+  - [The training background: what the DNMs are compared with](#the-training-background-what-the-dnms-are-compared-with)
+    - [Removing poorly covered or mapped genes from training](#removing-poorly-covered-or-mapped-genes-from-training)
+  - [What the leftover noise is](#what-the-leftover-noise-is)
+  - [The synonymous outliers](#the-synonymous-outliers)
+    - [What explains them besides size](#what-explains-them-besides-size)
+    - [Why the histone genes are outliers, and whether rr can capture them](#why-the-histone-genes-are-outliers-and-whether-rr-can-capture-them)
 - [Scripts, figures and tables](#scripts-figures-and-tables)
 - [Still worth trying or looking at](#still-worth-trying-or-looking-at)
 
@@ -31,7 +34,9 @@
   - GitHub shows HTML as source; download a file and open it in a browser to read it.
 - **Code, figures and tables for this report:** [Scripts, figures and tables](#scripts-figures-and-tables).
 
-## The problem, in plain terms
+## Summary
+
+### The problem, in plain terms
 
 ![The problem and the fix, in concept](followup/rr_concept.png)
 
@@ -49,7 +54,7 @@
 - **b.** Genes binned by the regional rate the rr predicts from DNMs: without a correction, obs/exp follows that rate almost exactly (0.97 to 1.10). With the ridge rr it is flat.
 - **c.** Gnocchi `adj_r` makes the noise worse. The synonymous rr versions remove about a fifth of the excess above chance. Most of what is left is real gene-level mutation-rate variation that the regional features can't see (see [What explains them besides size](#what-explains-them-besides-size)).
 
-## Recommendation
+### Recommendation
 
 Use a ridge-penalized rr trained on the Satterstrom DNMs, normalized per context, with no rr on chrX/Y, and leave genes with a QC flag out of training. Then confirm it with one full pipeline run. It's the black "Ridge, Satterstrom" series in every figure.
 
@@ -74,7 +79,7 @@ Use a ridge-penalized rr trained on the Satterstrom DNMs, normalized per context
 - **Other training backgrounds:** all sites, sampling by context, reweighting, and applying rr before saturation all did the same or slightly worse (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
   - ⏳ **Pending (background runs on jg2, started 2026-11-04):** all sites, one row per variant, both together, and sampling by context are being rerun properly through the pipeline.
 
-## What a good outcome looks like
+### What a good outcome looks like
 
 Nobody has written these down as a formal bar; they are the checks Ruchit's reports and the Slack threads have used ([initial report](https://atgu.slack.com/archives/C07NGV3UQKA/p1792179470507199), [first follow-up](https://atgu.slack.com/archives/C07NGV3UQKA/p1792615503898679), [second follow-up](https://atgu.slack.com/archives/C07NGV3UQKA/p1793130471776509?thread_ts=1793122617.080069&cid=C07NGV3UQKA)). All three options use the Satterstrom DNMs.
 
@@ -100,7 +105,7 @@ Sources:
 - the 10/1 investigation report, `investigation/adj_r_investigation_report.md` on `jg/adj_r_syn_oe_analysis`
 - [`rp/add_mu_adjustment`](https://github.com/broadinstitute/gnomad-constraint/tree/rp/add_mu_adjustment) at [`53a8f1d`](https://github.com/broadinstitute/gnomad-constraint/commit/53a8f1d)
 
-## Next steps for the team
+### Next steps for the team
 
 1. **Normalize rr per context** (Ruchit's open question).
    - Normalization changes only the overall level, not the noise: level-free dispersion for legacy is 4.378 raw and 4.373 normalized.
@@ -138,7 +143,7 @@ Sources:
 
 **Also in progress:** Ruchit's list of why each X/Y feature is missing.
 
-## Remaining decisions
+### Remaining decisions
 
 - **Model fit:** this report recommends the ridge fit; Ruchit's latest pick is a 1e-2 cutoff with α 0.625. Ridge scored better on his data (see [Ridge against the cutoff-and-α options](#strength-details)).
 - **Normalize rr per context?** Recommend yes.
@@ -284,7 +289,9 @@ The new DNMs aren't worse. Choosing features by p-value and then fitting them wi
   - **Ruchit:** the new files replaced the old one rather than adding to it. Most of the 282 are DD variants, which the providers re-annotated.
   - **Resolved:** the ~300 DNMs that differ are consequence-annotation changes from the providers' updated pipeline, so no union is needed.
 
-## Pipelines at a glance
+## How rr works
+
+### Pipelines at a glance
 
 ![Shared constraint pipeline and the three ways the rr table is built](followup/rr_pipelines_diagram.png)
 
@@ -298,7 +305,7 @@ The new DNMs aren't worse. Choosing features by p-value and then fitting them wi
   - rr applied by default
 - **Ridge fit (fourth lane; the recommended option):** Ruchit's pipeline with a ridge-penalized fit in place of the Bonferroni screen, normalized, and with no rr on chrX/Y.
 
-## How the rr model works
+### How the rr model works
 
 rr comes from one logistic regression per trinucleotide context: the site's base and its two neighbours, strand-collapsed into 32 contexts. Each model asks whether the features of a site's 1-kb window predict whether a de novo mutation happened at that site.
 
@@ -311,28 +318,28 @@ rr comes from one logistic regression per trinucleotide context: the site's base
 - **Applying it:** rr is normalized so that its expected-weighted mean over exome synonymous sites is 1 in each context, then multiplied onto each variant's expected count after the plateau and coverage models.
 - **Why the 1:0 ratio doesn't matter:** how many background sites are sampled only moves the intercept β₀, which cancels in rr. What matters is which sites the background includes.
 
-![One logistic regression per context: three contexts drawn in full, and the range of rr for all 32](followup/rr_logistic_fits.png)
+![One logistic regression per context: three contexts drawn in full, and the range of rr for all 32](followup/rr_logistic_fits.pipeline.png)
 
-What the fitted models look like:
+What the fitted models look like, in the full pipeline run:
 - **a–c: the logistic picture** for the context with the most DNMs in each class.
   - Each dot is a site at y = 1 (DNM) or y = 0 (background), placed by its regional score s = β·z from the model fit on the other half of the chromosomes.
   - The curve is drawn as if DNMs and background were sampled in equal numbers. That only moves the intercept (see the bullet above), and it puts the curve in the middle of the panel.
 - **The models work in the nearly straight middle of the S** (the insets show the whole curve).
-  - The middle 90% of sites have scores within about ±0.1–0.2, so their rr runs from about 0.93 to 1.10–1.15 (0.95–1.06 at CpG).
+  - The middle 90% of background sites have scores within about ±0.05–0.25. Their rr runs from about 0.9 to 1.1 in a typical A/T context, and from about 0.85 to 1.2–1.25 in C and CpG contexts.
   - DNM and background sites overlap almost completely. One site's window says little; rr matters because a gene sums hundreds of sites.
-  - The open circles, the share of DNMs in each score decile on held-out chromosomes, rise with the curve.
-- **d: every context's range of rr.** A/T and other C contexts span similar ranges, and CpG contexts the narrowest. GAA, with only 143 DNMs, is the widest.
+  - **Open circles:** the share of DNMs in each score decile, on held-out chromosomes. They rise with the curve in CCT and CCG, and are roughly flat in CAG, as for A/T contexts in general (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
+- **d: every context's range of rr.** A/T contexts span the narrowest ranges (median 0.89–1.12), and CpG contexts the widest (0.84–1.25). ACC, ACG and TAC reach the furthest (about 1.3).
 
-These are local fits: the Satterstrom DNMs, ridge with a penalty of 10 per DNM, and the background built from the exported MANE Select cells, the same approximation as in [The training background](#the-training-background-what-the-dnms-are-compared-with). Code: [rr_logistic_fits.py](followup/rr_logistic_fits.py). Results: [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv), [rr_logistic_fits.contexts.tsv](followup/rr_logistic_fits.contexts.tsv), [rr_logistic_fits.points.tsv](followup/rr_logistic_fits.points.tsv).
+These come from the full run on jg1 (`gs://gnomad-tmp/jg/rr_full`): the pipeline's training set (synonymous DNMs from every cohort, 22,881 in modeled contexts, against its usual background) and its ridge models with the default per-site penalty. Code: [export_logistic_fits.py](followup/cluster/export_logistic_fits.py). Results: [rr_logistic_fits.pipeline.bins.tsv](followup/rr_logistic_fits.pipeline.bins.tsv), [rr_logistic_fits.pipeline.contexts.tsv](followup/rr_logistic_fits.pipeline.contexts.tsv), [rr_logistic_fits.pipeline.points.tsv](followup/rr_logistic_fits.pipeline.points.tsv).
 
 <details>
 <summary><b>Click to expand: all 32 contexts' logistic regressions</b></summary>
 
-![Every context's logistic regression](followup/rr_logistic_fits.all_contexts.png)
+![Every context's logistic regression](followup/rr_logistic_fits.pipeline.all_contexts.png)
 
 </details>
 
-## The regional features rr uses
+### The regional features rr uses
 
 rr for each 1-kb window comes from 13 features. Each is measured in the window itself and in 10 kb, 100 kb and 1 Mb around it, which gives 52 columns. They are the [Gnocchi](https://doi.org/10.1038/s41586-023-06045-0) features; how each track was built is in [`generate_genomic_features.sh`](https://github.com/atgu/gnomad_nc_constraint/blob/a9c3c0eab432a67ee06ae63171a307fb3ddf4438/generate_genomic_features.sh#L21-L139).
 
@@ -368,7 +375,9 @@ rr for each 1-kb window comes from 13 features. Each is measured in the window i
 
 These are fit on the Satterstrom DNMs against the current background, built from the exported MANE Select cells ([rr_background_experiments.py](followup/rr_background_experiments.py), [rr_background.coefficients.tsv](followup/rr_background.coefficients.tsv)).
 
-## How each version performs
+## Results
+
+### How each version performs
 
 Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotted lines show what theory or chance predicts.
 
@@ -421,7 +430,7 @@ Panels g–j are remapped from Ruchit's evaluation export (`gs://gnomad-tmp/rp/g
 - **Checks:** the export reproduces his no-correction noise exactly (2.908, and 5.081 over all transcripts), and his normalized tables average exactly 1.
 - **Code:** [remap_rr_to_shet.py](followup/remap_rr_to_shet.py), run locally.
 
-## The training background: what the DNMs are compared with
+### The training background: what the DNMs are compared with
 
 The rr model contrasts DNM sites with background sites. The pipeline's background is possible synonymous sites with no variant in gnomAD v4 exomes. [Ruchit's 10/27 report](ruchit_reports/rr_followup_tests_report.html) and this one both flagged that this rule depends on gnomAD. The question was whether a different background would do better.
 
@@ -472,6 +481,9 @@ How this was run:
 ![The same logistic regressions under each training background](followup/rr_logistic_fits.backgrounds.png)
 
 The same logistic regressions as in [How the rr model works](#how-the-rr-model-works), fit under each background ([rr_logistic_fits.py](followup/rr_logistic_fits.py), [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv)):
+
+⏳ **Pending (background runs on jg2, started 2026-11-04):** these curves are from the local approximation. They will be redrawn from each background's pipeline run, as the figure in [How the rr model works](#how-the-rr-model-works) was from the full run.
+
 - **a–c. The background moves each curve up or down; it barely changes the slope.**
   - Sampling by context changes how many background rows a context has. Its curve sits higher or lower but rises at the same rate.
   - All sites adds the sites gnomAD has seen. That lowers the curve and, in C contexts, flattens it a little.
@@ -516,7 +528,7 @@ The same logistic regressions as in [How the rr model works](#how-the-rr-model-w
 
 Code: [rr_background_experiments.py](followup/rr_background_experiments.py). Results: [rr_background.class_slopes.tsv](followup/rr_background.class_slopes.tsv), [rr_background.coefficients.tsv](followup/rr_background.coefficients.tsv), [rr_background.frac_seen_by_rr.tsv](followup/rr_background.frac_seen_by_rr.tsv), [rr_background.metrics.tsv](followup/rr_background.metrics.tsv), [rr_background.penalty_tuning.tsv](followup/rr_background.penalty_tuning.tsv), [rr_background.rr_absent_vs_all.tsv](followup/rr_background.rr_absent_vs_all.tsv), [rr_background.strength.tsv](followup/rr_background.strength.tsv).
 
-### Removing poorly covered or mapped genes from training
+#### Removing poorly covered or mapped genes from training
 
 Both datasets lose calls in genes with a QC flag: DNMs there are well below expected (DNM obs/exp 0.44), and so are gnomAD's counts. That can teach the model that features of those regions mean a low mutation rate. This test drops those genes' DNMs and background sites before fitting, and scores as before. rr is still applied to every gene.
 
@@ -532,7 +544,7 @@ Both datasets lose calls in genes with a QC flag: DNMs there are well below expe
 
 Code: [rr_training_exclusion.py](followup/rr_training_exclusion.py). Results: [rr_training_exclusion.class_slopes.tsv](followup/rr_training_exclusion.class_slopes.tsv), [rr_training_exclusion.metrics.tsv](followup/rr_training_exclusion.metrics.tsv).
 
-## What the leftover noise is
+### What the leftover noise is
 
 ![Leftover noise by gene size, and what gene-level covariates remove](followup/rr_leftover_noise.png)
 
@@ -559,7 +571,7 @@ What this suggests:
 
 Code: [residual_noise.py](followup/residual_noise.py). Results: [residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv), [residual_noise.covariates.tsv](followup/residual_noise.covariates.tsv), [residual_noise.top_genes.tsv](followup/residual_noise.top_genes.tsv).
 
-## The synonymous outliers
+### The synonymous outliers
 
 ![Synonymous outliers by release gene flag, and histone gene z-scores](followup/rr_outliers.png)
 
@@ -583,7 +595,7 @@ Code: [residual_noise.py](followup/residual_noise.py). Results: [residual_noise.
 
 **The 47 non-histone outliers left with the ridge rr** (46 with too many variants, plus MUC4 with too few). These genes carry no QC gene flag, but 45 carry a release outlier flag (41 `outlier_syn`, 37 `outlier_mis`), and 37 are outliers under all four synonymous rr versions.
 
-### What explains them besides size
+#### What explains them besides size
 
 Size decides which genes cross |z| > 8, not why they have extra variants: gnomAD obs/exp doesn't change with gene size (1.01 to 1.00 across size fifths). For most of the 46, the mutation rate is genuinely higher than the model predicts.
 
@@ -683,14 +695,14 @@ Histone genes are assigned by gene symbol (H1-, H2AC, H2BC, H3C, H4C, H2AW, H2BW
 
 The counts are recomputed from Ruchit's evaluation export: all 18,406 Ensembl MANE Select transcripts including X/Y, raw |z| > 8, and his calibrated tables. Flags come from the v4.1.2 release. The totals reproduce his reported counts (270, 447, 217, 219 and 224). Code: [remap_rr_to_shet.py](followup/remap_rr_to_shet.py) `--outliers` (histone pattern in `GENE_FAMILIES`).
 
-### Why the histone genes are outliers, and whether rr can capture them
+#### Why the histone genes are outliers, and whether rr can capture them
 
 ![Histone cluster checks](followup/rr_histones.png)
 
 **What we know**
 - **The excess:** the 54 genes of the chr6p22 histone cluster carry about 1.85 times the expected synonymous variants (2.1 times at non-CpG sites, 1.3 times at CpG). 24 of them are outliers under every rr.
 - **It is the genes, not the region.** The 33 non-histone genes interleaved in the same stretch sit at 0.92.
-- **DNMs show it, more strongly.** There are 63 synonymous DNMs against 22 expected (2.8 times): 5.2 times at non-CpG sites and 1.15 times at CpG. Most of that DNM excess copies a paralog's base, though (see [Do the extra variants copy a paralog?](#do-the-extra-variants-copy-a-paralog)).
+- **DNMs show it, more strongly.** There are 63 synonymous DNMs against 22 expected (2.8 times): 5.2 times at non-CpG sites and 1.15 times at CpG. Most of that DNM excess copies a paralog's base, though (see [Do the extra variants copy a paralog?](#paralog-test)).
 - **a. It looks like a higher rate that saturates.** In gnomAD the excess is about 3 times in 1,000–5,000 exomes and falls to 1.9 times at 500,000, the same in every ancestry group. A rate about 3 times higher does this: once a site has been seen, more mutation there adds nothing. The level in small samples matches the DNM excess.
   - The 46 non-histone outliers, for comparison, stay flat at about 1.5 times, close to their own DNM excess (1.45).
   - A fixed set of artifact variants would also fall with sample size, so this alone doesn't rule artifacts out. The DNM excess is harder to explain that way, because a DNM call needs a variant absent from both parents.
@@ -705,7 +717,11 @@ The counts are recomputed from Ruchit's evaluation export: all 18,406 Ensembl MA
 3. **Mis-mapped paralog reads.** Reads from one copy placed on another would create false variants in both gnomAD and DNM calls. Mapping quality is normal for these genes, so this is less likely, but it isn't ruled out.
    - **Tested below:** there's no sign of it in gnomAD's filters. For DNMs it can't be told apart from gene conversion.
 
-#### Do the extra variants copy a paralog?
+<a id="paralog-test"></a>
+**Do the extra variants copy a paralog?** In gnomAD, mostly not: alleles that no paralog carries are nearly as elevated as the rest (1.67 against 1.80 times expected), and copying alleles aren't filtered more often. In DNMs, mostly yes: 58 of 62 copy a paralog's base (4.4 times expected), against 1.1 times for the rest.
+
+<details>
+<summary><b>Click to expand: the paralog-copying test</b></summary>
 
 ![Paralog-copying test for the histone genes](followup/rr_histone_conversion.png)
 
@@ -731,6 +747,8 @@ What it shows:
 
 Code: [histone_gene_conversion.py](followup/histone_gene_conversion.py). Results: [histone_gene_conversion.excess.tsv](followup/histone_gene_conversion.excess.tsv), [histone_gene_conversion.tests.tsv](followup/histone_gene_conversion.tests.tsv), [histone_gene_conversion.paralog_identity.tsv](followup/histone_gene_conversion.paralog_identity.tsv), [histone_gene_conversion.roulette_mu_by_context.tsv](followup/histone_gene_conversion.roulette_mu_by_context.tsv), [histone_gene_conversion.sites.tsv.gz](followup/histone_gene_conversion.sites.tsv.gz).
 
+</details>
+
 **Can rr capture it?**
 - **Not with regional features.** The interleaved non-histone genes are normal, so any regional feature that raises the histone genes would wrongly raise their neighbours too.
 - **b. A histone term learned from DNMs would overcorrect.**
@@ -745,11 +763,11 @@ Code: [histone_checks.py](followup/histone_checks.py). Results: [histone_checks.
 
 ## Scripts, figures and tables
 
-Everything here was run locally and is in [followup/](followup/). Each script lists its inputs at the top.
+The scripts are in [followup/](followup/); the ones in [followup/cluster/](followup/cluster/) run on Dataproc and the rest locally. Each script lists its inputs at the top.
 
 | Script | What it does | Tables it writes |
 |---|---|---|
-| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
+| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
 | [remap_rr_to_shet.py](followup/remap_rr_to_shet.py) | Applies each rr version to Ruchit's evaluation export: obs/exp by LOEUF and s_het decile, outliers by flag, and per-gene z. | [syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv), [syn_outliers_by_flag.rr_eval_export.tsv](followup/syn_outliers_by_flag.rr_eval_export.tsv), [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) |
 | [rr_shrinkage_experiments.py](followup/rr_shrinkage_experiments.py) | Alternatives to a strength α (ridge, sample split, background approximation, fitting on gnomAD), and the recommended ridge rr scored at each strength. | [rr_shrinkage_experiments.tsv](followup/rr_shrinkage_experiments.tsv), [rr_shrinkage_experiments.pass2.tsv](followup/rr_shrinkage_experiments.pass2.tsv), [recommended_rr_metrics.tsv](followup/recommended_rr_metrics.tsv) |
 | [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.py) | Ridge against Ruchit's cutoff-and-α options, with his model-fitting code. | [ridge_vs_cutoff_alpha.tsv](followup/ridge_vs_cutoff_alpha.tsv) |
@@ -758,6 +776,7 @@ Everything here was run locally and is in [followup/](followup/). Each script li
 | [decile_explained_removed.py](followup/decile_explained_removed.py) | The LOEUF and s_het decile summary with the explained outliers removed. | [syn_oe_by_decile.explained_removed.tsv](followup/syn_oe_by_decile.explained_removed.tsv), [explained_outliers_removed.tsv](followup/explained_outliers_removed.tsv) |
 | [rr_background_experiments.py](followup/rr_background_experiments.py) | Training backgrounds, strength sweeps, one strength per context class, and the ridge coefficients. | [rr_background.class_slopes.tsv](followup/rr_background.class_slopes.tsv), [rr_background.coefficients.tsv](followup/rr_background.coefficients.tsv), [rr_background.frac_seen_by_rr.tsv](followup/rr_background.frac_seen_by_rr.tsv), [rr_background.metrics.tsv](followup/rr_background.metrics.tsv), [rr_background.penalty_tuning.tsv](followup/rr_background.penalty_tuning.tsv), [rr_background.rr_absent_vs_all.tsv](followup/rr_background.rr_absent_vs_all.tsv), [rr_background.strength.tsv](followup/rr_background.strength.tsv) |
 | [rr_logistic_fits.py](followup/rr_logistic_fits.py) | What each context's logistic regression looks like under each training background, scored on held-out chromosomes. | [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv), [rr_logistic_fits.contexts.tsv](followup/rr_logistic_fits.contexts.tsv), [rr_logistic_fits.points.tsv](followup/rr_logistic_fits.points.tsv) |
+| [cluster/export_logistic_fits.py](followup/cluster/export_logistic_fits.py) | The same logistic-fit tables from a pipeline run's training set and models (run on the cluster). | [rr_logistic_fits.pipeline.bins.tsv](followup/rr_logistic_fits.pipeline.bins.tsv), [rr_logistic_fits.pipeline.contexts.tsv](followup/rr_logistic_fits.pipeline.contexts.tsv), [rr_logistic_fits.pipeline.points.tsv](followup/rr_logistic_fits.pipeline.points.tsv) |
 | [roulette_combo.py](followup/roulette_combo.py) | Roulette's rates alone, split into sequence and regional parts, and combined with the ridge rr; scored on gnomAD and on held-out DNMs. | [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv), [roulette_combo.v2.feature_coef.tsv](followup/roulette_combo.v2.feature_coef.tsv) |
 | [rr_training_exclusion.py](followup/rr_training_exclusion.py) | Leaving poorly covered or mapped genes out of training. | [rr_training_exclusion.class_slopes.tsv](followup/rr_training_exclusion.class_slopes.tsv), [rr_training_exclusion.metrics.tsv](followup/rr_training_exclusion.metrics.tsv) |
 | [histone_checks.py](followup/histone_checks.py) | The histone cluster's excess by sample size and ancestry, and what a DNM-learned histone factor would do. | [histone_checks.dnm_factor.tsv](followup/histone_checks.dnm_factor.tsv), [histone_checks.downsampling.tsv](followup/histone_checks.downsampling.tsv) |
@@ -775,7 +794,7 @@ Everything here was run locally and is in [followup/](followup/). Each script li
 - **A broad maternal-hotspot feature.** The rr leaves about a third of the excess in the published maternal C>G hotspot regions (8p: 1.31 → 1.20; DNMs 1.32). Try a smoothed, Mb-scale maternal DNM density, or a regional term learned from gnomAD rare variants.
 - **A gene-level adjustment.** DNMs confirm about two-thirds of the gene-to-gene spread the rr leaves. A gene's own synonymous obs/exp, shrunk toward 1, could adjust its missense and LoF expected counts.
   - **For:**
-    - One mechanism handles every gene-level excess the DNMs confirm (the histone genes, the maternal hotspot regions, the unexplained "other" outliers) without needing its cause. For the histone genes, the gnomAD excess applies to alleles of every kind (see [Do the extra variants copy a paralog?](#do-the-extra-variants-copy-a-paralog)), which is what one factor per gene assumes.
+    - One mechanism handles every gene-level excess the DNMs confirm (the histone genes, the maternal hotspot regions, the unexplained "other" outliers) without needing its cause. For the histone genes, the gnomAD excess applies to alleles of every kind (see [Do the extra variants copy a paralog?](#paralog-test)), which is what one factor per gene assumes.
     - Shrinkage keeps the added noise small. From the leftover noise by gene size ([residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv)), genes vary by roughly 6–12% in rate beyond chance. A typical gene (about 150 expected synonymous variants) would keep about half of its own deviation; small genes would move much less.
     - It wouldn't pull down constrained genes. Synonymous obs/exp is about 1.01 in LOEUF deciles 0–6 and 1.01–1.04 in every s_het decile ([syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv)).
   - **Against, and what it could break:**
@@ -797,15 +816,16 @@ Everything here was run locally and is in [followup/](followup/). Each script li
   - **Caveats:**
     - Roulette's regional rate is estimated from gnomAD rare variants, so part of its gnomAD gain is gnomAD fitting gnomAD. The DNM test is the independent check.
     - It is a cell-level approximation (Roulette's average per window and context), on the autosomes only, and Roulette has no rates at its low-quality sites.
-  - **What a pipeline version needs:**
-    - Roulette's per-variant rates (its per-chromosome VCFs) joined to the context Table.
-    - Normalized within each trinucleotide change and applied outside CpG after the plateau and coverage models.
-    - The ridge rr refit with log Roulette as an offset.
+  - **Pipeline version (added on this branch):**
+    - [`regional_rate_pipeline.py`](../../pipeline/regional_rate_pipeline.py) `--import-variant-rates` imports Roulette's per-chromosome VCFs over GENCODE coding exons. Each variant's multiplier is its rate over the average of its mutation-rate group (context, ref, alt, methylation level); CpG contexts get 1 unless `--variant-rate-include-cpg` is set.
+    - `--use-variant-rates` adds the log multiplier to the rr training set as a fixed offset, so the ridge only learns what Roulette misses, and normalizes rr on expected counts that include the multipliers.
+    - [`constraint_pipeline.py`](../../pipeline/constraint_pipeline.py) `--variant-rate-ht-path` multiplies expected counts by the multiplier along with rr.
+  - ⏳ **Pending (Roulette run on jg2, started 2026-11-04):** importing Roulette's rates, refitting the ridge rr on top of them, and running the constraint pipeline with both, under `gs://gnomad-tmp/jg/rr_roulette` and `gs://gnomad-tmp/jg/rr_downstream/roulette_ridge`.
 - **Recover the missing X/Y features**, or confirm they can't be recovered. Only this could make an X/Y correction worth more than about 1%.
 - **Split the leftover noise into its two parts** (see [What the leftover noise is](#what-the-leftover-noise-is)). The site-level part belongs to the mutation model. The gene-level part could be reached by a nonlinear model trained on gnomAD rare variants, which removed 13% more locally.
 - **Open threads on the synonymous outliers** (see [The synonymous outliers](#the-synonymous-outliers)):
   - **The 11 "other" outliers** (HSP90AA1, EP300, MECP2, WFS1, MED16 and others): DNMs confirm the excess (1.73), but nothing measured explains it.
-  - **Histone genes:** the paralog test found the gnomAD excess at alleles of every kind, and the DNM excess mostly at alleles that copy a paralog (see [Do the extra variants copy a paralog?](#do-the-extra-variants-copy-a-paralog)). Flag them, or adjust them gene by gene.
+  - **Histone genes:** the paralog test found the gnomAD excess at alleles of every kind, and the DNM excess mostly at alleles that copy a paralog (see [Do the extra variants copy a paralog?](#paralog-test)). Flag them, or adjust them gene by gene.
   - **Repeat and segdup genes the QC flags miss** (FLG, MUC genes, olfactory receptors, PSG2, CT47B1, ACTG1, HSPA8): DNMs don't confirm their excess. Consider a flag.
   - **`low_exome_coverage` genes:** they all have too many variants, which suggests the coverage correction pulls expected counts too low. DNMs can't test this, because the DNM cohorts lose calls there too (DNM obs/exp 0.29).
   - **The outlier cutoff:** a size-aware rule, since a fixed |z| > 8 favours long genes.

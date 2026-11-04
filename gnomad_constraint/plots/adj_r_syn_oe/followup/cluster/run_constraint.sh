@@ -9,8 +9,8 @@ export CLOUDSDK_PYTHON=/Users/jgoodric/miniconda3/bin/python CLOUDSDK_CORE_PROJE
 HAILCTL=/Users/jgoodric/miniconda3/envs/hail-134/bin/hailctl
 F=/Users/jgoodric/PycharmProjects/gnomad-constraint/gnomad_constraint/plots/adj_r_syn_oe/followup
 D=$F/data/cluster
-ZIP=$D/pyfiles.zip
-P=/Users/jgoodric/PycharmProjects/gnomad-constraint/gnomad_constraint/pipeline
+ZIP=$D/pyfiles_constraint.zip
+source "$F/cluster/snapshot_code.sh"
 A=gs://gnomad-tmp/jg/rr_full
 B=gs://gnomad-tmp/jg/rr_full_qcexcl
 OUT=gs://gnomad-tmp/jg/rr_downstream
@@ -40,7 +40,7 @@ for run in full qcexcl; do
   done
 done
 printf '%s\n' "${TABLES[@]}" | paste - - - | sed 's/^/    /'
-submit annotate_cells $F/cluster/annotate_cells_rr.py --cells "$CELLS" "${TABLES[@]}" --out "$OUT/syn_cells_rr_full_run.tsv.bgz" || exit 1
+submit annotate_cells $S/annotate_cells_rr.py --cells "$CELLS" "${TABLES[@]}" --out "$OUT/syn_cells_rr_full_run.tsv.bgz" || exit 1
 
 for v in ridge_qcexcl bonferroni_full ridge_full bonferroni_qcexcl; do
   cut=${v%_*}; run=${v##*_}; root=$A; [ $run = qcexcl ] && root=$B

@@ -3005,10 +3005,15 @@ LOGIT_BACKGROUNDS = [
 ]
 
 
-def read_logistic_fits():
-    """Read the per-context logistic fit tables from rr_logistic_fits.py."""
+def read_logistic_fits(prefix="rr_logistic_fits"):
+    """
+    Read the per-context logistic fit tables.
+
+    "rr_logistic_fits" is the local version (rr_logistic_fits.py) and
+    "rr_logistic_fits.pipeline" the full pipeline run (cluster/export_logistic_fits.py).
+    """
     return [
-        pd.read_csv(os.path.join(OUT_DIR, f"rr_logistic_fits.{t}.tsv"), sep="\t")
+        pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.{t}.tsv"), sep="\t")
         for t in ("bins", "points", "contexts")
     ]
 
@@ -3099,7 +3104,7 @@ def logistic_panel(ax, context, bins, points, ctx, rng, small=False):
         va="top",
     )
     ax.text(
-        hi + 0.04,
+        min(hi + 0.04, xmax - 0.27),
         0.2,
         f"shaded: middle 90%\nof sites, rr {np.exp(lo):.2f}–{np.exp(hi):.2f}",
         fontsize=8.8,
@@ -3107,9 +3112,14 @@ def logistic_panel(ax, context, bins, points, ctx, rng, small=False):
     )
 
 
-def draw_logistic_fits():
-    """Draw the per-context logistic regressions, from rr_logistic_fits.py."""
-    bins, points, ctx = read_logistic_fits()
+def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sites"):
+    """
+    Draw the per-context logistic regressions.
+
+    :param prefix: Table prefix (see ``read_logistic_fits``), also the figure names.
+    :param sites: Which sites the shaded middle 90% and panel d are over.
+    """
+    bins, points, ctx = read_logistic_fits(prefix)
     rng = np.random.default_rng(0)
     fig = plt.figure(figsize=(15, 9.6))
     gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.9], hspace=0.62, wspace=0.16)
@@ -3168,13 +3178,13 @@ def draw_logistic_fits():
     ax.tick_params(axis="x", labelsize=8.8, labelcolor=INK2)
     ax.set_ylim(0.75, 1.55)
     ax.set_xlim(x.min() - 0.8, x.max() + 0.8)
-    ax.set_ylabel("rr of the middle 90%\nof possible sites")
+    ax.set_ylabel(f"rr of the middle 90%\nof {sites.split()[0]} sites")
     ax.set_title(
-        "d  Every context's model: the range of rr it gives the middle 90% of possible"
-        " synonymous sites (DNMs per context in brackets)"
+        f"d  Every context's model: the range of rr it gives the middle 90% of {sites}"
+        " (DNMs per context in brackets)"
     )
     style_axis(ax, grid_axis="y")
-    fig.savefig(os.path.join(OUT_DIR, "rr_logistic_fits.png"), dpi=170)
+    fig.savefig(os.path.join(OUT_DIR, f"{prefix}.png"), dpi=170)
     plt.close(fig)
 
     fig, axes = plt.subplots(4, 8, figsize=(17, 9.5), sharex=True, sharey=True)
@@ -3193,7 +3203,7 @@ def draw_logistic_fits():
         logistic_panel(ax, r.context, bins, points, ctx, rng, small=True)
     fig.supxlabel("regional score s = β·z (log-odds; rr ≈ eˢ)", fontsize=10.5)
     fig.supylabel("chance a site is a DNM", fontsize=10.5)
-    fig.savefig(os.path.join(OUT_DIR, "rr_logistic_fits.all_contexts.png"), dpi=150)
+    fig.savefig(os.path.join(OUT_DIR, f"{prefix}.all_contexts.png"), dpi=150)
     plt.close(fig)
 
 
@@ -3439,5 +3449,6 @@ if __name__ == "__main__":
     draw_problem_summary()
     draw_features()
     draw_logistic_fits()
+    draw_logistic_fits("rr_logistic_fits.pipeline", "background sites")
     draw_logistic_backgrounds()
     draw_histone_conversion()

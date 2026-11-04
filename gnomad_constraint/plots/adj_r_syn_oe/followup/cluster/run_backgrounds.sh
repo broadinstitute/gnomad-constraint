@@ -10,7 +10,7 @@ CLUSTER=jg2
 F=/Users/jgoodric/PycharmProjects/gnomad-constraint/gnomad_constraint/plots/adj_r_syn_oe/followup
 D=$F/data/cluster
 ZIP=$D/pyfiles_bg.zip
-P=/Users/jgoodric/PycharmProjects/gnomad-constraint/gnomad_constraint/pipeline
+source "$F/cluster/snapshot_code.sh"
 A=gs://gnomad-tmp/jg/rr_full
 OUT=gs://gnomad-tmp/jg/rr_bg
 CUT="bonferroni ridge ridge_dnm_3 ridge_dnm_10 ridge_dnm_30"
@@ -38,22 +38,22 @@ train_and_rr() {  # train_and_rr NAME ROOT
   submit "$1_train" "$P/regional_rate_pipeline.py" --train-rr-models --feature-pval-cutoffs $CUT --cv-chrom-split --output-root "$2" &&
   submit "$1_rr" "$P/regional_rate_pipeline.py" --compute-rr --apply-rr-safeguards --out-of-fold --feature-pval-cutoffs $CUT --output-root "$2"
 }
+arm_done() {  # arm_done ROOT: the last rr Table of the arm is written
+  gsutil -q stat "$1/gnomad_v4.1.1/constraint/regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.fs_ridge_dnm_30.calibrated.out_of_fold.ht/_SUCCESS"
+}
 arm() {  # arm NAME OPTIONS...
   local name=$1; shift; local root=$OUT/$name
+  if arm_done "$root"; then echo "=== $name already done"; return 0; fi
   copy_inputs "$root" "$DNM" "$FEAT" || return 1
   submit "${name}_training" "$P/regional_rate_pipeline.py" --create-rr-training-set --output-root "$root" "$@" && train_and_rr "$name" "$root"
 }
 
-# SKIP_SETUP=1 resumes after the zip, package install and synthetic test already ran.
+# SKIP_SETUP=1 resumes after the package install and synthetic test already ran.
 if [ -z "${SKIP_SETUP:-}" ]; then
 while [ "$(gcloud dataproc clusters describe $CLUSTER --format='value(status.state)' 2>/dev/null)" != RUNNING ]; do sleep 30; done
 echo "=== $CLUSTER is running"
-rm -f "$ZIP"
-(cd /Users/jgoodric/PycharmProjects/gnomad-constraint && zip -rq "$ZIP" gnomad_constraint/ -x 'gnomad_constraint/experimental/*' 'gnomad_constraint/plots/*' 'gnomad_constraint/flowchart/*' 'gnomad_constraint/renv/*' '*.pyc' '*__pycache__*' '*.RData' '*.DS_Store' '*.png' '*.pdf' '*.ipynb' '*.Rproj.user*')
-(cd /Users/jgoodric/PycharmProjects/gnomad_qc && zip -rq "$ZIP" gnomad_qc/ -x '*.pyc' '*__pycache__*' '*.DS_Store' '*.ipynb')
-(cd /Users/jgoodric/PycharmProjects/gnomad_methods && zip -rq "$ZIP" gnomad/ -x '*.pyc' '*__pycache__*' '*.DS_Store')
-submit bg_install "$F/cluster/install_driver_packages.py" || exit 1
-submit bg_test "$F/cluster/test_background_options.py" || exit 1
+submit bg_install "$S/install_driver_packages.py" || exit 1
+submit bg_test "$S/test_background_options.py" || exit 1
 tr '\r' '\n' < "$D/logs/bg_test.log" | grep -E "^variants|background rows"
 fi
 
