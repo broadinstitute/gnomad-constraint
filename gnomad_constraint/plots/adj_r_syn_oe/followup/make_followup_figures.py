@@ -2804,10 +2804,6 @@ def draw_background():
             "Absent, reweighted by the model's\nexpected chance of being seen",
         ),
         ("all_sites", "All possible synonymous variants"),
-        (
-            "polymorphisms",
-            "Variants seen in gnomAD\n(stand-in for untransmitted variants)",
-        ),
     ]
 
     def get(bg, app="multiplicative"):
@@ -2966,7 +2962,7 @@ def draw_background():
         1.03, len(backgrounds) - 0.45, "1 = right strength", fontsize=8.8, color=INK2
     )
     ax.set_yticks(ypos, [])
-    ax.set_xlim(-0.5, 3.4)
+    ax.set_xlim(0, 1.8)
     ax.set_ylim(-0.6, len(backgrounds) - 0.2)
     ax.set_title(
         "d  Calibration slope by context class\n    (below 1 = too strong, above 1 = too weak)"

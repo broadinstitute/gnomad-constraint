@@ -33,6 +33,7 @@ Use a ridge-penalized rr trained on the Satterstrom DNMs, normalized per context
 4. **No rr on chrX/Y.** The best option there lowers noise by under 1%, and correcting only some contexts is hard to explain. Revisit this if the missing features can be recovered.
 5. **Keep the training background, but leave genes with a QC flag out of training.** Switching the background to all sites made noise slightly worse. Dropping the flagged genes' DNMs and background sites gave a small, consistent gain (held-out noise 2.524 → 2.513 locally).
    - ⏳ **Pending (full run on jg1, started 2026-11-04):** the QC-flagged-gene exclusion is being rerun through the pipeline with the real training set, for both ridge and the current method.
+   - ⏳ **Pending (background runs on jg2, started 2026-11-04):** proper pipeline runs of the background designs (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
 6. **Confirm it in the pipeline, then do one full run.** These results come from a local re-implementation on Ruchit's exports, which reproduces his numbers exactly.
    - ⏳ **Pending (full run on jg1, started 2026-11-04):** the rr pipeline (Bonferroni, 1e-2 and ridge; with and without the QC-flagged genes) and four constraint pipeline runs (ridge and the current method, each with and without the exclusion).
 
@@ -40,6 +41,7 @@ Use a ridge-penalized rr trained on the Satterstrom DNMs, normalized per context
 - **The top-LOEUF-decile rise:** it mostly comes from how LOEUF sorts genes. Binned by s_het, the top decile reaches only 1.04.
 - **The ~130 deficit outliers:** they are flagged mapping artifacts.
 - **Other training backgrounds:** all sites, sampling by context, reweighting, and applying rr before saturation all did the same or slightly worse (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
+  - ⏳ **Pending (background runs on jg2, started 2026-11-04):** all sites, one row per variant, both together, and sampling by context are being rerun properly through the pipeline.
 
 ## What a good outcome looks like
 
@@ -373,10 +375,19 @@ The rr model contrasts DNM sites with background sites. The pipeline's backgroun
 
 ![Training backgrounds compared](followup/rr_background.png)
 
+⏳ **Pending (background runs on jg2, started 2026-11-04):** the comparison below is a local approximation. The pipeline is rerunning the main designs properly, each in its own output folder under `gs://gnomad-tmp/jg/rr_bg/`, with the full DNM set and the pipeline's background:
+- the current background (absent from gnomAD, one row per locus), as the baseline;
+- all possible synonymous sites, one row per locus;
+- absent from gnomAD, one row per variant;
+- all possible synonymous sites, one row per variant;
+- absent from gnomAD, sampled by context in proportion to all sites, and sampled evenly by context.
+
+Each is fit with the Bonferroni screen, ridge with the default per-site penalty, and ridge with a penalty per DNM (3, 10 or 30), so backgrounds of different sizes get the same shrinkage.
+
 How this was run:
 - **DNMs:** the Satterstrom 2026 synonymous SNVs (`isSyn`), 20,636 of them in the exported windows.
 - **Backgrounds:** built from Ruchit's exported MANE Select cells, one row per possible variant (the pipeline keeps one row per locus).
-- **Fit:** the ridge fit on all features, with the penalty scaled by the number of DNMs so that backgrounds of different sizes get the same shrinkage. The penalty was chosen on held-out DNMs and came out the same (10 per DNM) for every background except gnomAD variants.
+- **Fit:** the ridge fit on all features, with the penalty scaled by the number of DNMs so that backgrounds of different sizes get the same shrinkage. The penalty was chosen on held-out DNMs and came out the same (10 per DNM) for every background.
 - **Comparing:** this is an approximation of the pipeline, so compare the rows with each other rather than with the 2.46 elsewhere in this report.
 
 | Background or option | Noise | Held-out noise | Slope | Slope by class (A/T / other C / CpG) |
@@ -387,7 +398,6 @@ How this was run:
 | Absent, sampled evenly by context | 2.507 | 2.526 | 1.07 | 0.62 / 1.24 / 0.26 |
 | Absent, reweighted by the model's expected chance of being seen | 2.497 | 2.518 | 1.08 | 0.63 / 1.18 / 0.31 |
 | All possible synonymous variants | 2.549 | 2.564 | 1.37 | 0.54 / 1.57 / 0.31 |
-| Variants seen in gnomAD (stand-in for untransmitted variants) | 2.887 | 2.887 | 12.8 | — |
 | Current rule, one strength per context class | 2.464 | 2.500 | — | set to 1 / 1 / 1 |
 | All sites, one strength per context class | 2.474 | 2.522 | — | set to 1 / 1 / 1 |
 | Current rule, rr applied before saturation | 2.525 | 2.538 | 1.37 | 0.69 / 1.47 / 0.51 |
@@ -397,8 +407,9 @@ How this was run:
   - The current rule drops a share of the background that changes with the regional rate. At CpG the share rises steadily with rr (47% to 52%). In other C contexts it is U-shaped (28% at the lowest rr, 24% in the middle, 31% at the top). In A/T contexts it is nearly flat.
   - So the rr learned against it is steeper than against all sites: 1.16 times as steep for C contexts, and the same for A/T. That is less than a simple calculation predicts (1.2–1.7 times), because whether gnomAD has seen a site depends on more than its regional rate.
 - **c. Switching to all sites doesn't help.** Against all sites the rr comes out too weak (slope 1.37), and noise is worse (2.56 against 2.52 on held-out chromosomes). gnomAD's synonymous counts vary more between regions than the DNM rate differences alone predict. The current rule's slight steepening happens to move rr toward that. In effect it trains partly on gnomAD, by using which sites gnomAD has not seen.
+  - ⏳ **Pending (background runs on jg2, started 2026-11-04):** rerunning through the pipeline, one row per locus and per variant.
 - **Sampling by context changes nothing**, whether in proportion to all sites or evenly (2.53 for both, against 2.52). Each context has its own model, so a context's total background only moves that model's intercept, which cancels out of rr. Reweighting the absent sites by the model's expected chance of being seen is also the same (2.52).
-- **Untransmitted variants don't work as controls.** Contrasting DNMs with polymorphisms cancels the mutation-rate signal, because both are more common where mutation is more frequent. With gnomAD variants as the stand-in, rr goes almost flat and noise stays at the no-correction level (2.89). Untransmitted variants in trios are mostly common rather than rare, but they scale with mutation rate the same way. They would be more useful for measuring where the DNM cohorts miss calls (same samples, same pipeline) than as controls.
+  - ⏳ **Pending (background runs on jg2, started 2026-11-04):** rerunning through the pipeline to show the same thing with the real training set.
 - **d. The bigger effect is strength by context class, under every background.** A/T contexts are too strong (slope 0.54–0.64), other C contexts are too weak (1.2–1.6), and CpG contexts are far too strong (about 0.3).
   - Giving each class its own strength, measured on one chromosome half and scored on the other, lowers held-out noise more than any background change (2.52 → 2.50 for the current rule). It also brings the two backgrounds close together.
   - It uses gnomAD to set three numbers, as α does.
@@ -413,6 +424,7 @@ How this was run:
 2. Look at one strength per context class (A/T, other C, CpG), and at why the classes differ.
 3. Drop genes with a QC flag (or, better, low-quality sites) from training (see [Removing poorly covered or mapped genes from training](#removing-poorly-covered-or-mapped-genes-from-training) below).
 4. One thing this can't test locally is one background row per locus (the pipeline) against one per variant. Loci with several synonymous alternatives get one background row but several chances for a DNM. That needs a cluster run.
+   - ⏳ **Pending (background runs on jg2, started 2026-11-04):** now running on jg2 (absent from gnomAD and all sites, each one row per variant).
 
 **Every background run**
 
@@ -433,8 +445,6 @@ How this was run:
 | All possible synonymous variants | rr applied before saturation | 10 | 2.580 | 2.589 | 1.5 / 1.5 | 2.542 | 237 (89) | 1.66 | 0.59 / 1.86 / 0.53 |
 | All possible synonymous variants | no rr at CpG | 10 | 2.560 | 2.572 | 1.5 / 1.5 | 2.530 | 235 (86) | 1.66 | 0.54 / 1.57 / — |
 | All possible synonymous variants | one strength per class | 10 | 2.474 | 2.522 | per class: A/T: 0.54, other C: 1.57, CpG: 0.31 | — | 230 (80) | — | 0.99 / 0.99 / 1.00 |
-| Variants seen in gnomAD | rr as fitted | 100 | 2.887 | 2.887 | 3 / 3 | 2.845 | 269 (122) | 12.84 | -0.24 / 17.55 / 2.46 |
-| Variants seen in gnomAD | rr applied before saturation | 100 | 2.887 | 2.886 | 3 / 3 | 2.851 | 270 (123) | 15.34 | -0.17 / 20.68 / 3.66 |
 
 - **Best α:** one strength for all contexts, chosen on one chromosome half from 0.25–3 and scored on the other. For most backgrounds the chosen α does no better on the other half than α = 1, so a single strength isn't the fix. "One strength per class" sets each class's strength to its calibration slope, also measured on one half and scored on the other.
 - **Penalty:** a first pass used a penalty per row of training data, as the pipeline does. That gives a bigger background more shrinkage, which made the all-sites background look worse than it is (noise 2.63, slope 1.6). The table uses a penalty per DNM instead, chosen on held-out DNMs from 3, 10, 30 and 100. With the pipeline's fixed 5% background the two are the same, but they differ once the background changes.
@@ -667,7 +677,7 @@ Everything here was run locally and is in [followup/](followup/). Each script li
 
 - **Train regional effects on gnomAD rare variants.** The local version, trained on exome synonymous counts from the other chromosome half, scored best of all (2.37, about 4% below the best DNM-based rr). The cleaner version trains on intronic rare variants from gnomAD genomes and needs the cluster.
 - **One rr strength per context class.** A/T contexts are too strong, other C contexts too weak and CpG contexts far too strong under every background. One strength per class lowered held-out noise more than any background change (see [The training background](#the-training-background-what-the-dnms-are-compared-with)). It is worth understanding why the classes differ.
-- **One background row per locus or per variant.** The pipeline keeps one row per locus, although a locus with several synonymous alternatives has several chances for a DNM. It is the one background question the exported data can't answer; it needs a cluster run.
+- **One background row per locus or per variant.** The pipeline keeps one row per locus, although a locus with several synonymous alternatives has several chances for a DNM. It is the one background question the exported data can't answer. ⏳ **Pending (background runs on jg2, started 2026-11-04):** running now.
 - **A broad maternal-hotspot feature.** The rr leaves about a third of the excess in the published maternal C>G hotspot regions (8p: 1.31 → 1.20; DNMs 1.32). Try a smoothed, Mb-scale maternal DNM density, or a regional term learned from gnomAD rare variants.
 - **A gene-level adjustment.** DNMs confirm about two-thirds of the gene-to-gene spread the rr leaves. A gene's own synonymous obs/exp, shrunk toward 1, could adjust its missense and LoF expected counts.
 - **Compare with Roulette, and consider combining them.** [Roulette](https://doi.org/10.1038/s41588-023-01562-0) (Seplyarskiy et al. 2023) is a basepair-resolution mutation rate model built from the observed mutability of each trinucleotide context in 50 kb windows; the paper reports it captures 80–90% of mutation-rate variation along the genome. The questions: what does it capture that our trinucleotide model plus rr doesn't, and can one model use both our regional features and Roulette's per-site rates (for example, Roulette's rate as an offset or a feature)?
