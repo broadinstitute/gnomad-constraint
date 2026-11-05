@@ -3308,6 +3308,232 @@ def draw_outlier_size():
     plt.close(fig)
 
 
+SUB_C = {
+    "A>C": "#1baf7a",
+    "A>G": "#2a78d6",
+    "A>T": "#8f84e0",
+    "C>A": "#eb6834",
+    "C>G": "#c4302b",
+    "C>T": "#eda100",
+    "CpG transition": "#2b2b2b",
+}
+"""Substitution types of the plateau-model groups (strand-collapsed)."""
+PLATEAU_VERSIONS = [
+    ("stored", "Current: 2 lines"),
+    ("weighted", "2 lines, weighted"),
+    ("by_class", "1 per context class"),
+    ("by_substitution", "1 per substitution"),
+    ("per_group", "each group alone"),
+]
+
+
+def draw_plateau(prefix="plateau_models"):
+    """Draw the current plateau models, the refits, and what they change."""
+    g = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.groups.tsv"), sep="\t")
+    fits = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.fits.tsv"), sep="\t")
+    ctx = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.contexts.tsv"), sep="\t")
+    noise = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.noise.tsv"), sep="\t")
+    g = g[g.possible >= 100]
+
+    def line(fit, name):
+        r = fits[(fits.fit == fit) & (fits.line == name)].iloc[0]
+        return r.intercept, r.slope
+
+    fig, axes = plt.subplots(2, 3, figsize=(19, 12))
+    fig.subplots_adjust(
+        left=0.06, right=0.98, top=0.9, bottom=0.08, hspace=0.42, wspace=0.42
+    )
+    size = lambda p: 12 + 180 * np.sqrt(p / g.possible.max())
+
+    # (a, b) The current lines on the training groups.
+    for ax, cpg, title in (
+        (axes[0, 0], False, "a  Current model: everything but CpG transitions"),
+        (axes[0, 1], True, "b  Current model: CpG transitions"),
+    ):
+        d = g[g.cpg == cpg]
+        for sub, c in SUB_C.items():
+            s = d[d["sub"] == sub]
+            if len(s):
+                ax.scatter(
+                    s.mu * 1e8,
+                    s.prop,
+                    s=size(s.possible),
+                    color=c,
+                    alpha=0.75,
+                    edgecolor=SURFACE,
+                    lw=0.6,
+                    label=sub,
+                    zorder=3,
+                )
+        name = "CpG transition" if cpg else "everything else"
+        x = np.linspace(d.mu.min(), d.mu.max(), 50)
+        for fit, ls, label in (
+            ("stored", "-", "current line (unweighted)"),
+            ("weighted", (0, (4, 2.5)), "weighted by possible variants"),
+        ):
+            b0, b1 = line(fit, name)
+            ax.plot(x * 1e8, b0 + b1 * x, color=INK, ls=ls, lw=2, label=label, zorder=4)
+        ax.set_xlabel("mutation rate per generation (× 10⁻⁸)")
+        ax.set_ylabel("share of possible variants seen")
+        ax.set_title(title)
+        style_axis(ax, grid_axis="both")
+    axes[0, 0].legend(loc="upper left", fontsize=12, frameon=False, ncol=2)
+    axes[0, 1].legend(
+        handles=axes[0, 1].get_legend_handles_labels()[0][-2:],
+        loc="lower right",
+        fontsize=12,
+        frameon=False,
+    )
+
+    # (c) One line per substitution type.
+    ax = axes[0, 2]
+    d = g[~g.cpg]
+    for sub, c in SUB_C.items():
+        s = d[d["sub"] == sub]
+        if not len(s):
+            continue
+        ax.scatter(
+            s.mu * 1e8,
+            s.prop,
+            s=size(s.possible),
+            color=c,
+            alpha=0.75,
+            edgecolor=SURFACE,
+            lw=0.6,
+            zorder=3,
+        )
+        b0, b1 = line("by_substitution", sub)
+        x = np.linspace(s.mu.min(), s.mu.max(), 20)
+        ax.plot(x * 1e8, b0 + b1 * x, color=c, lw=2.2, zorder=4, label=sub)
+    b0, b1 = line("stored", "everything else")
+    x = np.linspace(d.mu.min(), d.mu.max(), 20)
+    ax.plot(
+        x * 1e8, b0 + b1 * x, color=INK, lw=1.4, ls=(0, (1, 2)), label="current line"
+    )
+    ax.set_xlabel("mutation rate per generation (× 10⁻⁸)")
+    ax.set_ylabel("share of possible variants seen")
+    ax.set_title("c  Suggested: one line per substitution type")
+    ax.legend(loc="upper left", fontsize=12, frameon=False, ncol=2)
+    style_axis(ax, grid_axis="both")
+
+    # (d) Each group's obs/exp under the current model, by substitution type.
+    ax = axes[1, 0]
+    subs = list(SUB_C)
+    rng = np.random.default_rng(0)
+    tot = g.observed.sum() / g.exp_stored.sum()
+    for i, sub in enumerate(subs):
+        s = g[g["sub"] == sub]
+        for fit, dx, hollow in (
+            ("stored", -0.18, False),
+            ("by_substitution", 0.18, True),
+        ):
+            t = g.observed.sum() / g[f"exp_{fit}"].sum()
+            oe = s.observed / s[f"exp_{fit}"] / t
+            ax.scatter(
+                i + dx + rng.uniform(-0.08, 0.08, len(s)),
+                oe,
+                s=size(s.possible),
+                color=SURFACE if hollow else SUB_C[sub],
+                edgecolor=SUB_C[sub],
+                lw=1.3,
+                alpha=0.85,
+                zorder=3,
+            )
+    ax.axhline(1, **THEORY)
+    ax.set_xticks(
+        range(len(subs)), [s.replace("CpG transition", "CpG\ntransition") for s in subs]
+    )
+    ax.set_ylim(0.5, 1.55)
+    ax.set_ylabel("obs/exp of each group (total = 1)")
+    ax.set_title("d  The leftover is mostly by substitution type")
+    ax.text(
+        0.02,
+        0.97,
+        "filled: current model; hollow: one line per substitution type",
+        transform=ax.transAxes,
+        fontsize=12,
+        color=INK2,
+        va="top",
+    )
+    style_axis(ax, grid_axis="y")
+
+    # (e) Each context's obs/exp under each version.
+    ax = axes[1, 1]
+    for i, (fit, label) in enumerate(PLATEAU_VERSIONS):
+        t = ctx.observed.sum() / ctx[f"exp_{fit}"].sum()
+        oe = ctx.observed / ctx[f"exp_{fit}"] / t
+        sd = np.sqrt(np.average((oe - 1) ** 2, weights=ctx.exp_stored))
+        y = len(PLATEAU_VERSIONS) - 1 - i
+        ax.scatter(
+            oe,
+            y + rng.uniform(-0.15, 0.15, len(oe)),
+            s=40,
+            color=REC_C if i else NONE_C,
+            alpha=0.6,
+            lw=0,
+            zorder=3,
+        )
+        ax.text(1.27, y, f"SD {100 * sd:.1f}%\ntotal {t:.3f}", va="center", fontsize=12)
+    ax.axvline(1, **THEORY)
+    ax.set_yticks(range(len(PLATEAU_VERSIONS))[::-1], [v[1] for v in PLATEAU_VERSIONS])
+    ax.set_xlim(0.75, 1.42)
+    ax.set_xlabel(
+        "obs/exp of each of the 32 contexts\n(total scaled to 1; training sites)"
+    )
+    ax.set_title("e  Context offsets under each version")
+    style_axis(ax)
+
+    # (f) Per-gene noise under each version, with and without the ridge rr.
+    ax = axes[1, 2]
+    for i, (fit, label) in enumerate(PLATEAU_VERSIONS):
+        y = len(PLATEAU_VERSIONS) - 1 - i
+        for rr, c, dy in (("none", NONE_C, 0.17), ("ridge_qcexcl", REC_C, -0.17)):
+            v = noise[(noise.plateau == fit) & (noise.rr == rr)].core_noise.iloc[0]
+            ax.barh(y + dy, v, height=0.32, color=c, lw=0)
+            ax.text(v + 0.03, y + dy, f"{v:.3f}", va="center", fontsize=12)
+    ax.set_yticks(range(len(PLATEAU_VERSIONS))[::-1], [""] * len(PLATEAU_VERSIONS))
+    ax.set_xlim(0, 4.3)
+    ax.set_xlabel("per-gene synonymous noise, mean z²")
+    ax.set_title("f  Per-gene noise barely changes (rows as in e)")
+    ax.legend(
+        handles=[
+            Patch(color=NONE_C, label="no rr"),
+            Patch(color=REC_C, label="ridge rr"),
+        ],
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.13),
+        ncol=2,
+        fontsize=12,
+        frameon=False,
+    )
+    style_axis(ax)
+
+    fig.suptitle(
+        "The plateau models: two straight lines now; what a weighted fit or more lines"
+        " would change",
+        x=0.06,
+        ha="left",
+        fontsize=17.5,
+        weight="bold",
+    )
+    fig.text(
+        0.06,
+        0.935,
+        "v4.1.1 high-coverage synonymous training sites, autosomes and PARs; each dot"
+        " is a mutation-rate group (context, ref, alt, methylation level), sized by"
+        " possible variants",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_plateau.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
 def draw_alternatives():
     """Draw out-of-fold noise and calibration slope for the rr alternatives."""
     res = pd.concat(
@@ -5883,6 +6109,7 @@ if __name__ == "__main__":
     )
     draw_outliers()
     draw_outlier_size()
+    draw_plateau()
     draw_alternatives()
     draw_leftover_noise()
     draw_outlier_rates()
