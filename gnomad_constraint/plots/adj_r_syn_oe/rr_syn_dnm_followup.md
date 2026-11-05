@@ -69,7 +69,7 @@ Use a ridge-penalized rr trained on the Satterstrom DNMs, normalized per context
 4. **No rr on chrX/Y.** The best option there lowers noise by under 1%, and correcting only some contexts is hard to explain. Revisit this if the missing features can be recovered.
 5. **Keep the training background, but leave genes with a QC flag out of training.** Switching the background to all sites made noise slightly worse. Dropping the flagged genes' DNMs and background sites gave a small, consistent gain (held-out noise 2.524 → 2.513 locally).
    - **The full pipeline run confirms it for ridge, but the gain is small:** noise 2.458 → 2.451, held-out noise 2.476 → 2.471 and outcome-free noise 2.773 → 2.762. For the current method it is mixed (see [How each version performs](#how-each-version-performs)).
-   - ⏳ **Pending (background runs on jg2, started 2026-11-04):** proper pipeline runs of the background designs (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
+   - **Confirmed in the pipeline:** no other background does clearly better. One row per variant with a penalty per DNM is a small further gain (held-out noise 2.476 → 2.441); see [The training background](#the-training-background-what-the-dnms-are-compared-with).
 6. **Confirm it in the pipeline, then do one full run.** These results come from a local re-implementation on Ruchit's exports, which reproduces his numbers exactly.
    - **Done:** the rr pipeline (Bonferroni, 1e-2 and ridge; with and without the QC-flagged genes), and the constraint pipeline through the release for ridge and the current method, each with and without the exclusion, plus a run without rr.
    - The pipeline's rr tables reproduce the local numbers: for ridge, noise 2.458 against 2.46 and slope 0.86 against 0.86. Through the constraint pipeline, ridge still has the lowest noise, and LOEUF separates the ClinGen haploinsufficient genes as well as without rr (see [How each version performs](#how-each-version-performs)).
@@ -78,7 +78,7 @@ Use a ridge-penalized rr trained on the Satterstrom DNMs, normalized per context
 - **The top-LOEUF-decile rise:** it mostly comes from how LOEUF sorts genes. Binned by s_het, the top decile reaches only 1.04.
 - **The ~130 deficit outliers:** they are flagged mapping artifacts.
 - **Other training backgrounds:** all sites, sampling by context, reweighting, and applying rr before saturation all did the same or slightly worse (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
-  - ⏳ **Pending (background runs on jg2, started 2026-11-04):** all sites, one row per variant, both together, and sampling by context are being rerun properly through the pipeline.
+  - **Confirmed in the pipeline:** all sites is worse (held-out noise 2.54 against 2.48), and sampling by context or one row per variant changes little.
 
 ### What a good outcome looks like
 
@@ -148,7 +148,7 @@ Sources:
 - **Normalize rr per context?** Recommend yes.
 - **chrX/Y:** no rr, partial rr (unmasked), or recover the missing features first. Recommend no rr.
 - **Training data:** agreed on the Satterstrom 2026 DNMs, with no union. Recommend leaving genes with a QC flag out of training; the full run confirms a small gain for ridge.
-- **Roulette:** worth a production test? With the ridge on top it removes about twice as much noise as the ridge alone (2.03 against 2.43) and corrects the maternal hotspot regions. But it moves LoF and missense expected counts relative to synonymous (−5% and +3%), which the model calibration can't check, so LOEUF and missense z thresholds would shift (see [How each version performs](#how-each-version-performs)).
+- **Roulette:** worth a production test? With the ridge on top it removes about twice as much noise as the ridge alone (2.03 against 2.43) and corrects the maternal hotspot regions. But it moves LoF and missense expected counts relative to synonymous (−5% and +3%), which the model calibration can't check, so LOEUF and missense z thresholds would shift (see [How each version performs](#how-each-version-performs)). Rates built the same way from gnomAD v4.1 genomes get most of the gain (2.20) and shift LoF and missense the same way.
 - **For the PR:**
   - whether rr is on by default
   - the `unadj_*` release fields
@@ -425,11 +425,13 @@ Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotte
 | Ridge | 2.439 | 2.776 | 207 (64) | 1.086 | 1.034 |
 | **Ridge, QC-flagged genes left out** | **2.432** | **2.764** | **208 (63)** | **1.086** | **1.034** |
 | Roulette, with the ridge fit on top (exploratory) | 2.029 | 1.965 | 180 (33) | 1.048 | 0.992 |
+| Home-built Roulette-style rates, with the ridge fit on top (exploratory) | 2.203 | 2.136 | 193 (35) | 1.042 | 0.997 |
 
 - **Ridge beats the current method in the pipeline too:** 2.44 against 2.64 on the core set, and 2.78 against 3.04 on the set that doesn't select on the outcome.
 - **Leaving QC-flagged genes out of training barely matters:** 2.439 → 2.432 for ridge, and 2.638 → 2.629 for the current method, whose noise on the outcome-free set gets slightly worse (3.04 → 3.08).
 - **Roulette's rates with the ridge on top do much better:** 2.03 on the core set, and 1.97 on the outcome-free set, against 2.76 for the best DNM-only rr. Unflagged outliers halve (63 → 33), and the LOEUF decile 9 rise falls from 1.09 to 1.05.
   - It also lowers missense obs/exp by about 3% in every decile, so Roulette rates missense sites as slightly more mutable than synonymous sites of the same trinucleotide change. Whether that is right is open. For LoF it goes the other way (see below).
+- **Rates built the same way from gnomAD v4.1 genomes get most of Roulette's gain:** 2.20 on the core set and 2.14 on the outcome-free set, with 35 unflagged outliers. They come from non-coding rare variants only (exons ± 50 bp, low-complexity regions and segdups left out), with a simpler model than Roulette's (see [Still worth trying](#still-worth-trying-or-looking-at)).
   - Roulette's regional rate comes from gnomAD rare variants, so part of the gain on gnomAD counts is gnomAD fitting gnomAD. On held-out DNMs, which don't involve gnomAD, its gain over chance is 1,316 log-likelihood units against 114 for ridge alone.
 - Code: [score_downstream.py](followup/score_downstream.py), from the counts written by [export_group_oe.py](followup/cluster/export_group_oe.py). Results: [downstream.scores.tsv](followup/downstream.scores.tsv), [downstream.deciles.tsv](followup/downstream.deciles.tsv).
 
@@ -443,6 +445,7 @@ Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotte
 | Ridge | 0.992 | 0.9% | 125 / 168 | 0.870 | −1.1% | −0.4% | 2,415 |
 | **Ridge, QC-flagged genes left out** | **0.992** | **0.9%** | **125 / 167** | **0.870** | **−1.1%** | **−0.4%** | **2,443** |
 | Roulette, with the ridge fit on top (exploratory) | 0.981 | 2.8% | 100 / 496 | 0.869 | −5.1% | +2.9% | 4,203 |
+| Home-built Roulette-style rates, with the ridge fit on top (exploratory) | 0.970 | 5.1% | 130 / 593 | 0.870 | −6.1% | +1.8% | 3,780 |
 
 - **The rr leaves LOEUF's ranking and what it finds intact.**
   - With ridge, 0.9% of genes move two or more LOEUF deciles. 22% move one, because decile edges are close together.
@@ -458,10 +461,11 @@ Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotte
 - **Roulette moves the levels.** Against the run without rr, it lowers LoF expected counts by 5% and raises missense by 3%.
   - LoF: 496 genes rise above LOEUF 0.6 and 100 fall below it; genes with pLI ≥ 0.9 go from 3,238 to 2,971. ClinGen separation is unchanged (AUC 0.869).
   - Missense: obs/exp in the least constrained LOEUF decile goes from 1.085 to 1.006. Missense-constrained genes nearly double (2,238 → 4,203), because the level falls and the z-scale shrinks from 2.35 to 1.69. Missense outlier flags fall from 215 to 60.
-  - The model calibration uses synonymous sites only, so it can't check these shifts. Using Roulette would need a decision on them, and new LOEUF and missense z thresholds.
+  - The home-built rates move them the same way (LoF −6.1%, missense +1.8%; 593 genes rise above LOEUF 0.6 and 130 fall below it), so the shift isn't specific to Roulette's model.
+  - The model calibration uses synonymous sites only, so it can't check these shifts. Using either would need a decision on them, and new LOEUF and missense z thresholds.
 - Code: [score_release.py](followup/score_release.py), on slim copies of each version's release TSV ([export_release_slim.py](followup/cluster/export_release_slim.py)). Results: [release.scores.tsv](followup/release.scores.tsv), [release.deciles.tsv](followup/release.deciles.tsv), [release.flags.tsv](followup/release.flags.tsv).
 
-⏳ **Pending (metrics on jg4-137, started 2026-11-04):** the home-built Roulette-style version. The panels below are the cell-level approximation; the full run's rr tables give nearly the same values ([full_run.metrics.tsv](followup/full_run.metrics.tsv)).
+The panels below are the cell-level approximation; the full run's rr tables give nearly the same values ([full_run.metrics.tsv](followup/full_run.metrics.tsv)).
 
 ![Performance of each rr version](followup/rr_performance.png)
 
@@ -516,14 +520,32 @@ The rr model contrasts DNM sites with background sites. The pipeline's backgroun
 
 ![Training backgrounds compared](followup/rr_background.png)
 
-⏳ **Pending (background runs on jg2, started 2026-11-04):** the comparison below is a local approximation. The pipeline is rerunning the main designs properly, each in its own output folder under `gs://gnomad-tmp/jg/rr_bg/`, with the full DNM set and the pipeline's background:
-- the current background (absent from gnomAD, one row per locus), as the baseline;
-- all possible synonymous sites, one row per locus;
-- absent from gnomAD, one row per variant;
-- all possible synonymous sites, one row per variant;
-- absent from gnomAD, sampled by context in proportion to all sites, and sampled evenly by context.
+**Pipeline runs.** Each design was rerun through `regional_rate_pipeline.py` with the full run's DNMs and features, each in its own folder under `gs://gnomad-tmp/jg/rr_bg/`, and scored on Ruchit's exported counts like the full run. Each is fit with ridge at the default penalty (0.3 per site) and at 10 per DNM, which gives backgrounds of different sizes the same shrinkage.
 
-Each is fit with the Bonferroni screen, ridge with the default per-site penalty, and ridge with a penalty per DNM (3, 10 or 30), so backgrounds of different sizes get the same shrinkage.
+| Background | Penalty | Noise | Held-out noise | Outcome-free noise | Outliers (no QC flag) | Slope | Slope A/T / other C / CpG |
+|---|---|---|---|---|---|---|---|
+| No correction | — | 2.908 | 2.908 | 3.504 | 270 (123) | — | — |
+| **Absent from gnomAD, one row per locus (current)** | **per site** | **2.458** | **2.476** | **2.773** | **218 (71)** | **0.86** | **2.09 / 0.86 / 0.15** |
+| Absent from gnomAD, one row per locus (current) | per DNM | 2.441 | 2.451 | 2.810 | 224 (76) | 1.12 | 1.96 / 1.00 / 0.40 |
+| Absent from gnomAD, one row per variant | per site | 2.465 | 2.478 | 2.795 | 221 (73) | 0.90 | 2.47 / 0.95 / 0.15 |
+| Absent from gnomAD, one row per variant | per DNM | 2.424 | 2.441 | 2.766 | 223 (74) | 0.96 | 1.80 / 0.86 / 0.34 |
+| All sites, one row per locus | per site | 2.528 | 2.538 | 2.919 | 223 (77) | 1.24 | 2.73 / 1.44 / 0.17 |
+| All sites, one row per locus | per DNM | 2.516 | 2.522 | 2.931 | 228 (82) | 1.51 | 2.13 / 1.44 / 0.40 |
+| All sites, one row per variant | per site | 2.626 | 2.630 | 3.082 | 240 (91) | 1.83 | 3.40 / 2.54 / 0.20 |
+| All sites, one row per variant | per DNM | 2.548 | 2.555 | 2.973 | 233 (85) | 1.63 | 2.14 / 1.65 / 0.35 |
+| Absent, sampled by context in proportion to all sites | per site | 2.489 | 2.518 | 2.804 | 217 (71) | 0.81 | 1.89 / 0.89 / 0.12 |
+| Absent, sampled by context in proportion to all sites | per DNM | 2.444 | 2.461 | 2.809 | 224 (76) | 1.08 | 1.87 / 1.00 / 0.30 |
+| Absent, sampled evenly by context | per site | 2.489 | 2.522 | 2.786 | 219 (72) | 0.76 | 1.74 / 0.78 / 0.14 |
+| Absent, sampled evenly by context | per DNM | 2.449 | 2.465 | 2.812 | 224 (76) | 1.06 | 1.80 / 1.01 / 0.29 |
+
+- **No background does clearly better than the current one.** Its default run reproduces the full run's ridge exactly (2.458 / 2.476).
+- **All sites is worse,** as in the local test: held-out noise 2.538 against 2.476, and the rr comes out too weak (slope 1.24). All sites with one row per variant is worse still (2.630).
+- **One row per variant instead of per locus barely matters.** With the default penalty it is 2.478 against 2.476. With a penalty per DNM it is slightly better on every noise measure (held-out 2.441 against 2.451, outcome-free 2.766 against 2.810), the lowest held-out noise of any run, but by little.
+- **Sampling by context changes little with a penalty per DNM** (held-out 2.461–2.465 against 2.451). With the default per-site penalty it is worse (2.518–2.522), because sampling drops background rows and so weakens the penalty: the rr comes out stronger (slope 0.76–0.81).
+- **By context class, every run has the CpG rr far too strong (0.12–0.40) and the A/T rr too weak (1.7–3.4).** The local approximation below found A/T too strong; see panel d.
+- Code: [run_backgrounds.sh](followup/cluster/run_backgrounds.sh), scored by [run_bg_scores.sh](followup/cluster/run_bg_scores.sh) with [full_run_scores.py](followup/full_run_scores.py) `--rr-names`. Results: [rr_bg_pipeline.metrics.tsv](followup/rr_bg_pipeline.metrics.tsv), [rr_bg_pipeline.strength.tsv](followup/rr_bg_pipeline.strength.tsv).
+
+**Local approximation.** The rest of this section is the earlier local comparison, which also covers options the pipeline doesn't have (reweighting, one strength per class, applying rr before saturation, no rr at CpG).
 
 How this was run:
 - **DNMs:** the Satterstrom 2026 synonymous SNVs (`isSyn`), 20,636 of them in the exported windows.
@@ -548,12 +570,12 @@ How this was run:
   - The current rule drops a share of the background that changes with the regional rate. At CpG the share rises steadily with rr (47% to 52%). In other C contexts it is U-shaped (28% at the lowest rr, 24% in the middle, 31% at the top). In A/T contexts it is nearly flat.
   - So the rr learned against it is steeper than against all sites: 1.16 times as steep for C contexts, and the same for A/T. That is less than a simple calculation predicts (1.2–1.7 times), because whether gnomAD has seen a site depends on more than its regional rate.
 - **c. Switching to all sites doesn't help.** Against all sites the rr comes out too weak (slope 1.37), and noise is worse (2.56 against 2.52 on held-out chromosomes). gnomAD's synonymous counts vary more between regions than the DNM rate differences alone predict. The current rule's slight steepening happens to move rr toward that. In effect it trains partly on gnomAD, by using which sites gnomAD has not seen.
-  - ⏳ **Pending (background runs on jg2, started 2026-11-04):** rerunning through the pipeline, one row per locus and per variant.
+  - **Confirmed in the pipeline** (table above): held-out noise 2.538 against 2.476, slope 1.24.
 - **Sampling by context changes nothing**, whether in proportion to all sites or evenly (2.53 for both, against 2.52). Each context has its own model, so a context's total background only moves that model's intercept, which cancels out of rr. Reweighting the absent sites by the model's expected chance of being seen is also the same (2.52).
-  - ⏳ **Pending (background runs on jg2, started 2026-11-04):** rerunning through the pipeline to show the same thing with the real training set.
+  - **Confirmed in the pipeline with a penalty per DNM** (2.461–2.465 against 2.451). With the default per-site penalty, sampling also weakens the penalty, which makes rr too strong (table above).
 - **d. The bigger effect is strength by context class, under every background.** A/T contexts are too strong (slope 0.54–0.64), other C contexts are too weak (1.2–1.6), and CpG contexts are far too strong (about 0.3).
   - Giving each class its own strength, measured on one chromosome half and scored on the other, lowers held-out noise more than any background change (2.52 → 2.50 for the current rule). It also brings the two backgrounds close together.
-  - **The full run's ridge rr differs in A/T contexts.** Its class slopes are A/T 2.09, other C 0.86 and CpG 0.15 ([full_run.metrics.tsv](followup/full_run.metrics.tsv)). CpG is far too strong there too, but A/T comes out too weak rather than too strong, although its rr still spans about 1.26-fold between the 5th and 95th percentile of sites. The full run uses the DNMs from every cohort and the pipeline's penalty; why A/T differs hasn't been checked.
+  - **The pipeline's rr differs in A/T contexts.** The full run's ridge has class slopes A/T 2.09, other C 0.86 and CpG 0.15 ([full_run.metrics.tsv](followup/full_run.metrics.tsv)), and every pipeline background run has A/T at 1.7–3.4. CpG is far too strong there too, but A/T comes out too weak rather than too strong, although its rr still spans about 1.26-fold between the 5th and 95th percentile of sites. The pipeline uses the DNMs from every cohort and its own penalty; why A/T differs hasn't been checked.
   - It uses gnomAD to set three numbers, as α does.
 - **Smaller checks:**
   - Applying rr before saturation (expected = n × (1 − (1 − q)^rr)) weakens rr and doesn't help.
@@ -563,7 +585,7 @@ How this was run:
 
 The same logistic regressions as in [How the rr model works](#how-the-rr-model-works), fit under each background ([rr_logistic_fits.py](followup/rr_logistic_fits.py), [rr_logistic_fits.bins.tsv](followup/rr_logistic_fits.bins.tsv)):
 
-⏳ **Pending (background runs on jg2, started 2026-11-04):** these curves are from the local approximation. They will be redrawn from each background's pipeline run, as the figure in [How the rr model works](#how-the-rr-model-works) was from the full run.
+⏳ **Not yet redrawn:** these curves are from the local approximation. The pipeline runs are done (table above), but the figure hasn't been redrawn from them.
 
 - **a–c. The background moves each curve up or down; it barely changes the slope.**
   - Sampling by context changes how many background rows a context has. Its curve sits higher or lower but rises at the same rate.
@@ -581,7 +603,7 @@ The same logistic regressions as in [How the rr model works](#how-the-rr-model-w
 2. Look at one strength per context class (A/T, other C, CpG), and at why the classes differ.
 3. Drop genes with a QC flag (or, better, low-quality sites) from training (see [Removing poorly covered or mapped genes from training](#removing-poorly-covered-or-mapped-genes-from-training) below).
 4. One thing this can't test locally is one background row per locus (the pipeline) against one per variant. Loci with several synonymous alternatives get one background row but several chances for a DNM. That needs a cluster run.
-   - ⏳ **Pending (background runs on jg2, started 2026-11-04):** now running on jg2 (absent from gnomAD and all sites, each one row per variant).
+   - **Done in the pipeline:** one row per variant barely differs from one per locus (held-out 2.478 against 2.476 at the default penalty; 2.441 against 2.451 with a penalty per DNM).
 
 **Every background run**
 
@@ -706,14 +728,14 @@ Size decides which genes cross |z| > 8, not why they have extra variants: gnomAD
   - **Why the maternal clustered-DNM feature doesn't fix 8p,** although it is nonzero in 92% of 8p's windows:
     - It only says "near a maternal DNM cluster". Each context gets one coefficient for it, learned from all such windows, most of them outside 8p and with a smaller excess. So it gives 8p an rr of about 1.10, not the 1.3–1.4 the DNMs show.
     - 8p's excess isn't specific to maternal C>G. It is there in every context class (DNMs: A/T 1.32, other C 1.60, CpG 1.26; gnomAD 1.27, 1.41 and 1.13), and C>G is only 11% of 8p's C-site DNMs against 8% elsewhere. A broad regional rise like this needs a broad regional term.
-    - Roulette's empirical regional rate puts 8p at 1.34 times the average (outside CpG), about what the DNMs show. **In the pipeline it fixes 8p:** with Roulette's rates and the ridge on top, 8p's genes go from 1.32 to 1.02, and the other five regions to 0.99–1.01 ([downstream.hotspots.tsv](followup/downstream.hotspots.tsv); genes without a QC flag that aren't outliers).
+    - Roulette's empirical regional rate puts 8p at 1.34 times the average (outside CpG), about what the DNMs show. **In the pipeline it fixes 8p:** with Roulette's rates and the ridge on top, 8p's genes go from 1.32 to 1.02, and the other five regions to 0.99–1.01 ([downstream.hotspots.tsv](followup/downstream.hotspots.tsv); genes without a QC flag that aren't outliers). The home-built rates slightly overcorrect 8p (0.94) and bring the other regions to 0.97–0.99.
 - **The region isn't what makes these 23 genes outliers.** Their own excess is far above their region's:
   - The genes are at 1.24–1.91 (median 1.38), but the 3 Mb around each is only at 1.03–1.26 (median about 1.10), and each region as a whole at 1.05–1.31. So the region explains a small part; most of the excess belongs to the gene itself.
   - It covers the whole gene (almost every 1-kb window is up), not one exon.
   - It isn't maternal C>G. It is as large in A/T contexts (median 1.45), which can't have a C>G change, as in other C contexts (1.54), and smaller at CpG (1.10), where gnomAD is near saturation.
   - DNMs confirm it (1.47 pooled, 120 DNMs), so it is a real, gene-scale rise in mutation rate that the 13 regional features don't measure. Many of these genes sit near chromosome ends (16p13.3, 16q24, 8p23, 9p24), where they overlap the hotspot regions.
   - **Roulette's regional rate does see it.** Outside CpG, Roulette's 50 kb empirical rate puts these genes at a median of 1.44 (1.12–2.00), against their gnomAD obs/exp of 1.38; CSMD1, CTSB, FDFT1, GSE1, PIEZO1 and WWOX all match closely. It misses a few (MAZ 1.16 against 1.63, ZFP36L2 1.12 against 1.52, CARHSP1 1.49 against 1.91).
-  - **In the pipeline, 21 of the 23 stop being outliers** with Roulette's rates and the ridge on top, against 2 with the ridge alone. Only MAZ (1.52) and ZFP36L2 (1.44) remain. Roulette's regional rate comes from gnomAD rare variants, so part of this is gnomAD fitting gnomAD, but the DNMs show the same excess.
+  - **In the pipeline, 21 of the 23 stop being outliers** with Roulette's rates and the ridge on top, against 2 with the ridge alone. Only MAZ (1.52) and ZFP36L2 (1.44) remain, and the home-built rates leave the same two. Roulette's regional rate comes from gnomAD rare variants, so part of this is gnomAD fitting gnomAD, but the DNMs show the same excess.
 - **e. The excess is the same in every ancestry group, and at every sample size from 1,000 to 500,000** (about 1.4–1.6 everywhere).
   - That rules out ancestry-specific causes such as copy-number or diversity differences.
   - It also rules out per-sample sequencing errors, which would grow with sample size.
@@ -882,7 +904,7 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
 
 - **Train regional effects on gnomAD rare variants.** The local version, trained on exome synonymous counts from the other chromosome half, scored best of all (2.37, about 4% below the best DNM-based rr). The cleaner version trains on intronic rare variants from gnomAD genomes and needs the cluster.
 - **One rr strength per context class.** A/T contexts are too strong, other C contexts too weak and CpG contexts far too strong under every background. One strength per class lowered held-out noise more than any background change (see [The training background](#the-training-background-what-the-dnms-are-compared-with)). It is worth understanding why the classes differ.
-- **One background row per locus or per variant.** The pipeline keeps one row per locus, although a locus with several synonymous alternatives has several chances for a DNM. It is the one background question the exported data can't answer. ⏳ **Pending (background runs on jg2, started 2026-11-04):** running now.
+- **One background row per locus or per variant.** The pipeline keeps one row per locus, although a locus with several synonymous alternatives has several chances for a DNM. In the pipeline it barely matters: with a penalty per DNM, one row per variant lowers held-out noise from 2.451 to 2.441, the lowest of any background run. A small gain if the background is revisited.
 - **A broad regional term for 8p.** In the full run the rr corrects most of the maternal hotspot regions but leaves about 60% of the excess in the first 20 Mb of 8p (1.31 → 1.19; DNMs 1.39). The excess there is in every context class, not just maternal C>G, so a smoothed, Mb-scale DNM density or a regional term learned from gnomAD rare variants would fit it better than the clustered-DNM track. Roulette's regional rate, one such term, puts 8p at 1.34, and in the pipeline it brings 8p's synonymous obs/exp to 1.02 (see [What explains them besides size](#what-explains-them-besides-size)).
 - **A gene-level adjustment.** DNMs confirm about two-thirds of the gene-to-gene spread the rr leaves. A gene's own synonymous obs/exp, shrunk toward 1, could adjust its missense and LoF expected counts.
   - **For:**
@@ -913,7 +935,7 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
     - `--use-variant-rates` adds the log multiplier to the rr training set as a fixed offset, so the ridge only learns what Roulette misses, and normalizes rr on expected counts that include the multipliers.
     - [`constraint_pipeline.py`](../../pipeline/constraint_pipeline.py) `--variant-rate-ht-path` multiplies expected counts by the multiplier along with rr.
   - **Done in the pipeline:** Roulette's rates imported, the ridge rr refit on top of them, and the constraint pipeline run with both through the release, under `gs://gnomad-tmp/jg/rr_roulette` and `gs://gnomad-tmp/jg/rr_downstream/roulette_ridge`. It roughly doubles the noise reduction and corrects the maternal hotspot regions, but it lowers LoF expected counts by 5% and raises missense by 3% (see [How each version performs](#how-each-version-performs)).
-  - ⏳ **Pending (metrics on jg4-137, started 2026-11-04; the rates, rr and constraint groups are done):** the same two parts rebuilt from gnomAD v4.1 genome rare variants ([build_homebuilt_rates.py](followup/cluster/build_homebuilt_rates.py)), instead of Roulette's published rates. The regional part is each trinucleotide change's observed share of possible variants in 50 kb windows, relative to its genome-wide share, shrunk toward the window's rate. The sequence part is each heptamer change's genome-wide share, relative to its trinucleotide change's. The ridge rr is refit on top, and the constraint pipeline is run with both, under `gs://gnomad-tmp/jg/rr_homebuilt` and `gs://gnomad-tmp/jg/rr_downstream/homebuilt_ridge`.
+  - **Done in the pipeline, home-built:** the same two parts rebuilt from gnomAD v4.1 genome rare variants ([build_homebuilt_rates.py](followup/cluster/build_homebuilt_rates.py)), instead of Roulette's published rates. The regional part is each trinucleotide change's observed share of possible variants in 50 kb windows, relative to its genome-wide share, shrunk toward the window's rate. The sequence part is each heptamer change's genome-wide share, relative to its trinucleotide change's. Windows where gnomAD genomes see under 30% of the expected variants are taken as poorly called and get no regional part, and the regional part is capped at 3. The ridge rr is refit on top, and the constraint pipeline is run with both, under `gs://gnomad-tmp/jg/rr_homebuilt` and `gs://gnomad-tmp/jg/rr_downstream/homebuilt_ridge`. It gets most of Roulette's gain (noise 2.20 against 2.03) and shifts LoF and missense expected counts the same way (see [How each version performs](#how-each-version-performs)).
 - **Recover the missing X/Y features**, or confirm they can't be recovered. Only this could make an X/Y correction worth more than about 1%.
 - **Split the leftover noise into its two parts** (see [What the leftover noise is](#what-the-leftover-noise-is)). The site-level part belongs to the mutation model. The gene-level part could be reached by a nonlinear model trained on gnomAD rare variants, which removed 13% more locally.
 - **Open threads on the synonymous outliers** (see [The synonymous outliers](#the-synonymous-outliers)):

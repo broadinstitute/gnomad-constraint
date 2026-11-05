@@ -71,3 +71,15 @@ roulette_ridge	16p	control genes	387	0.9946663823543045	0
 roulette_ridge	16p	excess outliers	4	1.0243049698850837	1
 roulette_ridge	16q	control genes	332	1.0091333056033738	0
 roulette_ridge	16q	excess outliers	8	1.0292664105885307	0
+homebuilt_ridge	8p, first 20 Mb	control genes	62	0.9435645324970772	0
+homebuilt_ridge	8p, first 20 Mb	excess outliers	6	0.9399689009142623	0
+homebuilt_ridge	2p16-22	control genes	106	0.9656513868704422	0
+homebuilt_ridge	2p16-22	excess outliers	2	1.1665230858671207	1
+homebuilt_ridge	7p	control genes	268	0.9889703273520464	0
+homebuilt_ridge	7p	excess outliers	1	1.0192953584275917	0
+homebuilt_ridge	9p	control genes	180	0.9799893801203153	0
+homebuilt_ridge	9p	excess outliers	2	1.0587236302273346	0
+homebuilt_ridge	16p	control genes	387	0.9804184980667793	0
+homebuilt_ridge	16p	excess outliers	4	0.9920211640399658	1
+homebuilt_ridge	16q	control genes	332	0.9861936779276638	0
+homebuilt_ridge	16q	excess outliers	8	0.9694932311028377	0
