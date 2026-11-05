@@ -549,8 +549,37 @@ These are fit on the Satterstrom DNMs against the current background, built from
 
 - **Roulette** ([Seplyarskiy et al. 2023](https://doi.org/10.1038/s41588-023-01562-0)) gives a mutation rate for every possible SNV, learned from rare variants in gnomAD v3 genomes. Beyond our trinucleotide rates, it uses the wider sequence around each site, methylation, transcription and an empirical regional rate.
 - **The pipeline turns each rate into a multiplier** that adds only what our trinucleotide rates leave out, and uses it twice: on the expected counts, and as a fixed offset when the rr is trained, so the rr only learns what the rates miss.
-- **The home-built version** rebuilds the two parts that matter from gnomAD v4.1 genomes, and is used the same way.
+- **How Roulette uses the site frequency spectrum.** It is trained on gnomAD v3 genome SNVs below 0.1% frequency. It models the chance that a site stays monomorphic and converts that to a mutation rate with a population-genetics approximation that allows for recurrent mutation, which matters at the most mutable sites. Its VCFs also flag pentanucleotide contexts with an abnormal frequency spectrum (`SFS_bump`: the share of SNVs at 0.05–20% frequency is over 1.5 times the average for their mutation rate; mostly repetitive contexts, likely sequencing errors) and low-quality regions (`low`).
+- **The pipeline gives sites with either flag a multiplier of 1** ([`ROULETTE_LOW_QUALITY_FILTERS`](../../resources/constants.py)). It uses Roulette's `MR` rate, not `AR`, which adds a correction for hypermutability at Pol III-transcribed genes and transcription factor binding sites (rare in coding sequence).
+- **The home-built version** rebuilds the two parts that matter from gnomAD v4.1 genomes, and is used the same way. It uses the same 0.1% cutoff, but has no frequency-spectrum filter and no recurrence correction.
 - How they perform is in [How each version performs](#how-each-version-performs).
+
+<details>
+<summary><b>Click to expand: how the pipeline and home-built versions work, and the local test that led to them</b></summary>
+
+**Pipeline version (added on this branch):**
+- [`regional_rate_pipeline.py`](../../pipeline/regional_rate_pipeline.py) `--import-variant-rates` imports Roulette's per-chromosome VCFs over GENCODE coding exons. Each variant's multiplier is its rate over the average of its mutation-rate group (context, ref, alt, methylation level); CpG contexts get 1 unless `--variant-rate-include-cpg` is set.
+- `--use-variant-rates` adds the log multiplier to the rr training set as a fixed offset, so the ridge only learns what Roulette misses, and normalizes rr on expected counts that include the multipliers.
+- [`constraint_pipeline.py`](../../pipeline/constraint_pipeline.py) `--variant-rate-ht-path` multiplies expected counts by the multiplier along with rr.
+- Run with Roulette's rates under `gs://gnomad-tmp/jg/rr_roulette` and `gs://gnomad-tmp/jg/rr_downstream/roulette_ridge`.
+
+**Home-built version** ([build_homebuilt_rates.py](followup/cluster/build_homebuilt_rates.py)): the regional part is each trinucleotide change's observed share of possible variants in 50 kb windows, relative to its genome-wide share, shrunk toward the window's rate. The sequence part is each heptamer change's genome-wide share, relative to its trinucleotide change's. Windows where gnomAD genomes see under 30% of the expected variants are taken as poorly called and get no regional part, and the regional part is capped at 3. Run under `gs://gnomad-tmp/jg/rr_homebuilt` and `gs://gnomad-tmp/jg/rr_downstream/homebuilt_ridge`.
+
+**The local test** with Roulette's published rates for all high-quality synonymous variants, before the pipeline runs ([roulette_combo.py](followup/roulette_combo.py), [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv), [roulette_combo.v2.feature_coef.tsv](followup/roulette_combo.v2.feature_coef.tsv)):
+- **Roulette alone, outside CpG, removes more than twice as much noise as the ridge rr:** held-out 2.91 (no correction) → 2.52 (ridge) → 2.00 (Roulette). On the outcome-free core set: 3.50 → 2.87 → 2.01.
+- **The DNMs back it, independently of gnomAD.** On held-out DNMs, Roulette's slope is near 1 (A/T 0.94, other C 1.13), and it gains 17–30 log-likelihood units per 1,000 DNMs. The ridge rr gains 3 or less, and nothing in A/T contexts.
+- **Most of the DNM gain is wider sequence context; most of the gnomAD gain is regional.** Roulette's rate splits into a heptamer part (what the three bases on either side add to our trinucleotide rates) and a regional part.
+  - The heptamer part carries most of the DNM gain in A/T contexts, but little of the gene-level gnomAD gain (2.84), because it averages out over a gene.
+  - The regional part carries most of the gnomAD gain (2.05).
+- **The best combination fits our ridge on top of Roulette:** Roulette as a fixed offset, with the ridge learning only what Roulette misses.
+  - Held-out noise is about the same as Roulette alone (1.995 against 1.998). Outcome-free noise is the lowest of any version (1.93), and unflagged outliers drop from 76 to 40.
+  - Multiplying the two without refitting over-corrects (slopes 0.70–0.73). Adding Roulette as one more ridge feature barely helps (2.46), because the penalty shrinks its coefficient about tenfold.
+- **Not at CpG.** Roulette's CpG rates mostly carry methylation, which our expected counts already model. Applied there too, noise rises to 4.13.
+- **Caveats:**
+  - Roulette's regional rate is estimated from gnomAD rare variants, so part of its gnomAD gain is gnomAD fitting gnomAD. The DNM test is the independent check.
+  - It is a cell-level approximation (Roulette's average per window and context), on the autosomes only, and Roulette has no rates at its low-quality sites.
+
+</details>
 
 ## Results
 
@@ -558,10 +587,12 @@ These are fit on the Satterstrom DNMs against the current background, built from
 
 Every version is scored the same way: its rr (for the rate versions, its per-site rate × rr) applied cell by cell to Ruchit's exported synonymous counts (v4.1.1 expected counts, 18,406 Ensembl MANE Select transcripts). Gnocchi `adj_r` and legacy `syn_adj_r` are the published tables; the others come from the full pipeline runs. Black is the recommended ridge fit; dotted lines show what theory or chance predicts.
 
+**Which training genes.** Ruchit's two versions and ridge were each run twice: with all training genes, and with QC-flagged genes left out of training. Where both exist, the bar and dot panels split the row: upper = all training genes, lower and lighter = QC-flagged genes left out. The curve panels, the decile figure and the outlier figures show one run per version: ridge with QC-flagged genes left out (the recommended run), and Ruchit's versions with all training genes. The rate versions were only run with all training genes. The two runs of each version differ by at most 0.04 in noise and 7 outliers.
+
 ![Performance of each rr version](followup/rr_performance.png)
 
 - **a: noise.** Chance alone would give at most 0.70. Gnocchi `adj_r` nearly doubles the noise (5.45). The DNM-trained versions reach 2.45–2.65, ridge lowest; Roulette's rates with the ridge on top reach 2.06, and the home-built rates 2.23.
-- **b: outliers.** About 147 genes with a QC flag stay outliers under every version (gray; mostly mapping artifacts, see [The synonymous outliers](#the-synonymous-outliers)). Among genes without one, outliers fall from 123 to 71–79 with a DNM rr and to 37–40 with the rate versions.
+- **b: outliers.** About 147 genes with a QC flag stay outliers under every version (gray; mostly mapping artifacts, see [The synonymous outliers](#the-synonymous-outliers)). Among genes without one, outliers fall from 123 to 71–86 with a DNM rr (71 for ridge with either training set) and to 37–40 with the rate versions.
 - **c–e: how strong each rr should be,** measured two ways.
   - **c** looks gene by gene: when rr says a gene should get X% more synonymous variants, gnomAD shows about slope × X% more. Below 1 means rr is too strong.
   - **d** applies rr^α and finds the α with the lowest noise; **e** shows the best α lands on the slope from c, as theory says it should.
@@ -673,7 +704,7 @@ Every version below also went through the constraint pipeline's aggregation; sco
 | Roulette, with the ridge fit on top (quick first try) | 2.029 | 1.965 | 180 (33) | 1.048 | 0.992 |
 | Home-built Roulette-style rates, with the ridge fit on top (quick first try) | 2.203 | 2.136 | 193 (35) | 1.042 | 0.997 |
 
-The home-built rates come from non-coding rare variants only (exons ± 50 bp, low-complexity regions and segdups left out), with a simpler model than Roulette's (see [Still worth trying](#still-worth-trying-or-looking-at)).
+The home-built rates come from non-coding rare variants only (exons ± 50 bp, low-complexity regions and segdups left out), with a simpler model than Roulette's (see [Per-variant rates](#per-variant-rates-roulette-and-how-the-pipeline-uses-it)).
 
 Code: [score_downstream.py](followup/score_downstream.py), from the counts written by [export_group_oe.py](followup/cluster/export_group_oe.py). Results: [downstream.scores.tsv](followup/downstream.scores.tsv), [downstream.deciles.tsv](followup/downstream.deciles.tsv), [downstream.hotspots.tsv](followup/downstream.hotspots.tsv).
 
@@ -844,7 +875,7 @@ This uses the 17,459 genes with no release flag of any kind and at least 20 expe
   - A nonlinear model of the same 13 regional features removes another 7%, so the per-context logistic rr isn't using everything these features carry.
   - Everything together removes 12% (2.14 → 1.88).
 - **The per-variant rates remove more than all the covariates together:** 1.69 with Roulette's rates and 1.83 with the home-built ones, against 1.88. They are what point 2 below suggested: a regional rate learned from gnomAD rare variants. Part of that gain is gnomAD fitting gnomAD, and it was one untuned try.
-- **Most of the gene-level part is real.** Synonymous DNMs follow gnomAD synonymous obs/exp across genes, at about two-thirds of the slope expected if all the spread above chance were mutation rate (see [What explains them besides size](#what-explains-them-besides-size)). Histone genes are included: their DNMs are 2.8 times expected.
+- **Most of the gene-level part is real.** Synonymous DNMs follow gnomAD synonymous obs/exp across genes, at about 70% of the slope expected if all the spread above chance were mutation rate (see [What explains them besides size](#what-explains-them-besides-size)). Histone genes are included: their DNMs are 2.8 times expected.
 
 What this suggests:
 1. Treat what's left as two problems. The site-level part belongs to the mutation model (per-site coverage, wider sequence context). The gene-level part belongs to the regional correction.
@@ -872,18 +903,20 @@ Panel a scores every version the same way as [How each version performs](#how-ea
 - **Gnocchi `adj_r`** creates about 236 deficit outliers among genes without a flag, by pushing ordinary genes below their expected counts.
 - **Genes without a QC flag:** synonymous outliers fall from 123 to 71–79 with a DNM rr (71 with ridge), about half, and to 37–40 with the per-variant rates. After the ridge rr, histone genes are about a third of what's left; after the rates, almost two-thirds.
 
-- **Panels c and d, gene size:** for the same relative excess, z grows with the square root of a gene's expected count. Panel c plots expected count, which is what z depends on. Panel d plots coding length; there are about 160 expected synonymous variants per kb, so the two track each other closely.
-  - Large genes cross |z| = 8 with only 20–50% more variants than expected. CSMD1, for example, is at obs/exp 1.49 with about 1,900 expected.
-  - Histone genes have only about 60–130 expected, so they need nearly double.
-  - The non-histone outliers are mostly large genes: median 599 expected, against 212 for all genes.
-  - So outlier counts favour large genes, and a fixed |z| cutoff is not a fixed effect size.
+**Gene size.** For the same relative excess, z grows with the square root of a gene's expected count, so a fixed |z| cutoff is not a fixed effect size. Top row: the recommended ridge; bottom row: Roulette's rates with the ridge on top (a quick first try).
 
-**The 47 non-histone outliers left with the ridge rr** (46 with too many variants, plus MUC4 with too few). These genes carry no QC gene flag, but 45 carry a release outlier flag (41 `outlier_syn`, 37 `outlier_mis`). They were picked with the local ridge fit; the full run's ridge keeps 46 of them (ID1 drops just below |z| = 8, and ZFHX3 joins).
+![Synonymous obs/exp against gene size, with the ridge and with Roulette + ridge](followup/rr_outlier_size.png)
+
+- **a, c** plot expected count, which is what z depends on; **b, d** plot coding length. There are about 156 expected synonymous variants per kb, so the two track each other closely.
+- **With the ridge (a, b),** large genes cross |z| = 8 with only 20–50% more variants than expected. CSMD1, for example, is at obs/exp 1.49 with about 1,900 expected. Histone genes have only about 55–130 expected, so they need nearly double. The non-histone outliers are mostly large genes: median 604 expected, against 212 for all genes.
+- **With Roulette + ridge (c, d),** most of the large genes drop back into the cloud: CSMD1 goes to 0.98. 14 non-histone outliers are left (median 478 expected): 8 repeat and segdup genes, MAZ, ZFP36L2, DMD, HSP90AA1, IRF2BPL and MECP2 (see the next figure). The histone genes don't move.
+
+**The 47 non-histone outliers left with the ridge rr** (46 with too many variants, plus MUC4 with too few), picked with the full run's ridge (QC-flagged genes left out of training). These genes carry no QC gene flag, but 44 carry a release outlier flag (41 `outlier_syn`, 36 `outlier_mis`).
 
 ![Which synonymous outliers each version still leaves](followup/rr_outlier_rates.png)
 
 - **The ridge rr leaves every group in place.** The groups come from [What explains them besides size](#what-explains-them-besides-size) below.
-- **The per-variant rates (a quick first try) remove most of the outliers whose excess the DNMs confirm:** 21 of the 23 in maternal hotspot regions (MAZ and ZFP36L2 stay) and 7 of the 11 other excess outliers (DMD, HSP90AA1, IRF2BPL and MECP2 stay).
+- **The per-variant rates (a quick first try) remove most of the outliers whose excess the DNMs confirm:** 22 of the 24 in maternal hotspot regions (MAZ and ZFP36L2 stay) and 6 of the 10 other excess outliers (DMD, HSP90AA1, IRF2BPL and MECP2 stay).
 - **They leave the ones that look like artifacts or gene-specific excess:**
   - 8 of the 13 repeat, segdup or low-coverage genes (FLG, the MUC genes, ACTG1, HSPA8, CT47B1, MROH1). Their excess isn't in the DNMs, so it isn't mutation rate.
   - 23 of the 24 histone outliers. Their excess is in the genes, not the region (see [Why the histone genes are outliers](#why-the-histone-genes-are-outliers-and-whether-rr-can-capture-them)).
@@ -891,51 +924,51 @@ Panel a scores every version the same way as [How each version performs](#how-ea
 
 #### What explains them besides size
 
-Size decides which genes cross |z| > 8, not why they have extra variants: gnomAD obs/exp doesn't change with gene size (1.01 to 1.00 across size fifths). For most of the 46, the mutation rate is genuinely higher than the model predicts.
+Size decides which genes cross |z| > 8, not why they have extra variants: gnomAD obs/exp doesn't change with gene size (1.00–1.01 across size fifths). For most of the 46, the mutation rate is genuinely higher than the model predicts. Everything here uses the full run: its ridge rr (QC-flagged genes left out of training) and its 23,336 training DNMs.
 
 ![De novo mutations, maternal hotspot regions and ancestry checks for the outliers](followup/rr_outlier_drivers.png)
 
-- **a. De novo mutations (DNMs) show the same excess.** DNMs measure the mutation rate directly, in different people, so they don't share gnomAD's population history or most of its artifacts. Here they are the Satterstrom 2026 synonymous DNMs, with obs/exp scaled so genes without a flag are at 1.
+- **a. De novo mutations (DNMs) show the same excess.** DNMs measure the mutation rate directly, in different people, so they don't share gnomAD's population history or most of its artifacts. Here they are the full run's synonymous DNMs from every cohort, with obs/exp scaled so genes without a flag are at 1.
 
   | Outliers with too many variants | Genes | gnomAD obs/exp | DNM obs/exp (95% CI) |
   |---|---|---|---|
-  | in a maternal hotspot region | 23 | 1.36 | 1.47 (1.21–1.73) |
-  | other | 11 | 1.31 | 1.73 (1.33–2.16) |
-  | repeat, segdup or low coverage | 12 | 1.41 | 1.15 (0.83–1.51) |
-  | histone genes, chr6p22 cluster | 54 | 1.83 | 2.84 (2.16–3.56) |
-  | genes of the same size without a flag | 1,808 | 1.00 | 1.05 (1.02–1.08) |
+  | in a maternal hotspot region | 24 | 1.34 | 1.45 (1.22–1.70) |
+  | other | 10 | 1.30 | 1.73 (1.33–2.17) |
+  | repeat, segdup or low coverage | 12 | 1.41 | 1.15 (0.83–1.50) |
+  | histone genes, chr6p22 cluster | 54 | 1.82 | 2.83 (2.16–3.55) |
+  | genes of the same size without a flag | 1,764 | 1.00 | 1.05 (1.02–1.08) |
 
-  - The excess holds in non-CpG contexts alone (DNMs 1.51), so it isn't from methylation, which the DNM expectation leaves out.
+  - The excess holds in non-CpG contexts alone (DNMs 1.46), so it isn't from methylation, which the DNM expectation leaves out.
   - **Repeat genes are the exception:** DNMs don't confirm their excess. These are the ones likely to be mapping artifacts in gnomAD: FLG, MUC5AC, MUC3A, MUC17, the olfactory receptors, PSG2, CT47B1, ACTG1, HSPA8 and MROH1.
   - **Histone genes:** DNMs are 2.8 times expected (63 against 22), more than gnomAD shows. So the histone excess is not only a gnomAD paralog artifact.
-- **b. Across all genes, DNMs follow synonymous obs/exp** (slope 0.51 ± 0.07). If all the gene-to-gene spread above chance were mutation rate, the slope would be about 0.75. So about two-thirds of the spread the rr leaves behind is real mutation-rate variation.
-- **c. Half the outliers sit in known maternal mutation hotspots.** 23 of the 46 are in the regions where [Jónsson et al. 2017](https://doi.org/10.1038/nature24018) found raised maternal C>G DNM rates: the first 20 Mb of 8p, 2p16–22, 7p, 9p, 16p and 16q. Chance would put about 4 there (p = 3 × 10⁻¹³).
-  - This explains the chr16 and chr8p clusters, and also adds ZFP36L2 and MSH6 (2p), DNAH11 (7p), and KCNV2 and KIAA2026 (9p).
+- **b. Across all genes, DNMs follow synonymous obs/exp** (slope 0.53 ± 0.07). If all the gene-to-gene spread above chance were mutation rate, the slope would be about 0.75. So about 70% of the spread the rr leaves behind is real mutation-rate variation.
+- **c. Half the outliers sit in known maternal mutation hotspots.** 24 of the 46 are in the regions where [Jónsson et al. 2017](https://doi.org/10.1038/nature24018) found raised maternal C>G DNM rates: the first 20 Mb of 8p, 2p16–22, 7p, 9p, 16p and 16q. Chance would put about 4 there (p = 3 × 10⁻¹⁴).
+  - This explains the chr16 and chr8p clusters (including ZFHX3 on 16q22), and also adds ZFP36L2 and MSH6 (2p), DNAH11 (7p), and KCNV2 and KIAA2026 (9p).
   - [Goldmann et al. 2018](https://pubmed.ncbi.nlm.nih.gov/29507425/) link these regions to double-strand breaks in aging oocytes.
 - **d. The rr only partly corrects these regions,** even for genes that aren't outliers.
   - Across the six regions, the ridge rr moves obs/exp only from 1.09 to 1.06. DNMs agree with what's left: 1.07 (1.02–1.12).
-  - On 8p it moves from 1.31 to 1.20, and DNMs are at 1.32.
-  - **In the full run** (DNMs from every cohort, the pipeline's ridge rr), the rr corrects most of the regions: 16p 1.09 → 1.02, 16q 1.08 → 1.03, 7p 1.08 → 1.02, 2p16–22 1.13 → 1.07 and 9p 1.05 → 1.03. The first 20 Mb of 8p is the exception: 1.31 → 1.19, with DNMs at 1.39 (133 DNMs).
+  - Per region it removes a fifth to a half of the excess: 16p 1.09 → 1.04, 7p 1.07 → 1.04, 16q 1.07 → 1.05, 2p16–22 1.12 → 1.08 and 9p 1.07 → 1.06.
+  - On the first 20 Mb of 8p it moves from 1.31 to 1.20, and DNMs are at 1.33 (1.08–1.59; 101 DNMs).
   - **Why the maternal clustered-DNM feature doesn't fix 8p,** although it is nonzero in 92% of 8p's windows:
-    - It only says "near a maternal DNM cluster". Each context gets one coefficient for it, learned from all such windows, most of them outside 8p and with a smaller excess. So it gives 8p an rr of about 1.10, not the 1.3–1.4 the DNMs show.
-    - 8p's excess isn't specific to maternal C>G. It is there in every context class (DNMs: A/T 1.32, other C 1.60, CpG 1.26; gnomAD 1.27, 1.41 and 1.13), and C>G is only 11% of 8p's C-site DNMs against 8% elsewhere. A broad regional rise like this needs a broad regional term.
+    - It only says "near a maternal DNM cluster". Each context gets one coefficient for it, learned from all such windows, most of them outside 8p and with a smaller excess. So it gives 8p an rr of about 1.09, not the 1.3–1.5 the DNMs show.
+    - 8p's excess isn't specific to maternal C>G. Before any rr it is there in every context class (DNMs: A/T 1.73, other C 1.55, CpG 1.26; gnomAD 1.27, 1.41 and 1.14), including A/T contexts, which can't have a C>G change. A broad regional rise like this needs a broad regional term.
     - Roulette's empirical regional rate puts 8p at 1.34 times the average (outside CpG), about what the DNMs show. **In the pipeline it fixes 8p:** with Roulette's rates and the ridge on top, 8p's genes go from 1.32 to 1.02, and the other five regions to 0.99–1.01 ([downstream.hotspots.tsv](followup/downstream.hotspots.tsv); genes without a QC flag that aren't outliers). The home-built rates slightly overcorrect 8p (0.94) and bring the other regions to 0.97–0.99.
-- **The region isn't what makes these 23 genes outliers.** Their own excess is far above their region's:
-  - The genes are at 1.24–1.91 (median 1.38), but the 3 Mb around each is only at 1.03–1.26 (median about 1.10), and each region as a whole at 1.05–1.31. So the region explains a small part; most of the excess belongs to the gene itself.
+- **The region isn't what makes these 24 genes outliers.** Their own excess is far above their region's:
+  - The genes are at 1.16–1.91 (median 1.38), but the 3 Mb around each is only at 1.02–1.26 (median about 1.10), and each region as a whole at 1.04–1.20. So the region explains a small part; most of the excess belongs to the gene itself.
   - It covers the whole gene (almost every 1-kb window is up), not one exon.
-  - It isn't maternal C>G. It is as large in A/T contexts (median 1.45), which can't have a C>G change, as in other C contexts (1.54), and smaller at CpG (1.10), where gnomAD is near saturation.
-  - DNMs confirm it (1.47 pooled, 120 DNMs), so it is a real, gene-scale rise in mutation rate that the 13 regional features don't measure. Many of these genes sit near chromosome ends (16p13.3, 16q24, 8p23, 9p24), where they overlap the hotspot regions.
-  - **Roulette's regional rate does see it.** Outside CpG, Roulette's 50 kb empirical rate puts these genes at a median of 1.44 (1.12–2.00), against their gnomAD obs/exp of 1.38; CSMD1, CTSB, FDFT1, GSE1, PIEZO1 and WWOX all match closely. It misses a few (MAZ 1.16 against 1.63, ZFP36L2 1.12 against 1.52, CARHSP1 1.49 against 1.91).
-  - **In the pipeline, 21 of the 23 stop being outliers** with Roulette's rates and the ridge on top, against 2 with the ridge alone. Only MAZ (1.52) and ZFP36L2 (1.44) remain, and the home-built rates leave the same two. Roulette's regional rate comes from gnomAD rare variants, so part of this is gnomAD fitting gnomAD, but the DNMs show the same excess.
+  - It isn't maternal C>G. It is as large in A/T contexts (median 1.45), which can't have a C>G change, as in other C contexts (1.52), and smaller at CpG (1.11), where gnomAD is near saturation.
+  - DNMs confirm it (1.45 pooled, about 130 DNMs), so it is a real, gene-scale rise in mutation rate that the 13 regional features don't measure. Many of these genes sit near chromosome ends (16p13.3, 16q24, 8p23, 9p24), where they overlap the hotspot regions.
+  - **Roulette's regional rate does see it.** Outside CpG, Roulette's 50 kb empirical rate puts these genes at a median of 1.42 (1.02–1.98), against their gnomAD obs/exp of 1.38; CSMD1, CTSB, FDFT1, GSE1, PIEZO1 and WWOX all match closely. It misses a few (MAZ 1.12 against 1.61, ZFP36L2 1.10 against 1.51, CARHSP1 1.46 against 1.91, ZFHX3 1.02 against 1.16).
+  - **22 of the 24 stop being outliers** with Roulette's rates and the ridge on top. Only MAZ (1.54) and ZFP36L2 (1.46) remain. The home-built rates leave the same two and push CACNA1H below expected (0.82, z −9.5). Roulette's regional rate comes from gnomAD rare variants, so part of this is gnomAD fitting gnomAD, but the DNMs show the same excess.
 - **e. The excess is the same in every ancestry group, and at every sample size from 1,000 to 500,000** (about 1.4–1.6 everywhere).
   - That rules out ancestry-specific causes such as copy-number or diversity differences.
   - It also rules out per-sample sequencing errors, which would grow with sample size.
   - It sits inside the DNM range for the same genes (gray band).
 - **Other checks:**
-  - **It covers the whole gene.** A median of 99% of each gene's 1-kb windows are above expected, against 50% in genes of the same size. Only FLG, MUC5AC, MUC3A, MROH1, WFS1, ARHGAP8, CT47B1 and MECP2 have it concentrated in part of the gene.
-  - **It shows in every context class.** CpG sites show less (A/T 1.36, other C 1.46, CpG 1.11) because they are close to saturated in gnomAD.
+  - **It covers the whole gene.** A median of 98% of each gene's 1-kb windows are above expected, against 50% in genes of the same size. Only FLG, MUC5AC, MUC3A, MROH1, WFS1, ARHGAP8, CT47B1 and MECP2 have it concentrated in part of the gene.
+  - **It shows in every context class.** CpG sites show less (A/T 1.35, other C 1.44, CpG 1.11) because they are close to saturated in gnomAD.
   - **Missense rises by the same factor**, as a mutation-rate cause would predict.
-  - **Compared with genes of the same size,** the outliers are closer to a chromosome end (median 9% against 23% of the chromosome's length), and the rr already raises them slightly (1.02 against 0.98). Coverage, mapping quality, segdup fraction and testis expression don't differ.
+  - **Compared with genes of the same size,** the outliers are closer to a chromosome end (median 9% against 22% of the chromosome's length), and the rr already raises them slightly (1.03 against 0.98). Coverage, mapping quality, segdup fraction and testis expression don't differ.
 
 Code: [outlier_drivers.py](followup/outlier_drivers.py). Results: [outlier_drivers.all_genes.tsv](followup/outlier_drivers.all_genes.tsv), [outlier_drivers.covariates.tsv](followup/outlier_drivers.covariates.tsv), [outlier_drivers.dnm_by_oe_decile.tsv](followup/outlier_drivers.dnm_by_oe_decile.tsv), [outlier_drivers.downsampling.tsv](followup/outlier_drivers.downsampling.tsv), [outlier_drivers.genes.tsv](followup/outlier_drivers.genes.tsv), [outlier_drivers.groups.tsv](followup/outlier_drivers.groups.tsv), [outlier_drivers.regions.tsv](followup/outlier_drivers.regions.tsv).
 
@@ -944,55 +977,55 @@ Code: [outlier_drivers.py](followup/outlier_drivers.py). Results: [outlier_drive
 
 | Gene | Chr | Group | Syn obs | Syn exp (ridge) | Obs/exp | z (ridge) | DNMs obs / exp | Missense also high | Release outlier flag | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| CSMD1 | 8 | hotspot 8p | 2,862 | 1,919 | 1.49 | 21.5 | 13 / 8.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
-| MUC5AC | 11 | repeat / segdup | 1,975 | 1,264 | 1.56 | 20.0 | 7 / 10.6 | yes | outlier_syn, outlier_mis | tandem repeats; segdup 0.57; AN90 0.12 |
-| FLG | 1 | repeat / segdup | 2,551 | 1,829 | 1.39 | 16.9 | 7 / 7.2 | yes | outlier_syn, outlier_mis | tandem repeats; segdup 0.87 |
-| PIEZO1 | 16 | hotspot 16q | 2,427 | 1,730 | 1.40 | 16.8 | 14 / 8.0 | yes | outlier_syn, outlier_mis | 16q23–24 |
-| SRRM2 | 16 | hotspot 16p | 2,025 | 1,454 | 1.39 | 15.0 | 9 / 6.5 | yes | outlier_syn, outlier_mis | 16p13.3 |
-| MUC3A | 7 | repeat / segdup | 1,398 | 954 | 1.46 | 14.4 | 8 / 5.3 | yes | outlier_syn, outlier_mis | tandem repeats; AN90 0.42 |
-| MROH1 | 8 | repeat / segdup | 921 | 599 | 1.54 | 13.2 | 4 / 4.3 | yes | outlier_syn, outlier_mis | AN90 0.27 |
-| DNAH11 | 7 | hotspot 7p | 2,461 | 1,908 | 1.29 | 12.7 | 8 / 7.4 | yes | outlier_syn, outlier_mis |  |
-| GSE1 | 16 | hotspot 16q | 1,115 | 776 | 1.44 | 12.2 | 12 / 3.7 | yes | outlier_syn, outlier_mis | 16q23–24 |
-| MAZ | 16 | hotspot 16p | 510 | 307 | 1.66 | 11.5 | 4 / 2.0 | no | outlier_syn | AN90 0.66 |
-| CACNA1H | 16 | hotspot 16p | 2,202 | 1,730 | 1.27 | 11.3 | 14 / 8.6 | yes | outlier_syn, outlier_mis | 16p13.3 |
-| FDFT1 | 8 | hotspot 8p | 351 | 199 | 1.77 | 10.8 | 1 / 0.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
-| ZFP36L2 | 2 | hotspot 2p16–22 | 600 | 388 | 1.55 | 10.7 | 2 / 2.7 | yes | outlier_syn, outlier_mis |  |
-| PCM1 | 8 | hotspot 8p | 1,085 | 787 | 1.38 | 10.6 | 0 / 2.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
-| DNAH17 | 17 | other | 3,031 | 2,502 | 1.21 | 10.6 | 19 / 11.8 | no | outlier_syn |  |
-| FANCA | 16 | hotspot 16q | 1,014 | 730 | 1.39 | 10.5 | 3 / 3.2 | yes | outlier_syn, outlier_mis | 16q23–24 |
-| CTSB | 8 | hotspot 8p | 320 | 179 | 1.78 | 10.5 | 1 / 0.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
-| RP1L1 | 8 | hotspot 8p | 1,813 | 1,419 | 1.28 | 10.5 | 10 / 6.0 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| CSMD1 | 8 | hotspot 8p | 2,862 | 1,918 | 1.49 | 21.6 | 13 / 8.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| MUC5AC | 11 | repeat / segdup | 1,975 | 1,267 | 1.56 | 19.9 | 7 / 10.6 | yes | outlier_syn, outlier_mis | tandem repeats; segdup 0.57; AN90 0.12 |
+| FLG | 1 | repeat / segdup | 2,551 | 1,827 | 1.40 | 16.9 | 7 / 7.2 | yes | outlier_syn, outlier_mis | tandem repeats; segdup 0.87 |
+| PIEZO1 | 16 | hotspot 16q | 2,427 | 1,730 | 1.40 | 16.7 | 14 / 8.0 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| SRRM2 | 16 | hotspot 16p | 2,025 | 1,453 | 1.39 | 15.0 | 9 / 6.5 | yes | outlier_syn, outlier_mis | 16p13.3 |
+| MUC3A | 7 | repeat / segdup | 1,398 | 955 | 1.46 | 14.3 | 8 / 5.3 | yes | outlier_syn, outlier_mis | tandem repeats; AN90 0.42 |
+| MROH1 | 8 | repeat / segdup | 921 | 600 | 1.53 | 13.1 | 4 / 4.3 | yes | outlier_syn, outlier_mis | AN90 0.27 |
+| DNAH11 | 7 | hotspot 7p | 2,461 | 1,906 | 1.29 | 12.7 | 8 / 7.4 | yes | outlier_syn, outlier_mis |  |
+| GSE1 | 16 | hotspot 16q | 1,115 | 773 | 1.44 | 12.3 | 12 / 3.7 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| MAZ | 16 | hotspot 16p | 510 | 310 | 1.65 | 11.4 | 4 / 2.0 | no | outlier_syn | AN90 0.66 |
+| CACNA1H | 16 | hotspot 16p | 2,202 | 1,733 | 1.27 | 11.3 | 14 / 8.6 | yes | outlier_syn, outlier_mis | 16p13.3 |
+| DNAH17 | 17 | other | 3,031 | 2,491 | 1.22 | 10.8 | 19 / 11.7 | no | outlier_syn |  |
+| FDFT1 | 8 | hotspot 8p | 351 | 199 | 1.76 | 10.7 | 1 / 0.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| ZFP36L2 | 2 | hotspot 2p16–22 | 600 | 389 | 1.54 | 10.7 | 2 / 2.7 | yes | outlier_syn, outlier_mis |  |
+| RP1L1 | 8 | hotspot 8p | 1,813 | 1,413 | 1.28 | 10.6 | 10 / 5.9 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| PCM1 | 8 | hotspot 8p | 1,085 | 788 | 1.38 | 10.6 | 0 / 2.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| CTSB | 8 | hotspot 8p | 320 | 180 | 1.78 | 10.5 | 1 / 0.8 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| FANCA | 16 | hotspot 16q | 1,014 | 732 | 1.39 | 10.4 | 3 / 3.2 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| WFS1 | 4 | other | 860 | 604 | 1.42 | 10.4 | 5 / 2.9 | yes | outlier_syn, outlier_mis |  |
 | IRF2BPL | 14 | other | 768 | 529 | 1.45 | 10.4 | 2 / 3.4 | no | outlier_syn |  |
-| WFS1 | 4 | other | 860 | 608 | 1.41 | 10.2 | 5 / 3.0 | yes | outlier_syn, outlier_mis |  |
-| ACTG1 | 17 | repeat / segdup | 422 | 259 | 1.63 | 10.2 | 2 / 1.3 | no | outlier_syn | segdup 1.00 |
-| SLC38A8 | 16 | hotspot 16q | 447 | 278 | 1.61 | 10.2 | 0 / 1.3 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| SLC38A8 | 16 | hotspot 16q | 447 | 276 | 1.62 | 10.3 | 0 / 1.3 | yes | outlier_syn, outlier_mis | 16q23–24 |
 | HSP90AA1 | 14 | other | 477 | 301 | 1.58 | 10.1 | 5 / 1.2 | no | outlier_syn |  |
-| EP300 | 22 | other | 1,340 | 1,027 | 1.31 | 9.8 | 7 / 3.9 | no | outlier_syn |  |
+| ACTG1 | 17 | repeat / segdup | 422 | 261 | 1.61 | 9.9 | 2 / 1.3 | no | outlier_syn | segdup 1.00 |
+| EP300 | 22 | other | 1,340 | 1,026 | 1.31 | 9.8 | 7 / 3.9 | no | outlier_syn |  |
 | HSPA8 | 11 | repeat / segdup | 436 | 275 | 1.59 | 9.7 | 1 / 1.0 | no | outlier_syn | segdup 1.00 |
-| DLC1 | 8 | hotspot 8p | 986 | 727 | 1.36 | 9.6 | 5 / 3.1 | yes | outlier_syn, outlier_mis | 8p23–p22 |
-| OR4A5 | 11 | repeat / segdup | 245 | 134 | 1.83 | 9.6 | 3 / 0.5 | yes | outlier_syn, outlier_mis | paralog family; segdup 1.00 |
-| MED16 | 19 | other | 897 | 653 | 1.37 | 9.5 | 8 / 3.2 | yes | outlier_syn, outlier_mis |  |
-| ATP2C2 | 16 | hotspot 16q | 804 | 576 | 1.40 | 9.5 | 9 / 2.8 | yes | outlier_syn, outlier_mis | 16q23–24 |
-| CTU2 | 16 | hotspot 16q | 482 | 316 | 1.53 | 9.3 | 1 / 1.5 | yes | outlier_syn, outlier_mis | 16q23–24 |
-| MECP2 | X | other | 310 | 185 | 1.67 | 9.2 | 4 / 1.3 | no | outlier_syn |  |
-| OR4C16 | 11 | repeat / segdup | 233 | 129 | 1.81 | 9.2 | 1 / 0.4 | yes | outlier_syn, outlier_mis | paralog family |
-| WWOX | 16 | hotspot 16q | 359 | 223 | 1.61 | 9.1 | 2 / 1.1 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| ATP2C2 | 16 | hotspot 16q | 804 | 572 | 1.41 | 9.7 | 9 / 2.8 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| DLC1 | 8 | hotspot 8p | 986 | 726 | 1.36 | 9.7 | 5 / 3.1 | yes | outlier_syn, outlier_mis | 8p23–p22 |
+| OR4A5 | 11 | repeat / segdup | 245 | 135 | 1.82 | 9.5 | 3 / 0.5 | yes | outlier_syn, outlier_mis | paralog family; segdup 1.00 |
+| MED16 | 19 | other | 897 | 655 | 1.37 | 9.4 | 8 / 3.2 | yes | outlier_syn, outlier_mis |  |
+| CTU2 | 16 | hotspot 16q | 482 | 316 | 1.53 | 9.4 | 1 / 1.5 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| WWOX | 16 | hotspot 16q | 359 | 222 | 1.62 | 9.2 | 2 / 1.0 | yes | outlier_syn, outlier_mis | 16q23–24 |
+| OR4C16 | 11 | repeat / segdup | 233 | 130 | 1.80 | 9.1 | 1 / 0.4 | yes | outlier_syn, outlier_mis | paralog family |
+| MECP2 | X | other | 310 | 186 | 1.67 | 9.1 | 4 / 1.3 | no | outlier_syn |  |
+| MUC17 | 7 | repeat / segdup | 2,325 | 1,929 | 1.21 | 9.0 | 10 / 7.2 | yes | outlier_mis | tandem repeats |
 | PSG2 | 19 | repeat / segdup | 261 | 151 | 1.73 | 9.0 | 1 / 0.6 | yes | outlier_syn, outlier_mis | paralog family; segdup 1.00 |
-| MUC17 | 7 | repeat / segdup | 2,325 | 1,931 | 1.20 | 9.0 | 10 / 7.2 | yes | outlier_mis | tandem repeats |
-| PKD1L3 | 16 | hotspot 16q | 996 | 752 | 1.32 | 8.9 | 2 / 2.8 | yes | outlier_mis |  |
-| DMD | X | other | 1,223 | 955 | 1.28 | 8.7 | 7 / 5.4 | yes | outlier_syn, outlier_mis |  |
-| KCNV2 | 9 | hotspot 9p | 518 | 356 | 1.46 | 8.6 | 3 / 1.8 | yes | outlier_syn, outlier_mis |  |
+| PKD1L3 | 16 | hotspot 16q | 996 | 751 | 1.33 | 8.9 | 2 / 2.8 | yes | outlier_mis |  |
 | CARHSP1 | 16 | hotspot 16p | 161 | 83 | 1.95 | 8.6 | 0 / 0.4 | yes | outlier_syn, outlier_mis | 16p13.3 |
-| CT47B1 | X | repeat / segdup | 228 | 133 | 1.72 | 8.3 | 0 / 1.0 | yes | outlier_syn, outlier_mis | paralog family; segdup 1.00 |
-| ARHGAP8 | 22 | other | 375 | 245 | 1.53 | 8.3 | 2 / 1.2 | yes | outlier_syn, outlier_mis |  |
-| OR4C46 | 11 | repeat / segdup | 224 | 130 | 1.72 | 8.2 | 2 / 0.4 | yes | outlier_mis | paralog family; segdup 1.00 |
-| MSH6 | 2 | hotspot 2p16–22 | 830 | 625 | 1.33 | 8.2 | 2 / 2.4 | yes | outlier_syn, outlier_mis |  |
-| KIAA2026 | 9 | hotspot 9p | 1,222 | 967 | 1.26 | 8.2 | 5 / 3.8 | yes | outlier_syn, outlier_mis |  |
+| KCNV2 | 9 | hotspot 9p | 518 | 356 | 1.46 | 8.6 | 3 / 1.8 | yes | outlier_syn, outlier_mis |  |
+| DMD | X | other | 1,223 | 960 | 1.27 | 8.5 | 7 / 5.4 | yes | outlier_syn, outlier_mis |  |
+| ARHGAP8 | 22 | other | 375 | 244 | 1.53 | 8.4 | 2 / 1.2 | yes | outlier_syn, outlier_mis |  |
+| MSH6 | 2 | hotspot 2p16–22 | 830 | 624 | 1.33 | 8.2 | 2 / 2.4 | yes | outlier_syn, outlier_mis |  |
+| KIAA2026 | 9 | hotspot 9p | 1,222 | 966 | 1.26 | 8.2 | 5 / 3.8 | yes | outlier_syn, outlier_mis |  |
+| CT47B1 | X | repeat / segdup | 228 | 133 | 1.71 | 8.2 | 0 / 1.0 | yes | outlier_syn, outlier_mis | paralog family; segdup 1.00 |
 | LRIG1 | 3 | other | 772 | 577 | 1.34 | 8.1 | 5 / 2.7 | no | — |  |
-| ID1 | 20 | other | 176 | 97 | 1.82 | 8.1 | 1 / 0.6 | yes | outlier_mis |  |
-| MUC4 | 3 | repeat / segdup | 2,351 | 2,874 | 0.82 | -9.8 | 23 / 13.6 | no | — | tandem repeats; segdup 0.63; AN90 0.69 |
+| OR4C46 | 11 | repeat / segdup | 224 | 131 | 1.71 | 8.1 | 2 / 0.4 | yes | outlier_mis | paralog family; segdup 1.00 |
+| ZFHX3 | 16 | hotspot 16q | 2,293 | 1,940 | 1.18 | 8.0 | 11 / 8.6 | no |  | 16q22 |
+| MUC4 | 3 | repeat / segdup | 2,351 | 2,866 | 0.82 | -9.6 | 23 / 13.5 | no | — | tandem repeats; segdup 0.63; AN90 0.69 |
 
-"Missense also high" means release missense z < −8, which is the release's sign for too many variants. "DNMs obs / exp" counts Satterstrom 2026 synonymous DNMs in the gene against the number expected from context rates and the ridge rr; per-gene counts are small, so read them in groups. Group: in a maternal hotspot region; repeat or segdup (segdup fraction ≥ 0.5, AN90 < 0.5, or a MUC, OR or PSG gene); or other. Data: [ridge_unflagged_outliers.tsv](followup/ridge_unflagged_outliers.tsv), [outlier_drivers.genes.tsv](followup/outlier_drivers.genes.tsv).
+"Missense also high" means release missense z < −8, which is the release's sign for too many variants. "DNMs obs / exp" counts the full run's synonymous DNMs in the gene against the number expected from context rates and the ridge rr; per-gene counts are small, so read them in groups. Group: in a maternal hotspot region; repeat or segdup (segdup fraction ≥ 0.5, AN90 < 0.5, or a MUC, OR or PSG gene); or other. Data: [outlier_drivers.genes.tsv](followup/outlier_drivers.genes.tsv) (with each gene's release flags and missense z), and [full_run.per_transcript.tsv.gz](followup/full_run.per_transcript.tsv.gz) for the raw ridge z.
 
 </details>
 
@@ -1073,7 +1106,7 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
 
 | Script | What it does | Tables it writes |
 |---|---|---|
-| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_scorecard.png](followup/rr_scorecard.png), [rr_full_run_release.png](followup/rr_full_run_release.png), [rr_new_metrics.png](followup/rr_new_metrics.png), [rr_rate_parts.png](followup/rr_rate_parts.png), [rr_feature_use.png](followup/rr_feature_use.png), [rr_penalty.png](followup/rr_penalty.png), [rr_rates_diagram.png](followup/rr_rates_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_background_pipeline.png](followup/rr_background_pipeline.png), [rr_background.local.png](followup/rr_background.local.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outlier_rates.png](followup/rr_outlier_rates.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
+| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_scorecard.png](followup/rr_scorecard.png), [rr_full_run_release.png](followup/rr_full_run_release.png), [rr_new_metrics.png](followup/rr_new_metrics.png), [rr_rate_parts.png](followup/rr_rate_parts.png), [rr_feature_use.png](followup/rr_feature_use.png), [rr_penalty.png](followup/rr_penalty.png), [rr_rates_diagram.png](followup/rr_rates_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_background_pipeline.png](followup/rr_background_pipeline.png), [rr_background.local.png](followup/rr_background.local.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outlier_rates.png](followup/rr_outlier_rates.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_size.png](followup/rr_outlier_size.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
 | [remap_rr_to_shet.py](followup/remap_rr_to_shet.py) | Applies each rr version to Ruchit's evaluation export: obs/exp by LOEUF and s_het decile, outliers by flag, and per-gene z. | [syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv), [syn_outliers_by_flag.rr_eval_export.tsv](followup/syn_outliers_by_flag.rr_eval_export.tsv), [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) |
 | [rr_shrinkage_experiments.py](followup/rr_shrinkage_experiments.py) | Alternatives to a strength α (ridge, sample split, background approximation, fitting on gnomAD), and the recommended ridge rr scored at each strength. | [rr_shrinkage_experiments.tsv](followup/rr_shrinkage_experiments.tsv), [rr_shrinkage_experiments.pass2.tsv](followup/rr_shrinkage_experiments.pass2.tsv), [recommended_rr_metrics.tsv](followup/recommended_rr_metrics.tsv) |
 | [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.py) | Ridge against Ruchit's cutoff-and-α options, with his model-fitting code. | [ridge_vs_cutoff_alpha.tsv](followup/ridge_vs_cutoff_alpha.tsv) |
@@ -1096,51 +1129,33 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
 | [histone_checks.py](followup/histone_checks.py) | The histone cluster's excess by sample size and ancestry, and what a DNM-learned histone factor would do. | [histone_checks.dnm_factor.tsv](followup/histone_checks.dnm_factor.tsv), [histone_checks.downsampling.tsv](followup/histone_checks.downsampling.tsv) |
 | [histone_gene_conversion.py](followup/histone_gene_conversion.py) | Whether the histone genes' extra gnomAD variants and DNMs copy a paralog's base. | [histone_gene_conversion.excess.tsv](followup/histone_gene_conversion.excess.tsv), [histone_gene_conversion.tests.tsv](followup/histone_gene_conversion.tests.tsv), [histone_gene_conversion.paralog_identity.tsv](followup/histone_gene_conversion.paralog_identity.tsv), [histone_gene_conversion.roulette_mu_by_context.tsv](followup/histone_gene_conversion.roulette_mu_by_context.tsv), [histone_gene_conversion.sites.tsv.gz](followup/histone_gene_conversion.sites.tsv.gz) |
 
-- [ridge_unflagged_outliers.tsv](followup/ridge_unflagged_outliers.tsv): the 47 non-histone outliers with their release flags, built from [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) and the release TSV.
 - **Ruchit's reports:** [`rr_syn_dnm_report.html`](ruchit_reports/rr_syn_dnm_report.html) (v1, 10/16; [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1792179470507199)), [`rr_syn_dnm_report.v2.html`](ruchit_reports/rr_syn_dnm_report.v2.html) (10/19–21; [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1792615503898679)) and [`rr_followup_tests_report.html`](ruchit_reports/rr_followup_tests_report.html) (10/27; [Slack thread](https://atgu.slack.com/archives/C07NGV3UQKA/p1793130471776509?thread_ts=1793122617.080069&cid=C07NGV3UQKA)), in [ruchit_reports/](ruchit_reports/). GitHub shows HTML as source; download a file and open it in a browser to read it.
 - **Inputs:** Ruchit's rr evaluation export and training tables (`gs://gnomad-tmp/rp/gnomad_v4.1.1/constraint/regional_rate/`), the v4.1.2 constraint release TSV, the Satterstrom 2026 DNM files ([`get_dnm_cohort_resources`](../../resources/resource_utils.py)), gnomAD v4 s_het from Kar et al. 2026 ([Supplementary Table 3](https://zenodo.org/records/20587463)), the UCSC hg38 reference (`hg38.2bit`), GTEx v8 median TPM, Roulette's rates for high-quality synonymous variants (`all_hq_synonymous_variants.tsv.gz`, from the [Roulette downloads](http://genetics.bwh.harvard.edu/downloads/Vova/Roulette/)), the gnomAD v4.1 exome sites VCFs (read remotely from the [public bucket](https://gnomad.broadinstitute.org/downloads)), coding exons from the [Ensembl REST API](https://rest.ensembl.org), and the pipeline's synonymous DNM Table (`syn_dnm.tsv.bgz`, from the full run). Two small inputs are checked in: the export's per-transcript table, [transcripts.tsv.bgz](followup/data/rr_eval_export/transcripts.tsv.bgz), and the ClinGen haploinsufficiency scores, [ClinGen_haploinsufficiency_gene_GRCh38.bed](followup/data/ext_clingen/ClinGen_haploinsufficiency_gene_GRCh38.bed) (from [ClinGen](https://ftp.clinicalgenome.org/ClinGen_haploinsufficiency_gene_GRCh38.bed), for the LOEUF check). The rest are not: the DNM files list individual samples and their families, the exported cells, window features and hg38 reference are tens to hundreds of MB, and the s_het table is linked rather than copied.
 
 ## Still worth trying or looking at
 
-- **Train regional effects on gnomAD rare variants.** The local version, trained on exome synonymous counts from the other chromosome half, scored best of all (2.37, about 4% below the best DNM-based rr). The cleaner version trains on intronic rare variants from gnomAD genomes and needs the cluster.
-- **One rr strength per context class.** A/T contexts are too strong, other C contexts too weak and CpG contexts far too strong under every background. One strength per class lowered held-out noise more than any background change (see [The training background](#the-training-background-what-the-dnms-are-compared-with)). It is worth understanding why the classes differ.
+Ideas beyond the [next steps](#next-steps-for-the-team). Working out the per-variant rates is next step 8.
+
+- **Better home-built rates, if a gnomAD v4 version is wanted.** Their gap to Roulette is in the regional part, which varies too much (see [Why the home-built rates fall short](#how-each-version-performs)). Besides stronger or multi-scale shrinkage and a strength set on held-out DNMs, they lack Roulette's filters: Roulette leaves out low-quality regions and pentanucleotide contexts whose frequency spectrum looks like sequencing error (`SFS_bump`), and it corrects for recurrent mutation (see [Per-variant rates](#per-variant-rates-roulette-and-how-the-pipeline-uses-it)).
+- **One rr strength per context class.** In the full run, CpG is far too strong in every version (calibration slope 0.10–0.21), and the A/T and other C classes differ by version (ridge: A/T too weak, 1.96; other C slightly too strong, 0.84). Locally, one strength per class lowered held-out noise more than any background change (see [The training background](#the-training-background-what-the-dnms-are-compared-with)). It is worth understanding why the classes differ, CpG most of all.
 - **One background row per locus or per variant.** The pipeline keeps one row per locus, although a locus with several synonymous alternatives has several chances for a DNM. In the pipeline it barely matters: with a penalty per DNM, one row per variant lowers held-out noise from 2.451 to 2.441, the lowest of any background run. A small gain if the background is revisited.
-- **A broad regional term for 8p.** In the full run the rr corrects most of the maternal hotspot regions but leaves about 60% of the excess in the first 20 Mb of 8p (1.31 → 1.19; DNMs 1.39). The excess there is in every context class, not just maternal C>G, so a smoothed, Mb-scale DNM density or a regional term learned from gnomAD rare variants would fit it better than the clustered-DNM track. Roulette's regional rate, one such term, puts 8p at 1.34, and in the pipeline it brings 8p's synonymous obs/exp to 1.02 (see [What explains them besides size](#what-explains-them-besides-size)).
-- **A gene-level adjustment.** DNMs confirm about two-thirds of the gene-to-gene spread the rr leaves. A gene's own synonymous obs/exp, shrunk toward 1, could adjust its missense and LoF expected counts.
+- **A broad regional term for 8p that doesn't come from gnomAD.** The ridge rr leaves about two-thirds of the excess in the first 20 Mb of 8p (1.31 → 1.20; DNMs 1.33). The excess there is in every context class, not just maternal C>G. Roulette's regional rate fixes it in the pipeline (8p's synonymous obs/exp 1.02), but it is learned from gnomAD rare variants. A smoothed, Mb-scale DNM density as an rr feature would be an independent fix, and would show how much of Roulette's gain there is real (see [What explains them besides size](#what-explains-them-besides-size)).
+- **A gene-level adjustment.** DNMs confirm about 70% of the gene-to-gene spread the rr leaves. A gene's own synonymous obs/exp, shrunk toward 1, could adjust its missense and LoF expected counts.
   - **For:**
     - One mechanism handles every gene-level excess the DNMs confirm (the histone genes, the maternal hotspot regions, the unexplained "other" outliers) without needing its cause. For the histone genes, the gnomAD excess applies to alleles of every kind (see [Do the extra variants copy a paralog?](#paralog-test)), which is what one factor per gene assumes.
-    - Shrinkage keeps the added noise small. From the leftover noise by gene size ([residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv)), genes vary by roughly 6–12% in rate beyond chance. A typical gene (about 150 expected synonymous variants) would keep about half of its own deviation; small genes would move much less.
-    - It wouldn't pull down constrained genes. Synonymous obs/exp is about 1.01 in LOEUF deciles 0–6 and 1.01–1.04 in every s_het decile ([syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv)).
+    - Shrinkage keeps the added noise small. From the leftover noise by gene size ([residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv)), genes vary by about 5% in rate beyond chance and site-level noise. A typical gene (about 150 expected synonymous variants) would keep about a fifth of its own deviation, and the largest genes (about 1,000 expected) about two-thirds.
+    - It wouldn't pull down constrained genes. With the ridge rr, synonymous obs/exp is 1.01–1.02 in LOEUF deciles 0–6 and 1.01–1.04 in every s_het decile ([syn_oe_by_decile.full_run.tsv](followup/syn_oe_by_decile.full_run.tsv)).
   - **Against, and what it could break:**
     - Synonymous obs/exp becomes about 1 by construction, so it can no longer check the model. Checks would need held-out halves of each gene's sites, or DNMs, and `outlier_syn` would have to be computed before adjusting.
     - **False constraint where the excess is an artifact.** In repeat or segdup genes, mis-mapped synonymous calls would raise expected LoF, while LoF calls there are often filtered, so the gene would look constrained. Those genes need excluding or flagging instead.
     - One factor per gene ignores mutation type. An excess from a maternal C>G hotspot doesn't carry over to LoF sites, many of which are CpG transitions. Splitting by context class adds noise.
-    - It mostly moves the unconstrained end (LOEUF decile 9 has synonymous obs/exp 1.11), so LOEUF deciles would shift. LOEUF's interval should include the factor's uncertainty.
+    - It mostly moves the unconstrained end (LOEUF decile 9 has synonymous obs/exp 1.08 with the ridge rr), so LOEUF deciles would shift. LOEUF's interval should include the factor's uncertainty.
     - It has to be applied after rr and re-estimated whenever rr changes (for example with Roulette).
-- **Combine Roulette with the DNM rr.** [Roulette](https://doi.org/10.1038/s41588-023-01562-0) (Seplyarskiy et al. 2023) gives a rate for every possible SNV, learned from gnomAD v3 genome rare variants. It uses the pentanucleotide, wider sequence, methylation, transcription and an empirical regional rate (the observed mutability of each trinucleotide in 50 kb windows). A local test with its published rates for all high-quality synonymous variants ([roulette_combo.py](followup/roulette_combo.py), [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv), [roulette_combo.v2.feature_coef.tsv](followup/roulette_combo.v2.feature_coef.tsv)):
-  - **Roulette alone, outside CpG, removes more than twice as much noise as the ridge rr:** held-out 2.91 (no correction) → 2.52 (ridge) → 2.00 (Roulette). On the outcome-free core set: 3.50 → 2.87 → 2.01.
-  - **The DNMs back it, independently of gnomAD.** On held-out DNMs, Roulette's slope is near 1 (A/T 0.94, other C 1.13), and it gains 17–30 log-likelihood units per 1,000 DNMs. The ridge rr gains 3 or less, and nothing in A/T contexts.
-  - **Most of the DNM gain is wider sequence context; most of the gnomAD gain is regional.** Roulette's rate splits into a heptamer part (what the three bases on either side add to our trinucleotide rates) and a regional part.
-    - The heptamer part carries most of the DNM gain in A/T contexts, but little of the gene-level gnomAD gain (2.84), because it averages out over a gene.
-    - The regional part carries most of the gnomAD gain (2.05).
-  - **The best combination fits our ridge on top of Roulette:** Roulette as a fixed offset, with the ridge learning only what Roulette misses.
-    - Held-out noise is about the same as Roulette alone (1.995 against 1.998). Outcome-free noise is the lowest of any version (1.93), and unflagged outliers drop from 76 to 40.
-    - Multiplying the two without refitting over-corrects (slopes 0.70–0.73). Adding Roulette as one more ridge feature barely helps (2.46), because the penalty shrinks its coefficient about tenfold.
-  - **Not at CpG.** Roulette's CpG rates mostly carry methylation, which our expected counts already model. Applied there too, noise rises to 4.13.
-  - **Caveats:**
-    - Roulette's regional rate is estimated from gnomAD rare variants, so part of its gnomAD gain is gnomAD fitting gnomAD. The DNM test is the independent check.
-    - It is a cell-level approximation (Roulette's average per window and context), on the autosomes only, and Roulette has no rates at its low-quality sites.
-  - **Pipeline version (added on this branch):**
-    - [`regional_rate_pipeline.py`](../../pipeline/regional_rate_pipeline.py) `--import-variant-rates` imports Roulette's per-chromosome VCFs over GENCODE coding exons. Each variant's multiplier is its rate over the average of its mutation-rate group (context, ref, alt, methylation level); CpG contexts get 1 unless `--variant-rate-include-cpg` is set.
-    - `--use-variant-rates` adds the log multiplier to the rr training set as a fixed offset, so the ridge only learns what Roulette misses, and normalizes rr on expected counts that include the multipliers.
-    - [`constraint_pipeline.py`](../../pipeline/constraint_pipeline.py) `--variant-rate-ht-path` multiplies expected counts by the multiplier along with rr.
-  - **Done in the pipeline:** Roulette's rates imported, the ridge rr refit on top of them, and the constraint pipeline run with both through the release, under `gs://gnomad-tmp/jg/rr_roulette` and `gs://gnomad-tmp/jg/rr_downstream/roulette_ridge`. It roughly doubles the noise reduction and corrects the maternal hotspot regions, but it lowers LoF expected counts by 5% and raises missense by 3% (see [How each version performs](#how-each-version-performs)).
-  - **Done in the pipeline, home-built:** the same two parts rebuilt from gnomAD v4.1 genome rare variants ([build_homebuilt_rates.py](followup/cluster/build_homebuilt_rates.py)), instead of Roulette's published rates. The regional part is each trinucleotide change's observed share of possible variants in 50 kb windows, relative to its genome-wide share, shrunk toward the window's rate. The sequence part is each heptamer change's genome-wide share, relative to its trinucleotide change's. Windows where gnomAD genomes see under 30% of the expected variants are taken as poorly called and get no regional part, and the regional part is capped at 3. The ridge rr is refit on top, and the constraint pipeline is run with both, under `gs://gnomad-tmp/jg/rr_homebuilt` and `gs://gnomad-tmp/jg/rr_downstream/homebuilt_ridge`. It gets most of Roulette's gain (noise 2.20 against 2.03) and shifts LoF and missense expected counts the same way (see [How each version performs](#how-each-version-performs)).
 - **Recover the missing X/Y features**, or confirm they can't be recovered. Only this could make an X/Y correction worth more than about 1%.
-- **Split the leftover noise into its two parts** (see [What the leftover noise is](#what-the-leftover-noise-is)). The site-level part belongs to the mutation model. The gene-level part could be reached by a nonlinear model trained on gnomAD rare variants, which removed 13% more locally.
+- **Split the leftover noise into its two parts** (see [What the leftover noise is](#what-the-leftover-noise-is)). The site-level part belongs to the mutation model. The gene-level part is where the per-variant rates help most; on top of the ridge rr, a nonlinear model of the same 13 features also removed another 7%.
 - **Open threads on the synonymous outliers** (see [The synonymous outliers](#the-synonymous-outliers)):
-  - **The 11 "other" outliers** (HSP90AA1, EP300, MECP2, WFS1, MED16 and others): DNMs confirm the excess (1.73), but nothing measured explains it.
-  - **Histone genes:** the paralog test found the gnomAD excess at alleles of every kind, and the DNM excess mostly at alleles that copy a paralog (see [Do the extra variants copy a paralog?](#paralog-test)). Flag them, or adjust them gene by gene.
-  - **Repeat and segdup genes the QC flags miss** (FLG, MUC genes, olfactory receptors, PSG2, CT47B1, ACTG1, HSPA8): DNMs don't confirm their excess. Consider a flag.
+  - **The 10 "other" outliers** (HSP90AA1, EP300, MECP2, WFS1, MED16 and others): DNMs confirm the excess (1.73), but nothing measured explains it. Roulette's rates remove 6 of them; DMD, HSP90AA1, IRF2BPL and MECP2 stay.
+  - **Histone genes:** the paralog test found the gnomAD excess at alleles of every kind, and the DNM excess mostly at alleles that copy a paralog (see [Do the extra variants copy a paralog?](#paralog-test)). No rr or rate version moves them. Flag them, or adjust them gene by gene.
+  - **Repeat and segdup genes the QC flags miss** (FLG, MUC genes, olfactory receptors, PSG2, CT47B1, ACTG1, HSPA8): DNMs don't confirm their excess, and most stay outliers with the rates too. Consider a flag.
   - **`low_exome_coverage` genes:** they all have too many variants, which suggests the coverage correction pulls expected counts too low. DNMs can't test this, because the DNM cohorts lose calls there too (DNM obs/exp 0.29).
-  - **The outlier cutoff:** a size-aware rule, since a fixed |z| > 8 favours long genes.
+  - **The outlier cutoff:** a size-aware rule, since a fixed |z| > 8 favours long genes (see the gene-size figure in [The synonymous outliers](#the-synonymous-outliers)).

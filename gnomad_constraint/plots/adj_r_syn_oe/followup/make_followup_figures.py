@@ -600,6 +600,34 @@ PERF_VERSIONS = [
 ]
 """The versions compared on the cell-level scoring: key, label, colour, hatch, line."""
 
+QC_PAIRS = {
+    "bonferroni_full": ("bonferroni_full", "bonferroni_qcexcl"),
+    "1e-2_a0.625_full": ("1e-2_a0.625_full", "1e-2_a0.625_qcexcl"),
+    "ridge_qcexcl": ("ridge_full", "ridge_qcexcl"),
+}
+"""Versions run both with all training genes and with QC-flagged genes left out."""
+QC_LIGHT = 0.45
+"""Opacity of the QC-flagged-genes-left-out half of a split row."""
+
+
+def split_rows(key):
+    """
+    Get the runs drawn in a version's row: (run, vertical offset, bar height, opacity).
+
+    A version with both training sets gets two half rows: all training genes above,
+    QC-flagged genes left out below (lighter).
+    """
+    if key not in QC_PAIRS:
+        return [(key, 0.0, 0.6, 1.0)]
+    full, qc = QC_PAIRS[key]
+    return [(full, 0.19, 0.34, 1.0), (qc, -0.19, 0.34, QC_LIGHT)]
+
+
+QC_NOTE = (
+    "Split rows: upper = all training genes, lower (lighter) = QC-flagged genes"
+    " left out of training. Roulette and home-built: all training genes."
+)
+
 
 def read_cell_scores(table):
     """Read a cell-level score table of the full run and of the per-variant rates."""
@@ -636,9 +664,9 @@ def draw_performance():
         d = strength[strength.version == k].sort_values("alpha")
         return [0.0, *d.alpha], [met.loc["none", "core_noise"], *d.core_noise]
 
-    fig, axes = plt.subplots(3, 2, figsize=(13, 16))
+    fig, axes = plt.subplots(3, 2, figsize=(13, 18))
     fig.subplots_adjust(
-        left=0.2, right=0.97, top=0.9, bottom=0.05, hspace=0.45, wspace=0.6
+        left=0.2, right=0.97, top=0.89, bottom=0.05, hspace=0.42, wspace=0.6
     )
     from matplotlib.lines import Line2D
 
@@ -667,14 +695,32 @@ def draw_performance():
         handlelength=2.6,
         columnspacing=1.6,
     )
+    fig.text(0.55, 0.928, QC_NOTE, ha="center", fontsize=12.5, color=INK2)
 
     # (a) Per-gene noise.
     ax = axes[0, 0]
     for y, k in zip(ypos, keys):
         c, h, _ = style[k]
-        v = met.loc[k, "core_noise"]
-        ax.barh(y, v, height=0.6, color=c, hatch=h, hatchcolor="white", linewidth=0)
-        ax.text(v + 0.06, y, f"{v:.2f}", va="center", fontsize=14, fontweight="bold")
+        for run, dy, ht, al in split_rows(k):
+            v = met.loc[run, "core_noise"]
+            ax.barh(
+                y + dy,
+                v,
+                height=ht,
+                color=c,
+                alpha=al,
+                hatch=h,
+                hatchcolor="white",
+                linewidth=0,
+            )
+            ax.text(
+                v + 0.06,
+                y + dy,
+                f"{v:.2f}",
+                va="center",
+                fontsize=14 if ht > 0.5 else 12,
+                fontweight="bold",
+            )
     ax.axvline(met.loc["none", "core_noise"], color=MUTED, lw=1, ls=(0, (3, 3)))
     ax.axvline(CHANCE_FLOOR, zorder=0, **THEORY)
     ax.text(
@@ -697,23 +743,41 @@ def draw_performance():
     qc = {"low_exome_mapping_quality", "low_exome_coverage"}
     for y, k in zip(ypos, keys):
         c, h, _ = style[k]
-        d = out[out.version == k]
-        flagged = int(d[d.category.isin(qc)].n.sum())
-        unflagged = int(d.n.sum()) - flagged
-        ax.barh(y, flagged, height=0.6, color=AXIS, edgecolor=SURFACE, linewidth=2)
-        ax.text(flagged / 2, y, f"{flagged}", ha="center", va="center", fontsize=14)
-        ax.barh(
-            y,
-            unflagged,
-            left=flagged,
-            height=0.6,
-            color=c,
-            hatch=h,
-            hatchcolor="white",
-            edgecolor=SURFACE,
-            linewidth=2,
-        )
-        ax.text(flagged + unflagged + 8, y, f"{unflagged}", va="center", fontsize=14)
+        for run, dy, ht, al in split_rows(k):
+            d = out[out.version == run]
+            flagged = int(d[d.category.isin(qc)].n.sum())
+            unflagged = int(d.n.sum()) - flagged
+            fs = 14 if ht > 0.5 else 12
+            ax.barh(
+                y + dy,
+                flagged,
+                height=ht,
+                color=AXIS,
+                edgecolor=SURFACE,
+                linewidth=2 if ht > 0.5 else 1,
+            )
+            ax.text(
+                flagged / 2, y + dy, f"{flagged}", ha="center", va="center", fontsize=fs
+            )
+            ax.barh(
+                y + dy,
+                unflagged,
+                left=flagged,
+                height=ht,
+                color=c,
+                alpha=al,
+                hatch=h,
+                hatchcolor="white",
+                edgecolor=SURFACE,
+                linewidth=2 if ht > 0.5 else 1,
+            )
+            ax.text(
+                flagged + unflagged + 8,
+                y + dy,
+                f"{unflagged}",
+                va="center",
+                fontsize=fs,
+            )
     ax.set_yticks(ypos, [""] * len(keys))
     ax.set_xlim(0, 520)
     ax.set_ylim(-0.6, len(keys) - 0.05)
@@ -729,9 +793,25 @@ def draw_performance():
     sy = list(range(len(skeys)))[::-1]
     for y, k in zip(sy, skeys):
         c, h, _ = style[k]
-        v = met.loc[k, "slope"]
-        ax.barh(y, v, height=0.6, color=c, hatch=h, hatchcolor="white", linewidth=0)
-        ax.text(v + 0.02, y, f"{v:.2f}", va="center", fontsize=14)
+        for run, dy, ht, al in split_rows(k):
+            v = met.loc[run, "slope"]
+            ax.barh(
+                y + dy,
+                v,
+                height=ht,
+                color=c,
+                alpha=al,
+                hatch=h,
+                hatchcolor="white",
+                linewidth=0,
+            )
+            ax.text(
+                v + 0.02,
+                y + dy,
+                f"{v:.2f}",
+                va="center",
+                fontsize=14 if ht > 0.5 else 12,
+            )
     ax.axvline(1.0, **THEORY)
     ax.text(
         0.98,
@@ -792,6 +872,15 @@ def draw_performance():
     ax.set_xlim(-0.03, 1.53)
     ax.set_ylim(1.85, 3.0)
     ax.set_title("d  Noise at each strength")
+    ax.text(
+        1.5,
+        1.9,
+        "ridge: QC-flagged genes left out;\nothers: all training genes",
+        ha="right",
+        va="bottom",
+        fontsize=12,
+        color=INK2,
+    )
     ax.set_xlabel("strength α (rr^α); dots = best α")
     ax.set_ylabel("per-gene noise (mean z²)")
     style_axis(ax, grid_axis="y")
@@ -1098,7 +1187,7 @@ def draw_new_metrics():
     style = {v[0]: v[2:] for v in PERF_VERSIONS}
     fig, axes = plt.subplots(2, 2, figsize=(14, 12.5))
     fig.subplots_adjust(
-        left=0.18, right=0.97, top=0.89, bottom=0.08, hspace=0.5, wspace=0.5
+        left=0.18, right=0.97, top=0.85, bottom=0.08, hspace=0.5, wspace=0.5
     )
     fig.suptitle(
         "The checks added since Ruchit's reports",
@@ -1109,9 +1198,11 @@ def draw_new_metrics():
     )
     fig.text(
         0.03,
-        0.94,
+        0.895,
         "a–c: cell-level scoring of every version, as in the figure above."
-        "  d: the constraint pipeline's own counts.",
+        "  d: the constraint pipeline's own counts.\na, b: " + QC_NOTE + "\nc, d:"
+        " one run per version (ridge: QC-flagged genes left out; others: all"
+        " training genes).",
         fontsize=13.5,
         color=INK2,
     )
@@ -1134,27 +1225,36 @@ def draw_new_metrics():
         yy = list(range(len(ks)))[::-1]
         for y, k in zip(yy, ks):
             c, h, _ = style[k]
-            v = (
-                met.loc[k, col]
-                if pd.notna(met.loc[k, col])
-                else met.loc[k, "core_noise"]
-            )
-            allc = met.loc[k, "core_noise"] if col == "oof_noise" else None
-            if allc is not None and k != "none":
-                ax.plot([allc, v], [y, y], color=GRID, lw=2, zorder=1)
-                ax.scatter([allc], [y], s=150, marker="|", color=INK2, lw=2, zorder=3)
-            ax.scatter(
-                [v],
-                [y],
-                s=112,
-                color=SURFACE if h else c,
-                edgecolor=c,
-                lw=1.8,
-                zorder=4,
-            )
-            ax.text(
-                v + 0.03 * (xlim[1] - xlim[0]), y, f"{v:.2f}", va="center", fontsize=13
-            )
+            for run, dy, ht, al in split_rows(k):
+                yr = y + dy * 1.3
+                v = (
+                    met.loc[run, col]
+                    if pd.notna(met.loc[run, col])
+                    else met.loc[run, "core_noise"]
+                )
+                allc = met.loc[run, "core_noise"] if col == "oof_noise" else None
+                if allc is not None and k != "none":
+                    ax.plot([allc, v], [yr, yr], color=GRID, lw=2, zorder=1)
+                    ax.scatter(
+                        [allc], [yr], s=150, marker="|", color=INK2, lw=2, zorder=3
+                    )
+                ax.scatter(
+                    [v],
+                    [yr],
+                    s=112 if ht > 0.5 else 90,
+                    color=SURFACE if h else c,
+                    edgecolor=c,
+                    alpha=al,
+                    lw=1.8,
+                    zorder=4,
+                )
+                ax.text(
+                    v + 0.03 * (xlim[1] - xlim[0]),
+                    yr,
+                    f"{v:.2f}",
+                    va="center",
+                    fontsize=13 if ht > 0.5 else 12,
+                )
         ax.axvline(
             met.loc["none", col if col != "oof_noise" else "core_noise"],
             color=MUTED,
@@ -2406,7 +2506,7 @@ def draw_penalty(prefix="penalty_path", context="CCT"):
 
 def draw_rates_diagram():
     """Draw what Roulette is, what we do with its rates, and the home-built version."""
-    W, H = 1600, 760
+    W, H = 1600, 820
     fig = plt.figure(figsize=(W / 100, H / 100))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, W)
@@ -2443,8 +2543,8 @@ def draw_rates_diagram():
         RATE_EDGE,
         [
             "Learned from rare variants",
-            "in gnomAD v3 genomes: where",
-            "mutations happened in recent history",
+            "(below 0.1% frequency) in gnomAD v3",
+            "genomes: where mutations happened recently",
         ],
         size=sz,
     )
@@ -2454,7 +2554,7 @@ def draw_rates_diagram():
         x,
         225,
         cw,
-        172,
+        230,
         RATE_FILL,
         RATE_EDGE,
         [
@@ -2464,22 +2564,31 @@ def draw_rates_diagram():
             "• CpG methylation and transcription",
             "• an empirical regional rate: each",
             "   trinucleotide's mutability in 50 kb",
+            "• fit to the chance a site stays",
+            "   monomorphic, then converted to a rate",
+            "   allowing for recurrent mutation",
         ],
         size=sz,
     )
-    arrow(ax, x + cw / 2, 399, x + cw / 2, 423)
+    arrow(ax, x + cw / 2, 457, x + cw / 2, 481)
     box(
         ax,
         x,
-        425,
+        483,
         cw,
-        72,
+        130,
         RATE_FILL,
         RATE_EDGE,
-        ["A rate for every possible SNV", "(v5.2; low-quality sites are flagged)"],
+        [
+            "A rate for every possible SNV (v5.2)",
+            "flagged, and given no multiplier by us:",
+            "• low-quality regions (low)",
+            "• contexts with an abnormal frequency",
+            "   spectrum (SFS_bump; likely errors)",
+        ],
         size=sz,
     )
-    arrow(ax, x + cw + 4, 461, xs[1] - 6, 168, color=RATE_EDGE, lw=1.6)
+    arrow(ax, x + cw + 4, 548, xs[1] - 6, 160, color=RATE_EDGE, lw=1.6)
 
     # 2. What the pipeline does.
     x = xs[1]
@@ -2488,17 +2597,21 @@ def draw_rates_diagram():
         x,
         105,
         cw,
-        72,
+        92,
         SAME_FILL,
         SAME_EDGE,
-        ["Import the rates of coding SNVs", "--import-variant-rates"],
+        [
+            "Import the rates of coding SNVs",
+            "--import-variant-rates; sites flagged",
+            "low or SFS_bump get a multiplier of 1",
+        ],
         size=sz,
     )
-    arrow(ax, x + cw / 2, 179, x + cw / 2, 203)
+    arrow(ax, x + cw / 2, 199, x + cw / 2, 223)
     box(
         ax,
         x,
-        205,
+        225,
         cw,
         120,
         SAME_FILL,
@@ -2511,12 +2624,12 @@ def draw_rates_diagram():
         ],
         size=sz,
     )
-    arrow(ax, x + cw * 0.27, 327, x + cw * 0.27, 371)
-    arrow(ax, x + cw * 0.75, 327, x + cw * 0.75, 371)
+    arrow(ax, x + cw * 0.27, 347, x + cw * 0.27, 391)
+    arrow(ax, x + cw * 0.75, 347, x + cw * 0.75, 391)
     box(
         ax,
         x,
-        373,
+        393,
         cw * 0.5 - 6,
         150,
         RR_FILL,
@@ -2533,7 +2646,7 @@ def draw_rates_diagram():
     box(
         ax,
         x + cw * 0.5 + 6,
-        373,
+        393,
         cw * 0.5 - 6,
         150,
         "white",
@@ -2548,9 +2661,9 @@ def draw_rates_diagram():
         size=sz,
         lw=1.8,
     )
-    arrow(ax, x + cw * 0.5 - 4, 448, x + cw * 0.5 + 4, 448)
+    arrow(ax, x + cw * 0.5 - 4, 468, x + cw * 0.5 + 4, 468)
     ax.text(
-        x, 545, "--use-variant-rates, --variant-rate-ht-path", fontsize=11, color=INK2
+        x, 565, "--use-variant-rates, --variant-rate-ht-path", fontsize=11, color=INK2
     )
 
     # 3. Home-built.
@@ -2560,22 +2673,23 @@ def draw_rates_diagram():
         x,
         105,
         cw,
-        92,
+        112,
         SAME_FILL,
         SAME_EDGE,
         [
-            "Rare variants in gnomAD v4.1 genomes",
-            "outside exons ± 50 bp, low-complexity",
-            "regions and segdups",
+            "Rare variants (below 0.1%) in gnomAD v4.1",
+            "genomes, outside exons ± 50 bp, low-",
+            "complexity regions and segdups; no",
+            "frequency-spectrum filter",
         ],
         size=sz,
     )
-    arrow(ax, x + cw * 0.27, 199, x + cw * 0.27, 223)
-    arrow(ax, x + cw * 0.75, 199, x + cw * 0.75, 223)
+    arrow(ax, x + cw * 0.27, 219, x + cw * 0.27, 243)
+    arrow(ax, x + cw * 0.75, 219, x + cw * 0.75, 243)
     box(
         ax,
         x,
-        225,
+        245,
         cw * 0.5 - 6,
         190,
         SAME_FILL,
@@ -2593,7 +2707,7 @@ def draw_rates_diagram():
     box(
         ax,
         x + cw * 0.5 + 6,
-        225,
+        245,
         cw * 0.5 - 6,
         190,
         SAME_FILL,
@@ -2606,11 +2720,11 @@ def draw_rates_diagram():
         ],
         size=sz,
     )
-    arrow(ax, x + cw / 2, 417, x + cw / 2, 441)
+    arrow(ax, x + cw / 2, 437, x + cw / 2, 461)
     box(
         ax,
         x,
-        443,
+        463,
         cw,
         72,
         SAME_FILL,
@@ -2618,13 +2732,13 @@ def draw_rates_diagram():
         ["multiplier = regional × sequence", "then used exactly like Roulette's (2)"],
         size=sz,
     )
-    arrow(ax, x - 6, 479, xs[1] + cw + 6, 265, color=MUTED, lw=1.4)
+    arrow(ax, x - 6, 499, xs[1] + cw + 6, 285, color=MUTED, lw=1.4)
 
     # What it buys and costs.
     box(
         ax,
         30,
-        590,
+        650,
         1540,
         140,
         "white",
@@ -2648,7 +2762,7 @@ def draw_rates_diagram():
 
 
 def draw_outliers():
-    """Draw synonymous outliers by category, and histone gene z-scores below."""
+    """Draw synonymous outliers by category, and histone gene z-scores beside them."""
     out = pd.concat(
         pd.read_csv(os.path.join(OUT_DIR, f"{p}.outliers_by_flag.tsv"), sep="\t")
         for p in ("full_run", "rr_rates")
@@ -2670,9 +2784,9 @@ def draw_outliers():
         "low_exome_coverage": "#e6e5df",
         "low_exome_mapping_quality": "#c3c2b7",
     }
-    fig = plt.figure(figsize=(15, 13.5))
-    gs = fig.add_gridspec(2, 2, width_ratios=[1.2, 1], hspace=0.5, wspace=0.22)
-    fig.subplots_adjust(left=0.1, right=0.98, top=0.95, bottom=0.1)
+    fig = plt.figure(figsize=(15, 7.2))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1.2, 1], wspace=0.22)
+    fig.subplots_adjust(left=0.1, right=0.98, top=0.92, bottom=0.2)
     ax = fig.add_subplot(gs[0, 0])
     ypos = list(range(len(rows)))[::-1]
     for y, (_, corr, c, h) in zip(ypos, rows):
@@ -2824,105 +2938,172 @@ def draw_outliers():
     leg.get_frame().set_linewidth(0)
     style_axis(ax, grid_axis="y")
 
-    # (c, d) Gene size: a bigger gene crosses |z| > 8 with a smaller relative excess.
-    # c uses expected count (what z depends on); d uses coding length.
-    zs["oe"] = zs.obs / zs.exp_recommended
-    other = zs[zs.group.isin(["other genes", "non-histone, same chr6 region"])]
-    hit = other[other.z_recommended.abs() > 8]
-    exp_per_bp = float((other.exp_recommended / other.cds_length).median())
-    ax_c = fig.add_subplot(gs[1, 0])
-    ax_d = fig.add_subplot(gs[1, 1], sharey=ax_c)
-    for ax, xcol, title in (
-        (
-            ax_c,
-            "exp_recommended",
-            "c  Gene size by expected count: bigger genes need a smaller excess",
-        ),
-        (ax_d, "cds_length", "d  Gene size by coding length"),
-    ):
-        ax.scatter(
-            other[xcol],
-            other.oe,
-            s=4,
-            color=NONE_C,
-            alpha=0.25,
-            linewidth=0,
-            label=f"genes without a QC flag (n = {len(other):,})",
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_outliers.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
+SIZE_VERSIONS = [
+    ("ridge_qcexcl", "full_run", "Ridge (recommended)"),
+    ("roulette_ridge", "rr_rates", "Roulette + ridge (quick first try)"),
+]
+"""The versions in the gene-size figure: key, per-transcript table and label."""
+
+
+def draw_outlier_size():
+    """Draw synonymous obs/exp against gene size under ridge and Roulette + ridge."""
+    zs = pd.read_csv(os.path.join(OUT_DIR, "syn_z_by_histone_group.tsv"), sep="\t")
+    zs = zs[["transcript", "gene", "group", "cds_length", "obs"]]
+    for key, prefix, _ in SIZE_VERSIONS:
+        pt = pd.read_csv(
+            os.path.join(OUT_DIR, f"{prefix}.per_transcript.tsv.gz"),
+            sep="\t",
+            usecols=["transcript", f"exp_{key}", f"z_{key}"],
         )
-        ax.scatter(
-            hit[xcol],
-            hit.oe,
-            s=38,
-            color=REC_C,
-            edgecolor=SURFACE,
-            linewidth=0.8,
-            zorder=3,
-            label=f"non-histone outliers (n = {len(hit)})",
-        )
-        for group, label, c in (
-            ("histone, chr6p22 cluster", "histone genes, chr6p22 cluster", "#8f84e0"),
-            ("histone, elsewhere", "histone genes elsewhere", "#cfc8f2"),
-        ):
-            h = zs[zs.group == group]
+        zs = zs.merge(pt, on="transcript")
+    non_histone = zs.group.isin(["other genes", "non-histone, same chr6 region"])
+    fig, axes = plt.subplots(2, 2, figsize=(15, 13.5), sharey=True)
+    fig.subplots_adjust(
+        left=0.08, right=0.98, top=0.93, bottom=0.13, hspace=0.42, wspace=0.08
+    )
+    handles = None
+    for row, (key, _, vlabel) in enumerate(SIZE_VERSIONS):
+        exp, z = zs[f"exp_{key}"], zs[f"z_{key}"]
+        oe = zs.obs / exp
+        other = non_histone
+        hit = non_histone & (z.abs() > 8)
+        exp_per_bp = float((exp[other] / zs.cds_length[other]).median())
+        for col, xcol in enumerate(("exp", "cds_length")):
+            ax = axes[row, col]
+            xv = exp if xcol == "exp" else zs.cds_length
             ax.scatter(
-                h[xcol],
-                h.oe,
+                xv[other],
+                oe[other],
+                s=4,
+                color=NONE_C,
+                alpha=0.25,
+                linewidth=0,
+                label=f"genes without a QC flag (n = {int(other.sum()):,})",
+            )
+            ax.scatter(
+                xv[hit],
+                oe[hit],
                 s=38,
-                color=c,
+                color=ROULETTE_C if key == "roulette_ridge" else REC_C,
                 edgecolor=SURFACE,
                 linewidth=0.8,
                 zorder=3,
-                label=f"{label} (n = {len(h)})",
+                label="non-histone outliers (|z| > 8)",
             )
-        ax.set_xscale("log")
-        if xcol == "exp_recommended":
-            x = np.logspace(np.log10(5), np.log10(6000), 200)
-            e = x
-            ax.set_xlim(5, 6000)
-            ax.set_xticks([10, 100, 1000], ["10", "100", "1,000"])
-            ax.set_xlabel("expected synonymous variants in the gene")
-            curve_label, label_x = "|z| = 8", 26
-        else:
-            x = np.logspace(np.log10(30), np.log10(40000), 200)
-            e = x * exp_per_bp
-            ax.set_xlim(30, 40000)
-            ax.set_xticks([100, 1000, 10000], ["100 bp", "1 kb", "10 kb"])
-            ax.set_xlabel("coding sequence length")
-            curve_label, label_x = "|z| = 8 (at the median\n160 expected per kb)", 170
-        ax.plot(x, 1 + 8 / np.sqrt(e), **THEORY)
-        ax.plot(x, 1 - 8 / np.sqrt(e), **THEORY)
-        ax.text(label_x, 2.95, curve_label, fontsize=12.5, color=INK2, va="top")
-        for gene, dx, dy in (("CSMD1", -40, 10), ("H1-4", 8, 6), ("MUC4", 8, -12)):
-            r = zs[zs.gene == gene]
-            if len(r):
-                r = r.iloc[0]
-                ax.annotate(
-                    gene,
-                    (r[xcol], r.oe),
-                    xytext=(dx, dy),
-                    textcoords="offset points",
-                    fontsize=12.5,
-                    color=INK2,
+            for group, label, c in (
+                (
+                    "histone, chr6p22 cluster",
+                    "histone genes, chr6p22 cluster",
+                    "#8f84e0",
+                ),
+                ("histone, elsewhere", "histone genes elsewhere", "#cfc8f2"),
+            ):
+                m = zs.group == group
+                ax.scatter(
+                    xv[m],
+                    oe[m],
+                    s=38,
+                    color=c,
+                    edgecolor=SURFACE,
+                    linewidth=0.8,
+                    zorder=3,
+                    label=f"{label} (n = {int(m.sum())})",
                 )
-        ax.set_title(title)
-        style_axis(ax, grid_axis="y")
-    ax_c.set_ylim(0.3, 3.0)
-    ax_c.set_ylabel("synonymous obs/exp (ridge rr)")
-    plt.setp(ax_d.get_yticklabels(), visible=False)
-    handles, labels = ax_c.get_legend_handles_labels()
+            ax.set_xscale("log")
+            if xcol == "exp":
+                x = np.logspace(np.log10(5), np.log10(6000), 200)
+                e = x
+                ax.set_xlim(5, 6000)
+                ax.set_xticks([10, 100, 1000], ["10", "100", "1,000"])
+                ax.set_xlabel("expected synonymous variants in the gene")
+                curve_label, label_x = "|z| = 8", 26
+            else:
+                x = np.logspace(np.log10(30), np.log10(40000), 200)
+                e = x * exp_per_bp
+                ax.set_xlim(30, 40000)
+                ax.set_xticks([100, 1000, 10000], ["100 bp", "1 kb", "10 kb"])
+                ax.set_xlabel("coding sequence length")
+                curve_label = (
+                    f"|z| = 8 (at the median\n{1000 * exp_per_bp:.0f} expected per kb)"
+                )
+                label_x = 170
+            ax.plot(x, 1 + 8 / np.sqrt(e), **THEORY)
+            ax.plot(x, 1 - 8 / np.sqrt(e), **THEORY)
+            ax.text(label_x, 2.95, curve_label, fontsize=12.5, color=INK2, va="top")
+            for gene, dx, dy in (("CSMD1", -40, 10), ("H1-4", 8, 6), ("MUC4", 8, -12)):
+                m = (zs.gene == gene).to_numpy()
+                if m.any():
+                    i = int(np.flatnonzero(m)[0])
+                    ax.annotate(
+                        gene,
+                        (xv.iloc[i], oe.iloc[i]),
+                        xytext=(dx, dy),
+                        textcoords="offset points",
+                        fontsize=12.5,
+                        color=INK2,
+                    )
+            ax.text(
+                0.98,
+                0.03,
+                f"{int(hit.sum())} non-histone outliers;\nmedian expected"
+                f" {exp[hit].median():,.0f} (all genes {exp[other].median():,.0f})",
+                transform=ax.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=12.5,
+                color=INK2,
+            )
+            letter = "abcd"[2 * row + col]
+            what = "expected count" if xcol == "exp" else "coding length"
+            ax.set_title(f"{letter}  {vlabel}: by {what}")
+            style_axis(ax, grid_axis="y")
+            if col == 0:
+                ax.set_ylabel("synonymous obs/exp")
+            if handles is None:
+                handles, labels = ax.get_legend_handles_labels()
+    axes[0, 0].set_ylim(0.3, 3.0)
+    handles[1] = plt.Line2D(
+        [],
+        [],
+        ls="",
+        marker="o",
+        ms=8,
+        color=REC_C,
+        markeredgecolor=SURFACE,
+    )
+    handles.insert(
+        2,
+        plt.Line2D(
+            [], [], ls="", marker="o", ms=8, color=ROULETTE_C, markeredgecolor=SURFACE
+        ),
+    )
+    labels = [
+        labels[0],
+        "non-histone outliers (|z| > 8), ridge",
+        "non-histone outliers, Roulette + ridge",
+        *labels[2:],
+    ]
     fig.legend(
         handles,
         labels,
         loc="lower center",
-        ncol=2,
+        ncol=3,
         frameon=False,
         fontsize=13,
-        bbox_to_anchor=(0.54, 0.0),
+        bbox_to_anchor=(0.53, 0.0),
         markerscale=1.4,
     )
-
     fig.savefig(
-        os.path.join(OUT_DIR, "rr_outliers.png"),
+        os.path.join(OUT_DIR, "rr_outlier_size.png"),
         dpi=170,
         bbox_inches="tight",
         pad_inches=0.3,
@@ -3360,11 +3541,11 @@ def draw_outlier_drivers():
         ha="right",
         va="top",
     )
-    ax.plot(x, 1 + 0.51 * (x - 1), color=REC_C, lw=1.6)
+    ax.plot(x, 1 + 0.53 * (x - 1), color=REC_C, lw=1.6)
     ax.text(
         0.9,
         0.885,
-        "solid line: fit, slope 0.51 ± 0.07",
+        "solid line: fit, slope 0.53 ± 0.07",
         fontsize=13,
         color=INK,
         va="top",
@@ -3386,7 +3567,8 @@ def draw_outlier_drivers():
     ax.set_ylim(0.82, 1.2)
     ax.set_title("b  DNMs follow synonymous obs/exp")
     ax.set_xlabel(
-        "gnomAD synonymous obs/exp (ridge rr), decile mean\n15,027 genes without a flag, ≥ 100 expected"
+        "gnomAD synonymous obs/exp (ridge rr), decile mean\n"
+        f"{int(dec.n.sum()):,} genes without a flag, ≥ 100 expected"
     )
     ax.set_ylabel("synonymous DNM obs/exp, 95% CI")
     style_axis(ax, grid_axis="y")
@@ -3451,8 +3633,11 @@ def draw_outlier_drivers():
     ax.set_xlim(0, offset["chrY"] + length["chrY"])
     ax.set_ylim(-12, 25)
     ax.set_ylabel("synonymous z (ridge rr)")
+    excess = genes[genes.outlier & (genes.z > 0)]
+    n_hot = int((excess.group == "maternal hotspot region").sum())
     ax.set_title(
-        "c  23 of the 46 excess outliers sit in the maternal hotspot regions (shaded); 3.9 expected"
+        f"c  {n_hot} of the {len(excess)} excess outliers sit in the maternal hotspot"
+        " regions (shaded); 3.9 expected"
     )
     ax.legend(
         handles=[
@@ -5500,6 +5685,7 @@ if __name__ == "__main__":
         "Explained synonymous outliers removed: 91 histone, repeat or segdup, and maternal-hotspot genes",
     )
     draw_outliers()
+    draw_outlier_size()
     draw_alternatives()
     draw_leftover_noise()
     draw_outlier_rates()

@@ -1,8 +1,9 @@
 """Test what drives the synonymous outliers left after the ridge rr.
 
-The outliers are the 47 transcripts without a QC gene flag or histone gene symbol
-with |z| > 8 under the ridge rr (``rr_recommended`` in the cells written by
-``rr_shrinkage_experiments.py --experiments recommended``).
+The outliers are the transcripts without a QC gene flag or histone gene symbol with
+|z| > 8 under the ridge rr (``--rr-col`` of the cells: ``rr_recommended`` from
+``rr_shrinkage_experiments.py --experiments recommended``, or the full run's
+``rr_ridge_qcexcl`` from ``cluster/annotate_cells_rr.py``).
 
 Questions:
 
@@ -110,11 +111,12 @@ def poisson_ci(k: float, e: float) -> tuple:
     return lo / e, hi / e
 
 
-def load_cells(path: str) -> pd.DataFrame:
+def load_cells(path: str, rr_col: str = "rr_recommended") -> pd.DataFrame:
     """
     Read the per (transcript, window, context) cells with the ridge rr.
 
-    :param path: Cells TSV with ``rr_recommended``.
+    :param path: Cells TSV with ``rr_col``.
+    :param rr_col: The rr column to use.
     :return: Cells with ``exp_rr`` and a context class.
     """
     cells = pd.read_csv(
@@ -127,10 +129,10 @@ def load_cells(path: str) -> pd.DataFrame:
             "exp",
             "obs",
             "n_sites",
-            "rr_recommended",
+            rr_col,
         ],
     )
-    cells["rr"] = cells.rr_recommended.fillna(1.0)
+    cells["rr"] = cells[rr_col].fillna(1.0)
     cells["exp_rr"] = cells.exp * cells.rr
     ctx = cells.context
     cells["cls"] = np.where(
@@ -214,6 +216,8 @@ def build_genes(cells: pd.DataFrame, rel: pd.DataFrame) -> pd.DataFrame:
         "start_position",
         "end_position",
         "gene_flags",
+        "constraint_flags",
+        "mis.z_raw",
         *QC_COLS,
     ]
     tx = tx.join(rel[cols])
@@ -487,7 +491,7 @@ def covariates(
 def main(args: argparse.Namespace) -> None:
     """Run the analyses and write their tables."""
     rel = load_release(args.release_tsv)
-    cells = add_dnms(load_cells(args.cells), args.dnm_training)
+    cells = add_dnms(load_cells(args.cells, args.rr_col), args.dnm_training)
     tx = build_genes(cells, rel)
     ex = tx.outlier & (tx.z > 0)
     match = size_matched(tx)
@@ -600,6 +604,7 @@ def main(args: argparse.Namespace) -> None:
             "group",
             "region",
             "obs",
+            "exp_rr",
             "exp_g",
             "oe",
             "z",
@@ -613,6 +618,8 @@ def main(args: argparse.Namespace) -> None:
             "oe_C non-CpG",
             "oe_CpG",
             *QC_COLS,
+            "constraint_flags",
+            "mis.z_raw",
         ]
     ]
     genes.to_csv(f"{prefix}.genes.tsv", sep="\t")
@@ -627,7 +634,12 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cells", required=True, help="Cells TSV with rr_recommended.")
+    parser.add_argument("--cells", required=True, help="Cells TSV with --rr-col.")
+    parser.add_argument(
+        "--rr-col",
+        default="rr_recommended",
+        help="rr column of the cells, e.g. rr_ridge_qcexcl in the full run's cells.",
+    )
     parser.add_argument("--release-tsv", required=True)
     parser.add_argument(
         "--dnm-training", required=True, help="rr_training.tsv.bgz of the DNM set."
