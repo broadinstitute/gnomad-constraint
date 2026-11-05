@@ -3534,6 +3534,190 @@ def draw_plateau(prefix="plateau_models"):
     plt.close(fig)
 
 
+NDD_VERSIONS = [
+    ("none", "No rr (= released v4.1.1)", NONE_C, "-"),
+    ("bonferroni_full", "Current method", RUCHIT_C, "-"),
+    (
+        "bonferroni_qcexcl",
+        "Current method, QC-flagged left out",
+        RUCHIT_C,
+        (0, (4, 2.5)),
+    ),
+    ("ridge_full", "Ridge", REC_C, (0, (4, 2.5))),
+    ("ridge_qcexcl", "Ridge, QC-flagged left out (recommended)", REC_C, "-"),
+    ("roulette_ridge", "Roulette + ridge (quick first try)", ROULETTE_C, "-"),
+    (
+        "homebuilt_ridge",
+        "Home-built + ridge (quick first try)",
+        ROULETTE_C,
+        (0, (4, 2.5)),
+    ),
+]
+"""Versions in the NDD precision-recall figure: key, label, colour, line style."""
+
+
+def draw_disease_gene_pr(prefix="disease_gene_pr"):
+    """Draw LOEUF's precision-recall for NDD and HI genes, as in the flagship preprint."""
+    auprc = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.auprc.tsv"), sep="\t")
+    curves = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.curves.tsv"), sep="\t")
+    shown = [
+        "none",
+        "bonferroni_full",
+        "ridge_qcexcl",
+        "roulette_ridge",
+        "homebuilt_ridge",
+    ]
+    style = {k: (label, c, ls) for k, label, c, ls in NDD_VERSIONS}
+    sets = list(dict.fromkeys(auprc.gene_set))
+    tests = [
+        ("NDD", "NDD genes", "Extended Data Fig. 7b", "Fig. 4d", (0.6, 0.45)),
+        ("HI", "HI genes", "Extended Data Fig. 5b", None, (0.75, 0.16)),
+    ]
+    fig, axes = plt.subplots(
+        2, 3, figsize=(20, 13.8), gridspec_kw={"width_ratios": [1, 1, 1.15]}
+    )
+    fig.subplots_adjust(
+        left=0.05, right=0.98, top=0.9, bottom=0.1, wspace=0.42, hspace=0.5
+    )
+    letters = iter("abcdef")
+    for row, (test, what, ref_all, ref_short, ylims) in enumerate(tests):
+        for col, (gs, ylim) in enumerate(zip(sets, ylims)):
+            ax = axes[row, col]
+            a = auprc[(auprc.test == test) & (auprc.gene_set == gs)].set_index(
+                "version"
+            )
+            for k in shown:
+                label, c, ls = style[k]
+                cv = curves[
+                    (curves.test == test)
+                    & (curves.gene_set == gs)
+                    & (curves.version == k)
+                ]
+                ax.plot(
+                    cv.recall,
+                    cv.precision,
+                    color=c,
+                    ls=ls,
+                    lw=2.6 if k == "ridge_qcexcl" else 1.8,
+                    label=f"{label.split(' (')[0]} ({a.loc[k, 'auprc']:.3f})",
+                )
+            base = a.n_positive.iloc[0] / a.n_genes.iloc[0]
+            ax.axhline(base, **THEORY)
+            ax.text(
+                0.5,
+                base + 0.008,
+                f"chance ({base:.3f})",
+                ha="center",
+                fontsize=12,
+                color=INK2,
+            )
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, ylim)
+            ax.set_xlabel(f"recall (share of {what} found)")
+            ax.set_ylabel(f"precision (share called that are {what.split()[0]})")
+            ref = ref_all if col == 0 else ref_short
+            title = "all genes" if col == 0 else "< 50 expected pLoF"
+            ax.set_title(
+                f"{next(letters)}  {what}, {title}" + (f" (as {ref})" if ref else "")
+            )
+            ax.text(
+                0.98,
+                0.97,
+                f"{a.n_positive.iloc[0]} {what}, {a.n_genes.iloc[0] - a.n_positive.iloc[0]:,} others",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=12,
+                color=INK2,
+            )
+            ax.legend(
+                loc="upper right",
+                bbox_to_anchor=(1.0, 0.9),
+                fontsize=11.5,
+                frameon=False,
+                title="AUPRC",
+                title_fontsize=12,
+            )
+            style_axis(ax, grid_axis="both")
+
+        # Each version's AUPRC difference from no rr, with paired bootstrap intervals.
+        ax = axes[row, 2]
+        keys = [k for k, *_ in NDD_VERSIONS if k != "none"]
+        y0 = np.arange(len(keys))[::-1]
+        for j, (gs, dy, marker) in enumerate(zip(sets, (0.17, -0.17), ("o", "s"))):
+            a = auprc[(auprc.test == test) & (auprc.gene_set == gs)].set_index(
+                "version"
+            )
+            for y, k in zip(y0, keys):
+                label, c, ls = style[k]
+                r = a.loc[k]
+                ax.plot([r.diff_lo, r.diff_hi], [y + dy, y + dy], color=c, lw=2)
+                ax.scatter(
+                    [r.diff_vs_none],
+                    [y + dy],
+                    s=80,
+                    marker=marker,
+                    color=SURFACE if j else c,
+                    edgecolor=c,
+                    lw=1.8,
+                    zorder=3,
+                )
+        ax.axvline(0, **THEORY)
+        ax.set_yticks(
+            y0,
+            [style[k][0].replace(" (", "\n(").replace(", ", ",\n") for k in keys],
+            fontsize=12,
+        )
+        ax.set_xlabel("AUPRC difference from no rr (95% bootstrap interval)")
+        ax.set_title(f"{next(letters)}  {what}: change from the released LOEUF")
+        ax.legend(
+            handles=[
+                plt.Line2D(
+                    [], [], marker="o", ls="", color=INK2, ms=9, label="all genes"
+                ),
+                plt.Line2D(
+                    [],
+                    [],
+                    marker="s",
+                    ls="",
+                    mfc=SURFACE,
+                    mec=INK2,
+                    ms=9,
+                    label="< 50 expected pLoF",
+                ),
+            ],
+            loc="upper center",
+            bbox_to_anchor=(0.45, -0.12),
+            ncol=2,
+            fontsize=12,
+            frameon=False,
+        )
+        style_axis(ax)
+    fig.suptitle(
+        "Classifying NDD and haploinsufficient genes by LOEUF, for each version of the"
+        " full run",
+        x=0.05,
+        ha="left",
+        fontsize=17,
+        weight="bold",
+    )
+    fig.text(
+        0.05,
+        0.935,
+        "Gene lists and rules of the gnomAD v4 flagship preprint: NDD genes from DDG2P"
+        " (HI genes left out); HI genes from its curated union; ranked by LOEUF",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_disease_gene_pr.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
 def draw_alternatives():
     """Draw out-of-fold noise and calibration slope for the rr alternatives."""
     res = pd.concat(
@@ -6100,6 +6284,7 @@ if __name__ == "__main__":
     draw_new_metrics()
     draw_rate_parts()
     draw_full_run_release()
+    draw_disease_gene_pr()
     draw_performance()
     draw_deciles()
     draw_deciles(
