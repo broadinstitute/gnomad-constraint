@@ -2505,252 +2505,456 @@ def draw_penalty(prefix="penalty_path", context="CCT"):
 
 
 def draw_rates_diagram():
-    """Draw what Roulette is, what we do with its rates, and the home-built version."""
-    W, H = 1600, 820
+    """Draw a graphical abstract of Roulette, what the pipeline does with it, and the result."""
+    W, H = 1700, 940
     fig = plt.figure(figsize=(W / 100, H / 100))
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, W)
-    ax.set_ylim(H, 0)
-    ax.axis("off")
-    ax.text(
+    bg = fig.add_axes([0, 0, 1, 1])
+    bg.set_xlim(0, W)
+    bg.set_ylim(H, 0)
+    bg.axis("off")
+
+    def inset(x, y, w, h):
+        """Add axes at background coordinates (x, y from the top left)."""
+        a = fig.add_axes([x / W, 1 - (y + h) / H, w / W, h / H])
+        a.set_facecolor("none")
+        a.tick_params(labelsize=11, length=0)
+        for side in ("top", "right"):
+            a.spines[side].set_visible(False)
+        return a
+
+    def panel(x, y, w, h, title, fill=RATE_FILL, edge=RATE_EDGE, dash=False):
+        """Draw a vignette frame with a bold title."""
+        bg.add_patch(
+            FancyBboxPatch(
+                (x, y),
+                w,
+                h,
+                boxstyle="round,pad=0,rounding_size=10",
+                facecolor=fill,
+                edgecolor=edge,
+                linewidth=1.4,
+                linestyle=(0, (4, 3)) if dash else "-",
+            )
+        )
+        bg.text(x + 14, y + 24, title, fontsize=13.5, weight="bold", va="center")
+
+    def note(x, y, text, size=12):
+        """Write a gray note, vertically centred on y."""
+        bg.text(x, y, text, fontsize=size, color=INK2, va="center", linespacing=1.3)
+
+    bg.text(
         30,
-        34,
-        "Per-variant rates: what Roulette is, and how we tried it (a quick first try)",
-        fontsize=16,
+        30,
+        "Per-variant rates: what Roulette is, what the pipeline does with it, and"
+        " what one quick, untuned try did",
+        fontsize=17,
         weight="bold",
         va="center",
     )
-    cw = 470
-    xs = [30, 565, 1100]
     heads = [
-        "1  Roulette (Seplyarskiy et al. 2023)",
-        "2  What the pipeline does with the rates",
-        "3  The home-built version",
+        (
+            30,
+            "1  What Roulette learns",
+            "from rare (< 0.1%) non-coding SNVs in gnomAD v3 genomes",
+        ),
+        (
+            700,
+            "2  What the pipeline does with it",
+            "regional_rate_pipeline.py, constraint_pipeline.py",
+        ),
+        (
+            1200,
+            "3  What one untuned run did",
+            "noise: cell-level scoring; 8p: the pipeline's counts",
+        ),
     ]
-    for x, h in zip(xs, heads):
-        ax.text(x, 80, h, fontsize=14, weight="bold", va="center")
-    sz = 12
+    for x, h1, h2 in heads:
+        bg.text(x, 74, h1, fontsize=15.5, weight="bold", va="center")
+        bg.text(x, 100, h2, fontsize=12.5, color=INK2, va="center")
 
-    # 1. Roulette.
-    x = xs[0]
-    box(
-        ax,
-        x,
-        105,
-        cw,
-        92,
-        RATE_FILL,
-        RATE_EDGE,
-        [
-            "Learned from rare variants",
-            "(below 0.1% frequency) in gnomAD v3",
-            "genomes: where mutations happened recently",
-        ],
-        size=sz,
+    # (1a) Wider sequence context.
+    x, y = 30, 120
+    panel(x, y, 310, 290, "Wider sequence")
+    bw = 32
+    x0 = x + 155 - 3.5 * bw
+    for i, b in enumerate("GATCAGT"):
+        mid = i == 3
+        bg.add_patch(
+            Rectangle(
+                (x0 + i * bw, y + 120),
+                bw - 4,
+                42,
+                facecolor=ROULETTE_C if mid else "white",
+                edgecolor=ROULETTE_C,
+                lw=1.2,
+            )
+        )
+        bg.text(
+            x0 + i * bw + (bw - 4) / 2,
+            y + 141,
+            b,
+            ha="center",
+            va="center",
+            fontsize=15,
+            weight="bold",
+            color="white" if mid else INK,
+            family="monospace",
+        )
+    for x1, x2, yy, sign, label, c in (
+        (x0, x0 + 7 * bw - 4, y + 104, 1, "Roulette: ± 3 bases and beyond", ROULETTE_C),
+        (x0 + 2 * bw, x0 + 5 * bw - 4, y + 178, -1, "our μ: the trinucleotide", INK2),
+    ):
+        bg.plot(
+            [x1, x1, x2, x2], [yy + 8 * sign, yy, yy, yy + 8 * sign], color=c, lw=1.5
+        )
+        bg.text(
+            (x1 + x2) / 2,
+            yy - 16 * sign,
+            label,
+            ha="center",
+            va="center",
+            fontsize=12,
+            color=c,
+        )
+    note(
+        x + 14,
+        y + 252,
+        "in our test: most of the gain\non held-out DNMs (A/T contexts)",
     )
-    arrow(ax, x + cw / 2, 199, x + cw / 2, 223)
-    box(
-        ax,
-        x,
-        225,
-        cw,
-        230,
-        RATE_FILL,
-        RATE_EDGE,
-        [
-            "A model of each possible SNV's rate",
-            "• the wider sequence around the site",
-            "   (beyond our three bases)",
-            "• CpG methylation and transcription",
-            "• an empirical regional rate: each",
-            "   trinucleotide's mutability in 50 kb",
-            "• fit to the chance a site stays",
-            "   monomorphic, then converted to a rate",
-            "   allowing for recurrent mutation",
-        ],
-        size=sz,
+
+    # (1b) Regional rate, from the per-gene factors along chr8.
+    x, y = 360, 120
+    panel(x, y, 310, 290, "Regional rate (50 kb windows)")
+    genes = pd.read_csv(
+        os.path.join(OUT_DIR, "compare_rate_parts.genes.tsv.gz"), sep="\t"
     )
-    arrow(ax, x + cw / 2, 457, x + cw / 2, 481)
-    box(
-        ax,
+    c8 = genes[(genes.chromosome == "chr8") & (genes.mid < 60e6)].sort_values("mid")
+    a = inset(x + 62, y + 50, 232, 140)
+    a.axvspan(0, 20, color=RR_FILL, lw=0)
+    a.scatter(
+        c8.mid / 1e6, c8.roulette_regional, s=10, color=ROULETTE_C, alpha=0.45, lw=0
+    )
+    a.plot(
+        c8.mid / 1e6,
+        c8.roulette_regional.rolling(21, center=True, min_periods=5).median(),
+        color=ROULETTE_C,
+        lw=2.2,
+    )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.set_ylim(0.8, 1.9)
+    a.set_xlim(0, 60)
+    a.set_xticks([0, 20, 40, 60])
+    a.set_yticks([1, 1.5])
+    a.set_xlabel("chr8 position (Mb)", fontsize=11.5, labelpad=2)
+    a.set_ylabel("Roulette, per gene", fontsize=11.5)
+    a.text(1.5, 1.84, "8p hotspot", fontsize=11, color="#9a6a00", va="top")
+    note(x + 14, y + 252, "in our test: most of the gain\non gnomAD genes")
+
+    # (1c) Recurrent mutation: the chance a site is seen flattens at high rates.
+    x, y = 30, 430
+    panel(x, y, 310, 290, "Recurrent mutation")
+    a = inset(x + 62, y + 50, 232, 140)
+    mu = np.linspace(0, 4, 200)
+    a.plot(mu, 1 - np.exp(-mu), color=ROULETTE_C, lw=2.4)
+    a.plot(mu[mu < 1.2], mu[mu < 1.2], color=INK2, lw=1.3, ls=(0, (1, 2)))
+    a.text(
+        1.25, 1.1, "if no site were\nhit twice", fontsize=10.5, color=INK2, va="center"
+    )
+    a.axvspan(2.8, 4, color=CLASS_C["CpG"], alpha=0.12, lw=0)
+    a.text(3.4, 0.3, "CpG", fontsize=11, color=CLASS_C["CpG"], ha="center")
+    a.set_xlim(0, 4)
+    a.set_ylim(0, 1.3)
+    a.set_xticks([])
+    a.set_yticks([0, 1])
+    a.set_xlabel("mutation rate", fontsize=11.5, labelpad=2)
+    a.set_ylabel("chance a site is seen", fontsize=11.5)
+    note(
+        x + 14,
+        y + 248,
+        "fits the chance a site stays\nmonomorphic, then converts\nthat to a rate",
+    )
+
+    # (1d) Quality flags, including contexts with an abnormal frequency spectrum.
+    x, y = 360, 430
+    panel(x, y, 310, 290, "Quality flags")
+    typical = np.array([1.0, 0.42, 0.2, 0.1, 0.05, 0.03])
+    bump = np.array([1.0, 0.42, 0.34, 0.27, 0.2, 0.08])
+    for k, (vals, label) in enumerate(
+        ((typical, "typical context"), (bump, "SFS_bump"))
+    ):
+        a = inset(x + 22 + k * 145, y + 72, 125, 92)
+        colors = (
+            [AXIS] * 6
+            if not k
+            else [AXIS, AXIS, ROULETTE_C, ROULETTE_C, ROULETTE_C, AXIS]
+        )
+        a.bar(np.arange(6), vals, width=0.8, color=colors, lw=0)
+        a.set_xticks([])
+        a.set_yticks([])
+        a.set_ylim(0, 1.15)
+        a.spines["left"].set_visible(False)
+        a.set_xlabel("allele frequency →", fontsize=10.5, labelpad=2)
+        a.set_title(
+            label, fontsize=12, loc="center", weight="normal", color=INK2, pad=3
+        )
+    note(
+        x + 14,
+        y + 240,
+        "SFS_bump: too many SNVs at 0.05–20%\nfor the rate; mostly repeats, likely\n"
+        "errors. Also low-quality regions.",
+        11,
+    )
+
+    note(
+        30,
+        752,
+        "Also CpG methylation (as our μ, which has 3 levels) and transcription.\n"
+        "Output: one rate per possible SNV (v5.2), MR, plus AR (Pol III / TF sites).",
+    )
+
+    # (1e) Home-built version.
+    x, y = 30, 790
+    panel(
         x,
-        483,
-        cw,
+        y,
+        640,
         130,
-        RATE_FILL,
-        RATE_EDGE,
-        [
-            "A rate for every possible SNV (v5.2)",
-            "flagged, and given no multiplier by us:",
-            "• low-quality regions (low)",
-            "• contexts with an abnormal frequency",
-            "   spectrum (SFS_bump; likely errors)",
-        ],
-        size=sz,
-    )
-    arrow(ax, x + cw + 4, 548, xs[1] - 6, 160, color=RATE_EDGE, lw=1.6)
-
-    # 2. What the pipeline does.
-    x = xs[1]
-    box(
-        ax,
-        x,
-        105,
-        cw,
-        92,
+        "Home-built version (gnomAD v4.1 genomes)",
         SAME_FILL,
-        SAME_EDGE,
-        [
-            "Import the rates of coding SNVs",
-            "--import-variant-rates; sites flagged",
-            "low or SFS_bump get a multiplier of 1",
-        ],
-        size=sz,
+        MUTED,
+        True,
     )
-    arrow(ax, x + cw / 2, 199, x + cw / 2, 223)
-    box(
-        ax,
-        x,
-        225,
-        cw,
-        120,
-        SAME_FILL,
-        SAME_EDGE,
-        [
-            "Turn each rate into a multiplier",
-            "rate ÷ the average rate of its group",
-            "(context × ref × alt × methylation), so it",
-            "adds only what our μ leaves out; CpG = 1",
-        ],
-        size=sz,
-    )
-    arrow(ax, x + cw * 0.27, 347, x + cw * 0.27, 391)
-    arrow(ax, x + cw * 0.75, 347, x + cw * 0.75, 391)
-    box(
-        ax,
-        x,
-        393,
-        cw * 0.5 - 6,
-        150,
-        RR_FILL,
-        RR_EDGE,
-        [
-            "Train the rr",
-            "log(multiplier) as a",
-            "fixed offset: the ridge",
-            "learns only what the",
-            "rates miss",
-        ],
-        size=sz,
-    )
-    box(
-        ax,
-        x + cw * 0.5 + 6,
-        393,
-        cw * 0.5 - 6,
-        150,
-        "white",
-        ROULETTE_C,
-        [
-            "Expected counts",
-            "calibrated expected",
-            "× multiplier × rr",
-            "(rr normalized with the",
-            "multiplier included)",
-        ],
-        size=sz,
-        lw=1.8,
-    )
-    arrow(ax, x + cw * 0.5 - 4, 468, x + cw * 0.5 + 4, 468)
-    ax.text(
-        x, 565, "--use-variant-rates, --variant-rate-ht-path", fontsize=11, color=INK2
+    note(
+        x + 14,
+        y + 80,
+        "the sequence and regional parts rebuilt from rare (< 0.1%) non-coding\n"
+        "SNVs and used exactly like Roulette's; no frequency-spectrum filter or\n"
+        "recurrence correction; its regional part is 1.3 times as variable",
+        11.5,
     )
 
-    # 3. Home-built.
-    x = xs[2]
-    box(
-        ax,
-        x,
-        105,
-        cw,
-        112,
-        SAME_FILL,
-        SAME_EDGE,
-        [
-            "Rare variants (below 0.1%) in gnomAD v4.1",
-            "genomes, outside exons ± 50 bp, low-",
-            "complexity regions and segdups; no",
-            "frequency-spectrum filter",
-        ],
-        size=sz,
+    # (2a) Multiplier.
+    x, y = 700, 120
+    panel(x, y, 470, 290, "Rate → multiplier", "white", ROULETTE_C)
+    rng = np.random.default_rng(3)
+    a = inset(x + 62, y + 52, 390, 168)
+    for cx, sd, label in ((0.0, 0.35, "A>G at TAT"), (1.3, 0.3, "C>T at CCA")):
+        r = np.exp(rng.normal(0, sd, 40))
+        r = r / r.mean()
+        a.scatter(
+            cx + rng.uniform(-0.32, 0.32, 40),
+            r,
+            s=22,
+            color=ROULETTE_C,
+            alpha=0.6,
+            lw=0,
+        )
+        a.plot([cx - 0.42, cx + 0.42], [1, 1], color=INK, lw=1.8)
+        a.text(cx, 0.24, label, ha="center", fontsize=11.5, color=INK2)
+    a.scatter(
+        2.6 + rng.uniform(-0.32, 0.32, 40),
+        np.ones(40),
+        s=22,
+        color=CLASS_C["CpG"],
+        lw=0,
     )
-    arrow(ax, x + cw * 0.27, 219, x + cw * 0.27, 243)
-    arrow(ax, x + cw * 0.75, 219, x + cw * 0.75, 243)
-    box(
-        ax,
-        x,
-        245,
-        cw * 0.5 - 6,
-        190,
-        SAME_FILL,
-        SAME_EDGE,
-        [
-            "Regional part",
-            "each trinucleotide's",
-            "observed share in",
-            "50 kb windows ÷ its",
-            "genome-wide share,",
-            "shrunk; capped at 3",
-        ],
-        size=sz,
+    a.text(2.6, 0.24, "C>T at ACG", ha="center", fontsize=11.5, color=INK2)
+    a.text(
+        2.6,
+        0.62,
+        "CpG: all 1\n(μ models\nmethylation)",
+        ha="center",
+        va="center",
+        fontsize=11,
+        color=CLASS_C["CpG"],
     )
-    box(
-        ax,
-        x + cw * 0.5 + 6,
-        245,
-        cw * 0.5 - 6,
-        190,
-        SAME_FILL,
-        SAME_EDGE,
-        [
-            "Sequence part",
-            "each heptamer's",
-            "genome-wide share ÷",
-            "its trinucleotide's",
-        ],
-        size=sz,
+    a.text(
+        -0.42,
+        2.3,
+        "line: group mean = 1, what our μ already has",
+        fontsize=11.5,
+        color=INK,
     )
-    arrow(ax, x + cw / 2, 437, x + cw / 2, 461)
-    box(
-        ax,
-        x,
-        463,
-        cw,
-        72,
-        SAME_FILL,
-        SAME_EDGE,
-        ["multiplier = regional × sequence", "then used exactly like Roulette's (2)"],
-        size=sz,
+    a.set_yscale("log")
+    a.set_ylim(0.3, 2.7)
+    a.set_yticks([0.5, 1, 2], ["0.5", "1", "2"])
+    a.minorticks_off()
+    a.set_xlim(-0.6, 3.1)
+    a.set_xticks([])
+    a.set_ylabel("multiplier", fontsize=12)
+    a.spines["bottom"].set_visible(False)
+    note(
+        x + 14,
+        y + 262,
+        "MR ÷ the mean of its group (context, ref, alt, methylation\nlevel); CpG"
+        " sites and Roulette's flagged sites get 1",
+        11.5,
     )
-    arrow(ax, x - 6, 499, xs[1] + cw + 6, 285, color=MUTED, lw=1.4)
+    arrow(bg, x + 114, y + 293, x + 114, y + 308, color=ROULETTE_C, lw=1.6)
+    arrow(bg, x + 356, y + 293, x + 356, y + 308, color=ROULETTE_C, lw=1.6)
+
+    # (2b) rr training: a fixed offset.
+    x, y = 700, 330 + 100
+    panel(x, y, 228, 290, "Trains the rr", RR_FILL, RR_EDGE)
+    bg.text(x + 14, y + 66, "logit P(DNM) =", fontsize=12.5, va="center")
+    for yy, text, fill, edge, sub in (
+        (y + 104, "log(multiplier)", RATE_FILL, ROULETTE_C, "fixed offset"),
+        (y + 168, "+ Σ β · features", "white", RR_EDGE, "the ridge learns β"),
+    ):
+        bg.add_patch(
+            FancyBboxPatch(
+                (x + 14, yy - 17),
+                150,
+                34,
+                boxstyle="round,pad=0,rounding_size=6",
+                facecolor=fill,
+                edgecolor=edge,
+                lw=1.3,
+            )
+        )
+        bg.text(x + 89, yy, text, ha="center", va="center", fontsize=12.5)
+        note(x + 18, yy + 30, sub, 11.5)
+    note(x + 14, y + 258, "so the rr learns only what\nthe rates miss", 11.5)
+
+    # (2c) Expected counts.
+    x, y = 942, 430
+    panel(x, y, 228, 290, "Expected counts", "white", ROULETTE_C)
+    bx = x + 18
+    for k, (c, hgt, label) in enumerate(
+        (
+            (NONE_C, 1.0, "μ-based"),
+            (ROULETTE_C, 1.35, "multiplier"),
+            (RR_EDGE, 1.1, "rr"),
+        )
+    ):
+        bg.add_patch(Rectangle((bx, y + 175 - 55 * hgt), 34, 55 * hgt, color=c, lw=0))
+        bg.text(
+            bx + 17,
+            y + 192 + 18 * (k % 2),
+            label,
+            ha="center",
+            fontsize=10.5,
+            color=INK2,
+            va="center",
+        )
+        bg.text(
+            bx + 46,
+            y + 145,
+            "×" if k < 2 else "=",
+            ha="center",
+            va="center",
+            fontsize=15,
+        )
+        bx += 58
+    bg.add_patch(
+        Rectangle(
+            (bx - 6, y + 175 - 55 * 1.49),
+            30,
+            55 * 1.49,
+            facecolor="white",
+            edgecolor=INK,
+            lw=1.4,
+        )
+    )
+    bg.text(bx + 9, y + 210, "exp", ha="center", fontsize=10.5, color=INK2, va="center")
+    note(x + 14, y + 258, "rr renormalized with the\nmultiplier included", 11.5)
+    note(
+        700,
+        752,
+        "--import-variant-rates, --use-variant-rates,\n--variant-rate-ht-path",
+        11.5,
+    )
+    bg.texts[-1].set_family("monospace")
+
+    # (3a) Noise, from the cell-level scores.
+    met = read_cell_scores("metrics").set_index("version")
+    rows = [
+        ("none", "No correction", NONE_C, None),
+        ("ridge_qcexcl", "Ridge (recommended)", REC_C, None),
+        ("roulette_ridge", "Roulette + ridge", ROULETTE_C, None),
+        ("roulette_only", "Roulette alone", ROULETTE_C, "..."),
+        ("homebuilt_ridge", "Home-built + ridge", ROULETTE_C, "///"),
+    ]
+    x, y = 1200, 120
+    panel(x, y, 470, 290, "Per-gene synonymous noise", "white", AXIS)
+    a = inset(x + 178, y + 52, 230, 200)
+    for i, (k, label, c, h) in enumerate(rows):
+        v = met.loc[k, "core_noise"]
+        a.barh(
+            -i,
+            v,
+            height=0.62,
+            color=SURFACE if h == "..." else c,
+            hatch=h,
+            hatchcolor="white" if h == "///" else c,
+            edgecolor=c,
+            lw=1.2,
+        )
+        a.text(v + 0.06, -i, f"{v:.2f}", va="center", fontsize=12)
+    a.set_yticks([-i for i in range(len(rows))], [r[1] for r in rows], fontsize=12)
+    a.set_xlim(0, 3.4)
+    a.set_xticks([0, 1, 2, 3])
+    a.set_xlabel("mean z² (lower = better)", fontsize=11.5, labelpad=2)
+    a.axvline(CHANCE_FLOOR, **THEORY)
+
+    # (3b) The first 20 Mb of 8p, from the constraint pipeline's own counts.
+    hot = pd.read_csv(os.path.join(OUT_DIR, "downstream.hotspots.tsv"), sep="\t")
+    hot = hot[(hot.region == "8p, first 20 Mb") & (hot.set == "control genes")]
+    hot = hot.set_index("version").oe
+    rows8 = [r for r in rows if r[0] != "roulette_only"]
+    x, y = 1200, 430
+    panel(x, y, 470, 290, "8p hotspot: synonymous obs/exp", "white", AXIS)
+    a = inset(x + 178, y + 56, 230, 190)
+    for i, (k, label, c, h) in enumerate(rows8):
+        v = hot[k]
+        a.scatter(
+            [v],
+            [-i],
+            s=120,
+            marker="D" if k == "ridge_qcexcl" else "o",
+            color=SURFACE if h else c,
+            edgecolor=c,
+            lw=1.8,
+            zorder=3,
+        )
+        a.text(v + 0.035, -i, f"{v:.2f}", va="center", fontsize=12)
+    a.axvline(1, **THEORY)
+    a.set_yticks([-i for i in range(len(rows8))], [r[1] for r in rows8], fontsize=12)
+    a.set_xlim(0.9, 1.42)
+    a.set_ylim(-3.5, 0.5)
+    a.set_xticks([1.0, 1.2, 1.4])
+    a.set_xlabel("genes without a QC flag", fontsize=11.5, labelpad=2)
+    note(
+        1200,
+        752,
+        "Held-out DNMs back it, independently of gnomAD:\n+1,316 log-likelihood units over chance (ridge: +114)",
+    )
+
+    # The flow between the columns.
+    arrow(bg, 674, 265, 696, 265, color=ROULETTE_C, lw=2)
+    arrow(bg, 1174, 265, 1196, 265, color=MUTED, lw=2)
 
     # What it buys and costs.
     box(
-        ax,
-        30,
-        650,
-        1540,
-        140,
+        bg,
+        700,
+        790,
+        970,
+        130,
         "white",
-        AXIS,
+        "#c4302b",
         [
-            "A quick first try, not a worked-out method: one untuned run of each (see How each version performs)",
-            "+ about twice the noise reduction of the ridge rr alone, half the unflagged outliers, and the maternal hotspot regions corrected",
-            "+ held-out DNMs back it, independently of gnomAD",
-            "− with the ridge on top it is too strong; it moves LoF (−5%) and missense (+3%) expected counts relative to synonymous;",
-            "   part of its gain is gnomAD fitting gnomAD; the home-built regional part varies too much",
+            "A quick first try, not a worked-out method: one untuned run of each",
+            "+ twice the noise reduction of the ridge rr, half the outliers, hotspot"
+            " regions corrected",
+            "− too strong with the ridge on top (slope 0.77); home-built overcorrects 8p",
+            "− LoF expected −5%, missense +3% relative to synonymous; calibration can't"
+            " check it",
+            "− partly gnomAD fitting gnomAD: the regional rates come from gnomAD rare"
+            " variants",
         ],
-        size=12.5,
+        size=13,
+        lw=1.8,
     )
     fig.savefig(
         os.path.join(OUT_DIR, "rr_rates_diagram.png"),

@@ -545,14 +545,25 @@ These are fit on the Satterstrom DNMs against the current background, built from
 
 > ⚠️ **A quick first try, not a worked-out method.** The per-variant-rate versions (Roulette + ridge, and the home-built rates) were run once, with settings carried over from the ridge fit and no tuning of their own. The numbers show the idea is worth pursuing, not how to do it: how to combine the rates with rr, how strong to make them, and how to handle the LoF and missense levels they move all still need real work and thought before any of it is used.
 
-![Per-variant rates: what Roulette is, and what the pipeline does with it](followup/rr_rates_diagram.png)
+![Per-variant rates: what Roulette learns, what the pipeline does with it, and what one quick try did](followup/rr_rates_diagram.png)
 
-- **Roulette** ([Seplyarskiy et al. 2023](https://doi.org/10.1038/s41588-023-01562-0)) gives a mutation rate for every possible SNV, learned from rare variants in gnomAD v3 genomes. Beyond our trinucleotide rates, it uses the wider sequence around each site, methylation, transcription and an empirical regional rate.
-- **The pipeline turns each rate into a multiplier** that adds only what our trinucleotide rates leave out, and uses it twice: on the expected counts, and as a fixed offset when the rr is trained, so the rr only learns what the rates miss.
-- **How Roulette uses the site frequency spectrum.** It is trained on gnomAD v3 genome SNVs below 0.1% frequency. It models the chance that a site stays monomorphic and converts that to a mutation rate with a population-genetics approximation that allows for recurrent mutation, which matters at the most mutable sites. Its VCFs also flag pentanucleotide contexts with an abnormal frequency spectrum (`SFS_bump`: the share of SNVs at 0.05–20% frequency is over 1.5 times the average for their mutation rate; mostly repetitive contexts, likely sequencing errors) and low-quality regions (`low`).
-- **The pipeline gives sites with either flag a multiplier of 1** ([`ROULETTE_LOW_QUALITY_FILTERS`](../../resources/constants.py)). It uses Roulette's `MR` rate, not `AR`, which adds a correction for hypermutability at Pol III-transcribed genes and transcription factor binding sites (rare in coding sequence).
-- **The home-built version** rebuilds the two parts that matter from gnomAD v4.1 genomes, and is used the same way. It uses the same 0.1% cutoff, but has no frequency-spectrum filter and no recurrence correction.
-- How they perform is in [How each version performs](#how-each-version-performs).
+**Roulette itself** (from the paper and its published files; column 1 of the diagram):
+- **What it is.** [Roulette](https://doi.org/10.1038/s41588-023-01562-0) (Seplyarskiy et al. 2023) gives one mutation rate for every possible SNV (version 5.2).
+- **What it learns from.** Non-coding SNVs below 0.1% frequency in gnomAD v3 genomes.
+- **What goes into each rate.** Like our mutation rates, it uses CpG methylation; ours splits CpG sites into three methylation levels. Beyond our rates, it uses the wider sequence around each site, transcription and an empirical regional rate (each trinucleotide's mutability in 50 kb windows).
+- **How it uses the site frequency spectrum.** It fits the chance that a site stays monomorphic and converts that to a mutation rate with a population-genetics approximation that allows for recurrent mutation, which matters at the most mutable sites. The rate is one per SNV, not one per frequency bin. The paper's frequency spectra (its Figure 3) group sites by Roulette rate and compare each group's spectrum with a demographic model, as a check that the rates and the recurrence hold up.
+- **Its quality flags.** Its VCFs flag low-quality regions (`low`) and pentanucleotide contexts with an abnormal frequency spectrum (`SFS_bump`: the share of SNVs at 0.05–20% frequency is over 1.5 times the average for their mutation rate; mostly repetitive contexts, likely sequencing errors).
+- **Its two rates.** `MR` is the rate; `AR` adds a correction for hypermutability at Pol III-transcribed genes and transcription factor binding sites.
+
+**How our pipeline uses Roulette's rates** (column 2 of the diagram):
+- **Which rate.** `MR`, not `AR`; the sites `AR` corrects are rare in coding sequence.
+- **Rate → multiplier.** Each variant's rate is divided by the average rate of its mutation-rate group (context, ref, alt, methylation level) over coding sites, so the multiplier adds only what our mutation rates leave out.
+- **Where the multiplier is 1.** CpG contexts, because Roulette's CpG rates mostly carry methylation, which our rates already model; and sites Roulette flags `low` or `SFS_bump` ([`ROULETTE_LOW_QUALITY_FILTERS`](../../resources/constants.py)).
+- **Used twice.** On the expected counts (expected × multiplier × rr), and as a fixed offset when the rr is trained, so the rr only learns what the rates miss.
+
+**The home-built version** rebuilds Roulette's two parts that matter (the wider sequence and the regional rate) from gnomAD v4.1 genomes, with the same 0.1% cutoff, and our pipeline uses it exactly like Roulette's rates. Unlike Roulette, it has no frequency-spectrum filter and no recurrence correction.
+
+How they perform is in [How each version performs](#how-each-version-performs).
 
 <details>
 <summary><b>Click to expand: how the pipeline and home-built versions work, and the local test that led to them</b></summary>
