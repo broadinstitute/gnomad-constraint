@@ -1,0 +1,33 @@
+context	class
+AAA	A/T
+AAC	A/T
+AAG	A/T
+AAT	A/T
+ACA	C non-CpG
+ACC	C non-CpG
+ACG	CpG
+ACT	C non-CpG
+CAA	A/T
+CAC	A/T
+CAG	A/T
+CAT	A/T
+CCA	C non-CpG
+CCC	C non-CpG
+CCG	CpG
+CCT	C non-CpG
+GAA	A/T
+GAC	A/T
+GAG	A/T
+GAT	A/T
+GCA	C non-CpG
+GCC	C non-CpG
+GCG	CpG
+GCT	C non-CpG
+TAA	A/T
+TAC	A/T
+TAG	A/T
+TAT	A/T
+TCA	C non-CpG
+TCC	C non-CpG
+TCG	CpG
+TCT	C non-CpG

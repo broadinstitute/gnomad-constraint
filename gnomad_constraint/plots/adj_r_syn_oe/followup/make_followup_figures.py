@@ -3001,7 +3001,7 @@ LOGIT_BACKGROUNDS = [
         "#1baf7a",
         (0, (1, 1.5)),
     ),
-    ("all_sites", "All possible synonymous variants", "#eb6834", "-"),
+    ("all_sites", "All possible synonymous sites", "#eb6834", "-"),
 ]
 
 
@@ -3306,9 +3306,17 @@ def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sit
     plt.close(fig)
 
 
-def draw_logistic_backgrounds():
-    """Draw how the logistic fits change with the training background."""
-    bins, _, ctx = read_logistic_fits()
+def draw_logistic_backgrounds(prefix="rr_logistic_fits.pipeline_backgrounds"):
+    """
+    Draw how the logistic fits change with the training background.
+
+    "rr_logistic_fits.pipeline_backgrounds" is the pipeline runs
+    (cluster/export_background_fits.py) and "rr_logistic_fits" the local version.
+    """
+    bins, ctx = (
+        pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.{t}.tsv"), sep="\t")
+        for t in ("bins", "contexts")
+    )
     cls = ctx.set_index("context")["class"]
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     fig.subplots_adjust(
