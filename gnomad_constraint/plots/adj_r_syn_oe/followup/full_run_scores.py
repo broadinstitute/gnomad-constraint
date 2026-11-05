@@ -12,7 +12,9 @@ Each version is scored like the rest of the report: per-gene synonymous noise (l
 free mean z²) on Ruchit's core set, on held-out chromosomes, and on a core set that
 doesn't select on the outcome; outliers by release flag; the calibration slope overall
 and by context class; noise at each strength; synonymous obs/exp by LOEUF and s_het
-decile; and noise on chrX/Y. The held-out DNM fit comes from the cv metrics.
+decile; and noise on chrX/Y. The held-out DNM fit comes from the cv metrics. Also
+writes each version's per-transcript expected count and z (``<prefix>.per_transcript.tsv.gz``,
+in the format of ``syn_z_by_histone_group.tsv``) for the decile summaries.
 
 With ``--rr-names``, scores those rr columns instead (``rr_<name>``, held out with
 ``rr_<name>_oof`` where present), for example the background runs, without the cv
@@ -300,6 +302,12 @@ def main(args: argparse.Namespace) -> None:
     deciles(ev, cells_rr, args.transcripts, rel, args.shet).to_csv(
         f"{pre}.deciles.tsv", sep="\t", index=False
     )
+    per_tx = pd.DataFrame({"transcript": ev.tx_names, "obs": ev.obs})
+    for name, r in cells_rr.items():
+        exp = tx_expected(ev, r)
+        per_tx[f"exp_{name}"] = exp
+        per_tx[f"z_{name}"] = (ev.obs - exp) / np.sqrt(exp)
+    per_tx.to_csv(f"{pre}.per_transcript.tsv.gz", sep="\t", index=False)
     pd.set_option("display.width", 250)
     print(pd.DataFrame(rows).drop(columns="label").round(3).to_string(index=False))
     if args.rr_names:

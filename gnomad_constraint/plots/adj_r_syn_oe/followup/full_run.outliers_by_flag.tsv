@@ -1,0 +1,46 @@
+direction	category	n	version
+deficit	low_exome_mapping_quality	129	none
+deficit	unflagged	1	none
+excess	histone genes	24	none
+excess	low_exome_coverage	18	none
+excess	unflagged	98	none
+deficit	low_exome_coverage	2	adj_r
+deficit	low_exome_mapping_quality	155	adj_r
+deficit	unflagged	236	adj_r
+excess	histone genes	19	adj_r
+excess	low_exome_coverage	16	adj_r
+excess	unflagged	19	adj_r
+deficit	low_exome_mapping_quality	127	syn_adj_r_norm
+excess	histone genes	24	syn_adj_r_norm
+excess	low_exome_coverage	20	syn_adj_r_norm
+excess	unflagged	48	syn_adj_r_norm
+deficit	low_exome_mapping_quality	127	bonferroni_full
+deficit	unflagged	1	bonferroni_full
+excess	histone genes	24	bonferroni_full
+excess	low_exome_coverage	20	bonferroni_full
+excess	unflagged	54	bonferroni_full
+deficit	low_exome_mapping_quality	128	1e-2_a0.625_full
+deficit	unflagged	1	1e-2_a0.625_full
+excess	histone genes	24	1e-2_a0.625_full
+excess	low_exome_coverage	19	1e-2_a0.625_full
+excess	unflagged	49	1e-2_a0.625_full
+deficit	low_exome_mapping_quality	127	ridge_full
+deficit	unflagged	1	ridge_full
+excess	histone genes	24	ridge_full
+excess	low_exome_coverage	20	ridge_full
+excess	unflagged	46	ridge_full
+deficit	low_exome_mapping_quality	127	bonferroni_qcexcl
+deficit	unflagged	1	bonferroni_qcexcl
+excess	histone genes	23	bonferroni_qcexcl
+excess	low_exome_coverage	20	bonferroni_qcexcl
+excess	unflagged	62	bonferroni_qcexcl
+deficit	low_exome_mapping_quality	129	1e-2_a0.625_qcexcl
+deficit	unflagged	1	1e-2_a0.625_qcexcl
+excess	histone genes	24	1e-2_a0.625_qcexcl
+excess	low_exome_coverage	19	1e-2_a0.625_qcexcl
+excess	unflagged	50	1e-2_a0.625_qcexcl
+deficit	low_exome_mapping_quality	128	ridge_qcexcl
+deficit	unflagged	1	ridge_qcexcl
+excess	histone genes	24	ridge_qcexcl
+excess	low_exome_coverage	19	ridge_qcexcl
+excess	unflagged	46	ridge_qcexcl

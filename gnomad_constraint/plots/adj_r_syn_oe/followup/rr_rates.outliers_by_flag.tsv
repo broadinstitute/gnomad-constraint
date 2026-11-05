@@ -1,0 +1,34 @@
+direction	category	n	version
+deficit	low_exome_mapping_quality	129	none
+deficit	unflagged	1	none
+excess	histone genes	24	none
+excess	low_exome_coverage	18	none
+excess	unflagged	98	none
+deficit	low_exome_mapping_quality	129	roulette_only
+deficit	unflagged	1	roulette_only
+excess	histone genes	24	roulette_only
+excess	low_exome_coverage	17	roulette_only
+excess	unflagged	20	roulette_only
+deficit	low_exome_mapping_quality	130	roulette_ridge
+deficit	unflagged	1	roulette_ridge
+excess	histone genes	23	roulette_ridge
+excess	low_exome_coverage	17	roulette_ridge
+excess	unflagged	13	roulette_ridge
+deficit	low_exome_mapping_quality	143	homebuilt_only
+excess	histone genes	24	homebuilt_only
+excess	low_exome_coverage	17	homebuilt_only
+excess	unflagged	25	homebuilt_only
+deficit	low_exome_mapping_quality	142	homebuilt_ridge
+deficit	unflagged	2	homebuilt_ridge
+excess	histone genes	24	homebuilt_ridge
+excess	low_exome_coverage	17	homebuilt_ridge
+excess	unflagged	14	homebuilt_ridge
+deficit	low_exome_mapping_quality	145	homebuilt_regional
+excess	histone genes	23	homebuilt_regional
+excess	low_exome_coverage	15	homebuilt_regional
+excess	unflagged	24	homebuilt_regional
+deficit	low_exome_mapping_quality	130	homebuilt_sequence
+deficit	unflagged	1	homebuilt_sequence
+excess	histone genes	25	homebuilt_sequence
+excess	low_exome_coverage	17	homebuilt_sequence
+excess	unflagged	101	homebuilt_sequence

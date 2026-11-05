@@ -14,6 +14,11 @@ cause, are dropped:
 
 Outliers without one of these causes stay. Gnocchi ``adj_r`` is not used to pick
 outliers, since its outliers come from the correction itself.
+
+More per-transcript tables (``full_run_scores.py``'s ``<prefix>.per_transcript.tsv.gz``)
+can be given after the first; their versions are added (columns already present are
+kept from the first table) and picked with ``--corrections``. ``--full-out`` also
+writes the summary before removing anything.
 """
 
 import argparse
@@ -68,7 +73,7 @@ def explained_cause(df: pd.DataFrame) -> pd.Series:
     return cause
 
 
-def summarize(df: pd.DataFrame) -> pd.DataFrame:
+def summarize(df: pd.DataFrame, corrections: list = CORRECTIONS) -> pd.DataFrame:
     """
     Sum syn obs and expected per s_het and LOEUF decile for each correction.
 
@@ -78,7 +83,7 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for binning in ("shet_decile", "loeuf_decile"):
         g = df.groupby(binning)
-        for corr in CORRECTIONS:
+        for corr in corrections:
             s = g[["obs", f"exp_{corr}"]].sum()
             for dec, r in s.iterrows():
                 rows.append(
@@ -97,7 +102,11 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
 
 def main(args: argparse.Namespace) -> None:
     """Write the decile summary with explained outliers removed."""
-    zs = pd.read_csv(args.syn_z, sep="\t")
+    zs = pd.read_csv(args.syn_z[0], sep="\t")
+    for path in args.syn_z[1:]:
+        more = pd.read_csv(path, sep="\t")
+        keep = ["transcript"] + [c for c in more.columns if c not in zs.columns]
+        zs = zs.merge(more[keep], on="transcript", how="left")
     tx = pd.read_csv(args.transcripts, sep="\t", compression="gzip", na_values=["NA"])
     tx = tx[tx.is_xy.astype(str).str.lower().eq("false") & tx.decile.notna()]
     rel = read_release_flags(args.release_tsv)
@@ -139,8 +148,10 @@ def main(args: argparse.Namespace) -> None:
             len(new),
         )
 
+    if args.full_out:
+        summarize(df, args.corrections).to_csv(args.full_out, sep="\t", index=False)
     outlier = np.zeros(len(df), dtype=bool)
-    for c in OUTLIER_CORRECTIONS:
+    for c in args.outlier_corrections:
         outlier |= (df[f"z_{c}"].abs() > 8).to_numpy()
     df["cause"] = explained_cause(df)
     drop = outlier & (df.cause != "")
@@ -154,12 +165,20 @@ def main(args: argparse.Namespace) -> None:
     df[drop][["transcript", "gene", "cause"]].to_csv(
         args.removed_out, sep="\t", index=False
     )
-    summarize(df[~drop]).to_csv(args.out, sep="\t", index=False)
+    summarize(df[~drop], args.corrections).to_csv(args.out, sep="\t", index=False)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--syn-z", required=True, help="syn_z_by_histone_group.tsv")
+    parser.add_argument(
+        "--syn-z",
+        nargs="+",
+        required=True,
+        help="syn_z_by_histone_group.tsv, then any more per-transcript tables.",
+    )
+    parser.add_argument("--corrections", nargs="+", default=CORRECTIONS)
+    parser.add_argument("--outlier-corrections", nargs="+", default=OUTLIER_CORRECTIONS)
+    parser.add_argument("--full-out", help="Summary of the full set, before removal.")
     parser.add_argument("--transcripts", required=True)
     parser.add_argument("--release-tsv", required=True)
     parser.add_argument(

@@ -30,9 +30,11 @@ ROOT = "gs://gnomad-tmp/jg/rr_bg"
 RD = "gnomad_v4.1.1/constraint/regional_rate"
 BACKGROUNDS = {
     "absent": "absent_locus",
+    "absent_variant": "absent_variant",
     "absent_context_matched": "ctx_proportional",
     "absent_equal_per_context": "ctx_even",
     "all_sites": "all_locus",
+    "all_variant": "all_variant",
 }
 """Background name in the figure -> run in ``ROOT``."""
 REFERENCE = "absent"
@@ -235,7 +237,7 @@ if __name__ == "__main__":
     parser.add_argument("--cutoff", default="ridge")
     parser.add_argument(
         "--out-prefix",
-        default=f"{ROOT}/logistic/rr_logistic_fits.pipeline_backgrounds",
+        default=f"{ROOT}/logistic/rr_logistic_fits.pipeline_bg6",
         help="GCS path prefix.",
     )
     main(parser.parse_args())
