@@ -3323,6 +3323,7 @@ PLATEAU_VERSIONS = [
     ("weighted", "2 lines, weighted"),
     ("by_class", "1 per context class"),
     ("by_substitution", "1 per substitution"),
+    ("saturating", "saturating curve"),
     ("per_group", "each group alone"),
 ]
 
@@ -3373,13 +3374,26 @@ def draw_plateau(prefix="plateau_models"):
         ):
             b0, b1 = line(fit, name)
             ax.plot(x * 1e8, b0 + b1 * x, color=INK, ls=ls, lw=2, label=label, zorder=4)
+        a, b = line("saturating", name)
+        ax.plot(
+            x * 1e8,
+            1 - np.exp(-(a + b * x * 1e8)),
+            color=RR_EDGE,
+            lw=2.4,
+            ls=(0, (1, 1.5)),
+            label="saturating curve, 1 − exp(−(a + b·rate))",
+            zorder=4,
+        )
         ax.set_xlabel("mutation rate per generation (× 10⁻⁸)")
         ax.set_ylabel("share of possible variants seen")
         ax.set_title(title)
         style_axis(ax, grid_axis="both")
-    axes[0, 0].legend(loc="upper left", fontsize=12, frameon=False, ncol=2)
+    sub_handles = axes[0, 0].get_legend_handles_labels()[0][:-3]
+    axes[0, 0].legend(
+        handles=sub_handles, loc="upper left", fontsize=12, frameon=False, ncol=2
+    )
     axes[0, 1].legend(
-        handles=axes[0, 1].get_legend_handles_labels()[0][-2:],
+        handles=axes[0, 1].get_legend_handles_labels()[0][-3:],
         loc="lower right",
         fontsize=12,
         frameon=False,
@@ -3509,8 +3523,8 @@ def draw_plateau(prefix="plateau_models"):
     style_axis(ax)
 
     fig.suptitle(
-        "The plateau models: two straight lines now; what a weighted fit or more lines"
-        " would change",
+        "The plateau models: two straight lines now; what a weighted fit, more lines"
+        " or a curve would change",
         x=0.06,
         ha="left",
         fontsize=17.5,
@@ -3711,6 +3725,311 @@ def draw_disease_gene_pr(prefix="disease_gene_pr"):
     )
     fig.savefig(
         os.path.join(OUT_DIR, "rr_disease_gene_pr.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
+def draw_per_variant_math(prefix="per_variant_expected"):
+    """Draw the companion note's figure: per-variant expected counts and plateau curves."""
+    totals = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.totals.tsv"), sep="\t")
+    jen = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.jensen.tsv"), sep="\t")
+    g = pd.read_csv(os.path.join(OUT_DIR, "plateau_models.groups.tsv"), sep="\t")
+    fits = pd.read_csv(os.path.join(OUT_DIR, "plateau_models.fits.tsv"), sep="\t")
+
+    def params(line, fit):
+        r = totals[(totals.line == line) & (totals.fit == fit)].iloc[0]
+        return float(r.a), float(r.b)
+
+    def sat(x, a, b):
+        return 1 - np.exp(-(a + b * x))
+
+    def logi(x, a, b):
+        return 1 / (1 + np.exp(-(a + b * x)))
+
+    fig = plt.figure(figsize=(20, 12.5))
+    gs = fig.add_gridspec(2, 3, hspace=0.45, wspace=0.3)
+    fig.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.08)
+
+    # (a) The computation, written out.
+    ax = fig.add_subplot(gs[0, 0])
+    ax.axis("off")
+    ax.set_title("a  How the pipeline builds expected counts")
+    steps = [
+        ("for each possible variant $v$:", INK, True),
+        (r"$p_v = f_{g(v)}(\mu_v)$   plateau: share seen at rate $\mu_v$", INK2, False),
+        (r"$E_v = p_v \cdot h(c_v)$   coverage correction at depth $c_v$", INK2, False),
+        (
+            r"$E_v \leftarrow E_v \cdot r_v \cdot m_v$   rr (and rate multiplier)",
+            INK2,
+            False,
+        ),
+        ("for any set of variants $S$ (gene, consequence, group):", INK, True),
+        (r"$E_S = \Sigma_{v \in S}\, E_v$", INK2, False),
+        ("why that is right for any $f$:", INK, True),
+        (
+            r"$O_S = \Sigma_{v \in S}\, O_v \;\Rightarrow\; \mathbb{E}[O_S] = \Sigma_{v \in S}\, \mathbb{E}[O_v]$",
+            INK2,
+            False,
+        ),
+        ("when $f$ is a line, summed rates also work:", INK, True),
+        (
+            r"$\Sigma_v\, (\alpha + \beta\mu_v) = n\alpha + \beta \Sigma_v\, \mu_v$",
+            INK2,
+            False,
+        ),
+        ("when $f$ curves, they don't:", INK, True),
+        (r"$\Sigma_v\, f(\mu_v) \neq n\, f(\bar\mu)$   (Jensen)", INK2, False),
+    ]
+    y = 0.97
+    for text, c, bold in steps:
+        ax.text(
+            0.0 if bold else 0.04,
+            y,
+            text,
+            transform=ax.transAxes,
+            fontsize=13.5 if bold else 14.5,
+            color=c,
+            weight="bold" if bold else "normal",
+            va="top",
+        )
+        y -= 0.082 if bold else 0.083
+
+    # (b) Jensen's inequality on the CpG-transition curve.
+    ax = fig.add_subplot(gs[0, 1])
+    a, b = params("CpG transition", "saturating, likelihood")
+    x = np.linspace(0, 16, 300)
+    ax.plot(
+        x,
+        sat(x, a, b),
+        color=RR_EDGE,
+        lw=2.6,
+        label="saturating curve (CpG transitions)",
+    )
+    rng = np.random.default_rng(1)
+    mu_bar = 4.0
+    rates = mu_bar * rng.lognormal(-0.5 * 0.45**2, 0.45, 12)
+    rates = rates * mu_bar / rates.mean()
+    ax.scatter(
+        rates,
+        sat(rates, a, b),
+        s=70,
+        color=ROULETTE_C,
+        zorder=3,
+        label="variants of one group",
+    )
+    mean_f = sat(rates, a, b).mean()
+    f_mean = sat(np.array([mu_bar]), a, b)[0]
+    ax.axvline(mu_bar, color=MUTED, lw=1, ls=(0, (3, 3)))
+    ax.axhline(mean_f, color=ROULETTE_C, lw=1.6, ls=(0, (4, 2.5)))
+    ax.axhline(f_mean, color=INK, lw=1.6, ls=(0, (1, 1.5)))
+    ax.text(
+        15.8,
+        mean_f - 0.012,
+        "mean of f(rate): per-variant, correct",
+        ha="right",
+        va="top",
+        fontsize=12.5,
+        color=ROULETTE_C,
+    )
+    ax.text(
+        15.8,
+        f_mean + 0.01,
+        "f(mean rate): averaged-rate shortcut",
+        ha="right",
+        va="bottom",
+        fontsize=12.5,
+        color=INK,
+    )
+    ax.set_xlim(0, 16)
+    ax.set_ylim(0.5, 1.02)
+    ax.set_xlabel("mutation rate (× 10⁻⁸)")
+    ax.set_ylabel("share of possible variants seen")
+    ax.set_title("b  A curve applied to an averaged rate overshoots")
+    ax.legend(loc="lower right", fontsize=12, frameon=False)
+    style_axis(ax, grid_axis="both")
+
+    # (c) How big that error would be with Roulette's within-group spread.
+    ax = fig.add_subplot(gs[0, 2])
+    order = ["A/T", "other C", "CpG transition"]
+    colors = {
+        "A/T": CLASS_C["A/T"],
+        "other C": CLASS_C["C non-CpG"],
+        "CpG transition": CLASS_C["CpG"],
+    }
+    for i, cls in enumerate(order):
+        d = jen[jen.cls == cls]
+        err = 100 * (d.averaged_over_per_variant - 1)
+        ax.scatter(
+            i + rng.uniform(-0.15, 0.15, len(d)),
+            err,
+            s=20 + 140 * np.sqrt(d.possible / jen.possible.max()),
+            color=colors[cls],
+            alpha=0.75,
+            edgecolor=SURFACE,
+            lw=0.6,
+            zorder=3,
+        )
+        w = 100 * np.average(d.averaged_over_per_variant - 1, weights=d.possible)
+        ax.plot([i - 0.3, i + 0.3], [w, w], color=INK, lw=2)
+        ax.text(i + 0.33, w, f"{w:.1f}%", va="center", fontsize=12.5)
+    ax.axhline(0, **THEORY)
+    ax.set_xticks(range(3), ["A/T", "other C", "CpG transitions*"])
+    ax.set_ylabel("averaged-rate shortcut, % too high")
+    ax.set_title("c  Size of that error with Roulette's spread")
+    ax.text(
+        0.02,
+        0.97,
+        "each dot: one mutation-rate group; line: weighted mean\n"
+        "a straight line has no such error",
+        transform=ax.transAxes,
+        fontsize=12,
+        color=INK2,
+        va="top",
+    )
+    ax.text(
+        0.02,
+        -0.2,
+        "*Roulette's spread at CpG includes methylation, which our groups already split",
+        transform=ax.transAxes,
+        fontsize=11,
+        color=INK2,
+    )
+    style_axis(ax, grid_axis="y")
+
+    # (d) Which fits make total expected equal total observed.
+    ax = fig.add_subplot(gs[1, 0])
+    names = [
+        "line, unweighted (stored)",
+        "line, weighted",
+        "saturating, least squares",
+        "saturating, likelihood",
+        "logistic, likelihood",
+    ]
+    y0 = np.arange(len(names))[::-1]
+    for line, dy, c in (
+        ("everything else", 0.17, NONE_C),
+        ("CpG transition", -0.17, CLASS_C["CpG"]),
+    ):
+        t = totals[totals.line == line].set_index("fit").obs_over_exp
+        for y, nm in zip(y0, names):
+            v = t[nm]
+            ax.barh(y + dy, v - 1, left=1, height=0.32, color=c, lw=0)
+            ax.text(max(v, 1) + 0.0015, y + dy, f"{v:.3f}", va="center", fontsize=12)
+    ax.axvline(1, color=INK, lw=1)
+    ax.set_yticks(y0, names, fontsize=12.5)
+    ax.set_xlim(0.98, 1.035)
+    ax.set_xlabel("total observed / total expected (training sites)")
+    ax.set_title("d  Which fits match the totals")
+    ax.legend(
+        handles=[
+            Patch(color=NONE_C, label="everything else"),
+            Patch(color=CLASS_C["CpG"], label="CpG transitions"),
+        ],
+        loc="lower right",
+        fontsize=12,
+        frameon=False,
+    )
+    style_axis(ax)
+
+    # (e) The fitted shapes on the CpG transitions.
+    ax = fig.add_subplot(gs[1, 1])
+    d = g[g.cpg]
+    ax.scatter(
+        d.mu * 1e8,
+        d.prop,
+        s=20 + 160 * np.sqrt(d.possible / d.possible.max()),
+        color=CLASS_C["CpG"],
+        alpha=0.8,
+        edgecolor=SURFACE,
+        zorder=3,
+        label="training groups",
+    )
+    x = np.linspace(d.mu.min() * 1e8, d.mu.max() * 1e8, 200)
+    st = fits[(fits.fit == "stored") & (fits.line == "CpG transition")].iloc[0]
+    ax.plot(
+        x, st.intercept + st.slope * x / 1e8, color=INK, lw=2, label="line (stored)"
+    )
+    ax.plot(
+        x,
+        sat(x, *params("CpG transition", "saturating, likelihood")),
+        color=RR_EDGE,
+        lw=2.4,
+        ls=(0, (1, 1.5)),
+        label="saturating, likelihood",
+    )
+    ax.plot(
+        x,
+        logi(x, *params("CpG transition", "logistic, likelihood")),
+        color=ROULETTE_C,
+        lw=2.2,
+        ls=(0, (4, 2.5)),
+        label="logistic, likelihood",
+    )
+    ax.set_xlabel("mutation rate (× 10⁻⁸)")
+    ax.set_ylabel("share of possible variants seen")
+    ax.set_title("e  The shapes, on the CpG transitions")
+    ax.legend(loc="lower right", fontsize=12, frameon=False)
+    style_axis(ax, grid_axis="both")
+
+    # (f) Where rr goes: multiplied on afterwards, or inside the curve.
+    ax = fig.add_subplot(gs[1, 2])
+    rr = np.linspace(0.7, 1.4, 100)
+    a_o, b_o = params("everything else", "saturating, likelihood")
+    a_c, b_c = params("CpG transition", "saturating, likelihood")
+    st_o = fits[(fits.fit == "stored") & (fits.line == "everything else")].iloc[0]
+    ax.plot(rr, rr, color=INK, lw=2.4, label="after the curve: E × rr (now)")
+    for mu, (aa, bb), c, nm in (
+        (0.2, (a_o, b_o), CLASS_C["A/T"], "inside, rare change (0.2)"),
+        (0.8, (a_o, b_o), CLASS_C["C non-CpG"], "inside, common change (0.8)"),
+        (10.0, (a_c, b_c), CLASS_C["CpG"], "inside, CpG transition (10)"),
+    ):
+        ax.plot(
+            rr,
+            sat(mu * rr, aa, bb) / sat(mu, aa, bb),
+            color=c,
+            lw=2,
+            ls=(0, (4, 2.5)),
+            label=nm,
+        )
+    lin = (st_o.intercept + st_o.slope * 0.2e-8 * rr) / (
+        st_o.intercept + st_o.slope * 0.2e-8
+    )
+    ax.plot(
+        rr,
+        lin,
+        color=CLASS_C["A/T"],
+        lw=1.6,
+        ls=(0, (1, 1.5)),
+        label="inside the line, rare change",
+    )
+    ax.axhline(1, color=AXIS, lw=1)
+    ax.axvline(1, color=AXIS, lw=1)
+    ax.set_xlabel("rr")
+    ax.set_ylabel("change in the variant's expected count")
+    ax.set_title("f  Where rr goes changes how much it moves E")
+    ax.legend(loc="upper left", fontsize=11.5, frameon=False)
+    style_axis(ax, grid_axis="both")
+
+    fig.suptitle(
+        "Per-variant expected counts: why they add up, and what a curved plateau model changes",
+        x=0.05,
+        ha="left",
+        fontsize=17,
+        weight="bold",
+    )
+    fig.text(
+        0.05,
+        0.935,
+        "v4.1.1 high-coverage synonymous training sites (autosomes and PARs); rates in units"
+        " of 10⁻⁸ per generation; Roulette's rates for the within-group spread in c",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_per_variant_expected.png"),
         dpi=170,
         bbox_inches="tight",
         pad_inches=0.3,
@@ -6295,6 +6614,7 @@ if __name__ == "__main__":
     draw_outliers()
     draw_outlier_size()
     draw_plateau()
+    draw_per_variant_math()
     draw_alternatives()
     draw_leftover_noise()
     draw_outlier_rates()

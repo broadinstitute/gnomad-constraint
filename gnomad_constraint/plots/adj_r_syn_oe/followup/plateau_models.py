@@ -22,6 +22,11 @@ On the autosomes and PARs, the versions compared are:
   CpG transversions go with other C, as in the non-CpG line now);
 - ``by_substitution``: one weighted line per substitution type (A>C, A>G, A>T, C>A,
   C>G, C>T outside CpG, and CpG transitions);
+- ``saturating``: a saturating curve instead of a line, share seen =
+  1 - exp(-(a + b * rate)), one for CpG transitions and one for everything else,
+  fit by binomial likelihood (a stand-in for the exponential fit Ruchit tried, whose
+  exact form isn't written down). Its intercept and slope columns hold a and b, with
+  the rate in units of 1e-8;
 - ``per_group``: each mutation-rate group calibrated to its own observed share (no
   line; expected = observed on the training sites by construction).
 
@@ -41,12 +46,21 @@ import numpy as np
 import pandas as pd
 from full_run_scores import cell_rr, tx_expected
 from rr_shrinkage_experiments import Evaluator
+from scipy.optimize import minimize
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 REGION = "autosome_or_par"
-FITS = ("stored", "refit", "weighted", "by_class", "by_substitution", "per_group")
+FITS = (
+    "stored",
+    "refit",
+    "weighted",
+    "by_class",
+    "by_substitution",
+    "saturating",
+    "per_group",
+)
 LINES = {
     "refit": ("cpg", False),
     "weighted": ("cpg", True),
@@ -92,6 +106,30 @@ def fit_line(x: np.ndarray, y: np.ndarray, w: np.ndarray = None) -> tuple:
     return float(beta[0]), float(beta[1])
 
 
+def fit_saturating(x: np.ndarray, k: np.ndarray, n: np.ndarray) -> tuple:
+    """
+    Fit share seen = 1 - exp(-(a + b * x)) by binomial likelihood.
+
+    :param x: Mutation rate of each group, in units of 1e-8.
+    :param k: Observed variants per group.
+    :param n: Possible variants per group.
+    :return: (a, b).
+    """
+
+    def nll(t: np.ndarray) -> float:
+        p = 1 - np.exp(-(np.exp(t[0]) + np.exp(t[1]) * x))
+        p = np.clip(p, 1e-12, 1 - 1e-12)
+        return float(-(k * np.log(p) + (n - k) * np.log(1 - p)).sum())
+
+    r = minimize(
+        nll,
+        [np.log(0.03), np.log(0.4)],
+        method="Nelder-Mead",
+        options={"xatol": 1e-10, "fatol": 1e-8, "maxiter": 10000},
+    )
+    return float(np.exp(r.x[0])), float(np.exp(r.x[1]))
+
+
 def fit_versions(g: pd.DataFrame, stored: dict) -> pd.DataFrame:
     """Add each version's expected count to the groups and return the lines."""
     fits = []
@@ -115,6 +153,13 @@ def fit_versions(g: pd.DataFrame, stored: dict) -> pd.DataFrame:
                 key = "CpG transition" if key else "everything else"
             fits.append({"fit": fit, "line": key, "intercept": b0, "slope": b1})
             g.loc[d.index, f"exp_{fit}"] = d.possible * (b0 + b1 * d.mu)
+    g["exp_saturating"] = np.nan
+    for cpg, d in g.groupby("cpg"):
+        x = d.mu.to_numpy() * 1e8
+        a, b = fit_saturating(x, d.observed.to_numpy(), d.possible.to_numpy())
+        key = "CpG transition" if cpg else "everything else"
+        fits.append({"fit": "saturating", "line": key, "intercept": a, "slope": b})
+        g.loc[d.index, "exp_saturating"] = d.possible * (1 - np.exp(-(a + b * x)))
     g["exp_per_group"] = g.observed.astype(float)
     return pd.DataFrame(fits)
 
