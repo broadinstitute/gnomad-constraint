@@ -371,6 +371,8 @@ These come from the full run on jg1 (`gs://gnomad-tmp/jg/rr_full`): the pipeline
 
 ![Every context's logistic regression](followup/rr_logistic_fits.pipeline.all_contexts.png)
 
+The same three rows as panels a–i, for every context in class order.
+
 </details>
 
 ### The regional features rr uses
@@ -415,7 +417,18 @@ These are fit on the Satterstrom DNMs against the current background, built from
 
 Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotted lines show what theory or chance predicts.
 
-**Full pipeline run.** Each version below went through `regional_rate_pipeline.py` and the constraint pipeline's aggregation, with the synonymous DNMs from every cohort. Scores come from the constraint pipeline's own per-transcript counts, not the cell-level approximation used elsewhere in this section. All rows use the same 16,438 autosomal MANE Select transcripts.
+**Full pipeline run.** Every version went through `regional_rate_pipeline.py` and the constraint pipeline, with the synonymous DNMs from every cohort, and is scored on the pipeline's own per-transcript counts.
+
+![The full pipeline runs](followup/rr_full_run.png)
+
+- **a, b:** ridge beats the current method (2.43 against 2.64), and leaving QC-flagged genes out of training barely matters. Roulette's rates with the ridge on top roughly double the gain and halve the unflagged outliers; rates built the same way from gnomAD v4.1 genomes get most of it.
+- **c, d:** the top LOEUF decile's rise goes from 1.11 to 1.07–1.09 with a DNM rr, and to 1.04–1.05 with Roulette or home-built rates. By s_het every version is flat.
+- **e:** Roulette and home-built rates lower missense obs/exp by 1–3% in every decile.
+- **f:** Roulette's rates correct the maternal hotspot regions, 8p included (1.32 → 1.02, where ridge alone stops at 1.21). Home-built rates slightly overcorrect 8p.
+- **Caveat:** both regional rates come from gnomAD rare variants, so part of their gain on gnomAD counts is gnomAD fitting gnomAD. On held-out DNMs, which don't involve gnomAD, Roulette gains 1,316 log-likelihood units over chance, against 114 for ridge alone.
+
+<details>
+<summary><b>Click to expand: the numbers</b></summary>
 
 | Version | Noise (core set) | Noise (no QC flag) | Outliers (no QC flag) | Synonymous obs/exp, LOEUF decile 9 | Missense obs/exp, lowest s_het decile |
 |---|---|---|---|---|---|
@@ -427,15 +440,24 @@ Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotte
 | Roulette, with the ridge fit on top (exploratory) | 2.029 | 1.965 | 180 (33) | 1.048 | 0.992 |
 | Home-built Roulette-style rates, with the ridge fit on top (exploratory) | 2.203 | 2.136 | 193 (35) | 1.042 | 0.997 |
 
-- **Ridge beats the current method in the pipeline too:** 2.44 against 2.64 on the core set, and 2.78 against 3.04 on the set that doesn't select on the outcome.
-- **Leaving QC-flagged genes out of training barely matters:** 2.439 → 2.432 for ridge, and 2.638 → 2.629 for the current method, whose noise on the outcome-free set gets slightly worse (3.04 → 3.08).
-- **Roulette's rates with the ridge on top do much better:** 2.03 on the core set, and 1.97 on the outcome-free set, against 2.76 for the best DNM-only rr. Unflagged outliers halve (63 → 33), and the LOEUF decile 9 rise falls from 1.09 to 1.05.
-  - It also lowers missense obs/exp by about 3% in every decile, so Roulette rates missense sites as slightly more mutable than synonymous sites of the same trinucleotide change. Whether that is right is open. For LoF it goes the other way (see below).
-- **Rates built the same way from gnomAD v4.1 genomes get most of Roulette's gain:** 2.20 on the core set and 2.14 on the outcome-free set, with 35 unflagged outliers. They come from non-coding rare variants only (exons ± 50 bp, low-complexity regions and segdups left out), with a simpler model than Roulette's (see [Still worth trying](#still-worth-trying-or-looking-at)).
-  - Roulette's regional rate comes from gnomAD rare variants, so part of the gain on gnomAD counts is gnomAD fitting gnomAD. On held-out DNMs, which don't involve gnomAD, its gain over chance is 1,316 log-likelihood units against 114 for ridge alone.
-- Code: [score_downstream.py](followup/score_downstream.py), from the counts written by [export_group_oe.py](followup/cluster/export_group_oe.py). Results: [downstream.scores.tsv](followup/downstream.scores.tsv), [downstream.deciles.tsv](followup/downstream.deciles.tsv).
+The home-built rates come from non-coding rare variants only (exons ± 50 bp, low-complexity regions and segdups left out), with a simpler model than Roulette's (see [Still worth trying](#still-worth-trying-or-looking-at)).
 
-**LoF and missense metrics in the full run.** Each version's release, against the run without rr, on the 17,641 autosomal MANE Select transcripts. ClinGen haploinsufficient genes are the 314 of them with ClinGen score 3.
+Code: [score_downstream.py](followup/score_downstream.py), from the counts written by [export_group_oe.py](followup/cluster/export_group_oe.py). Results: [downstream.scores.tsv](followup/downstream.scores.tsv), [downstream.deciles.tsv](followup/downstream.deciles.tsv), [downstream.hotspots.tsv](followup/downstream.hotspots.tsv).
+
+</details>
+
+**LoF and missense metrics.** Each version's release, against the run without rr.
+
+![LoF and missense metrics in the full run](followup/rr_full_run_release.png)
+
+- **a, c:** ridge lowers LoF expected counts by about 1% (the current method by 2.5%): by about 1.5% in LOEUF deciles 0–6, while it raises them in the least constrained deciles. Net, 42 genes leave LOEUF < 0.6. LOEUF still separates the ClinGen haploinsufficient genes as well as before in every version.
+- **b, d:** with ridge, missense expected moves by under 1%. 9% more genes reach missense z ≥ 3.09, because the rr narrows the spread each raw z is divided by (2.34 → 2.19).
+- **Roulette and home-built rates move the levels:** LoF expected falls 5–6% and missense rises 2–3%. About 500–600 genes leave LOEUF < 0.6 (100–130 join), and missense-constrained genes rise by 70–90%. The model calibration uses synonymous sites only, so it can't check these shifts; using either would need new LOEUF and missense z thresholds.
+
+<details>
+<summary><b>Click to expand: the numbers</b></summary>
+
+On the 17,641 autosomal MANE Select transcripts. ClinGen haploinsufficient genes are the 314 of them with ClinGen score 3.
 
 | Version | LOEUF rank correlation with no rr | Genes moving 2+ LOEUF deciles | Genes newly below / no longer below LOEUF 0.6 | ClinGen HI: AUC of LOEUF | LoF expected | Missense expected | Missense z ≥ 3.09 |
 |---|---|---|---|---|---|---|---|
@@ -447,25 +469,16 @@ Black is the ridge fit with the Satterstrom DNMs (the recommended option). Dotte
 | Roulette, with the ridge fit on top (exploratory) | 0.981 | 2.8% | 100 / 496 | 0.869 | −5.1% | +2.9% | 4,203 |
 | Home-built Roulette-style rates, with the ridge fit on top (exploratory) | 0.970 | 5.1% | 130 / 593 | 0.870 | −6.1% | +1.8% | 3,780 |
 
-- **The rr leaves LOEUF's ranking and what it finds intact.**
-  - With ridge, 0.9% of genes move two or more LOEUF deciles. 22% move one, because decile edges are close together.
-  - The ClinGen haploinsufficient genes separate as well as before (AUC 0.867 → 0.870), with 62% in the most constrained decile under every version.
-  - Genes where ClinGen finds dosage sensitivity unlikely (score 40) stay out of that decile under every version. With ridge, the share of autosomal recessive genes (score 30) in it goes from 1.2% to 1.7%.
-- **The rr lowers LoF expected counts by about 1%,** although it averages 1 over synonymous sites. Over LoF sites the ridge rr averages about 0.99, and the current method's about 0.975.
-  - LoF obs/exp rises in LOEUF deciles 0–7 and falls in the least constrained decile (1.25 → 1.22).
-  - So, net, 42 fewer genes are below LOEUF 0.6 and 30 fewer have pLI ≥ 0.9 (3,238 → 3,208).
-- **Missense constraint gets sharper, not shifted.**
-  - Missense expected moves by under 1% with ridge.
-  - 9% more genes reach missense z ≥ 3.09, mostly because the z-scores' scale shrinks. The pipeline divides each gene's raw missense z by one spread, measured on genes with excess missense, and the rr narrows it (2.35 → 2.19).
-  - Missense outlier flags fall from 215 to 167, and synonymous outlier flags from 262 to 210.
-- **Roulette moves the levels.** Against the run without rr, it lowers LoF expected counts by 5% and raises missense by 3%.
-  - LoF: 496 genes rise above LOEUF 0.6 and 100 fall below it; genes with pLI ≥ 0.9 go from 3,238 to 2,971. ClinGen separation is unchanged (AUC 0.869).
-  - Missense: obs/exp in the least constrained LOEUF decile goes from 1.085 to 1.006. Missense-constrained genes nearly double (2,238 → 4,203), because the level falls and the z-scale shrinks from 2.35 to 1.69. Missense outlier flags fall from 215 to 60.
-  - The home-built rates move them the same way (LoF −6.1%, missense +1.8%; 593 genes rise above LOEUF 0.6 and 130 fall below it), so the shift isn't specific to Roulette's model.
-  - The model calibration uses synonymous sites only, so it can't check these shifts. Using either would need a decision on them, and new LOEUF and missense z thresholds.
-- Code: [score_release.py](followup/score_release.py), on slim copies of each version's release TSV ([export_release_slim.py](followup/cluster/export_release_slim.py)). Results: [release.scores.tsv](followup/release.scores.tsv), [release.deciles.tsv](followup/release.deciles.tsv), [release.flags.tsv](followup/release.flags.tsv).
+- With ridge, 0.9% of genes move two or more LOEUF deciles, and 22% move one, because decile edges are close together.
+- 62% of the ClinGen haploinsufficient genes are in the most constrained decile under every version. Genes where ClinGen finds dosage sensitivity unlikely (score 40) stay out of it; with ridge, the share of autosomal recessive genes (score 30) in it goes from 1.2% to 1.7%.
+- Over LoF sites the ridge rr averages about 0.99, although it averages 1 over synonymous sites; the current method's averages about 0.975.
+- Genes with pLI ≥ 0.9: 3,238 without rr, 3,208 with ridge, 2,971 with Roulette and 2,917 with home-built rates. Missense outlier flags: 215, 167, 60 and 69.
 
-The panels below are the cell-level approximation; the full run's rr tables give nearly the same values ([full_run.metrics.tsv](followup/full_run.metrics.tsv)).
+Code: [score_release.py](followup/score_release.py), on slim copies of each version's release TSV ([export_release_slim.py](followup/cluster/export_release_slim.py)). Results: [release.scores.tsv](followup/release.scores.tsv), [release.deciles.tsv](followup/release.deciles.tsv), [release.flags.tsv](followup/release.flags.tsv).
+
+</details>
+
+**Compared with the older versions.** The panels below compare the rr options with Gnocchi `adj_r`, legacy `syn_adj_r` and Ruchit's tables, on the cell-level approximation. The full run's rr tables give nearly the same values ([full_run.metrics.tsv](followup/full_run.metrics.tsv)).
 
 ![Performance of each rr version](followup/rr_performance.png)
 
@@ -520,7 +533,16 @@ The rr model contrasts DNM sites with background sites. The pipeline's backgroun
 
 ![Training backgrounds compared](followup/rr_background.png)
 
-**Pipeline runs.** Each design was rerun through `regional_rate_pipeline.py` with the full run's DNMs and features, each in its own folder under `gs://gnomad-tmp/jg/rr_bg/`, and scored on Ruchit's exported counts like the full run. Each is fit with ridge at the default penalty (0.3 per site) and at 10 per DNM, which gives backgrounds of different sizes the same shrinkage.
+**Pipeline runs.** Each design was rerun through `regional_rate_pipeline.py` with the full run's DNMs and features, each in its own folder under `gs://gnomad-tmp/jg/rr_bg/`.
+
+![The training backgrounds, rerun through the pipeline](followup/rr_background_pipeline.png)
+
+- **a, b: no background does clearly better than the current one.** All sites is worse, and worse still with one row per variant. One row per variant with a penalty per DNM is the lowest on held-out chromosomes (2.441 against 2.476), but by little.
+- **Sampling by context** changes little with a penalty per DNM. With the default per-site penalty it does worse, because dropping background rows weakens the penalty and makes rr too strong.
+- **c: in every run, CpG is far too strong and A/T too weak.** The local approximation below found A/T too strong (see panel d there).
+
+<details>
+<summary><b>Click to expand: the numbers</b></summary>
 
 | Background | Penalty | Noise | Held-out noise | Outcome-free noise | Outliers (no QC flag) | Slope | Slope A/T / other C / CpG |
 |---|---|---|---|---|---|---|---|
@@ -538,12 +560,11 @@ The rr model contrasts DNM sites with background sites. The pipeline's backgroun
 | Absent, sampled evenly by context | per site | 2.489 | 2.522 | 2.786 | 219 (72) | 0.76 | 1.74 / 0.78 / 0.14 |
 | Absent, sampled evenly by context | per DNM | 2.449 | 2.465 | 2.812 | 224 (76) | 1.06 | 1.80 / 1.01 / 0.29 |
 
-- **No background does clearly better than the current one.** Its default run reproduces the full run's ridge exactly (2.458 / 2.476).
-- **All sites is worse,** as in the local test: held-out noise 2.538 against 2.476, and the rr comes out too weak (slope 1.24). All sites with one row per variant is worse still (2.630).
-- **One row per variant instead of per locus barely matters.** With the default penalty it is 2.478 against 2.476. With a penalty per DNM it is slightly better on every noise measure (held-out 2.441 against 2.451, outcome-free 2.766 against 2.810), the lowest held-out noise of any run, but by little.
-- **Sampling by context changes little with a penalty per DNM** (held-out 2.461–2.465 against 2.451). With the default per-site penalty it is worse (2.518–2.522), because sampling drops background rows and so weakens the penalty: the rr comes out stronger (slope 0.76–0.81).
-- **By context class, every run has the CpG rr far too strong (0.12–0.40) and the A/T rr too weak (1.7–3.4).** The local approximation below found A/T too strong; see panel d.
-- Code: [run_backgrounds.sh](followup/cluster/run_backgrounds.sh), scored by [run_bg_scores.sh](followup/cluster/run_bg_scores.sh) with [full_run_scores.py](followup/full_run_scores.py) `--rr-names`. Results: [rr_bg_pipeline.metrics.tsv](followup/rr_bg_pipeline.metrics.tsv), [rr_bg_pipeline.strength.tsv](followup/rr_bg_pipeline.strength.tsv).
+The current background's default run reproduces the full run's ridge exactly (2.458 / 2.476).
+
+Code: [run_backgrounds.sh](followup/cluster/run_backgrounds.sh), scored by [run_bg_scores.sh](followup/cluster/run_bg_scores.sh) with [full_run_scores.py](followup/full_run_scores.py) `--rr-names`. Results: [rr_bg_pipeline.metrics.tsv](followup/rr_bg_pipeline.metrics.tsv), [rr_bg_pipeline.strength.tsv](followup/rr_bg_pipeline.strength.tsv).
+
+</details>
 
 **Local approximation.** The rest of this section is the earlier local comparison, which also covers options the pipeline doesn't have (reweighting, one strength per class, applying rr before saturation, no rr at CpG).
 
@@ -881,7 +902,7 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
 
 | Script | What it does | Tables it writes |
 |---|---|---|
-| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
+| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_full_run.png](followup/rr_full_run.png), [rr_full_run_release.png](followup/rr_full_run_release.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_background_pipeline.png](followup/rr_background_pipeline.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
 | [remap_rr_to_shet.py](followup/remap_rr_to_shet.py) | Applies each rr version to Ruchit's evaluation export: obs/exp by LOEUF and s_het decile, outliers by flag, and per-gene z. | [syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv), [syn_outliers_by_flag.rr_eval_export.tsv](followup/syn_outliers_by_flag.rr_eval_export.tsv), [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) |
 | [rr_shrinkage_experiments.py](followup/rr_shrinkage_experiments.py) | Alternatives to a strength α (ridge, sample split, background approximation, fitting on gnomAD), and the recommended ridge rr scored at each strength. | [rr_shrinkage_experiments.tsv](followup/rr_shrinkage_experiments.tsv), [rr_shrinkage_experiments.pass2.tsv](followup/rr_shrinkage_experiments.pass2.tsv), [recommended_rr_metrics.tsv](followup/recommended_rr_metrics.tsv) |
 | [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.py) | Ridge against Ruchit's cutoff-and-α options, with his model-fitting code. | [ridge_vs_cutoff_alpha.tsv](followup/ridge_vs_cutoff_alpha.tsv) |

@@ -14,6 +14,8 @@ version, on Ensembl MANE Select transcripts off chrX/Y, against the run without 
 - LoF and missense obs/exp by LOEUF decile of the run without rr (so the bins don't
   move between versions), missense-constrained genes (missense z >= 3.09) and pLI >=
   0.9;
+- the missense z-score scale: the spread the pipeline divides each raw missense z by
+  (raw z = (exp - obs) / sqrt(exp), over the z-score);
 - constraint flag counts.
 """
 
@@ -99,6 +101,15 @@ def main(args: argparse.Namespace) -> None:
             "mis_oe": float(d["mis.obs"].sum() / d["mis.exp"].sum()),
             "mis_z_ge_3.09": int(d["mis.z_score"].ge(3.09).sum()),
             "pli_ge_0.9": int(d["lof.pLI"].ge(0.9).sum()),
+            "mis_z_scale": float(
+                (
+                    (d["mis.exp"] - d["mis.obs"])
+                    / np.sqrt(d["mis.exp"])
+                    / d["mis.z_score"]
+                )
+                .replace([np.inf, -np.inf], np.nan)
+                .median()
+            ),
         }
         rows.append(row)
         g = d.groupby(base_dec.reindex(d.index))

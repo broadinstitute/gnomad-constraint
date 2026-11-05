@@ -982,6 +982,473 @@ def draw_deciles(
     plt.close(fig)
 
 
+ROULETTE_C = "#6250d6"
+"""Per-variant rates learned from gnomAD rare variants (Roulette and home-built)."""
+
+FULL_RUN_VERSIONS = [
+    ("none", "No correction", NONE_C, None, "-"),
+    ("bonferroni_full", "Current method (Bonferroni)", RUCHIT_C, None, "-"),
+    (
+        "bonferroni_qcexcl",
+        "Current method,\nQC-flagged genes left out",
+        RUCHIT_C,
+        "///",
+        (0, (4, 2.5)),
+    ),
+    ("ridge_full", "Ridge", REC_C, "///", (0, (4, 2.5))),
+    (
+        "ridge_qcexcl",
+        "Ridge, QC-flagged genes\nleft out (recommended)",
+        REC_C,
+        None,
+        "-",
+    ),
+    ("roulette_ridge", "Roulette + ridge", ROULETTE_C, None, "-"),
+    ("homebuilt_ridge", "Home-built rates + ridge", ROULETTE_C, "///", (0, (4, 2.5))),
+]
+"""The full pipeline runs: key, label, colour, bar hatch, line style."""
+
+FULL_RUN_LINES = [
+    "none",
+    "bonferroni_full",
+    "ridge_qcexcl",
+    "roulette_ridge",
+    "homebuilt_ridge",
+]
+"""The versions drawn as lines (the QC-exclusion twins are within 0.01 of these)."""
+
+
+def full_run_style(key):
+    """Get a full-run version's label, colour, hatch and line style."""
+    return {v[0]: v[1:] for v in FULL_RUN_VERSIONS}[key]
+
+
+def hbar(ax, y, v, left, c, h):
+    """Draw one horizontal bar, hatched in white if ``h``."""
+    ax.barh(
+        y,
+        v,
+        left=left,
+        height=0.6,
+        color=c,
+        hatch=h,
+        hatchcolor="white",
+        edgecolor=SURFACE,
+        linewidth=1.5,
+    )
+
+
+def decile_lines(ax, d, keys, flip=False, lw_rec=2.8):
+    """Draw obs/exp by decile for each version; ``flip`` puts the top decile first."""
+    for key in keys:
+        label, c, _, ls = full_run_style(key)
+        v = d[d.version == key].sort_values("decile")
+        x = 9 - v.decile if flip else v.decile
+        ax.plot(
+            x,
+            v.oe,
+            color=c,
+            ls=ls,
+            lw=lw_rec if key == "ridge_qcexcl" else 2,
+            label=label.replace("\n", " "),
+        )
+
+
+def draw_full_run():
+    """Draw the full pipeline runs' synonymous and missense results."""
+    sc = pd.read_csv(os.path.join(OUT_DIR, "downstream.scores.tsv"), sep="\t")
+    dec = pd.read_csv(os.path.join(OUT_DIR, "downstream.deciles.tsv"), sep="\t")
+    hot = pd.read_csv(os.path.join(OUT_DIR, "downstream.hotspots.tsv"), sep="\t")
+    sc = sc.set_index("version")
+    fig, axes = plt.subplots(3, 2, figsize=(12, 13.5))
+    fig.subplots_adjust(
+        left=0.19, right=0.97, top=0.91, bottom=0.07, hspace=0.5, wspace=0.55
+    )
+    fig.suptitle(
+        "The full pipeline runs: every version through rr and the constraint pipeline",
+        x=0.03,
+        ha="left",
+        fontsize=13,
+        weight="bold",
+    )
+    fig.text(
+        0.03,
+        0.958,
+        "Scored on the pipeline's own per-transcript counts; 16,438 autosomal MANE"
+        " Select transcripts.\nHatched or dashed = the same fit with QC-flagged genes"
+        " left out of training, or rates built from gnomAD v4.1 genomes instead of"
+        " Roulette's.",
+        fontsize=9.2,
+        color=INK2,
+        va="top",
+        linespacing=1.5,
+    )
+    keys = [v[0] for v in FULL_RUN_VERSIONS]
+    names = [full_run_style(k)[0] for k in keys]
+    ypos = list(range(len(keys)))[::-1]
+
+    # (a) Noise on the core set and on the set that doesn't select on the outcome.
+    ax = axes[0, 0]
+    for y, k in zip(ypos, keys):
+        _, c, h, _ = full_run_style(k)
+        core, free = sc.loc[k, "core_noise"], sc.loc[k, "outcome_free_noise"]
+        ax.plot([core, free], [y, y], color=GRID, lw=2, zorder=1)
+        ax.scatter([core], [y], s=70, color=c, edgecolor=SURFACE, lw=1.5, zorder=3)
+        ax.scatter(
+            [free],
+            [y],
+            s=70,
+            color=SURFACE,
+            edgecolor=c,
+            lw=1.8,
+            zorder=3,
+            hatch=h,
+        )
+        ax.text(
+            min(core, free) - 0.06,
+            y,
+            f"{core:.2f}",
+            ha="right",
+            va="center",
+            fontsize=9,
+            color=INK,
+        )
+    ax.axvline(
+        sc.loc["none", "core_noise"], color=MUTED, lw=1, ls=(0, (3, 3)), zorder=0
+    )
+    ax.axvline(CHANCE_FLOOR, zorder=0, **THEORY)
+    ax.text(
+        CHANCE_FLOOR + 0.05,
+        len(keys) - 0.4,
+        f"chance ≤ {CHANCE_FLOOR:.2f}",
+        fontsize=8.8,
+        color=INK2,
+        va="center",
+    )
+    ax.set_yticks(ypos, names)
+    ax.set_xlim(0.4, 3.75)
+    ax.set_ylim(-0.6, len(keys) - 0.1)
+    ax.set_title("a  Per-gene synonymous noise")
+    ax.set_xlabel(
+        "mean z², level removed (lower = better)\n● core set   ○ no QC flag"
+        " (doesn't select on the outcome)"
+    )
+    style_axis(ax)
+
+    # (b) Outliers, genes with a QC flag (gray) and without (colour).
+    ax = axes[0, 1]
+    for y, k in zip(ypos, keys):
+        _, c, h, _ = full_run_style(k)
+        unflagged = int(sc.loc[k, "outliers_no_qc_flag"])
+        flagged = int(sc.loc[k, "outliers"]) - unflagged
+        hbar(ax, y, flagged, 0, AXIS, None)
+        ax.text(flagged / 2, y, f"{flagged}", ha="center", va="center", fontsize=9)
+        hbar(ax, y, unflagged, flagged, c, h)
+        ax.text(flagged + unflagged + 5, y, f"{unflagged}", va="center", fontsize=9)
+    ax.set_yticks(ypos, [""] * len(keys))
+    ax.set_xlim(0, 300)
+    ax.set_ylim(-0.6, len(keys) - 0.1)
+    ax.set_title("b  Synonymous outliers (|z| > 8)")
+    ax.set_xlabel(
+        "transcripts; gray = genes with a QC flag,\ncolour = genes without one"
+    )
+    style_axis(ax)
+
+    # (c, d) Synonymous obs/exp by LOEUF and s_het decile; (e) missense by s_het.
+    dec_s = dec.copy()
+    for ax, binning, csq, flip, title, ylim in (
+        (
+            axes[1, 0],
+            "loeuf_decile",
+            "syn",
+            False,
+            "c  Synonymous obs/exp by LOEUF decile",
+            (0.97, 1.13),
+        ),
+        (
+            axes[1, 1],
+            "shet_decile",
+            "syn",
+            True,
+            "d  Synonymous obs/exp by s_het decile",
+            (0.97, 1.13),
+        ),
+        (
+            axes[2, 0],
+            "shet_decile",
+            "mis",
+            True,
+            "e  Missense obs/exp by s_het decile",
+            (0.68, 1.06),
+        ),
+    ):
+        d = dec_s[(dec_s.binning == binning) & (dec_s.csq == csq)]
+        ax.axhline(1.0, **THEORY)
+        decile_lines(ax, d, FULL_RUN_LINES, flip=flip)
+        ax.set_xticks(range(10))
+        ax.set_xlim(-0.3, 9.3)
+        ax.set_ylim(*ylim)
+        ax.set_title(title)
+        ax.set_xlabel(
+            (
+                "LOEUF (v4.1.2)"
+                if binning == "loeuf_decile"
+                else "s_het (Kar et al. 2026)"
+            )
+            + " decile; 0 = most constrained"
+        )
+        style_axis(ax, grid_axis="y")
+    axes[1, 0].legend(loc="upper left", frameon=False, fontsize=8.5)
+
+    # (f) Maternal hotspot regions.
+    ax = axes[2, 1]
+    regions = list(dict.fromkeys(hot.region))
+    show = ["none", "ridge_qcexcl", "roulette_ridge", "homebuilt_ridge"]
+    short = {
+        "none": "No correction",
+        "ridge_qcexcl": "Ridge (recommended)",
+        "roulette_ridge": "Roulette + ridge",
+        "homebuilt_ridge": "Home-built + ridge",
+    }
+    markers = {
+        "none": "o",
+        "ridge_qcexcl": "D",
+        "roulette_ridge": "s",
+        "homebuilt_ridge": "^",
+    }
+    for i, region in enumerate(regions):
+        y = len(regions) - 1 - i
+        for j, k in enumerate(show):
+            _, c, h, _ = full_run_style(k)
+            r = hot[
+                (hot.region == region)
+                & (hot.set == "control genes")
+                & (hot.version == k)
+            ]
+            ax.scatter(
+                r.oe,
+                [y + (j - 1.5) * 0.14] * len(r),
+                s=46,
+                marker=markers[k],
+                color=SURFACE if h else c,
+                edgecolor=c,
+                lw=1.6,
+                zorder=3,
+                label=short[k] if i == 0 else None,
+            )
+    ax.axvline(1.0, **THEORY)
+    ax.set_yticks(range(len(regions))[::-1], regions)
+    ax.set_xlim(0.9, 1.36)
+    ax.set_title("f  Maternal hotspot regions")
+    ax.set_xlabel(
+        "synonymous obs/exp of the region's genes\n(no QC flag, not outliers),"
+        " relative to all genes"
+    )
+    ax.legend(loc="lower right", frameon=False, fontsize=8.5)
+    style_axis(ax)
+    fig.savefig(os.path.join(OUT_DIR, "rr_full_run.png"), dpi=170)
+    plt.close(fig)
+
+
+def draw_full_run_release():
+    """Draw what the full pipeline runs do to LoF and missense metrics."""
+    sc = pd.read_csv(os.path.join(OUT_DIR, "release.scores.tsv"), sep="\t")
+    dec = pd.read_csv(os.path.join(OUT_DIR, "release.deciles.tsv"), sep="\t")
+    sc = sc.set_index("version")
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9.4))
+    fig.subplots_adjust(
+        left=0.19, right=0.97, top=0.87, bottom=0.08, hspace=0.45, wspace=0.55
+    )
+    fig.suptitle(
+        "What each version does to LoF and missense metrics (each release against the"
+        " run without rr)",
+        x=0.03,
+        ha="left",
+        fontsize=13,
+        weight="bold",
+    )
+    fig.text(
+        0.03,
+        0.925,
+        "17,641 autosomal MANE Select transcripts. LOEUF still separates the 314 ClinGen"
+        " haploinsufficient genes equally well in every version (AUC 0.867–0.870).",
+        fontsize=9.2,
+        color=INK2,
+    )
+    base = dec[dec.version == "none"].set_index(["csq", "decile_none"]).oe
+    for ax, csq, title in (
+        (axes[0, 0], "lof", "a  LoF obs/exp, relative to no rr"),
+        (axes[0, 1], "mis", "b  Missense obs/exp, relative to no rr"),
+    ):
+        ax.axhline(1.0, **THEORY)
+        for key in FULL_RUN_LINES[1:]:
+            label, c, _, ls = full_run_style(key)
+            v = dec[(dec.version == key) & (dec.csq == csq)].sort_values("decile_none")
+            ax.plot(
+                v.decile_none,
+                v.oe.to_numpy() / base.loc[csq].reindex(v.decile_none).to_numpy(),
+                color=c,
+                ls=ls,
+                lw=2.8 if key == "ridge_qcexcl" else 2,
+                label=label.replace("\n", " "),
+            )
+        ax.set_xticks(range(10))
+        ax.set_xlim(-0.3, 9.3)
+        ax.set_ylim(0.9, 1.1)
+        ax.set_title(title)
+        ax.set_xlabel("LOEUF decile without rr; 0 = most constrained")
+        style_axis(ax, grid_axis="y")
+    axes[0, 0].set_ylabel("obs/exp ÷ obs/exp without rr\n(above 1 = expected fell)")
+    axes[0, 0].legend(loc="lower left", frameon=False, fontsize=8.5)
+
+    keys = [v[0] for v in FULL_RUN_VERSIONS]
+    names = [full_run_style(k)[0] for k in keys]
+    ypos = list(range(len(keys)))[::-1]
+
+    # (c) Genes crossing LOEUF 0.6.
+    ax = axes[1, 0]
+    for y, k in zip(ypos, keys):
+        if k == "none":
+            continue
+        _, c, h, _ = full_run_style(k)
+        out, into = int(sc.loc[k, "out_of_loeuf_lt_0.6"]), int(
+            sc.loc[k, "into_loeuf_lt_0.6"]
+        )
+        hbar(ax, y, -out, 0, c, h)
+        hbar(ax, y, into, 0, c, h)
+        ax.text(-out - 12, y, f"−{out}", ha="right", va="center", fontsize=9)
+        ax.text(into + 12, y, f"+{into}", va="center", fontsize=9)
+    ax.axvline(0, color=INK2, lw=1)
+    ax.set_yticks(ypos, names)
+    ax.set_xlim(-720, 300)
+    ax.set_ylim(-0.6, len(keys) - 0.1)
+    ax.set_title("c  Genes crossing LOEUF 0.6")
+    ax.set_xlabel("← no longer below 0.6      newly below 0.6 →")
+    style_axis(ax)
+
+    # (d) Missense-constrained genes and the z-score scale.
+    ax = axes[1, 1]
+    for y, k in zip(ypos, keys):
+        _, c, h, _ = full_run_style(k)
+        n = int(sc.loc[k, "mis_z_ge_3.09"])
+        hbar(ax, y, n, 0, c, h)
+        ax.text(
+            n + 60,
+            y,
+            f"{n:,}  (÷ {sc.loc[k, 'mis_z_scale']:.2f})",
+            va="center",
+            fontsize=9,
+        )
+    ax.axvline(sc.loc["none", "mis_z_ge_3.09"], color=MUTED, lw=1, ls=(0, (3, 3)))
+    ax.set_yticks(ypos, [""] * len(keys))
+    ax.set_xlim(0, 6200)
+    ax.set_ylim(-0.6, len(keys) - 0.1)
+    ax.set_title("d  Missense-constrained genes (z ≥ 3.09)")
+    ax.set_xlabel("genes; in brackets, the spread each raw missense z is divided by")
+    style_axis(ax)
+    fig.savefig(os.path.join(OUT_DIR, "rr_full_run_release.png"), dpi=170)
+    plt.close(fig)
+
+
+BG_PIPELINE_RUNS = [
+    ("absent_locus", "Absent from gnomAD,\none row per locus (current)"),
+    ("absent_variant", "Absent from gnomAD,\none row per variant"),
+    ("all_locus", "All sites,\none row per locus"),
+    ("all_variant", "All sites,\none row per variant"),
+    ("ctx_proportional", "Absent, sampled by context\nin proportion to all sites"),
+    ("ctx_even", "Absent, sampled\nevenly by context"),
+]
+"""The pipeline background runs (run_backgrounds.sh), in figure order."""
+
+
+def draw_background_pipeline():
+    """Draw the pipeline background runs' noise and class slopes."""
+    m = pd.read_csv(os.path.join(OUT_DIR, "rr_bg_pipeline.metrics.tsv"), sep="\t")
+    m = m.set_index("version")
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.6), sharey=True)
+    fig.subplots_adjust(left=0.15, right=0.98, top=0.8, bottom=0.17, wspace=0.12)
+    fig.suptitle(
+        "The training backgrounds, rerun through the pipeline",
+        x=0.15,
+        ha="left",
+        fontsize=13,
+        weight="bold",
+    )
+    fig.text(
+        0.15,
+        0.875,
+        "Each background fit with ridge at the default penalty (●, 0.3 per site) and at"
+        " 10 per DNM (○, the same shrinkage for any background size); scored on"
+        " Ruchit's exported counts.",
+        fontsize=9.2,
+        color=INK2,
+    )
+    ypos = list(range(len(BG_PIPELINE_RUNS)))[::-1]
+    names = [n for _, n in BG_PIPELINE_RUNS]
+    for ax, col, title, xlim in (
+        (axes[0], "oof_noise", "a  Noise on held-out chromosomes", (2.42, 2.7)),
+        (
+            axes[1],
+            "outcome_free_noise",
+            "b  Noise on genes without a QC flag",
+            (2.74, 3.16),
+        ),
+    ):
+        ref = m.loc["absent_locus_ridge", col]
+        ax.axvline(ref, color=REC_C, lw=1, ls=(0, (3, 3)), zorder=0)
+        for y, (run, _) in zip(ypos, BG_PIPELINE_RUNS):
+            a, b = m.loc[f"{run}_ridge", col], m.loc[f"{run}_ridge_dnm_10", col]
+            c = REC_C if run == "absent_locus" else MUTED
+            ax.plot([a, b], [y, y], color=GRID, lw=2, zorder=1)
+            ax.scatter([a], [y], s=70, color=c, edgecolor=SURFACE, lw=1.5, zorder=3)
+            ax.scatter([b], [y], s=70, color=SURFACE, edgecolor=c, lw=1.8, zorder=3)
+            ax.text(
+                max(a, b) + 0.04 * (xlim[1] - xlim[0]),
+                y,
+                f"{a:.3f} / {b:.3f}",
+                va="center",
+                fontsize=8.8,
+            )
+        ax.set_xlim(*xlim)
+        ax.set_title(title)
+        ax.set_xlabel("mean z², level removed (lower = better)")
+        style_axis(ax)
+    axes[0].set_yticks(ypos, names)
+    axes[0].set_ylim(-0.6, len(ypos) - 0.4)
+
+    ax = axes[2]
+    ax.axvline(1.0, **THEORY)
+    for j, (cls, c) in enumerate(CLASS_C.items()):
+        for y, (run, _) in zip(ypos, BG_PIPELINE_RUNS):
+            ax.scatter(
+                [m.loc[f"{run}_ridge", f"slope_{cls}"]],
+                [y + (j - 1) * 0.18],
+                s=55,
+                color=c,
+                edgecolor=SURFACE,
+                lw=1.2,
+                zorder=3,
+                label=cls if y == ypos[0] else None,
+            )
+    ax.set_xscale("log")
+    ticks = [0.1, 0.2, 0.5, 1, 2, 4]
+    ax.set_xticks(ticks, [f"{t:g}" for t in ticks])
+    ax.minorticks_off()
+    ax.set_xlim(0.09, 4.5)
+    ax.text(
+        0.95, len(ypos) - 0.55, "too strong ←", ha="right", fontsize=8.8, color=INK2
+    )
+    ax.text(1.05, len(ypos) - 0.55, "→ too weak", fontsize=8.8, color=INK2)
+    ax.set_title("c  Calibration slope by context class (●)")
+    ax.set_xlabel("slope; 1 = right strength (log scale)")
+    ax.legend(
+        loc="center left", bbox_to_anchor=(0.24, 0.62), frameon=False, fontsize=8.8
+    )
+    style_axis(ax)
+    fig.savefig(os.path.join(OUT_DIR, "rr_background_pipeline.png"), dpi=170)
+    plt.close(fig)
+
+
 def draw_outliers():
     """Draw synonymous outliers by category, and histone gene z-scores below."""
     out = read_outliers()
@@ -3112,7 +3579,7 @@ def logistic_panel(ax, context, bins, points, ctx, rng, small=False):
     )
 
 
-def rr_curve_panel(ax, context, bins, ctx):
+def rr_curve_panel(ax, context, bins, ctx, small=False):
     """Draw one context's DNM rate per score decile against the model's rr."""
     r = ctx.set_index("context").loc[context]
     b = bins[(bins.context == context) & (bins.background == "absent")]
@@ -3121,7 +3588,7 @@ def rr_curve_panel(ax, context, bins, ctx):
     rel = b.dnms / n0 / k
     se = rel * np.sqrt(1 / b.dnms.clip(lower=1) + 1 / n0)
     s = np.linspace(b.score.min(), b.score.max(), 100)
-    ax.plot(s, np.exp(s), color=INK, lw=2.4, label="model rr (≈ eˢ)")
+    ax.plot(s, np.exp(s), color=INK, lw=1.6 if small else 2.4, label="model rr (≈ eˢ)")
     ax.errorbar(
         b.score,
         rel,
@@ -3129,22 +3596,24 @@ def rr_curve_panel(ax, context, bins, ctx):
         fmt="o",
         color=CLASS_C[r["class"]],
         mfc=SURFACE,
-        mew=1.4,
-        ms=7,
-        elinewidth=1.1,
+        mew=1 if small else 1.4,
+        ms=3.5 if small else 7,
+        elinewidth=0.8 if small else 1.1,
         capsize=0,
         label="DNMs per background site, relative",
     )
     ax.axhline(1, color=AXIS, lw=1, zorder=0)
     ax.set_yscale("log")
-    ticks = [0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6]
+    ticks = [0.8, 1.0, 1.25, 1.6] if small else [0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6]
     ax.set_yticks(ticks, [f"{t:g}" for t in ticks])
     ax.minorticks_off()
     ax.set_ylim(0.6, 1.75)
     style_axis(ax, grid_axis="y")
+    if small:
+        ax.tick_params(labelsize=8)
 
 
-def score_dist_panel(ax, context, hist, ctx):
+def score_dist_panel(ax, context, hist, ctx, small=False):
     """Draw one context's score distributions for DNM and background sites."""
     r = ctx.set_index("context").loc[context]
     for y, color, label in (
@@ -3156,16 +3625,31 @@ def score_dist_panel(ax, context, hist, ctx):
             (h.lo + h.hi) / 2,
             h.share / (h.hi - h.lo),
             color=color,
-            lw=2.2 if y else 1.8,
+            lw=(1.6 if y else 1.2) if small else (2.2 if y else 1.8),
             label=label,
         )
         ax.axvline(
             r.mean_dnm if y else r.mean_background,
             color=color,
-            lw=1.4,
+            lw=1 if small else 1.4,
             ls=(0, (4, 2)),
         )
     shift = (r.mean_dnm - r.mean_background) / r.sd_background
+    if small:
+        ax.text(
+            0.03,
+            0.97,
+            f"Δ {shift:.2f} SD",
+            transform=ax.transAxes,
+            va="top",
+            fontsize=8,
+            color=INK2,
+        )
+        ax.set_ylim(bottom=0)
+        ax.set_yticks([])
+        style_axis(ax, grid_axis="y")
+        ax.tick_params(labelsize=8)
+        return
     ax.text(
         0.0,
         1.02,
@@ -3286,6 +3770,9 @@ def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sit
     fig.savefig(os.path.join(OUT_DIR, f"{prefix}.png"), dpi=170)
     plt.close(fig)
 
+    if stacked:
+        draw_logistic_fits_all_stacked(prefix, bins, points, ctx, hist, rng)
+        return
     fig, axes = plt.subplots(4, 8, figsize=(17, 9.5), sharex=True, sharey=True)
     fig.subplots_adjust(
         left=0.05, right=0.99, top=0.9, bottom=0.08, hspace=0.45, wspace=0.12
@@ -3303,6 +3790,80 @@ def draw_logistic_fits(prefix="rr_logistic_fits", sites="possible synonymous sit
     fig.supxlabel("regional score s = β·z (log-odds; rr ≈ eˢ)", fontsize=10.5)
     fig.supylabel("chance a site is a DNM", fontsize=10.5)
     fig.savefig(os.path.join(OUT_DIR, f"{prefix}.all_contexts.png"), dpi=150)
+    plt.close(fig)
+
+
+def draw_logistic_fits_all_stacked(prefix, bins, points, ctx, hist, rng):
+    """
+    Draw every context's logistic regression with the main figure's three stacked rows.
+
+    For each context, top to bottom: the fitted curve (as panels a–c of the main
+    figure), DNMs against rr per score decile (d–f), and the two score distributions
+    (g–i). Contexts are in class order, eight per block.
+
+    :param prefix: Table prefix, also the figure name.
+    :param bins: Per-context score-decile table.
+    :param points: Sampled sites.
+    :param ctx: Per-context table, sorted in class order.
+    :param hist: Score histograms.
+    :param rng: Random generator for the jitter.
+    """
+    n_col, n_block = 8, int(np.ceil(len(ctx) / 8))
+    height = 5.0 * n_block + 1.5
+    fig = plt.figure(figsize=(18, height))
+    gs = fig.add_gridspec(
+        4 * n_block,
+        n_col,
+        height_ratios=([1, 0.8, 0.7, 0.3] * n_block)[:-1] + [0.01],
+        hspace=0.2,
+        wspace=0.14,
+    )
+    fig.subplots_adjust(left=0.06, right=0.99, top=1 - 1.75 / height, bottom=0.03)
+    fig.text(
+        0.06,
+        1 - 0.3 / height,
+        "Every context's logistic regression, in the main figure's three rows"
+        " (DNMs in brackets; colour = context class)",
+        fontsize=13,
+        weight="bold",
+        va="top",
+    )
+    fig.text(
+        0.06,
+        1 - 0.68 / height,
+        "top: the fitted curve, drawn with equal numbers of DNMs and background; open"
+        " circles = share of DNMs per score decile\nmiddle: DNMs per background site"
+        " (relative, ± 95% CI) against the model's rr (black)\nbottom: the score"
+        " distributions of DNM (colour) and background (gray) sites; Δ = difference of"
+        " the means, in SD of the background scores. All on held-out chromosomes.",
+        fontsize=9.5,
+        color=INK2,
+        va="top",
+        linespacing=1.5,
+    )
+    shared = None
+    for k, (_, r) in enumerate(ctx.iterrows()):
+        blk, col = divmod(k, n_col)
+        axes = []
+        for row in range(3):
+            ax = fig.add_subplot(gs[4 * blk + row, col], sharex=shared)
+            shared = shared or ax
+            axes.append(ax)
+        logistic_panel(axes[0], r.context, bins, points, ctx, rng, small=True)
+        rr_curve_panel(axes[1], r.context, bins, ctx, small=True)
+        score_dist_panel(axes[2], r.context, hist, ctx, small=True)
+        for ax in axes[:2]:
+            ax.tick_params(labelbottom=False)
+        if col == 0:
+            axes[0].set_ylabel("chance of DNM", fontsize=9)
+            axes[1].set_ylabel("DNM rate,\nrelative", fontsize=9)
+            axes[2].set_ylabel("density", fontsize=9)
+        else:
+            for ax in axes[:2]:
+                ax.tick_params(labelleft=False)
+        axes[2].set_xlabel("regional score s", fontsize=8.5, labelpad=1)
+    shared.set_xlim(-0.35, 0.5)
+    fig.savefig(os.path.join(OUT_DIR, f"{prefix}.all_contexts.png"), dpi=140)
     plt.close(fig)
 
 
@@ -3537,6 +4098,8 @@ def draw_histone_conversion():
 
 if __name__ == "__main__":
     draw_diagram()
+    draw_full_run()
+    draw_full_run_release()
     draw_performance()
     draw_deciles()
     draw_deciles(
@@ -3549,6 +4112,7 @@ if __name__ == "__main__":
     draw_leftover_noise()
     draw_outlier_drivers()
     draw_background()
+    draw_background_pipeline()
     draw_concept()
     draw_model()
     draw_dnm_sets()
