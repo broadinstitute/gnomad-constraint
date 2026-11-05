@@ -546,13 +546,6 @@ def draw_diagram():
     plt.close(fig)
 
 
-def read_outliers():
-    """Read synonymous outlier counts written by remap_rr_to_shet.py --outliers."""
-    return pd.read_csv(
-        os.path.join(OUT_DIR, "syn_outliers_by_flag.rr_eval_export.tsv"), sep="\t"
-    )
-
-
 def out_count(out, corr, direction, flag=None):
     """Count outliers of one correction and direction, optionally of one flag group."""
     d = out[(out.correction == corr) & (out.direction == direction)]
@@ -4850,7 +4843,11 @@ def draw_problem_summary():
         sep="\t",
         compression="gzip",
     )
-    zs = pd.read_csv(os.path.join(OUT_DIR, "syn_z_by_histone_group.tsv"), sep="\t")
+    zs = pd.read_csv(
+        os.path.join(OUT_DIR, "full_run.per_transcript.tsv.gz"),
+        sep="\t",
+        usecols=["transcript", "obs", "exp_none", "exp_ridge_qcexcl"],
+    )
     fig, axes = plt.subplots(
         1, 3, figsize=(18, 5.6), gridspec_kw={"width_ratios": [1, 1, 1.05]}
     )
@@ -4899,15 +4896,15 @@ def draw_problem_summary():
     ax = axes[1]
     d = zs.merge(tx[["transcript", "unflagged"]], on="transcript")
     d = d[d.unflagged.astype(str).str.lower().eq("true") & (d.exp_none >= 20)]
-    d = d.assign(rr=d.exp_recommended / d.exp_none)
+    d = d.assign(rr=d.exp_ridge_qcexcl / d.exp_none)
     d["bin"] = pd.qcut(d.rr.rank(method="first"), 10, labels=False)
     g = d.groupby("bin").agg(
         rr=("rr", "mean"),
         obs=("obs", "sum"),
         e0=("exp_none", "sum"),
-        e1=("exp_recommended", "sum"),
+        e1=("exp_ridge_qcexcl", "sum"),
     )
-    k0, k1 = d.obs.sum() / d.exp_none.sum(), d.obs.sum() / d.exp_recommended.sum()
+    k0, k1 = d.obs.sum() / d.exp_none.sum(), d.obs.sum() / d.exp_ridge_qcexcl.sum()
     lim = (0.94, 1.12)
     ax.plot(lim, lim, **THEORY, label="if rr were exactly right")
     ax.axhline(1, color=AXIS, lw=1)
@@ -4941,16 +4938,12 @@ def draw_problem_summary():
 
     # (c) How much of the scatter each correction removes.
     ax = axes[2]
-    rec = pd.read_csv(os.path.join(OUT_DIR, "recommended_rr_metrics.tsv"), sep="\t")
+    met = read_cell_scores("metrics").set_index("version").core_noise
     rows = [
-        ("No correction", 2.908, NONE_C),
-        ("Gnocchi adj_r", 5.450, ADJ_R_C),
-        ("Legacy syn_adj_r", 2.509, LEGACY_C),
-        (
-            "Ridge rr",
-            float(rec[rec.alpha == 1.0].core_noise.iloc[0]),
-            REC_C,
-        ),
+        ("No correction", met["none"], NONE_C),
+        ("Gnocchi adj_r", met["adj_r"], ADJ_R_C),
+        ("Legacy syn_adj_r", met["syn_adj_r_norm"], LEGACY_C),
+        ("Ridge rr", met["ridge_qcexcl"], REC_C),
     ]
     ypos = np.arange(len(rows))[::-1]
     for y, (label, v, c) in zip(ypos, rows):
