@@ -2649,21 +2649,28 @@ def draw_rates_diagram():
 
 def draw_outliers():
     """Draw synonymous outliers by category, and histone gene z-scores below."""
-    out = read_outliers()
-    rows = [
-        ("No correction", "none", NONE_C, None),
-        ("Gnocchi adj_r", "adj_r", ADJ_R_C, None),
-        ("Legacy syn_adj_r", "syn_adj_r", LEGACY_C, None),
-        ("Ruchit, 17k DNMs", "ruchit_17k", RUCHIT_C, None),
-        ("Ruchit, Satterstrom\nDNMs", "ruchit_satterstrom", RUCHIT_C, "///"),
-        ("Ridge, Satterstrom\nDNMs", "recommended", REC_C, None),
-    ]
+    out = pd.concat(
+        pd.read_csv(os.path.join(OUT_DIR, f"{p}.outliers_by_flag.tsv"), sep="\t")
+        for p in ("full_run", "rr_rates")
+    ).drop_duplicates(["version", "direction", "category"])
+    out = out.rename(columns={"version": "correction", "category": "flag"})
+    short = {
+        "none": "No correction",
+        "adj_r": "Gnocchi adj_r",
+        "syn_adj_r_norm": "Legacy syn_adj_r",
+        "bonferroni_full": "Ruchit's pipeline",
+        "1e-2_a0.625_full": "Ruchit's latest pick",
+        "ridge_qcexcl": "Ridge (recommended)",
+        "roulette_ridge": "Roulette + ridge\n(quick first try)",
+        "homebuilt_ridge": "Home-built + ridge\n(quick first try)",
+    }
+    rows = [(short[k], k, c, h) for k, _, c, h, _ in PERF_VERSIONS]
     flag_fill = {
         "histone genes": "#cfc8f2",
         "low_exome_coverage": "#e6e5df",
         "low_exome_mapping_quality": "#c3c2b7",
     }
-    fig = plt.figure(figsize=(15, 12.2))
+    fig = plt.figure(figsize=(15, 13.5))
     gs = fig.add_gridspec(2, 2, width_ratios=[1.2, 1], hspace=0.5, wspace=0.22)
     fig.subplots_adjust(left=0.1, right=0.98, top=0.95, bottom=0.1)
     ax = fig.add_subplot(gs[0, 0])
@@ -2741,8 +2748,8 @@ def draw_outliers():
     ax.set_xlim(-440, 180)
     ax.set_ylim(-1.3, len(rows) - 0.05)
     ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{abs(v):.0f}"))
-    ax.set_title("a  Synonymous outliers (|z| > 8), histone genes split out")
     ax.set_xlabel("transcripts (of 18,406)")
+    ax.set_title("a  Synonymous outliers (|z| > 8), by flag")
     ax.legend(
         handles=[
             Patch(color=INK2, label="none of these (bar color = version)"),
@@ -3061,19 +3068,41 @@ def draw_leftover_noise():
     size = pd.read_csv(os.path.join(OUT_DIR, "residual_noise.by_size.tsv"), sep="\t")
     cov = pd.read_csv(os.path.join(OUT_DIR, "residual_noise.covariates.tsv"), sep="\t")
     fig, axes = plt.subplots(
-        1, 2, figsize=(11, 4.8), gridspec_kw={"width_ratios": [1, 1.25]}
+        1, 2, figsize=(16, 6.6), gridspec_kw={"width_ratios": [1, 1.2]}
     )
     fig.subplots_adjust(left=0.07, right=0.97, top=0.86, bottom=0.17, wspace=0.62)
 
     ax = axes[0]
     x = size.median_exp
     ax.plot(x, size.chance, label="Chance alone", **THEORY)
-    ax.plot(x, size.none, color=NONE_C, lw=2, marker="o", ms=7, label="No correction")
-    ax.plot(x, size.ridge_rr, color=REC_C, lw=2.6, marker="D", ms=7, label="Ridge rr")
+    ax.plot(x, size.none, color=NONE_C, lw=2, marker="o", ms=9, label="No correction")
+    ax.plot(x, size.ridge_rr, color=REC_C, lw=2.6, marker="D", ms=9, label="Ridge rr")
+    if "roulette_ridge" in size:
+        ax.plot(
+            x,
+            size.roulette_ridge,
+            color=ROULETTE_C,
+            lw=2,
+            marker="s",
+            ms=9,
+            label="Roulette + ridge (quick first try)",
+        )
+        ax.plot(
+            x,
+            size.homebuilt_ridge,
+            color=ROULETTE_C,
+            lw=2,
+            ls=(0, (4, 2.5)),
+            marker="^",
+            ms=9,
+            mfc=SURFACE,
+            label="Home-built + ridge (quick first try)",
+        )
     ax.set_xscale("log")
     ax.set_xticks(
         [40, 80, 150, 300, 500, 1000], ["40", "80", "150", "300", "500", "1,000"]
     )
+    ax.minorticks_off()
     ax.set_ylim(0, 6.2)
     ax.set_title("Leftover noise grows with gene size")
     ax.set_xlabel("expected synonymous variants per gene (bin median)")
@@ -3083,42 +3112,109 @@ def draw_leftover_noise():
 
     ax = axes[1]
     order = [
-        ("no correction", "No correction", NONE_C),
-        ("none (ridge rr only)", "Ridge rr", REC_C),
-        ("gene size", "+ gene size", "#6250d6"),
-        ("expression (GTEx)", "+ expression (GTEx)", "#6250d6"),
-        ("gene quality metrics", "+ gene quality metrics", "#6250d6"),
+        ("no correction", "No correction", NONE_C, None),
+        ("none (ridge rr only)", "Ridge rr", REC_C, None),
+        ("gene size", "ridge + gene size", MUTED, None),
+        ("expression (GTEx)", "ridge + expression (GTEx)", MUTED, None),
+        ("gene quality metrics", "ridge + gene quality metrics", MUTED, None),
         (
             "13 regional features, nonlinear",
-            "+ regional features, nonlinear",
-            "#6250d6",
+            "ridge + regional features, nonlinear",
+            MUTED,
+            None,
         ),
-        ("all of the above", "+ all of the above", "#6250d6"),
+        ("all of the above", "ridge + all of the above", MUTED, None),
+        ("version: roulette_ridge", "Roulette + ridge (quick try)", ROULETTE_C, None),
+        (
+            "version: homebuilt_ridge",
+            "Home-built + ridge (quick try)",
+            ROULETTE_C,
+            "///",
+        ),
     ]
+    order = [o for o in order if (cov.covariates == o[0]).any()]
     ypos = list(range(len(order)))[::-1]
-    for y, (key, label, c) in zip(ypos, order):
+    for y, (key, label, c, h) in zip(ypos, order):
         v = float(cov[cov.covariates == key].noise.iloc[0])
-        ax.barh(y, v, height=0.56, color=c, linewidth=0)
+        ax.barh(y, v, height=0.6, color=c, hatch=h, hatchcolor="white", linewidth=0)
         ax.text(v + 0.03, y, f"{v:.2f}", va="center", fontsize=14)
     ax.axvline(CHANCE_FLOOR, **THEORY)
     ax.text(
-        CHANCE_FLOOR + 0.04,
-        len(order) - 0.45,
-        "chance ≤ 0.70",
-        fontsize=13,
-        color=INK2,
+        CHANCE_FLOOR + 0.04, len(order) - 0.45, "chance ≤ 0.70", fontsize=13, color=INK2
     )
     ax.set_yticks(ypos, [o[1] for o in order])
     ax.set_xlim(0, 3.0)
     ax.set_ylim(-0.6, len(order) - 0.1)
-    ax.set_title("What gene-level covariates remove")
+    ax.set_title("What rates and gene-level covariates remove")
     ax.set_xlabel(
-        "mean z², overall level removed (lower = better)\ncovariates fit on the other chromosome half"
+        "mean z², overall level removed (lower = better)\ncovariates fit on the other"
+        " chromosome half"
     )
     style_axis(ax)
 
     fig.savefig(
         os.path.join(OUT_DIR, "rr_leftover_noise.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
+def draw_outlier_rates():
+    """Draw which synonymous outliers each version still leaves, by explanation."""
+    o = pd.read_csv(os.path.join(OUT_DIR, "outlier_rates.tsv"), sep="\t")
+    groups = [
+        ("maternal hotspot region", "In a maternal\nhotspot region"),
+        ("other", "Other excess"),
+        ("repeat, segdup or low coverage", "Repeat, segdup\nor low coverage"),
+        ("histone genes", "Histone genes"),
+    ]
+    versions = [
+        ("none", "No correction", NONE_C, None),
+        ("ridge_qcexcl", "Ridge (recommended)", REC_C, None),
+        ("roulette_ridge", "Roulette + ridge (quick first try)", ROULETTE_C, None),
+        ("homebuilt_ridge", "Home-built + ridge (quick first try)", ROULETTE_C, "///"),
+    ]
+    fig, ax = plt.subplots(figsize=(13, 6.2))
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.8, bottom=0.2)
+    w = 0.2
+    for j, (v, label, c, h) in enumerate(versions):
+        for i, (g, _) in enumerate(groups):
+            r = o[(o.group == g) & (o.version == v)].iloc[0]
+            x = i + (j - 1.5) * w
+            ax.bar(
+                x,
+                r.still_outliers,
+                width=w * 0.92,
+                color=c,
+                hatch=h,
+                hatchcolor="white",
+                linewidth=0,
+                label=label if i == 0 else None,
+            )
+            ax.text(
+                x,
+                r.still_outliers + 0.4,
+                f"{r.still_outliers}",
+                ha="center",
+                fontsize=12.5,
+            )
+    ax.set_xticks(
+        range(len(groups)),
+        [
+            f"{lab}\n(of {int(o[o.group == g].n_genes.iloc[0])} genes)"
+            for g, lab in groups
+        ],
+    )
+    ax.set_ylabel("genes still with |z| > 8")
+    ax.set_title("Which synonymous outliers each version still leaves")
+    ax.legend(
+        loc="lower left", bbox_to_anchor=(0, 1.08), ncol=2, frameon=False, fontsize=13
+    )
+    style_axis(ax, grid_axis="y")
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_outlier_rates.png"),
         dpi=170,
         bbox_inches="tight",
         pad_inches=0.3,
@@ -5406,6 +5502,7 @@ if __name__ == "__main__":
     draw_outliers()
     draw_alternatives()
     draw_leftover_noise()
+    draw_outlier_rates()
     draw_outlier_drivers()
     draw_background()
     draw_background_pipeline()

@@ -828,46 +828,49 @@ Code: [rr_training_exclusion.py](followup/rr_training_exclusion.py). Results: [r
 
 ### What the leftover noise is
 
-![Leftover noise by gene size, and what gene-level covariates remove](followup/rr_leftover_noise.png)
+![Leftover noise by gene size, and what rates and gene-level covariates remove](followup/rr_leftover_noise.png)
 
-This uses the 17,459 genes with no release flag of any kind and at least 20 expected synonymous variants; the flags already handle the rest. On this set, noise is 2.57 with no correction and 2.15 with the ridge rr, against at most 0.70 from chance.
+This uses the 17,459 genes with no release flag of any kind and at least 20 expected synonymous variants; the flags already handle the rest. The versions are the full run's (the ridge rr with QC-flagged genes left out of training, and the per-variant rates, a quick first try), scored on Ruchit's exported counts. On this set, noise is 2.57 with no correction and 2.14 with the ridge rr, against at most 0.70 from chance.
 
-- **About half of the leftover excess doesn't grow with gene size** (left). Even small genes sit well above chance (1.1–1.9). That part comes from individual sites, for example the three possible variants at a position sharing its coverage and mappability. No regional correction can remove it; a better per-site model could.
-- **The other half grows with gene size**, as a gene-wide rate error of about 5% would. That is the part a regional or gene-level correction can reach.
-- **It's concentrated in a few hundred genes.** The noisiest 5% of genes carry half the leftover excess, and 61% of the excess comes from genes with more variants than expected. The noisiest unflagged genes include:
-  - histone cluster genes (synonymous o/e ≈ 1.8, despite clean coverage and mapping)
-  - mucins and other tandem-repeat genes
+- **About half of what the ridge rr leaves doesn't grow with gene size** (left). Even small genes sit well above chance (1.1–1.8). That part comes from individual sites, for example the three possible variants at a position sharing its coverage and mappability. No regional correction can remove it; a better per-site model could.
+- **The other half grows with gene size**, as a gene-wide rate error of about 5% would. That is the part a regional or gene-level correction can reach, and it is where the per-variant rates help most: in the largest genes, noise falls from 4.6 with the ridge rr to 3.5 with Roulette's rates on top.
+- **It's concentrated in a few hundred genes.** The noisiest 5% of genes carry half the leftover excess, and 60% of the excess comes from genes with more variants than expected. The noisiest unflagged genes include:
+  - histone cluster genes (synonymous obs/exp about 1.8, despite clean coverage and mapping)
+  - mucins and segdup genes with fewer variants than expected (MUC4, MUC6, ESPN, CSPG4)
   - HLA genes
-  - a few highly constrained, broadly expressed genes (HNRNPA2B1, SFPQ, BRD2, USP34)
-- **Gene-level covariates help a little** (right). Each model is fit on gnomAD synonymous counts from the other chromosome half.
+  - a few highly constrained, broadly expressed genes (HNRNPA2B1, SFPQ, BRD2, USP34, HNRNPDL)
+- **Gene-level covariates on top of the ridge rr help a little** (right). Each is fit on gnomAD synonymous counts from the other chromosome half.
   - Gene quality metrics, gene size and GTEx expression barely help on their own: at most 1.5%.
   - A nonlinear model of the same 13 regional features removes another 7%, so the per-context logistic rr isn't using everything these features carry.
-  - Everything together removes 13% (2.15 → 1.87), about a fifth of what's left above chance.
+  - Everything together removes 12% (2.14 → 1.88).
+- **The per-variant rates remove more than all the covariates together:** 1.69 with Roulette's rates and 1.83 with the home-built ones, against 1.88. They are what point 2 below suggested: a regional rate learned from gnomAD rare variants. Part of that gain is gnomAD fitting gnomAD, and it was one untuned try.
 - **Most of the gene-level part is real.** Synonymous DNMs follow gnomAD synonymous obs/exp across genes, at about two-thirds of the slope expected if all the spread above chance were mutation rate (see [What explains them besides size](#what-explains-them-besides-size)). Histone genes are included: their DNMs are 2.8 times expected.
 
 What this suggests:
 1. Treat what's left as two problems. The site-level part belongs to the mutation model (per-site coverage, wider sequence context). The gene-level part belongs to the regional correction.
-2. For the gene-level part, the most promising route is a model trained on gnomAD rare variants that uses the regional features flexibly (nonlinearly). This matches the "fit on gnomAD synonymous" result earlier.
-3. Check histone clusters for paralog artifacts. Consider flagging repeat and segdup genes, whose excess DNMs don't confirm.
+2. For the gene-level part, a regional rate learned from gnomAD rare variants is the most promising route. The per-variant rates tested here are one version of it and already beat every gene-level covariate; how best to build and combine it still needs work (see [Per-variant rates](#per-variant-rates-roulette-and-how-the-pipeline-uses-it)).
+3. The histone genes need their own handling: the paralog test found their gnomAD excess is mostly not paralog-copying (see [Do the extra variants copy a paralog?](#paralog-test)), and no regional rate removes it. Consider flagging repeat and segdup genes, whose excess the DNMs don't confirm.
 4. Expression breadth (a stand-in for transcription-coupled repair) adds little on its own. Replication timing is untested; it needs an external track.
 
-Code: [residual_noise.py](followup/residual_noise.py). Results: [residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv), [residual_noise.covariates.tsv](followup/residual_noise.covariates.tsv), [residual_noise.top_genes.tsv](followup/residual_noise.top_genes.tsv).
+Code: [residual_noise.py](followup/residual_noise.py) (GTEx v8 median TPM for expression). Results: [residual_noise.by_size.tsv](followup/residual_noise.by_size.tsv), [residual_noise.covariates.tsv](followup/residual_noise.covariates.tsv), [residual_noise.top_genes.tsv](followup/residual_noise.top_genes.tsv).
 
 ### The synonymous outliers
 
 ![Synonymous outliers by release gene flag, and histone gene z-scores](followup/rr_outliers.png)
 
-- **Left (obs ≪ exp):** under every synonymous rr, all but 0–1 of these carry `low_exome_mapping_quality`. They are segdup and paralog genes, with median syn o/e about 0.2. No rr can fix them, and none should.
+Panel a scores every version the same way as [How each version performs](#how-each-version-performs): the full run's rr tables (and the per-variant rates, a quick first try) on Ruchit's exported counts.
+
+- **Left (obs ≪ exp):** under every version, all but 0–2 of these carry `low_exome_mapping_quality` (127–131; 142 with the home-built rates). They are segdup and paralog genes, with median syn o/e about 0.2. No rr can fix them, and none should.
 - **Right (obs ≫ exp):** rr changes these, but not all of them.
-  - **Histone genes (lavender):** 23–24 excess outliers under every version. None has a QC gene flag, though the release already marks all 24 `outlier_syn`. No rr removes any of them.
+  - **Histone genes (lavender):** 23–24 excess outliers under every version, the per-variant rates included. None has a QC gene flag, though the release already marks all 24 `outlier_syn`.
     - There are 72 histone genes in all: 54 in the chr6p22 cluster, 5 in the chr1q21 cluster, and 13 elsewhere. Every outlier is in the chr6p22 cluster, which is 24 of its 54 genes.
     - The excess covers the whole cluster, not just the outliers: pooled syn o/e is 1.88 in the chr6p22 cluster, 1.32 in chr1q21 and 1.23 elsewhere. 45 of the 72 genes have o/e above 1.5.
     - **Panel b:** the whole chr6p22 histone cluster is shifted to the right of every other gene: median z 7.4, against 0.1 for all other genes without a QC flag. The histone genes elsewhere sit in between, at a median of 2.3. The 24 outliers are just the part of that shifted distribution that crosses z = 8. The 33 non-histone genes in the same 25–28.5 Mb stretch sit slightly *below* expected (median z −1.1), the opposite of their histone neighbours.
     - **It's specific to histone genes, not the region.** The 33 non-histone genes interleaved in the same chr6 stretch (25–28.5 Mb) have pooled o/e 0.92, and the neighbouring MHC has 0.91. So neither regional mutation rate nor MHC diversity explains it, which is why no rr helps. Synonymous DNMs in the cluster are 2.8 times expected (see [What explains them besides size](#what-explains-them-besides-size)), so a real mutation-rate excess is likely. Paralog mis-mapping could still affect both gnomAD and DNM calls.
-  - **`low_exome_coverage` (light gray, right):** 18–20 genes with too many variants. It's the only release gene flag besides `low_exome_mapping_quality`. These genes have more variants than the coverage-corrected expected count.
-  - **Everything else without a flag:** these drop from 98 to 42 with legacy `syn_adj_r`, 48–52 with Ruchit's tables, and 46 with the ridge rr.
+  - **`low_exome_coverage` (light gray, right):** 17–20 genes with too many variants. It's the only release gene flag besides `low_exome_mapping_quality`. These genes have more variants than the coverage-corrected expected count.
+  - **Everything else without a flag:** these drop from 98 to 48 with legacy `syn_adj_r`, 49–54 with Ruchit's pipeline and his latest pick, 46 with the ridge rr, and 13–14 with the per-variant rates.
 - **Gnocchi `adj_r`** creates about 236 deficit outliers among genes without a flag, by pushing ordinary genes below their expected counts.
-- **Unflagged genes only:** synonymous outliers fall from 123 to 66 (legacy), 71–76 (Ruchit's tables) and 71 (ridge), about half. After rr, histone genes are about a third of the unflagged outliers left.
+- **Genes without a QC flag:** synonymous outliers fall from 123 to 71–79 with a DNM rr (71 with ridge), about half, and to 37–40 with the per-variant rates. After the ridge rr, histone genes are about a third of what's left; after the rates, almost two-thirds.
 
 - **Panels c and d, gene size:** for the same relative excess, z grows with the square root of a gene's expected count. Panel c plots expected count, which is what z depends on. Panel d plots coding length; there are about 160 expected synonymous variants per kb, so the two track each other closely.
   - Large genes cross |z| = 8 with only 20–50% more variants than expected. CSMD1, for example, is at obs/exp 1.49 with about 1,900 expected.
@@ -875,7 +878,16 @@ Code: [residual_noise.py](followup/residual_noise.py). Results: [residual_noise.
   - The non-histone outliers are mostly large genes: median 599 expected, against 212 for all genes.
   - So outlier counts favour large genes, and a fixed |z| cutoff is not a fixed effect size.
 
-**The 47 non-histone outliers left with the ridge rr** (46 with too many variants, plus MUC4 with too few). These genes carry no QC gene flag, but 45 carry a release outlier flag (41 `outlier_syn`, 37 `outlier_mis`), and 37 are outliers under all four synonymous rr versions.
+**The 47 non-histone outliers left with the ridge rr** (46 with too many variants, plus MUC4 with too few). These genes carry no QC gene flag, but 45 carry a release outlier flag (41 `outlier_syn`, 37 `outlier_mis`). They were picked with the local ridge fit; the full run's ridge keeps 46 of them (ID1 drops just below |z| = 8, and ZFHX3 joins).
+
+![Which synonymous outliers each version still leaves](followup/rr_outlier_rates.png)
+
+- **The ridge rr leaves every group in place.** The groups come from [What explains them besides size](#what-explains-them-besides-size) below.
+- **The per-variant rates (a quick first try) remove most of the outliers whose excess the DNMs confirm:** 21 of the 23 in maternal hotspot regions (MAZ and ZFP36L2 stay) and 7 of the 11 other excess outliers (DMD, HSP90AA1, IRF2BPL and MECP2 stay).
+- **They leave the ones that look like artifacts or gene-specific excess:**
+  - 8 of the 13 repeat, segdup or low-coverage genes (FLG, the MUC genes, ACTG1, HSPA8, CT47B1, MROH1). Their excess isn't in the DNMs, so it isn't mutation rate.
+  - 23 of the 24 histone outliers. Their excess is in the genes, not the region (see [Why the histone genes are outliers](#why-the-histone-genes-are-outliers-and-whether-rr-can-capture-them)).
+- Code: [outlier_rates.py](followup/outlier_rates.py). Results: [outlier_rates.tsv](followup/outlier_rates.tsv).
 
 #### What explains them besides size
 
@@ -1044,6 +1056,7 @@ Code: [histone_gene_conversion.py](followup/histone_gene_conversion.py). Results
 
 **Can rr capture it?**
 - **Not with regional features.** The interleaved non-histone genes are normal, so any regional feature that raises the histone genes would wrongly raise their neighbours too.
+- **Not with per-variant rates either.** In the quick first try, Roulette's rates with the ridge on top still leave 23 of the 24 histone outliers: their regional part can't single out the genes, for the same reason.
 - **b. A histone term learned from DNMs would overcorrect.**
   - Multiplying expected by the DNM excess (2.84) leaves the cluster at obs/exp 0.65.
   - Applying it before saturation gives 0.87, and doing it by CpG status gives 0.72.
@@ -1060,7 +1073,7 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
 
 | Script | What it does | Tables it writes |
 |---|---|---|
-| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_scorecard.png](followup/rr_scorecard.png), [rr_full_run_release.png](followup/rr_full_run_release.png), [rr_new_metrics.png](followup/rr_new_metrics.png), [rr_rate_parts.png](followup/rr_rate_parts.png), [rr_feature_use.png](followup/rr_feature_use.png), [rr_penalty.png](followup/rr_penalty.png), [rr_rates_diagram.png](followup/rr_rates_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_background_pipeline.png](followup/rr_background_pipeline.png), [rr_background.local.png](followup/rr_background.local.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
+| [make_followup_figures.py](followup/make_followup_figures.py) | Draws every figure in this report from the tables listed here. | Figures: [rr_concept.png](followup/rr_concept.png), [rr_problem_summary.png](followup/rr_problem_summary.png), [rr_pipelines_diagram.png](followup/rr_pipelines_diagram.png), [rr_scorecard.png](followup/rr_scorecard.png), [rr_full_run_release.png](followup/rr_full_run_release.png), [rr_new_metrics.png](followup/rr_new_metrics.png), [rr_rate_parts.png](followup/rr_rate_parts.png), [rr_feature_use.png](followup/rr_feature_use.png), [rr_penalty.png](followup/rr_penalty.png), [rr_rates_diagram.png](followup/rr_rates_diagram.png), [rr_performance.png](followup/rr_performance.png), [rr_by_decile.png](followup/rr_by_decile.png), [rr_by_decile.explained_removed.png](followup/rr_by_decile.explained_removed.png), [rr_features.png](followup/rr_features.png), [rr_alternatives.png](followup/rr_alternatives.png), [rr_dnm_sets.png](followup/rr_dnm_sets.png), [rr_background.png](followup/rr_background.png), [rr_background_pipeline.png](followup/rr_background_pipeline.png), [rr_background.local.png](followup/rr_background.local.png), [rr_leftover_noise.png](followup/rr_leftover_noise.png), [rr_outlier_rates.png](followup/rr_outlier_rates.png), [rr_outliers.png](followup/rr_outliers.png), [rr_outlier_drivers.png](followup/rr_outlier_drivers.png), [rr_histones.png](followup/rr_histones.png), [rr_model.png](followup/rr_model.png), [rr_logistic_fits.png](followup/rr_logistic_fits.png), [rr_logistic_fits.all_contexts.png](followup/rr_logistic_fits.all_contexts.png), [rr_logistic_fits.backgrounds.png](followup/rr_logistic_fits.backgrounds.png), [rr_logistic_fits.pipeline.png](followup/rr_logistic_fits.pipeline.png), [rr_logistic_fits.pipeline.all_contexts.png](followup/rr_logistic_fits.pipeline.all_contexts.png), [rr_histone_conversion.png](followup/rr_histone_conversion.png) |
 | [remap_rr_to_shet.py](followup/remap_rr_to_shet.py) | Applies each rr version to Ruchit's evaluation export: obs/exp by LOEUF and s_het decile, outliers by flag, and per-gene z. | [syn_oe_by_decile.rr_eval_export.tsv](followup/syn_oe_by_decile.rr_eval_export.tsv), [syn_outliers_by_flag.rr_eval_export.tsv](followup/syn_outliers_by_flag.rr_eval_export.tsv), [syn_z_by_histone_group.tsv](followup/syn_z_by_histone_group.tsv) |
 | [rr_shrinkage_experiments.py](followup/rr_shrinkage_experiments.py) | Alternatives to a strength α (ridge, sample split, background approximation, fitting on gnomAD), and the recommended ridge rr scored at each strength. | [rr_shrinkage_experiments.tsv](followup/rr_shrinkage_experiments.tsv), [rr_shrinkage_experiments.pass2.tsv](followup/rr_shrinkage_experiments.pass2.tsv), [recommended_rr_metrics.tsv](followup/recommended_rr_metrics.tsv) |
 | [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.py) | Ridge against Ruchit's cutoff-and-α options, with his model-fitting code. | [ridge_vs_cutoff_alpha.tsv](followup/ridge_vs_cutoff_alpha.tsv) |
@@ -1077,6 +1090,7 @@ The scripts are in [followup/](followup/); the ones in [followup/cluster/](follo
 | [cluster/export_rate_cells.py](followup/cluster/export_rate_cells.py) | Each exported cell's factor under the per-variant-rate versions (rate × rr, and each home-built part alone), for scoring like any rr (run on the cluster by [run_rate_cells.sh](followup/cluster/run_rate_cells.sh)). | [rr_rates.metrics.tsv](followup/rr_rates.metrics.tsv), [rr_rates.strength.tsv](followup/rr_rates.strength.tsv) |
 | [compare_rate_parts.py](followup/compare_rate_parts.py) | The home-built rates against Roulette's, part by part: spread and agreement per cell and per gene, and the hotspot regions. | [compare_rate_parts.agreement.tsv](followup/compare_rate_parts.agreement.tsv), [compare_rate_parts.hotspots.tsv](followup/compare_rate_parts.hotspots.tsv) |
 | [penalty_path.py](followup/penalty_path.py) | What the ridge penalty does to one context's weights and rr, and the held-out DNM loss it is chosen on (local approximation). | [penalty_path.loss.tsv](followup/penalty_path.loss.tsv), [penalty_path.coefs.tsv](followup/penalty_path.coefs.tsv), [penalty_path.rr_range.tsv](followup/penalty_path.rr_range.tsv) |
+| [outlier_rates.py](followup/outlier_rates.py) | Which synonymous outliers each version of the full run still leaves, by explanation. | [outlier_rates.tsv](followup/outlier_rates.tsv) |
 | [roulette_combo.py](followup/roulette_combo.py) | Roulette's rates alone, split into sequence and regional parts, and combined with the ridge rr; scored on gnomAD and on held-out DNMs. | [roulette_combo.v2.metrics.tsv](followup/roulette_combo.v2.metrics.tsv), [roulette_combo.v2.feature_coef.tsv](followup/roulette_combo.v2.feature_coef.tsv) |
 | [rr_training_exclusion.py](followup/rr_training_exclusion.py) | Leaving poorly covered or mapped genes out of training. | [rr_training_exclusion.class_slopes.tsv](followup/rr_training_exclusion.class_slopes.tsv), [rr_training_exclusion.metrics.tsv](followup/rr_training_exclusion.metrics.tsv) |
 | [histone_checks.py](followup/histone_checks.py) | The histone cluster's excess by sample size and ancestry, and what a DNM-learned histone factor would do. | [histone_checks.dnm_factor.tsv](followup/histone_checks.dnm_factor.tsv), [histone_checks.downsampling.tsv](followup/histone_checks.downsampling.tsv) |

@@ -14,6 +14,11 @@ Questions:
 
 Genes with any release flag (QC gene flags or constraint outlier flags) are left out:
 the release already handles them.
+
+With ``--per-transcript`` (``full_run_scores.py``'s per-transcript tables), the
+expected counts of each of ``--versions`` come from those tables instead of the
+cells' ``rr_recommended`` column; ``--versions[0]`` is the one the covariates are fit
+on top of, and the others are scored alongside it.
 """
 
 import argparse
@@ -43,22 +48,32 @@ def load(args: argparse.Namespace) -> Tuple[pd.DataFrame, List[str]]:
     :param args: Parsed arguments.
     :return: Per-transcript DataFrame and the regional feature column names.
     """
+    use_cells = not args.per_transcript
+    cols = ["transcript", "win", "exp", "obs", "n_sites"]
     cells = pd.read_csv(
-        args.cells,
-        sep="\t",
-        usecols=["transcript", "win", "exp", "obs", "n_sites", "rr_recommended"],
+        args.cells, sep="\t", usecols=cols + (["rr_recommended"] if use_cells else [])
     )
-    cells["rr_recommended"] = cells.rr_recommended.fillna(1.0)
-    cells["exp_rr"] = cells.exp * cells.rr_recommended
+    if use_cells:
+        cells["exp_rr"] = cells.exp * cells.rr_recommended.fillna(1.0)
     p = (cells.exp / cells.n_sites).clip(upper=1)
     cells["floor_var"] = cells.n_sites * p * (1 - p)
 
     tx = cells.groupby("transcript").agg(
         obs=("obs", "sum"),
         exp=("exp", "sum"),
-        exp_rr=("exp_rr", "sum"),
         floor_var=("floor_var", "sum"),
+        **({"exp_rr": ("exp_rr", "sum")} if use_cells else {}),
     )
+    for path in args.per_transcript or []:
+        pt = pd.read_csv(path, sep="\t").set_index("transcript")
+        keep = [
+            f"exp_{v}"
+            for v in args.versions
+            if f"exp_{v}" in pt and f"exp_{v}" not in tx
+        ]
+        tx = tx.join(pt[keep])
+    if not use_cells:
+        tx["exp_rr"] = tx[f"exp_{args.versions[0]}"]
     # Expected-weighted mean of each regional feature over the transcript's windows.
     tw = cells.groupby(["transcript", "win"], as_index=False).exp.sum()
     windows = pd.read_csv(args.windows, sep="\t", compression="gzip")
@@ -186,6 +201,10 @@ def main(args: argparse.Namespace) -> None:
     d["z2_rr"] = (d.obs - d.exp_rr * s1) ** 2 / (d.exp_rr * s1)
     d["z_rr"] = (d.obs - d.exp_rr * s1) / np.sqrt(d.exp_rr * s1)
     d["floor"] = d.floor_var / d.exp
+    others = args.versions[1:] if args.per_transcript else []
+    for v in others:
+        sv = d.obs.sum() / d[f"exp_{v}"].sum()
+        d[f"z2_{v}"] = (d.obs - d[f"exp_{v}"] * sv) ** 2 / (d[f"exp_{v}"] * sv)
     bins = [20, 50, 100, 200, 400, 800, np.inf]
     d["size_bin"] = pd.cut(d.exp, bins, right=False)
     by_size = (
@@ -196,6 +215,7 @@ def main(args: argparse.Namespace) -> None:
             chance=("floor", "mean"),
             none=("z2_none", "mean"),
             ridge_rr=("z2_rr", "mean"),
+            **{v: (f"z2_{v}", "mean") for v in others},
         )
         .reset_index()
     )
@@ -237,6 +257,13 @@ def main(args: argparse.Namespace) -> None:
             "noise": noise(d.obs.to_numpy(), d.exp.to_numpy()),
         },
     ]
+    for v in others:
+        rows.append(
+            {
+                "covariates": f"version: {v}",
+                "noise": noise(d.obs.to_numpy(), d[f"exp_{v}"].to_numpy()),
+            }
+        )
     sets = {
         "13 regional features, nonlinear": feat_cols,
         "gene quality metrics": QC_COLS,
@@ -288,4 +315,13 @@ if __name__ == "__main__":
     parser.add_argument("--release-tsv", required=True)
     parser.add_argument("--gtex", help="GTEx v8 gene median TPM GCT (optional).")
     parser.add_argument("--out-prefix", required=True)
+    parser.add_argument(
+        "--per-transcript", nargs="+", help="full_run_scores.py per-transcript tables."
+    )
+    parser.add_argument(
+        "--versions",
+        nargs="+",
+        default=["ridge_qcexcl", "roulette_ridge", "homebuilt_ridge"],
+        help="With --per-transcript: versions to score; the first gets the covariates.",
+    )
     main(parser.parse_args())
