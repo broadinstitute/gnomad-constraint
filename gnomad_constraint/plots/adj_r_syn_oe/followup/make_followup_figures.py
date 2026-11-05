@@ -4037,6 +4037,215 @@ def draw_per_variant_math(prefix="per_variant_expected"):
     plt.close(fig)
 
 
+COVERAGE_MODEL = (-0.14479061495071816, 0.014710539963350573)
+"""The v4.1.1 coverage model (intercept, slope on exome AN %), used below 90%."""
+
+
+def draw_old_vs_new_expected():
+    """Draw a worked example: expected counts before and after the per-variant Table."""
+    totals = pd.read_csv(
+        os.path.join(OUT_DIR, "per_variant_expected.totals.tsv"), sep="\t"
+    )
+    fits = pd.read_csv(os.path.join(OUT_DIR, "plateau_models.fits.tsv"), sep="\t")
+    st = fits[(fits.fit == "stored") & (fits.line == "everything else")].iloc[0]
+    sat = totals[
+        (totals.line == "everything else") & (totals.fit == "saturating, likelihood")
+    ].iloc[0]
+    shapes = {
+        "line": lambda mu: st.intercept + st.slope * mu * 1e-8,
+        "curve": lambda mu: 1 - np.exp(-(sat.a + sat.b * mu)),
+    }
+
+    def h(c):
+        return 1.0 if c >= 90 else COVERAGE_MODEL[0] + COVERAGE_MODEL[1] * c
+
+    # One gene's synonymous variants: three cells of (mutation-rate group, coverage).
+    cells = [
+        ("C>T at TCA", 0.80, 95, 3),
+        ("A>G at TAT", 0.35, 95, 2),
+        ("A>G at TAT", 0.35, 60, 1),
+    ]
+    variants = [(lab, mu, c) for lab, mu, c, n in cells for _ in range(n)]
+
+    W, H = 1700, 690
+    fig = plt.figure(figsize=(W / 100, H / 100))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, W)
+    ax.set_ylim(H, 0)
+    ax.axis("off")
+    ax.text(
+        30,
+        32,
+        "One gene's synonymous variants, three ways: the old cell table, the per-variant"
+        " Table, and a shortcut a curve rules out",
+        fontsize=16,
+        weight="bold",
+        va="center",
+    )
+    fs = 12.5
+
+    def table(x, y, header, rows, widths, title, sub):
+        ax.text(x, y, title, fontsize=14.5, weight="bold", va="center")
+        ax.text(x, y + 26, sub, fontsize=12, color=INK2, va="center")
+        yy = y + 62
+        cx = x
+        for hd, w in zip(header, widths):
+            ax.text(cx, yy, hd, fontsize=fs, weight="bold", va="center")
+            cx += w
+        ax.plot([x, cx - 10], [yy + 14, yy + 14], color=AXIS, lw=1)
+        for r in rows:
+            yy += 28
+            cx = x
+            for v, w in zip(r, widths):
+                ax.text(cx, yy, v, fontsize=fs, va="center", color=INK)
+                cx += w
+        return yy
+
+    # (a) Before: one row per (gene, consequence, mutation-rate group, coverage).
+    rows = []
+    tot = {"line": 0.0, "curve": 0.0}
+    for lab, mu, c, n in cells:
+        e = {k: n * f(mu) * h(c) for k, f in shapes.items()}
+        for k in tot:
+            tot[k] += e[k]
+        rows.append(
+            [
+                lab,
+                f"{mu:.2f}",
+                f"{c}",
+                f"{h(c):.3f}",
+                f"{n}",
+                f"{e['line']:.3f}",
+                f"{e['curve']:.3f}",
+            ]
+        )
+    yy = table(
+        30,
+        80,
+        ["group", "μ", "cov", "h(cov)", "N", "E (line)", "E (curve)"],
+        rows,
+        [140, 60, 50, 80, 40, 95, 95],
+        "a  Before: the cell table (v4.1 release code)",
+        "group sites by group and coverage; E = N · f(μ) · h(cov) per row",
+    )
+    ax.plot([30, 590], [yy + 16, yy + 16], color=INK, lw=1)
+    ax.text(30, yy + 38, "sum over rows", fontsize=fs, weight="bold", va="center")
+    ax.text(395, yy + 38, f"{tot['line']:.3f}", fontsize=fs, weight="bold", va="center")
+    ax.text(
+        490, yy + 38, f"{tot['curve']:.3f}", fontsize=fs, weight="bold", va="center"
+    )
+    old = dict(tot)
+
+    # (b) Now: one row per possible variant.
+    rows = []
+    tot = {"line": 0.0, "curve": 0.0}
+    for i, (lab, mu, c) in enumerate(variants):
+        e = {k: f(mu) * h(c) for k, f in shapes.items()}
+        for k in tot:
+            tot[k] += e[k]
+        rows.append(
+            [
+                f"v{i + 1}",
+                lab,
+                f"{mu:.2f}",
+                f"{c}",
+                f"{e['line']:.3f}",
+                f"{e['curve']:.3f}",
+            ]
+        )
+    yy = table(
+        620,
+        80,
+        ["", "group", "μ", "cov", "E (line)", "E (curve)"],
+        rows,
+        [40, 140, 60, 50, 95, 95],
+        "b  Now: the per-variant Table",
+        "one row per possible variant; E = f(μ) · h(cov), then summed",
+    )
+    ax.plot([620, 1090], [yy + 16, yy + 16], color=INK, lw=1)
+    ax.text(620, yy + 38, "sum over variants", fontsize=fs, weight="bold", va="center")
+    ax.text(910, yy + 38, f"{tot['line']:.3f}", fontsize=fs, weight="bold", va="center")
+    ax.text(
+        1005, yy + 38, f"{tot['curve']:.3f}", fontsize=fs, weight="bold", va="center"
+    )
+    new = dict(tot)
+
+    # (c) A shortcut: average the rates of the well-covered variants first.
+    hi = [(lab, mu, c) for lab, mu, c in variants if c >= 90]
+    mu_bar = np.mean([mu for _, mu, _ in hi])
+    per_v = {k: sum(f(mu) for _, mu, _ in hi) for k, f in shapes.items()}
+    short = {k: len(hi) * f(mu_bar) for k, f in shapes.items()}
+    x = 1130
+    ax.text(
+        x,
+        80,
+        "c  A shortcut a curve rules out",
+        fontsize=14.5,
+        weight="bold",
+        va="center",
+    )
+    ax.text(
+        x,
+        106,
+        "the 5 well-covered variants, rates averaged first",
+        fontsize=12,
+        color=INK2,
+        va="center",
+    )
+    lines = [
+        ("per variant:  Σ f(μᵥ)", per_v),
+        (f"averaged:  5 · f(mean μ = {mu_bar:.2f})", short),
+    ]
+    yy = 142
+    ax.text(x + 300, yy, "line", fontsize=fs, weight="bold", va="center")
+    ax.text(x + 400, yy, "curve", fontsize=fs, weight="bold", va="center")
+    for lab, v in lines:
+        yy += 30
+        ax.text(x, yy, lab, fontsize=fs, va="center")
+        ax.text(x + 300, yy, f"{v['line']:.3f}", fontsize=fs, va="center")
+        ax.text(x + 400, yy, f"{v['curve']:.3f}", fontsize=fs, va="center")
+    ax.text(
+        x,
+        yy + 40,
+        "same for the line; different for the curve.\nNeither the old nor the new"
+        " method does this.",
+        fontsize=12.5,
+        color=INK2,
+        va="top",
+    )
+
+    # The conclusion.
+    box(
+        ax,
+        30,
+        470,
+        1640,
+        190,
+        "white",
+        REC_C,
+        [
+            "Why a and b agree, for any plateau shape f",
+            f"every variant in a cell shares its rate μₖ and coverage c, so  Σ over the cell's"
+            f" variants of f(μᵥ)·h(cᵥ)  =  N · f(μₖ) · h(c)",
+            f"line: old {old['line']:.3f} = new {new['line']:.3f};   curve: old"
+            f" {old['curve']:.3f} = new {new['curve']:.3f}",
+            "neither method ever puts a summed or averaged rate into f, so switching the"
+            " line for a curve changes the numbers but keeps the two methods identical",
+            "rr is the reason for one row per variant: it changes within a cell (by 1-kb window),"
+            " and it is applied per variant before summing",
+        ],
+        size=13.5,
+        lw=1.6,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_old_vs_new_expected.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
 def draw_alternatives():
     """Draw out-of-fold noise and calibration slope for the rr alternatives."""
     res = pd.concat(
@@ -6615,6 +6824,7 @@ if __name__ == "__main__":
     draw_outlier_size()
     draw_plateau()
     draw_per_variant_math()
+    draw_old_vs_new_expected()
     draw_alternatives()
     draw_leftover_noise()
     draw_outlier_rates()
