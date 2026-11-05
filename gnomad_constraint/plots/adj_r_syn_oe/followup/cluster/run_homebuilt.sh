@@ -31,8 +31,10 @@ submit() {
 source "$F/cluster/snapshot_code.sh"
 
 # A quick end-to-end check on chr22, then the autosomes.
-submit homebuilt_rates_test "$S/build_homebuilt_rates.py" --count-reference --count-variants --build-rates --contigs chr22 --out "$H/rates_test" || exit 1
-submit homebuilt_rates "$S/build_homebuilt_rates.py" --count-reference --count-variants --build-rates --out "$H/rates" || exit 1
+gsutil -q stat "$H/rates_test/homebuilt_variant_rates.ht/_SUCCESS" ||
+  submit homebuilt_rates_test "$S/build_homebuilt_rates.py" --count-reference --count-variants --build-rates --contigs chr22 --out "$H/rates_test" || exit 1
+gsutil -q stat "$RATES/_SUCCESS" ||
+  submit homebuilt_rates "$S/build_homebuilt_rates.py" --count-reference --count-variants --build-rates --out "$H/rates" || exit 1
 
 echo "=== copying the DNM and feature Tables to $H"
 for ht in syn_dnm genomic_features13_1kb; do

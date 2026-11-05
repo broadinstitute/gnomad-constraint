@@ -253,8 +253,8 @@ def count_variants(args: argparse.Namespace) -> None:
     excl = exclusion_ht(args.version, args.exon_padding)
     g = g.filter(hl.is_missing(excl[g.locus]))
     hept, alt, ok = collapsed_context(g)
-    g = g.annotate(hept=hept, alt=alt)
-    g = g.filter(ok)
+    g = g.annotate(hept=hept, alt=alt, ok=ok)
+    g = g.filter(g.ok).drop("ok")
     g = g.checkpoint(hl.utils.new_temp_file("rare_genome_snvs", "ht"))
     w = g.group_by(
         contig=g.locus.contig,
@@ -297,12 +297,26 @@ def build_rates(args: argparse.Namespace) -> None:
     cpg = (cells.context.str[1] == "C") & (cells.context.str[2] == "G")
     cells["cls"] = np.where(cpg, "CpG " + cells.cls, cells.cls)
 
-    # Window rate (outside CpG), shrunk class rate, shrunk trinucleotide rate.
+    # Window rate (outside CpG), shrunk class rate, shrunk trinucleotide rate. A window
+    # where gnomAD genomes see far fewer variants than expected (raw rate below
+    # --min-window-rate) is poorly called rather than less mutable, so it gets no
+    # regional multiplier; the rest are shrunk toward 1 and capped.
     key = ["contig", "window"]
     nc = cells[~cpg].groupby(key)[["observed", "expected"]].sum()
-    win_rate = (nc.observed / nc.expected).rename("win_rate")
-    cells = cells.join(win_rate, on=key)
+    raw = nc.observed / nc.expected
+    win_rate = (nc.observed + args.window_prior) / (nc.expected + args.window_prior)
+    usable = raw >= args.min_window_rate
+    win_rate = win_rate.where(usable, 1.0).clip(upper=args.max_window_rate)
+    logger.info(
+        "%d of %d windows usable; window rate quantiles: %s",
+        usable.sum(),
+        len(usable),
+        win_rate[usable].quantile([0.01, 0.05, 0.5, 0.95, 0.99]).round(3).to_dict(),
+    )
+    cells = cells.join(win_rate.rename("win_rate"), on=key)
+    cells = cells.join(usable.rename("usable"), on=key)
     cells["win_rate"] = cells.win_rate.fillna(1.0)
+    cells["usable"] = cells.usable.fillna(False).astype(bool)
     cl = cells.groupby(key + ["cls"]).agg(
         o=("observed", "sum"), e=("expected", "sum"), w=("win_rate", "first")
     )
@@ -310,6 +324,9 @@ def build_rates(args: argparse.Namespace) -> None:
     cells = cells.join(cl["cls_rate"], on=key + ["cls"])
     cells["regional"] = (cells.observed + args.tri_prior * cells.cls_rate) / (
         cells.expected + args.tri_prior
+    )
+    cells["regional"] = cells.regional.where(cells.usable, 1.0).clip(
+        upper=args.max_window_rate
     )
     logger.info(
         "Regional multiplier quantiles by class:\n%s",
@@ -340,9 +357,14 @@ def build_rates(args: argparse.Namespace) -> None:
         )
 
     # Per-variant rates over coding sites.
-    reg_ht = hl.Table.from_pandas(
-        cells[key + ["context", "alt", "regional"]].astype({"window": "int32"})
+    # Read the multipliers back from the TSV: a Table built with from_pandas holds
+    # all 5 million rows in one literal, which overflows.
+    reg_ht = hl.import_table(
+        f"{args.out}/regional_multipliers.tsv.bgz",
+        types={"window": hl.tint32, "regional": hl.tfloat64},
+        force_bgz=True,
     ).key_by("contig", "window", "context", "alt")
+    reg_ht = reg_ht.select("regional")
     seq_map = hl.literal(
         {(h, a): float(v) for h, a, v in zip(hp.heptamer, hp.alt, hp.sequence)}
     )
@@ -389,11 +411,14 @@ def build_rates(args: argparse.Namespace) -> None:
             source="gnomAD v4.1 genomes rare variants (homebuilt, Roulette-style)",
             window=args.window,
             max_af=args.max_af,
+            window_prior=args.window_prior,
+            min_window_rate=args.min_window_rate,
+            max_window_rate=args.max_window_rate,
             class_prior=args.class_prior,
             tri_prior=args.tri_prior,
         )
     )
-    ht.write(f"{args.out}/homebuilt_variant_rates.ht", overwrite=args.overwrite)
+    ht.write(f"{args.out}/{args.rates_name}.ht", overwrite=args.overwrite)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -429,6 +454,29 @@ if __name__ == "__main__":
     parser.add_argument("--max-af", type=float, default=0.001)
     parser.add_argument("--exon-padding", type=int, default=50)
     parser.add_argument("--coding-padding", type=int, default=10)
+    parser.add_argument(
+        "--window-prior",
+        type=float,
+        default=1000.0,
+        help="Pseudo-expected variants shrinking a window's rate toward 1.",
+    )
+    parser.add_argument(
+        "--min-window-rate",
+        type=float,
+        default=0.3,
+        help="Windows with a raw observed/expected below this get no regional rate.",
+    )
+    parser.add_argument(
+        "--max-window-rate",
+        type=float,
+        default=3.0,
+        help="Cap on the regional multiplier.",
+    )
+    parser.add_argument(
+        "--rates-name",
+        default="homebuilt_variant_rates",
+        help="Name of the per-variant rate Table written in --out.",
+    )
     parser.add_argument(
         "--class-prior",
         type=float,

@@ -30,9 +30,14 @@ wait_for() {  # wait_for NAME_PATTERN
   while :; do ht=$(ht_of "$1"); [ -n "$ht" ] && gsutil -q stat "$ht/_SUCCESS" && break; sleep 60; done
   echo "$ht"
 }
-copy_inputs() {  # copy_inputs ROOT HT...
+copy_inputs() {  # copy_inputs ROOT HT...: skips Tables already copied
   local root=$1; shift
-  for ht in "$@"; do gsutil -q -m cp -r "$ht" "$(dirname "${ht/$A/$root}")/" || return 1; done
+  # gcloud storage, not gsutil -m: gsutil -m once hung for hours after a finished copy.
+  for ht in "$@"; do
+    local dest=${ht/$A/$root}
+    gsutil -q stat "$dest/_SUCCESS" && continue
+    gcloud storage cp -r "$ht" "$(dirname "$dest")/" || return 1
+  done
 }
 train_and_rr() {  # train_and_rr NAME ROOT
   submit "$1_train" "$P/regional_rate_pipeline.py" --train-rr-models --feature-pval-cutoffs $CUT --cv-chrom-split --output-root "$2" &&

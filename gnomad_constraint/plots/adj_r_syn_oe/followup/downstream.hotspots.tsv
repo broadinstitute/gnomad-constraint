@@ -1,0 +1,73 @@
+version	region	set	n	oe	still_outliers
+none	8p, first 20 Mb	control genes	62	1.3219345082317573	3
+none	8p, first 20 Mb	excess outliers	6	1.5035561759292397	6
+none	2p16-22	control genes	106	1.1271605785331817	0
+none	2p16-22	excess outliers	2	1.4878747238543835	2
+none	7p	control genes	268	1.082139430938275	7
+none	7p	excess outliers	1	1.2574841402698225	1
+none	9p	control genes	180	1.079624127110087	2
+none	9p	excess outliers	2	1.3816978844846965	2
+none	16p	control genes	387	1.0978239616142245	4
+none	16p	excess outliers	4	1.4988196126368292	4
+none	16q	control genes	332	1.0822354564046992	6
+none	16q	excess outliers	8	1.519064631227144	7
+bonferroni_full	8p, first 20 Mb	control genes	62	1.2479932669906202	0
+bonferroni_full	8p, first 20 Mb	excess outliers	6	1.4849380842753757	6
+bonferroni_full	2p16-22	control genes	106	1.1226366006560302	0
+bonferroni_full	2p16-22	excess outliers	2	1.376359027876665	1
+bonferroni_full	7p	control genes	268	1.0556537094066414	1
+bonferroni_full	7p	excess outliers	1	1.2737580061221234	1
+bonferroni_full	9p	control genes	180	1.092038201546952	1
+bonferroni_full	9p	excess outliers	2	1.2830328767278554	1
+bonferroni_full	16p	control genes	387	1.0425988291582382	0
+bonferroni_full	16p	excess outliers	4	1.345797108212225	4
+bonferroni_full	16q	control genes	332	1.0599879854924756	1
+bonferroni_full	16q	excess outliers	8	1.4233014597879607	8
+bonferroni_qcexcl	8p, first 20 Mb	control genes	62	1.2853814911823593	1
+bonferroni_qcexcl	8p, first 20 Mb	excess outliers	6	1.5165782233505036	6
+bonferroni_qcexcl	2p16-22	control genes	106	1.1316999500526188	1
+bonferroni_qcexcl	2p16-22	excess outliers	2	1.399515328659383	1
+bonferroni_qcexcl	7p	control genes	268	1.065823025693968	2
+bonferroni_qcexcl	7p	excess outliers	1	1.2897159687392743	1
+bonferroni_qcexcl	9p	control genes	180	1.1034596468219937	3
+bonferroni_qcexcl	9p	excess outliers	2	1.303428563462888	1
+bonferroni_qcexcl	16p	control genes	387	1.0510009799633528	1
+bonferroni_qcexcl	16p	excess outliers	4	1.363157780959025	4
+bonferroni_qcexcl	16q	control genes	332	1.0658730431098595	2
+bonferroni_qcexcl	16q	excess outliers	8	1.4552998959994825	8
+ridge_full	8p, first 20 Mb	control genes	62	1.2078455791450062	0
+ridge_full	8p, first 20 Mb	excess outliers	6	1.39963702566929	6
+ridge_full	2p16-22	control genes	106	1.0906877107062272	0
+ridge_full	2p16-22	excess outliers	2	1.3936622448786364	1
+ridge_full	7p	control genes	268	1.0459413761371605	0
+ridge_full	7p	excess outliers	1	1.2736525091459265	1
+ridge_full	9p	control genes	180	1.0634188797818764	0
+ridge_full	9p	excess outliers	2	1.2984912840188656	1
+ridge_full	16p	control genes	387	1.0492702944305452	0
+ridge_full	16p	excess outliers	4	1.3524055784578086	4
+ridge_full	16q	control genes	332	1.0586295717601775	0
+ridge_full	16q	excess outliers	8	1.4023489534216078	8
+ridge_qcexcl	8p, first 20 Mb	control genes	62	1.2094013141787117	0
+ridge_qcexcl	8p, first 20 Mb	excess outliers	6	1.4017808798060498	6
+ridge_qcexcl	2p16-22	control genes	106	1.0901145289378977	0
+ridge_qcexcl	2p16-22	excess outliers	2	1.3936233780380847	1
+ridge_qcexcl	7p	control genes	268	1.045538985115168	0
+ridge_qcexcl	7p	excess outliers	1	1.2749285267681045	1
+ridge_qcexcl	9p	control genes	180	1.0640379401510238	0
+ridge_qcexcl	9p	excess outliers	2	1.2996181133426457	1
+ridge_qcexcl	16p	control genes	387	1.0484192432033106	0
+ridge_qcexcl	16p	excess outliers	4	1.3514223266016792	4
+ridge_qcexcl	16q	control genes	332	1.0588016324743008	0
+ridge_qcexcl	16q	excess outliers	8	1.404605178222782	8
+roulette_ridge	8p, first 20 Mb	control genes	62	1.0167965051784735	0
+roulette_ridge	8p, first 20 Mb	excess outliers	6	1.0234479488321773	0
+roulette_ridge	2p16-22	control genes	106	1.0137592142615248	0
+roulette_ridge	2p16-22	excess outliers	2	1.235713818523615	1
+roulette_ridge	7p	control genes	268	1.0086526669218374	0
+roulette_ridge	7p	excess outliers	1	1.1130395022632202	0
+roulette_ridge	9p	control genes	180	1.0096963709203663	0
+roulette_ridge	9p	excess outliers	2	1.1245719665539902	0
+roulette_ridge	16p	control genes	387	0.9946663823543045	0
+roulette_ridge	16p	excess outliers	4	1.0243049698850837	1
+roulette_ridge	16q	control genes	332	1.0091333056033738	0
+roulette_ridge	16q	excess outliers	8	1.0292664105885307	0

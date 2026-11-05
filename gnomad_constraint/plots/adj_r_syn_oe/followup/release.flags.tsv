@@ -1,0 +1,7 @@
+flag	none	bonferroni_full	bonferroni_qcexcl	ridge_full	ridge_qcexcl	roulette_ridge
+no_exp_lof	831	831	831	831	831	831
+no_exp_mis	32	32	32	32	32	32
+no_exp_syn	45	45	45	45	45	45
+outlier_lof	6	6	6	6	6	5
+outlier_mis	215	206	219	169	167	60
+outlier_syn	262	218	225	210	210	176

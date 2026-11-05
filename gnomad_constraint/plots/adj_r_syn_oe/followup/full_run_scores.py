@@ -13,6 +13,10 @@ free mean z²) on Ruchit's core set, on held-out chromosomes, and on a core set 
 doesn't select on the outcome; outliers by release flag; the calibration slope overall
 and by context class; noise at each strength; synonymous obs/exp by LOEUF and s_het
 decile; and noise on chrX/Y. The held-out DNM fit comes from the cv metrics.
+
+With ``--rr-names``, scores those rr columns instead (``rr_<name>``, held out with
+``rr_<name>_oof`` where present), for example the background runs, without the cv
+metrics.
 """
 
 import argparse
@@ -232,31 +236,38 @@ def main(args: argparse.Namespace) -> None:
         "xy": tx.is_xy.astype(str).str.lower().eq("true").to_numpy(),
     }
 
-    # syn_adj_r normalized per context over the exported cells, like the pipeline's rr.
-    r = ev.cells.rr_syn_adj_r.fillna(1.0).to_numpy()
-    norm = np.bincount(
-        ev.cell_ctx, weights=ev.exp_cell * r, minlength=32
-    ) / np.bincount(ev.cell_ctx, weights=ev.exp_cell, minlength=32)
-    ev.cells["rr_syn_adj_r_norm"] = r / norm[ev.cell_ctx]
+    if args.rr_names:
+        versions = {"none": ("No correction", None, None, 1.0)}
+        for name in args.rr_names:
+            oof = f"rr_{name}_oof"
+            versions[name] = (name, f"rr_{name}", oof if oof in ev.cells else None, 1.0)
+    else:
+        # syn_adj_r normalized per context over the exported cells, like the pipeline's
+        # rr.
+        r = ev.cells.rr_syn_adj_r.fillna(1.0).to_numpy()
+        norm = np.bincount(
+            ev.cell_ctx, weights=ev.exp_cell * r, minlength=32
+        ) / np.bincount(ev.cell_ctx, weights=ev.exp_cell, minlength=32)
+        ev.cells["rr_syn_adj_r_norm"] = r / norm[ev.cell_ctx]
 
-    versions = {
-        "none": ("No correction", None, None, 1.0),
-        "adj_r": ("Gnocchi adj_r", "rr_adj_r", None, 1.0),
-        "syn_adj_r_norm": (
-            "Legacy syn_adj_r (normalized)",
-            "rr_syn_adj_r_norm",
-            None,
-            1.0,
-        ),
-    }
-    for run in RUNS:
-        for key, (cutoff, alpha, label) in FITS.items():
-            versions[f"{key}_{run}"] = (
-                f"{label}, {RUNS[run]}",
-                f"rr_{cutoff}_{run}",
-                f"rr_{cutoff}_{run}_oof",
-                alpha,
-            )
+        versions = {
+            "none": ("No correction", None, None, 1.0),
+            "adj_r": ("Gnocchi adj_r", "rr_adj_r", None, 1.0),
+            "syn_adj_r_norm": (
+                "Legacy syn_adj_r (normalized)",
+                "rr_syn_adj_r_norm",
+                None,
+                1.0,
+            ),
+        }
+        for run in RUNS:
+            for key, (cutoff, alpha, label) in FITS.items():
+                versions[f"{key}_{run}"] = (
+                    f"{label}, {RUNS[run]}",
+                    f"rr_{cutoff}_{run}",
+                    f"rr_{cutoff}_{run}_oof",
+                    alpha,
+                )
 
     rows, strength, outl, cells_rr = [], [], [], {}
     for name, (label, col, col_oof, alpha) in versions.items():
@@ -289,6 +300,10 @@ def main(args: argparse.Namespace) -> None:
     deciles(ev, cells_rr, args.transcripts, rel, args.shet).to_csv(
         f"{pre}.deciles.tsv", sep="\t", index=False
     )
+    pd.set_option("display.width", 250)
+    print(pd.DataFrame(rows).drop(columns="label").round(3).to_string(index=False))
+    if args.rr_names:
+        return
 
     fit = []
     for run, path in (
@@ -312,8 +327,6 @@ def main(args: argparse.Namespace) -> None:
             )
         )
     pd.concat(fit).to_csv(f"{pre}.dnm_fit.tsv", sep="\t", index=False)
-    pd.set_option("display.width", 250)
-    print(pd.DataFrame(rows).drop(columns="label").round(3).to_string(index=False))
     print(pd.concat(fit).round(2).to_string(index=False))
 
 
@@ -326,7 +339,10 @@ if __name__ == "__main__":
     parser.add_argument("--transcripts", required=True)
     parser.add_argument("--release-tsv", required=True)
     parser.add_argument("--shet", required=True)
-    parser.add_argument("--cv-metrics-full", required=True)
-    parser.add_argument("--cv-metrics-qcexcl", required=True)
+    parser.add_argument("--cv-metrics-full")
+    parser.add_argument("--cv-metrics-qcexcl")
     parser.add_argument("--out-prefix", required=True)
+    parser.add_argument(
+        "--rr-names", nargs="+", help="Score these rr columns instead of the full run."
+    )
     main(parser.parse_args())
