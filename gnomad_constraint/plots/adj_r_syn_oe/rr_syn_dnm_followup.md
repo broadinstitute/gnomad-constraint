@@ -132,7 +132,7 @@ Sources:
 ### Next steps for the team
 
 1. **Normalize rr per context** (Ruchit's open question).
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - Normalization changes only the overall level, not the noise: level-free dispersion for legacy is 4.378 raw and 4.373 normalized.
@@ -140,10 +140,10 @@ Sources:
    - Synonymous obs/exp by decile can't settle it. Whether the constrained deciles sit at 1.00 or 1.01 depends on which flagged genes are dropped (panel g in [How each version performs](#how-each-version-performs)), and normalization only moves the whole curve by about 1.3%.
    - Raw rr only looks better because uncorrected synonymous obs/exp is 1.015 overall, driven by the least constrained genes. That offset belongs in the model calibration, not in rr.
 
-   </details>
+   </details></dd></dl>
 
 2. **Adopt the ridge fit in place of the cutoff and strength α.**
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - **Done in the full run:** `regional_rate_pipeline.py` fit three versions side by side on the Satterstrom DNMs, under `gs://gnomad-tmp/jg/rr_full`: the current method (Bonferroni cutoff), Ruchit's latest pick (1e-2 cutoff) and ridge (no cutoff). The pipeline picks all three through one argument, `--feature-pval-cutoffs bonferroni 1e-2 ridge`, where `ridge` means no p-value screen at all. Ridge has the lowest noise of the three, on all chromosomes (2.46) and held out (2.48).
@@ -151,37 +151,37 @@ Sources:
    - Run [`regional_rate_pipeline.py`](../../pipeline/regional_rate_pipeline.py) with the ridge fit (`--feature-pval-cutoffs ridge`; ridge has no p-value cutoff, it is just chosen through this argument) on the Satterstrom DNMs, and rerun the pipeline's own evaluation (`--evaluate-rr-cutoffs`, `--compare-rr-variants`) to confirm the local numbers.
    - The requested per-variant version of the strength figure is in [Ruchit's v2 report](ruchit_reports/rr_syn_dnm_report.v2.html), section 9, which applies α per site and gets the same α (0.75 for legacy).
 
-   </details>
+   </details></dd></dl>
 
 3. **Leave genes with a QC flag out of rr training.** In the pipeline, the cleaner version filters the training DNMs and background on gnomAD AN and mapping quality at each site (see [Removing poorly covered or mapped genes from training](#removing-poorly-covered-or-mapped-genes-from-training)).
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - **Done in the full run:** the same run with `--exclude-qc-flagged-genes`, under `gs://gnomad-tmp/jg/rr_full_qcexcl`. It is a small gain for ridge (2.458 → 2.451) and mixed for the current method. This uses gene flags; the site-level filter isn't tested.
 
-   </details>
+   </details></dd></dl>
 
 4. **Count outliers on genes without a QC flag.**
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - About 130 deficit synonymous outliers (obs ≪ exp) are unchanged by every rr option. 129 of them carry `low_exome_mapping_quality`, with median synonymous obs/exp about 0.2. They are segdup and paralog genes such as RIMBP3 and NBPF1.
    - The outlier counts use all 18,406 transcripts, although the dispersion core set already drops flagged genes. On genes without a QC flag, synonymous outliers fall from 123 to 72 with legacy `syn_adj_r`, 74–79 with Ruchit's pipeline and his latest pick, and 71 with the ridge rr, about half. On all transcripts the change looks smaller (270 → 218–226).
 
-   </details>
+   </details></dd></dl>
 
 5. **Decide chrX/Y.** "No masking" is not the same as "no correction".
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - Unmasked means a partial correction. On X/Y, a context gets rr only if none of its selected features is missing there. With the old DNM set that is 3 of the 13 modeled contexts (ACT, CAC, TCT).
    - The benefit is tiny. Over the 769 X/Y transcripts, level-free dispersion goes from 4.364 to 4.332 unmasked, and masking makes it worse (4.435). So no rr on X/Y costs almost nothing and is the easiest to explain.
    - Six features have no X/Y data: `recomb_male`, `recomb_female`, `met_sperm`, `Nucleosome`, `cDNM_maternal_05M` and `cDNM_paternal_05M` ([`RR_XY_MASKED_FEATURES`](../../resources/constants.py)). Gnocchi's published feature matrix covers chr1–22 only, and Ruchit rebuilt the X/Y features from the source tracks ([`build_xy_features.py`](../../pipeline/build_xy_features.py)).
 
-   </details>
+   </details></dd></dl>
 
 6. **Open and review a PR for [`rp/add_mu_adjustment`](https://github.com/broadinstitute/gnomad-constraint/tree/rp/add_mu_adjustment).** It touches [#51](https://github.com/broadinstitute/gnomad-constraint/pull/51) and [#55](https://github.com/broadinstitute/gnomad-constraint/pull/55).
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - It is based on [`5bc7d3a`](https://github.com/broadinstitute/gnomad-constraint/commit/5bc7d3a), 22 commits behind [`jg/switch_constraint_to_per_base`](https://github.com/broadinstitute/gnomad-constraint/tree/jg/switch_constraint_to_per_base) ([#51](https://github.com/broadinstitute/gnomad-constraint/pull/51)), so it needs a rebase onto [#51](https://github.com/broadinstitute/gnomad-constraint/pull/51), including the new tests. The release gains `unadj_*` fields, so [`tests/data/constraint_metrics_row_type.txt`](https://github.com/broadinstitute/gnomad-constraint/blob/jg/switch_constraint_to_per_base/tests/data/constraint_metrics_row_type.txt) and [`tests/data/release_tsv_columns.txt`](https://github.com/broadinstitute/gnomad-constraint/blob/jg/switch_constraint_to_per_base/tests/data/release_tsv_columns.txt) have to change.
@@ -190,18 +190,18 @@ Sources:
    - `--feature-pval-cutoffs` now also takes `ridge`, which isn't a p-value cutoff. Consider renaming it (for example `--rr-feature-selection`) so the ridge fit doesn't read as a cutoff.
    - The 1 bp window offset has a [`--corrected-window-coords`](../../pipeline/regional_rate_pipeline.py) flag. It is off by default, which reproduces legacy. Decide whether the production table uses the corrected windows.
 
-   </details>
+   </details></dd></dl>
 
 7. **Do one full pipeline run with the final rr.** Compare LOEUF, pLI and flags with the unadjusted values, and check that LOEUF still separates known haploinsufficient genes (row 6 of [What a good outcome looks like](#what-a-good-outcome-looks-like)). The NA-observed fix (#2298) needs the preprocessed context HT rebuilt, so do it in the same run.
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - **Done as a test run:** the constraint pipeline through the release TSV for ridge and the current method, each with and without the exclusion, plus a run without rr, under `gs://gnomad-tmp/jg/rr_downstream/`. LOEUF still separates the ClinGen haploinsufficient genes, and ridge lowers LoF expected counts by about 1% (see [How each version performs](#how-each-version-performs)). The NA-observed fix is not part of this run. The metrics step needs `hl.qgamma`, so it needs Hail 0.2.137 or newer.
 
-   </details>
+   </details></dd></dl>
 
 8. **Work out how to use Roulette's per-variant rates.** So far there is only one quick, untuned try. The pipeline already takes them (`--import-variant-rates`, `--use-variant-rates`, `--variant-rate-ht-path`).
-   <details>
+   <dl><dd><details>
    <summary><b>Click to expand: details</b></summary>
 
    - Set the combination's strength on held-out DNMs, or fit the ridge on top with a stronger penalty: as run, it is too strong (slope 0.77), and Roulette alone does slightly better (1.99 against 2.06).
@@ -209,7 +209,7 @@ Sources:
    - Check what the new levels do to LOEUF and missense z thresholds and flags before any release.
    - If a gnomAD v4 version is wanted, improve the home-built rates first (stronger or multi-scale shrinkage of the regional part, a strength set on held-out DNMs, conserved non-coding sites left out).
 
-   </details>
+   </details></dd></dl>
 
 **Also in progress:** Ruchit's list of why each X/Y feature is missing.
 
@@ -231,31 +231,31 @@ Sources:
 Questions raised in the Slack threads on the [initial report](https://atgu.slack.com/archives/C07NGV3UQKA/p1792179470507199), the [first follow-up](https://atgu.slack.com/archives/C07NGV3UQKA/p1792615503898679) and the [second follow-up](https://atgu.slack.com/archives/C07NGV3UQKA/p1793130471776509?thread_ts=1793122617.080069&cid=C07NGV3UQKA). **Ruchit** = his answer. **Added** = new suggestion, not from Ruchit.
 
 - **Why are 6 of 13 features missing on chrX/Y?**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** their source tracks (recombination, sperm methylation, nucleosome, clustered DNMs) have no chrX/Y data. He is listing why for each.
   - **Added:** male recombination couldn't be filled in anyway, because the male X doesn't recombine outside the PARs.
 
-  </details>
+  </details></dd></dl>
 - **Does correcting only some contexts on chrX/Y make sense?**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** without masking, only 3 of 13 contexts get an rr. Masking corrects all of them but adds noise. He prefers no masking.
   - **Added:** even the best option lowers per-gene synonymous noise on chrX/Y genes by under 1% (mean z² 4.36 → 4.33, unmasked). So skip rr on chrX/Y unless the features can be recovered.
 
-  </details>
+  </details></dd></dl>
 - **Normalize rr per context, or keep it raw?**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** normalizing changes only the overall level. Raw rr would raise LoF expected counts by about 1.4% and shift every LOEUF.
   - **Added:** normalize. Expected counts are already calibrated so that exome synonymous obs/exp averages about 1 (see the next question). rr should only move expected counts between regions, not add to the total. Raw rr adds about 1.4% on top, the same mistake (at a smaller scale) that left Gnocchi `adj_r` about 8% low. It gains nothing in return: per-gene noise is the same with or without normalization.
 
-  </details>
+  </details></dd></dl>
 - **Why does synonymous obs/exp sit a little above 1 under every rr?**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Added:** the offset comes from the baseline expected counts, and rr is built not to change it.
@@ -290,9 +290,9 @@ Questions raised in the Slack threads on the [initial report](https://atgu.slack
     - **A saturating curve** instead of each straight line. It nearly fixes the level and removes about a sixth of the context spread with the same two groups, because the share seen does level off at high rates. Any such curve still gives each variant its own expected count from its own rate, so expected counts still add up over any set of variants (it just can't be applied to a summed rate). Fit by likelihood it keeps total expected close to total observed (1.001 here); an exact match needs a canonical link (logit or log) with an intercept, and least squares on the shares guarantees neither. The math, with figures: [Per-variant expected counts and the plateau model](per_variant_expected.md).
     - **Not needed for the noise:** none of these changes per-gene noise. What they would change is how LoF and missense expected counts compare with synonymous, because those sites have a different mix of substitution types. That is worth checking on the per-variant expected Table before choosing.
 
-  </details>
+  </details></dd></dl>
 - **Why not apply the regional correction before calibration, and refit the plateau model?** (rr is applied after calibration, to the existing per-variant expected Table.)
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** Jeremy Guez tried something like this, and as Ruchit recalls from his presentation it increased the dispersion (noise). He has asked Jeremy for the slides and may check it himself.
@@ -302,18 +302,18 @@ Questions raised in the Slack threads on the [initial report](https://atgu.slack
     - With the linear plateau (proportion seen = intercept + slope × rate), scaling the rate by rr moves expected counts by less than rr wherever the intercept is a large part of the prediction, mostly in the least mutable contexts. So rr before calibration acts like rr at a strength below 1 that varies by context. That exact version hasn't been tested; the saturation version above is the closest.
     - Keeping rr after calibration also lets every rr version reuse the same per-variant expected Table, without rerunning the models.
 
-  </details>
+  </details></dd></dl>
 - **Is a strength adjustment needed? Legacy didn't have one.**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** every rr fits best below full strength. For the 17k set the gain is only 2–3%; for the Satterstrom set it's about 7%. His latest pick keeps a screen, with a looser 1e-2 cutoff, and adds α 0.625.
   - **Added:** rr comes out too strong because its features are chosen by p-value and then fit without a penalty, and because it is fit on DNMs and applied to gnomAD. Correcting that is standard practice. The alternative added in this report is a ridge-penalized fit with no screen: it needs no α, makes the two DNM sets perform the same, and had lower noise than Ruchit's options on his data (2.46 against 2.50 for the 1e-2 / α 0.625 option). The details are below.
 
-  </details>
+  </details></dd></dl>
 
   <a id="strength-details"></a>
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: more on the strength question.</b> Why rr comes out too strong, the alternatives tried, and ridge against the cutoff-and-α options</summary>
 
   rr as fitted predicts bigger differences between regions than gnomAD shows. Below: why that happens and why correcting it is standard, the alternatives to a single strength adjustment that were tried, and the ridge fit against Ruchit's cutoff-and-α options.
@@ -392,19 +392,19 @@ Questions raised in the Slack threads on the [initial report](https://atgu.slack
 
   Code: [compare_ridge_vs_cutoff_alpha.py](followup/compare_ridge_vs_cutoff_alpha.py). Results: [ridge_vs_cutoff_alpha.tsv](followup/ridge_vs_cutoff_alpha.tsv).
 
-  </details>
+  </details></dd></dl>
 
 - **Why would more DNMs do worse?**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** the fixed cutoff lets in weak features that predict DNMs but carry over poorly to gnomAD. His 10/27 tests rule out the newer cohorts as the cause.
   - **Added:** the new DNMs aren't worse; the fitting rule is. A fixed p-value cutoff lets in more features as the sample grows, and features that only just pass have overestimated effects, which an unpenalized fit keeps. The gap between the sets shrinks as the fit stops relying on the screen, and with a ridge fit it is gone (2.475 against 2.479). The details are below.
 
-  </details>
+  </details></dd></dl>
 
   <a id="dnm-sets-details"></a>
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: more on the DNM sets.</b> What changed between them, what "worse" meant, and the evidence that the fitting rule is the cause</summary>
 
   The new DNMs aren't worse. Choosing features by p-value and then fitting them without a penalty made the bigger set look worse. With a fit that doesn't screen features, the two sets perform the same.
@@ -435,16 +435,16 @@ Questions raised in the Slack threads on the [initial report](https://atgu.slack
   - How well exome DNM calling detects variants may vary with GC differently from gnomAD.
   - The training background (see [The training background](#the-training-background-what-the-dnms-are-compared-with)).
 
-  </details>
+  </details></dd></dl>
 
 - **Why do 282 old DNMs drop out, and are they still synonymous?**
-  <details>
+  <dl><dd><details>
   <summary><b>Click to expand: the answer</b></summary>
 
   - **Ruchit:** the new files replaced the old one rather than adding to it. Most of the 282 are DD variants, which the providers re-annotated.
   - **Resolved:** the ~300 DNMs that differ are consequence-annotation changes from the providers' updated pipeline, so no union is needed.
 
-  </details>
+  </details></dd></dl>
 
 ## How rr works
 
