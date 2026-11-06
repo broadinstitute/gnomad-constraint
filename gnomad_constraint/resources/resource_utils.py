@@ -1231,9 +1231,15 @@ def get_constraint_resources(
         ],
         add_input_resources=(
             {
-                "regional_rate_pipeline.py --compute-rr": {
-                    "regional_rr_ht": regional_rr_ht
-                },
+                **(
+                    {
+                        "regional_rate_pipeline.py --compute-rr": {
+                            "regional_rr_ht": regional_rr_ht
+                        }
+                    }
+                    if regional_rr_ht is not None
+                    else {}
+                ),
                 **(
                     {
                         "regional_rate_pipeline.py --import-variant-rates": {
@@ -1244,8 +1250,7 @@ def get_constraint_resources(
                     else {}
                 ),
             }
-            if regional_rr_ht is not None
-            else None
+            or None
         ),
     )
     aggregate_by_constraint_groups = PipelineStepResourceCollection(

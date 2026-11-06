@@ -161,10 +161,6 @@ def main(args):
         logger.info("Using regional rr Table: %s", regional_rr_ht.path)
     variant_rate_ht = None
     if args.variant_rate_ht_path is not None:
-        if skip_regional_rr:
-            raise ValueError(
-                "--variant-rate-ht-path can't be used with --skip-regional-rr."
-            )
         variant_rate_ht = TableResource(args.variant_rate_ht_path)
         logger.info("Using per-variant rate Table: %s", variant_rate_ht.path)
 
@@ -914,7 +910,8 @@ if __name__ == "__main__":
             "Optional per-variant mutation rate Table (regional_rate_pipeline.py"
             " --import-variant-rates) applied with rr: expected counts are also"
             " multiplied by its 'variant_rate_multiplier'. Use it with an rr Table fit"
-            " on top of the same rates (--use-variant-rates)."
+            " on top of the same rates (--use-variant-rates). With --skip-regional-rr,"
+            " only the multiplier is applied."
         ),
         type=str,
         default=None,
