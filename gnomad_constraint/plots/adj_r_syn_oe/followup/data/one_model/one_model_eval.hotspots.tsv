@@ -1,0 +1,133 @@
+model	region	set	n	oe	still_outliers
+current stack, no rr	8p, first 20 Mb	control genes	62	1.3218625110364548	3
+current stack, no rr	8p, first 20 Mb	excess outliers	6	1.503487826687127	6
+current stack, no rr	2p16-22	control genes	106	1.1270982873523188	0
+current stack, no rr	2p16-22	excess outliers	2	1.487794084755466	2
+current stack, no rr	7p	control genes	268	1.0820811743753243	7
+current stack, no rr	7p	excess outliers	1	1.2574455538004066	1
+current stack, no rr	9p	control genes	180	1.079563288440354	2
+current stack, no rr	9p	excess outliers	2	1.3816309214027347	2
+current stack, no rr	16p	control genes	387	1.097762715035973	4
+current stack, no rr	16p	excess outliers	4	1.498707226463896	4
+current stack, no rr	16q	control genes	331	1.0805948665419727	6
+current stack, no rr	16q	excess outliers	9	1.4172114673555285	7
+current stack + ridge rr	8p, first 20 Mb	control genes	62	1.2093442205729439	0
+current stack + ridge rr	8p, first 20 Mb	excess outliers	6	1.4016991489059762	6
+current stack + ridge rr	2p16-22	control genes	106	1.0900630070941548	0
+current stack + ridge rr	2p16-22	excess outliers	2	1.3935566423226837	1
+current stack + ridge rr	7p	control genes	268	1.0454893546680146	0
+current stack + ridge rr	7p	excess outliers	1	1.2748861230940682	1
+current stack + ridge rr	9p	control genes	180	1.06398727411219	0
+current stack + ridge rr	9p	excess outliers	2	1.2995567130848105	1
+current stack + ridge rr	16p	control genes	387	1.0483643017688629	0
+current stack + ridge rr	16p	excess outliers	4	1.3513594553937596	4
+current stack + ridge rr	16q	control genes	331	1.0565771819221117	0
+current stack + ridge rr	16q	excess outliers	9	1.341447080125754	8
+current stack x Roulette	8p, first 20 Mb	control genes	62	1.0807123869527415	0
+current stack x Roulette	8p, first 20 Mb	excess outliers	6	1.067176408147374	0
+current stack x Roulette	2p16-22	control genes	106	1.0450326097940215	0
+current stack x Roulette	2p16-22	excess outliers	2	1.2963879647943806	1
+current stack x Roulette	7p	control genes	268	1.033895222518994	0
+current stack x Roulette	7p	excess outliers	1	1.104710245855568	0
+current stack x Roulette	9p	control genes	180	1.0209711100270582	0
+current stack x Roulette	9p	excess outliers	2	1.1843687034793366	0
+current stack x Roulette	16p	control genes	387	1.0266721174277318	0
+current stack x Roulette	16p	excess outliers	4	1.108984452113868	2
+current stack x Roulette	16q	control genes	331	1.0225034788280962	0
+current stack x Roulette	16q	excess outliers	9	1.0924895075087346	0
+current stack x Roulette + ridge rr	8p, first 20 Mb	control genes	62	0.9909436310941431	0
+current stack x Roulette + ridge rr	8p, first 20 Mb	excess outliers	6	0.9970943295247494	0
+current stack x Roulette + ridge rr	2p16-22	control genes	106	1.0117062668171097	0
+current stack x Roulette + ridge rr	2p16-22	excess outliers	2	1.2157126371925056	1
+current stack x Roulette + ridge rr	7p	control genes	268	0.9963076995413157	0
+current stack x Roulette + ridge rr	7p	excess outliers	1	1.1234002341614322	0
+current stack x Roulette + ridge rr	9p	control genes	180	1.00489746850953	0
+current stack x Roulette + ridge rr	9p	excess outliers	2	1.1147884705370998	0
+current stack x Roulette + ridge rr	16p	control genes	387	0.9765150585760386	0
+current stack x Roulette + ridge rr	16p	excess outliers	4	0.987519078389603	1
+current stack x Roulette + ridge rr	16q	control genes	331	0.9960730901406725	0
+current stack x Roulette + ridge rr	16q	excess outliers	9	1.0274852722159935	0
+one model: groups + coverage	8p, first 20 Mb	control genes	62	1.3326145417577393	5
+one model: groups + coverage	8p, first 20 Mb	excess outliers	6	1.5095709821891774	6
+one model: groups + coverage	2p16-22	control genes	106	1.1381549282500951	1
+one model: groups + coverage	2p16-22	excess outliers	2	1.5166337346897465	2
+one model: groups + coverage	7p	control genes	268	1.076710536171047	6
+one model: groups + coverage	7p	excess outliers	1	1.2467689912271067	1
+one model: groups + coverage	9p	control genes	180	1.073431782464967	2
+one model: groups + coverage	9p	excess outliers	2	1.3669405222511222	2
+one model: groups + coverage	16p	control genes	387	1.1061174836181835	4
+one model: groups + coverage	16p	excess outliers	4	1.5198086124689623	4
+one model: groups + coverage	16q	control genes	331	1.0891252457234555	7
+one model: groups + coverage	16q	excess outliers	9	1.422479122117684	7
+one model: + window MQ	8p, first 20 Mb	control genes	62	1.32879821754261	5
+one model: + window MQ	8p, first 20 Mb	excess outliers	6	1.5011886565703148	6
+one model: + window MQ	2p16-22	control genes	106	1.1312350032665102	1
+one model: + window MQ	2p16-22	excess outliers	2	1.508406581360659	2
+one model: + window MQ	7p	control genes	268	1.074762938326094	7
+one model: + window MQ	7p	excess outliers	1	1.242012615599908	1
+one model: + window MQ	9p	control genes	180	1.0746567102853033	1
+one model: + window MQ	9p	excess outliers	2	1.36070594751932	2
+one model: + window MQ	16p	control genes	387	1.107891607898252	6
+one model: + window MQ	16p	excess outliers	4	1.5052070205337642	4
+one model: + window MQ	16q	control genes	331	1.0847114511268523	6
+one model: + window MQ	16q	excess outliers	9	1.414129209474604	7
+one model: + DNM regional	8p, first 20 Mb	control genes	62	1.251155581629538	3
+one model: + DNM regional	8p, first 20 Mb	excess outliers	6	1.4361843691771632	6
+one model: + DNM regional	2p16-22	control genes	106	1.096470732345658	0
+one model: + DNM regional	2p16-22	excess outliers	2	1.462608223336769	2
+one model: + DNM regional	7p	control genes	268	1.023243893975971	0
+one model: + DNM regional	7p	excess outliers	1	1.2227619083979804	1
+one model: + DNM regional	9p	control genes	180	1.018596987222179	0
+one model: + DNM regional	9p	excess outliers	2	1.2144660749836012	0
+one model: + DNM regional	16p	control genes	387	1.0750196899814735	2
+one model: + DNM regional	16p	excess outliers	4	1.4176553149781455	4
+one model: + DNM regional	16q	control genes	331	1.0727681312406183	2
+one model: + DNM regional	16q	excess outliers	9	1.3627953540792257	7
+one model: + DNM regional + window MQ	8p, first 20 Mb	control genes	62	1.248686062485813	2
+one model: + DNM regional + window MQ	8p, first 20 Mb	excess outliers	6	1.4293300820317896	6
+one model: + DNM regional + window MQ	2p16-22	control genes	106	1.0903820225114846	0
+one model: + DNM regional + window MQ	2p16-22	excess outliers	2	1.4551224625963757	2
+one model: + DNM regional + window MQ	7p	control genes	268	1.0247210911137272	0
+one model: + DNM regional + window MQ	7p	excess outliers	1	1.2197075196734122	1
+one model: + DNM regional + window MQ	9p	control genes	180	1.0230354338865508	0
+one model: + DNM regional + window MQ	9p	excess outliers	2	1.2172483595707864	0
+one model: + DNM regional + window MQ	16p	control genes	387	1.0775078488104755	2
+one model: + DNM regional + window MQ	16p	excess outliers	4	1.4058025574072899	4
+one model: + DNM regional + window MQ	16q	control genes	331	1.0687582268436073	2
+one model: + DNM regional + window MQ	16q	excess outliers	9	1.3556454346119031	7
+one model: + gnomAD regional + window MQ	8p, first 20 Mb	control genes	62	1.187378087909532	0
+one model: + gnomAD regional + window MQ	8p, first 20 Mb	excess outliers	6	1.3549474983121101	4
+one model: + gnomAD regional + window MQ	2p16-22	control genes	106	1.0820683409275818	0
+one model: + gnomAD regional + window MQ	2p16-22	excess outliers	2	1.3494800541027008	1
+one model: + gnomAD regional + window MQ	7p	control genes	268	1.0079837635257431	0
+one model: + gnomAD regional + window MQ	7p	excess outliers	1	1.1908846782811517	1
+one model: + gnomAD regional + window MQ	9p	control genes	180	1.0334267475711023	0
+one model: + gnomAD regional + window MQ	9p	excess outliers	2	1.2207255109816446	0
+one model: + gnomAD regional + window MQ	16p	control genes	387	1.0612987072533135	1
+one model: + gnomAD regional + window MQ	16p	excess outliers	4	1.3458153495590865	4
+one model: + gnomAD regional + window MQ	16q	control genes	331	1.0633442153931656	0
+one model: + gnomAD regional + window MQ	16q	excess outliers	9	1.3343028155956862	8
+one model: + window MQ + Roulette	8p, first 20 Mb	control genes	62	1.130124673672299	1
+one model: + window MQ + Roulette	8p, first 20 Mb	excess outliers	6	1.1502535380728744	0
+one model: + window MQ + Roulette	2p16-22	control genes	106	1.0580753980105957	0
+one model: + window MQ + Roulette	2p16-22	excess outliers	2	1.3371208693734327	1
+one model: + window MQ + Roulette	7p	control genes	268	1.0393835797519362	0
+one model: + window MQ + Roulette	7p	excess outliers	1	1.1129022508250963	0
+one model: + window MQ + Roulette	9p	control genes	180	1.025537958720848	0
+one model: + window MQ + Roulette	9p	excess outliers	2	1.1941645225205044	0
+one model: + window MQ + Roulette	16p	control genes	387	1.052455270181081	1
+one model: + window MQ + Roulette	16p	excess outliers	4	1.2086393549899386	2
+one model: + window MQ + Roulette	16q	control genes	331	1.0383150373095988	1
+one model: + window MQ + Roulette	16q	excess outliers	9	1.1610328014576323	1
+one model: + DNM regional + window MQ + Roulette	8p, first 20 Mb	control genes	62	1.089354534188123	0
+one model: + DNM regional + window MQ + Roulette	8p, first 20 Mb	excess outliers	6	1.118316654973868	0
+one model: + DNM regional + window MQ + Roulette	2p16-22	control genes	106	1.0351880544193486	0
+one model: + DNM regional + window MQ + Roulette	2p16-22	excess outliers	2	1.307495523722374	1
+one model: + DNM regional + window MQ + Roulette	7p	control genes	268	1.0095315808151895	0
+one model: + DNM regional + window MQ + Roulette	7p	excess outliers	1	1.1017786933243334	0
+one model: + DNM regional + window MQ + Roulette	9p	control genes	180	0.9942056400983522	0
+one model: + DNM regional + window MQ + Roulette	9p	excess outliers	2	1.118316286032502	0
+one model: + DNM regional + window MQ + Roulette	16p	control genes	387	1.0347099773958837	1
+one model: + DNM regional + window MQ + Roulette	16p	excess outliers	4	1.1625469814172797	2
+one model: + DNM regional + window MQ + Roulette	16q	control genes	331	1.028281067357739	0
+one model: + DNM regional + window MQ + Roulette	16q	excess outliers	9	1.1325055469995147	1

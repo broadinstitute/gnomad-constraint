@@ -1,0 +1,221 @@
+model	binning	decile	oe
+current stack, no rr	decile	0	0.9986319061820963
+current stack, no rr	decile	1	0.9990603787769641
+current stack, no rr	decile	2	1.0075092293024488
+current stack, no rr	decile	3	1.0020063044489227
+current stack, no rr	decile	4	1.0020755327086446
+current stack, no rr	decile	5	1.0030411612705992
+current stack, no rr	decile	6	1.019004079298883
+current stack, no rr	decile	7	1.0361242548440812
+current stack, no rr	decile	8	1.0645521031143734
+current stack, no rr	decile	9	1.1119073422617933
+current stack, no rr	shet_decile	0	1.0242432086620332
+current stack, no rr	shet_decile	1	1.0180735519338289
+current stack, no rr	shet_decile	2	1.0185587556637443
+current stack, no rr	shet_decile	3	1.021863758521129
+current stack, no rr	shet_decile	4	1.009733979473039
+current stack, no rr	shet_decile	5	1.0159628501973441
+current stack, no rr	shet_decile	6	1.016708755009664
+current stack, no rr	shet_decile	7	1.0213746894074556
+current stack, no rr	shet_decile	8	1.0223106253024599
+current stack, no rr	shet_decile	9	1.0347691570146176
+current stack + ridge rr	decile	0	1.0018615771528292
+current stack + ridge rr	decile	1	1.0026535900895392
+current stack + ridge rr	decile	2	1.0082833233265762
+current stack + ridge rr	decile	3	1.003651514423469
+current stack + ridge rr	decile	4	1.006687965460337
+current stack + ridge rr	decile	5	1.008411834604734
+current stack + ridge rr	decile	6	1.0215382616188364
+current stack + ridge rr	decile	7	1.0309469196304035
+current stack + ridge rr	decile	8	1.0504796167906985
+current stack + ridge rr	decile	9	1.0856613872886898
+current stack + ridge rr	shet_decile	0	1.0241394493168516
+current stack + ridge rr	shet_decile	1	1.0161307793962864
+current stack + ridge rr	shet_decile	2	1.0138171861526395
+current stack + ridge rr	shet_decile	3	1.0189486461699462
+current stack + ridge rr	shet_decile	4	1.0123527272381165
+current stack + ridge rr	shet_decile	5	1.0186980111957058
+current stack + ridge rr	shet_decile	6	1.0172746456428234
+current stack + ridge rr	shet_decile	7	1.0203239973523537
+current stack + ridge rr	shet_decile	8	1.0282031075331037
+current stack + ridge rr	shet_decile	9	1.0364870247262568
+current stack x Roulette	decile	0	1.0162051591838164
+current stack x Roulette	decile	1	1.023298038196253
+current stack x Roulette	decile	2	1.032659089753321
+current stack x Roulette	decile	3	1.0270869852947042
+current stack x Roulette	decile	4	1.0285362330659535
+current stack x Roulette	decile	5	1.0308046598218323
+current stack x Roulette	decile	6	1.0414125051935001
+current stack x Roulette	decile	7	1.0476650731587578
+current stack x Roulette	decile	8	1.0579802058289178
+current stack x Roulette	decile	9	1.084985481472643
+current stack x Roulette	shet_decile	0	1.0385088499620871
+current stack x Roulette	shet_decile	1	1.0360526767647287
+current stack x Roulette	shet_decile	2	1.0396931960332956
+current stack x Roulette	shet_decile	3	1.042222843013274
+current stack x Roulette	shet_decile	4	1.0339173395494046
+current stack x Roulette	shet_decile	5	1.0382201104374331
+current stack x Roulette	shet_decile	6	1.0390575087499243
+current stack x Roulette	shet_decile	7	1.0361384593416092
+current stack x Roulette	shet_decile	8	1.0395173545414291
+current stack x Roulette	shet_decile	9	1.0401308821991755
+current stack x Roulette + ridge rr	decile	0	1.0180056642383164
+current stack x Roulette + ridge rr	decile	1	1.0255578805957046
+current stack x Roulette + ridge rr	decile	2	1.031671535160219
+current stack x Roulette + ridge rr	decile	3	1.0270457425343185
+current stack x Roulette + ridge rr	decile	4	1.0312824952182869
+current stack x Roulette + ridge rr	decile	5	1.0346246903519758
+current stack x Roulette + ridge rr	decile	6	1.0422745424192021
+current stack x Roulette + ridge rr	decile	7	1.0403615593404651
+current stack x Roulette + ridge rr	decile	8	1.04088380344713
+current stack x Roulette + ridge rr	decile	9	1.0559253144111005
+current stack x Roulette + ridge rr	shet_decile	0	1.0366433913582536
+current stack x Roulette + ridge rr	shet_decile	1	1.0321889246527496
+current stack x Roulette + ridge rr	shet_decile	2	1.0324640465048087
+current stack x Roulette + ridge rr	shet_decile	3	1.0370047740435742
+current stack x Roulette + ridge rr	shet_decile	4	1.0346745105135
+current stack x Roulette + ridge rr	shet_decile	5	1.039064726258043
+current stack x Roulette + ridge rr	shet_decile	6	1.037786590614038
+current stack x Roulette + ridge rr	shet_decile	7	1.0328741182698375
+current stack x Roulette + ridge rr	shet_decile	8	1.0442912630764432
+current stack x Roulette + ridge rr	shet_decile	9	1.039953681113716
+one model: groups + coverage	decile	0	0.982955474763557
+one model: groups + coverage	decile	1	0.9831369500141472
+one model: groups + coverage	decile	2	0.9908252878316852
+one model: groups + coverage	decile	3	0.9859719589825083
+one model: groups + coverage	decile	4	0.9853983907578888
+one model: groups + coverage	decile	5	0.9854475168115119
+one model: groups + coverage	decile	6	1.0002236637328326
+one model: groups + coverage	decile	7	1.0178599624055376
+one model: groups + coverage	decile	8	1.0468752546497186
+one model: groups + coverage	decile	9	1.0914483120606475
+one model: groups + coverage	shet_decile	0	1.0085209858469237
+one model: groups + coverage	shet_decile	1	1.0024255811427887
+one model: groups + coverage	shet_decile	2	1.0028141987826105
+one model: groups + coverage	shet_decile	3	1.005831136769552
+one model: groups + coverage	shet_decile	4	0.9921905044379622
+one model: groups + coverage	shet_decile	5	0.9981182681461405
+one model: groups + coverage	shet_decile	6	0.9990559658639275
+one model: groups + coverage	shet_decile	7	1.0036452653324517
+one model: groups + coverage	shet_decile	8	1.0037753562575729
+one model: groups + coverage	shet_decile	9	1.0152683312970867
+one model: + window MQ	decile	0	0.9918808803454786
+one model: + window MQ	decile	1	0.9843736762376895
+one model: + window MQ	decile	2	0.9877576030254065
+one model: + window MQ	decile	3	0.98406721177565
+one model: + window MQ	decile	4	0.9850561907206729
+one model: + window MQ	decile	5	0.9805380406153973
+one model: + window MQ	decile	6	0.9941413336987449
+one model: + window MQ	decile	7	1.0125048584742136
+one model: + window MQ	decile	8	1.043412829833984
+one model: + window MQ	decile	9	1.086039542484329
+one model: + window MQ	shet_decile	0	1.0007157061445124
+one model: + window MQ	shet_decile	1	0.9963727465135226
+one model: + window MQ	shet_decile	2	0.9939956848350164
+one model: + window MQ	shet_decile	3	0.9973126397151261
+one model: + window MQ	shet_decile	4	0.9876147760059614
+one model: + window MQ	shet_decile	5	0.9930654598912566
+one model: + window MQ	shet_decile	6	0.9942166646578943
+one model: + window MQ	shet_decile	7	1.0036537594068118
+one model: + window MQ	shet_decile	8	1.0033655525599696
+one model: + window MQ	shet_decile	9	1.0180828248895961
+one model: + DNM regional	decile	0	0.9854370767662151
+one model: + DNM regional	decile	1	0.9854059171447815
+one model: + DNM regional	decile	2	0.9910051884604648
+one model: + DNM regional	decile	3	0.987212950840826
+one model: + DNM regional	decile	4	0.9922764100508588
+one model: + DNM regional	decile	5	0.9935226247375657
+one model: + DNM regional	decile	6	1.0077002948598108
+one model: + DNM regional	decile	7	1.0181930259488436
+one model: + DNM regional	decile	8	1.0427964574309314
+one model: + DNM regional	decile	9	1.0791014511440629
+one model: + DNM regional	shet_decile	0	1.0095052089839018
+one model: + DNM regional	shet_decile	1	1.0001593799284654
+one model: + DNM regional	shet_decile	2	1.0010858898332198
+one model: + DNM regional	shet_decile	3	1.00508246056989
+one model: + DNM regional	shet_decile	4	0.9966615484086199
+one model: + DNM regional	shet_decile	5	1.0024703110643478
+one model: + DNM regional	shet_decile	6	1.0036228645854357
+one model: + DNM regional	shet_decile	7	1.0078324016208806
+one model: + DNM regional	shet_decile	8	1.0102331726591876
+one model: + DNM regional	shet_decile	9	1.0201618775819365
+one model: + DNM regional + window MQ	decile	0	0.9940705320554166
+one model: + DNM regional + window MQ	decile	1	0.9863442460404372
+one model: + DNM regional + window MQ	decile	2	0.9878635400331337
+one model: + DNM regional + window MQ	decile	3	0.9851244718678601
+one model: + DNM regional + window MQ	decile	4	0.9913433087643458
+one model: + DNM regional + window MQ	decile	5	0.9881644963740046
+one model: + DNM regional + window MQ	decile	6	1.0012280003458698
+one model: + DNM regional + window MQ	decile	7	1.0128781448069168
+one model: + DNM regional + window MQ	decile	8	1.0392587252352403
+one model: + DNM regional + window MQ	decile	9	1.0739674552767056
+one model: + DNM regional + window MQ	shet_decile	0	1.0015625688917598
+one model: + DNM regional + window MQ	shet_decile	1	0.9942657024820568
+one model: + DNM regional + window MQ	shet_decile	2	0.9922604340115718
+one model: + DNM regional + window MQ	shet_decile	3	0.9964962637547634
+one model: + DNM regional + window MQ	shet_decile	4	0.9917374812406143
+one model: + DNM regional + window MQ	shet_decile	5	0.9971167738915097
+one model: + DNM regional + window MQ	shet_decile	6	0.9985349513139608
+one model: + DNM regional + window MQ	shet_decile	7	1.0076034194888466
+one model: + DNM regional + window MQ	shet_decile	8	1.0095329858199673
+one model: + DNM regional + window MQ	shet_decile	9	1.0223943915542806
+one model: + gnomAD regional + window MQ	decile	0	0.9974903915900534
+one model: + gnomAD regional + window MQ	decile	1	0.9880912779612278
+one model: + gnomAD regional + window MQ	decile	2	0.9899001546048366
+one model: + gnomAD regional + window MQ	decile	3	0.9870422661994055
+one model: + gnomAD regional + window MQ	decile	4	0.9931265799252028
+one model: + gnomAD regional + window MQ	decile	5	0.9900559652453832
+one model: + gnomAD regional + window MQ	decile	6	1.0000792310066609
+one model: + gnomAD regional + window MQ	decile	7	1.0101939517424612
+one model: + gnomAD regional + window MQ	decile	8	1.0304522508615852
+one model: + gnomAD regional + window MQ	decile	9	1.056024965249066
+one model: + gnomAD regional + window MQ	shet_decile	0	1.0019869731977302
+one model: + gnomAD regional + window MQ	shet_decile	1	0.9936707569744818
+one model: + gnomAD regional + window MQ	shet_decile	2	0.9890508288839999
+one model: + gnomAD regional + window MQ	shet_decile	3	0.9962844001209349
+one model: + gnomAD regional + window MQ	shet_decile	4	0.9916295103928241
+one model: + gnomAD regional + window MQ	shet_decile	5	0.9983543315342917
+one model: + gnomAD regional + window MQ	shet_decile	6	0.9982562055087769
+one model: + gnomAD regional + window MQ	shet_decile	7	1.0056461780753405
+one model: + gnomAD regional + window MQ	shet_decile	8	1.0124095777415145
+one model: + gnomAD regional + window MQ	shet_decile	9	1.022440262769001
+one model: + window MQ + Roulette	decile	0	0.9916321648595939
+one model: + window MQ + Roulette	decile	1	0.9903665376302943
+one model: + window MQ + Roulette	decile	2	0.9947291270224466
+one model: + window MQ + Roulette	decile	3	0.9910251976744605
+one model: + window MQ + Roulette	decile	4	0.9938877659414201
+one model: + window MQ + Roulette	decile	5	0.9899051061896157
+one model: + window MQ + Roulette	decile	6	1.0001427585645044
+one model: + window MQ + Roulette	decile	7	1.0103177640002095
+one model: + window MQ + Roulette	decile	8	1.0271254310469706
+one model: + window MQ + Roulette	decile	9	1.054894741737419
+one model: + window MQ + Roulette	shet_decile	0	0.9977937410291265
+one model: + window MQ + Roulette	shet_decile	1	0.9977037230640219
+one model: + window MQ + Roulette	shet_decile	2	0.9980733619499977
+one model: + window MQ + Roulette	shet_decile	3	1.0005286002560843
+one model: + window MQ + Roulette	shet_decile	4	0.9945856323760456
+one model: + window MQ + Roulette	shet_decile	5	0.9979186597189501
+one model: + window MQ + Roulette	shet_decile	6	0.999306613639985
+one model: + window MQ + Roulette	shet_decile	7	1.0039491946666959
+one model: + window MQ + Roulette	shet_decile	8	1.0048454810650633
+one model: + window MQ + Roulette	shet_decile	9	1.0109113306724717
+one model: + DNM regional + window MQ + Roulette	decile	0	0.9931891298286184
+one model: + DNM regional + window MQ + Roulette	decile	1	0.9918516975867575
+one model: + DNM regional + window MQ + Roulette	decile	2	0.995041522071318
+one model: + DNM regional + window MQ + Roulette	decile	3	0.9919401365857797
+one model: + DNM regional + window MQ + Roulette	decile	4	0.997953574581864
+one model: + DNM regional + window MQ + Roulette	decile	5	0.9948290950592619
+one model: + DNM regional + window MQ + Roulette	decile	6	1.0046748359030646
+one model: + DNM regional + window MQ + Roulette	decile	7	1.0107557126562143
+one model: + DNM regional + window MQ + Roulette	decile	8	1.0247486738711624
+one model: + DNM regional + window MQ + Roulette	decile	9	1.0478594528232064
+one model: + DNM regional + window MQ + Roulette	shet_decile	0	0.9985222528542239
+one model: + DNM regional + window MQ + Roulette	shet_decile	1	0.9966773278803079
+one model: + DNM regional + window MQ + Roulette	shet_decile	2	0.9972484416678223
+one model: + DNM regional + window MQ + Roulette	shet_decile	3	1.0002605432172733
+one model: + DNM regional + window MQ + Roulette	shet_decile	4	0.997320759677602
+one model: + DNM regional + window MQ + Roulette	shet_decile	5	1.0006308304802654
+one model: + DNM regional + window MQ + Roulette	shet_decile	6	1.0021147012095177
+one model: + DNM regional + window MQ + Roulette	shet_decile	7	1.0065358425069644
+one model: + DNM regional + window MQ + Roulette	shet_decile	8	1.0087888050609561
+one model: + DNM regional + window MQ + Roulette	shet_decile	9	1.0136328522973521

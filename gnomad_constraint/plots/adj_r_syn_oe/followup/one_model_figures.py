@@ -1,0 +1,909 @@
+"""Figures for the notes ``notes_one_model_for_expected.md``, linked from the rr report.
+
+``draw_stack``: a graphical abstract of how expected counts are built now, step by
+step, with the data each step is fit on and the patches between them. Uses the
+plateau training groups (``plateau_models.groups.tsv``), the stored plateau lines,
+the v4.1.1 coverage model, the full run's ridge rr cells along chr8, and Roulette's
+per-gene regional factor along chr8 (``compare_rate_parts.genes.tsv.gz``).
+
+``draw_fit_results``: how the single cloglog models from ``one_model_fit.py`` compare
+with the current stack: per-gene noise, and synonymous obs/exp by coverage and by
+context class.
+
+``draw_coverage_check``: the stored coverage model against the share of synonymous
+variants seen at each exome AN % (``coverage_check.py``).
+
+``draw_fit_checks``: the report's other synonymous checks on the same fits (outliers by
+category, calibration slope, obs/exp by LOEUF and s_het decile, maternal hotspot
+regions; ``one_model_eval.py``).
+
+``draw_coverage_oe_current``: synonymous obs/exp by exome AN % under the current models
+(the released expected counts), as panel b of ``one_model_fit.png`` with only the
+current stack, plus each AN % value.
+"""
+
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from make_followup_figures import (
+    AXIS,
+    CLASS_C,
+    COVERAGE_MODEL,
+    INK,
+    INK2,
+    LEGACY_C,
+    NONE_C,
+    OUT_DIR,
+    REC_C,
+    ROULETTE_C,
+    RR_EDGE,
+    RR_FILL,
+    SUB_C,
+    SURFACE,
+    arrow,
+    style_axis,
+)
+from matplotlib.patches import FancyBboxPatch
+
+PATCH_C = "#c4302b"
+
+
+def draw_stack() -> None:
+    """Draw the current stack as a graphical abstract."""
+    g = pd.read_csv(os.path.join(OUT_DIR, "plateau_models.groups.tsv"), sep="\t")
+    fits = pd.read_csv(os.path.join(OUT_DIR, "plateau_models.fits.tsv"), sep="\t")
+    rr = pd.read_csv(
+        os.path.join(OUT_DIR, "data/full_run/syn_cells_rr_full_run.tsv"),
+        sep="\t",
+        usecols=["win", "context", "rr_ridge_qcexcl"],
+    ).drop_duplicates(["win", "context"])
+    genes = pd.read_csv(
+        os.path.join(OUT_DIR, "compare_rate_parts.genes.tsv.gz"), sep="\t"
+    )
+
+    W, H = 1800, 990
+    fig = plt.figure(figsize=(W / 100, H / 100))
+    bg = fig.add_axes([0, 0, 1, 1])
+    bg.set_xlim(0, W)
+    bg.set_ylim(H, 0)
+    bg.axis("off")
+
+    def inset(x, y, w, h):
+        a = fig.add_axes([x / W, 1 - (y + h) / H, w / W, h / H])
+        a.set_facecolor("none")
+        a.tick_params(labelsize=10.5, length=0)
+        return a
+
+    def card(x, y, w, h, title, sub, data, fill="white", edge=AXIS):
+        bg.add_patch(
+            FancyBboxPatch(
+                (x, y),
+                w,
+                h,
+                boxstyle="round,pad=0,rounding_size=10",
+                facecolor=fill,
+                edgecolor=edge,
+                lw=1.5,
+            )
+        )
+        bg.text(x + 12, y + 22, title, fontsize=14, weight="bold", va="center")
+        bg.text(x + 12, y + 46, sub, fontsize=11.5, color=INK2, va="center")
+        bg.text(
+            x + 12,
+            y + h - 20,
+            "fit on: " + data,
+            fontsize=11,
+            color=INK,
+            va="center",
+            style="italic",
+        )
+
+    def patch(x, y, w, text):
+        bg.add_patch(
+            FancyBboxPatch(
+                (x, y),
+                w,
+                74,
+                boxstyle="round,pad=0,rounding_size=8",
+                facecolor="#fdecea",
+                edgecolor=PATCH_C,
+                lw=1.2,
+            )
+        )
+        bg.text(
+            x + 10,
+            y + 37,
+            text,
+            fontsize=11,
+            color=PATCH_C,
+            va="center",
+            linespacing=1.3,
+        )
+
+    bg.text(
+        30,
+        34,
+        "The stack today: five models, each fit on its own data, each correcting what"
+        " the others miss",
+        fontsize=17,
+        weight="bold",
+        va="center",
+    )
+    xs = [30, 385, 740, 1095, 1450]
+    cw, ch, y0 = 320, 360, 80
+
+    # 1. Mutation rates.
+    card(
+        xs[0],
+        y0,
+        cw,
+        ch,
+        "1  Mutation rate μ",
+        "one per context × ref × alt × methylation",
+        "gnomAD genomes, rare intergenic variants",
+    )
+    a = inset(xs[0] + 50, y0 + 70, cw - 70, ch - 175)
+    subs = list(SUB_C)
+    for i, s in enumerate(subs):
+        d = g[g["sub"] == s].drop_duplicates(
+            ["context", "ref", "alt", "methylation_level"]
+        )
+        a.scatter(
+            np.full(len(d), i) + np.random.default_rng(i).uniform(-0.2, 0.2, len(d)),
+            d.mu * 1e8,
+            s=14,
+            color=SUB_C[s],
+            alpha=0.8,
+            lw=0,
+        )
+    a.set_yscale("log")
+    a.set_xticks(
+        range(len(subs)),
+        [s.replace("CpG transition", "CpG ts") for s in subs],
+        rotation=45,
+        ha="right",
+        fontsize=9.5,
+    )
+    a.set_ylabel("μ (× 10⁻⁸)", fontsize=10.5)
+    style_axis(a, grid_axis="y")
+
+    # 2. Plateau model.
+    card(
+        xs[1],
+        y0,
+        cw,
+        ch,
+        "2  Plateau model f(μ)",
+        "μ → share of possible variants seen",
+        "exome synonymous sites, high coverage",
+    )
+    # One straight line per model group, each on its own linear axes (the two groups
+    # sit at very different rates), dots colored by substitution as in card 1.
+    gp = g[g.possible >= 100]
+    for cpg, x0, w, name, title in (
+        (False, xs[1] + 48, 120, "everything else", "everything else"),
+        (True, xs[1] + 200, 96, "CpG transition", "CpG transitions"),
+    ):
+        a = inset(x0, y0 + 112, w, ch - 205)
+        d = gp[gp.cpg == cpg]
+        for s, c in SUB_C.items():
+            e = d[d["sub"] == s]
+            a.scatter(
+                e.mu * 1e8,
+                e.prop,
+                s=8 + 70 * np.sqrt(e.possible / gp.possible.max()),
+                color=c,
+                alpha=0.6,
+                lw=0,
+                zorder=3,
+            )
+        st = fits[(fits.fit == "stored") & (fits.line == name)].iloc[0]
+        x = np.linspace(0, d.mu.max() * 1.05, 20)
+        a.plot(x * 1e8, st.intercept + st.slope * x, color=INK, lw=2, zorder=4)
+        a.set_xlim(0, d.mu.max() * 1.05e8)
+        a.set_title(title, fontsize=10.5, color=INK2, pad=4)
+        a.tick_params(labelsize=9.5)
+        style_axis(a, grid_axis="both")
+        if not cpg:
+            a.set_ylim(0, 0.5)
+            a.set_ylabel("share seen", fontsize=10.5)
+        else:
+            a.set_ylim(0.5, 1.05)
+    bg.text(
+        xs[1] + cw / 2 + 10,
+        y0 + ch - 50,
+        "μ (× 10⁻⁸)",
+        fontsize=10.5,
+        ha="center",
+        va="center",
+    )
+    bg.text(
+        xs[1] + 12,
+        y0 + 70,
+        "a straight line per group, share = a + b·μ",
+        fontsize=10.5,
+        color=INK,
+        va="center",
+    )
+
+    # 3. Coverage model.
+    card(
+        xs[2],
+        y0,
+        cw,
+        ch,
+        "3  Coverage model h(AN %)",
+        "scales expected down at low coverage",
+        "exome synonymous sites, low coverage",
+    )
+    a = inset(xs[2] + 50, y0 + 70, cw - 70, ch - 160)
+    cov = np.linspace(19, 100, 200)
+    hcov = np.where(cov >= 90, 1.0, COVERAGE_MODEL[0] + COVERAGE_MODEL[1] * cov)
+    a.plot(cov, hcov, color=INK, lw=2.2)
+    a.axvline(90, color=AXIS, lw=1, ls=(0, (3, 3)))
+    a.axhline(1, color=AXIS, lw=1)
+    a.text(91, 0.15, "high coverage:\nh = 1", fontsize=10, color=INK2)
+    a.text(62, 1.2, "overshoots 1\nbelow 90", fontsize=10, color=PATCH_C, ha="right")
+    a.set_xlabel("exome AN %", fontsize=10.5)
+    a.set_ylabel("h", fontsize=10.5)
+    a.set_ylim(0, 1.3)
+    style_axis(a, grid_axis="both")
+
+    # 4. rr.
+    card(
+        xs[3],
+        y0,
+        cw,
+        ch,
+        "4  Regional rate rr",
+        "a logistic model per context on window features",
+        "DNMs vs background, 52 features",
+        fill=RR_FILL,
+        edge=RR_EDGE,
+    )
+    a = inset(xs[3] + 50, y0 + 70, cw - 70, ch - 160)
+    d = rr[(rr.context == "CCT") & rr.win.str.startswith("chr8-")].copy()
+    d["pos"] = d.win.str.split("-").str[1].astype(int) / 1e6
+    d = d[d.pos < 60].sort_values("pos")
+    a.axvspan(0, 20, color=RR_FILL, lw=0)
+    a.scatter(d.pos, d.rr_ridge_qcexcl, s=5, color=RR_EDGE, alpha=0.5, lw=0)
+    a.plot(
+        d.pos,
+        d.rr_ridge_qcexcl.rolling(41, center=True, min_periods=5).median(),
+        color=INK,
+        lw=1.8,
+    )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.set_xlabel("chr8 position (Mb), context CCT", fontsize=10.5)
+    a.set_ylabel("rr per 1-kb window", fontsize=10.5)
+    a.set_ylim(0.8, 1.25)
+    style_axis(a, grid_axis="y")
+
+    # 5. Per-variant rates.
+    card(
+        xs[4],
+        y0,
+        cw,
+        ch,
+        "5  Per-variant rate m (trial)",
+        "Roulette: sequence and regional parts",
+        "gnomAD v3 genomes, rare variants",
+        edge=ROULETTE_C,
+    )
+    a = inset(xs[4] + 50, y0 + 70, cw - 70, ch - 160)
+    c8 = genes[(genes.chromosome == "chr8") & (genes.mid < 60e6)].sort_values("mid")
+    a.axvspan(0, 20, color=RR_FILL, lw=0)
+    a.scatter(
+        c8.mid / 1e6, c8.roulette_multiplier, s=7, color=ROULETTE_C, alpha=0.5, lw=0
+    )
+    a.plot(
+        c8.mid / 1e6,
+        c8.roulette_multiplier.rolling(21, center=True, min_periods=5).median(),
+        color=INK,
+        lw=1.8,
+    )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.set_xlabel("chr8 position (Mb)", fontsize=10.5)
+    a.set_ylabel("m per gene (outside CpG)", fontsize=10.5)
+    a.set_ylim(0.8, 1.9)
+    style_axis(a, grid_axis="y")
+
+    for i in range(4):
+        arrow(
+            bg,
+            xs[i] + cw + 4,
+            y0 + ch / 2,
+            xs[i + 1] - 4,
+            y0 + ch / 2,
+            color=INK2,
+            lw=1.8,
+        )
+
+    # The patches between the steps.
+    bg.text(
+        30,
+        478,
+        "Patches the steps need because they're fit apart",
+        fontsize=13.5,
+        weight="bold",
+        va="center",
+        color=PATCH_C,
+    )
+    patch(
+        xs[1],
+        500,
+        cw,
+        "unweighted lines: total obs/exp 1.016;\n" "each context keeps a ±5–20% offset",
+    )
+    patch(
+        xs[2],
+        500,
+        cw,
+        "a separate line in AN %, fit on low-\ncoverage sites only; it reaches 1.16\njust below 90, then drops to 1",
+    )
+    patch(
+        xs[3],
+        500,
+        cw,
+        "too strong on gnomAD: needs α or a\n"
+        "penalty; methylation features dropped\nat CpG (overlap with μ)",
+    )
+    patch(
+        xs[4],
+        500,
+        cw,
+        "CpG set to 1 (overlap with μ);\n" "too strong with the ridge on top",
+    )
+
+    # How it comes together.
+    bg.add_patch(
+        FancyBboxPatch(
+            (30, 610),
+            W - 60,
+            340,
+            boxstyle="round,pad=0,rounding_size=10",
+            facecolor="white",
+            edgecolor=REC_C,
+            lw=1.6,
+        )
+    )
+    bg.text(
+        52,
+        642,
+        "Put together, per possible variant v, then summed",
+        fontsize=15,
+        weight="bold",
+        va="center",
+    )
+    bg.text(
+        W / 2,
+        720,
+        r"$E_v \;=\; f_{g(v)}(\mu_v)\;\times\; h(c_v)\;\times\; r_{w(v),\,k(v)}\;\times\; m_v$",
+        fontsize=26,
+        ha="center",
+        va="center",
+    )
+    labels = [
+        (W / 2 - 330, "plateau (2)", INK2),
+        (W / 2 - 100, "coverage (3)", INK2),
+        (W / 2 + 125, "rr (4)", RR_EDGE),
+        (W / 2 + 300, "rate (5)", ROULETTE_C),
+    ]
+    for x, t, c in labels:
+        bg.text(x, 770, t, fontsize=12.5, color=c, ha="center", va="center")
+    bg.text(
+        W / 2,
+        830,
+        r"$E_{\mathrm{gene,\,consequence}} \;=\; \sum_{v\,\in\,\mathrm{gene,\,consequence}} E_v$",
+        fontsize=22,
+        ha="center",
+        va="center",
+    )
+    bg.text(
+        W / 2,
+        900,
+        "μ is only an input to f; rr and m multiply afterwards; each factor is fit on"
+        " different data, so none of them knows what the others already explain",
+        fontsize=12.5,
+        color=INK2,
+        ha="center",
+        va="center",
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "one_model_stack.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
+FIT_PREFIX = "data/one_model/one_model_full_v2"
+FIT_LABELS = {
+    "current stack, no rr": "current stack, no rr",
+    "current stack + ridge rr": "current stack + ridge rr",
+    "current stack x Roulette": "current stack × Roulette",
+    "current stack x Roulette + ridge rr": "current stack × Roulette + ridge rr",
+    "one model: groups + coverage": "groups + coverage",
+    "one model: + window MQ": "+ window MQ",
+    "one model: + DNM regional": "+ DNM regional",
+    "one model: + DNM regional + window MQ": "+ DNM regional + window MQ",
+    "one model: + gnomAD regional + window MQ": "+ gnomAD regional + window MQ",
+    "one model: + window MQ + Roulette": "+ window MQ + Roulette",
+    "one model: + DNM regional + window MQ + Roulette": "+ DNM regional + window MQ + Roulette",
+}
+FIT_SHOWN = [
+    ("current stack, no rr", "current stack, no rr", NONE_C, True),
+    ("current stack + ridge rr", "current stack + ridge rr", RR_EDGE, True),
+    ("current stack x Roulette", "current stack × Roulette", ROULETTE_C, False),
+    ("one model: groups + coverage", "one model: groups + coverage", LEGACY_C, True),
+    (
+        "one model: + DNM regional + window MQ + Roulette",
+        "one model: + DNM regional + MQ + Roulette",
+        ROULETTE_C,
+        True,
+    ),
+]
+"""Models in panels b and c: (name, label, color, filled marker)."""
+
+
+def draw_fit_results(prefix: str = FIT_PREFIX) -> None:
+    """Draw how the single cloglog models compare with the current stack."""
+    m = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.metrics.tsv"), sep="\t")
+    cov = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.coverage.tsv"), sep="\t")
+    m = m.set_index("model").loc[[k for k in FIT_LABELS if k in set(m.model)]]
+
+    fig = plt.figure(figsize=(18, 7.6))
+    gs = fig.add_gridspec(
+        2,
+        2,
+        width_ratios=[1.35, 1],
+        hspace=0.55,
+        wspace=0.32,
+        left=0.2,
+        right=0.98,
+        top=0.9,
+        bottom=0.1,
+    )
+
+    # (a) Per-gene noise.
+    a = fig.add_subplot(gs[:, 0])
+    y = np.arange(len(m))[::-1]
+    stack = m.index.str.startswith("current")
+    for yi, (name, r), st in zip(y, m.iterrows(), stack):
+        c = NONE_C if st else LEGACY_C
+        a.plot(
+            [r.core_noise, r.outcome_free_noise], [yi, yi], color=c, lw=1.2, alpha=0.6
+        )
+        a.scatter(r.core_noise, yi, s=70, color=c, zorder=3, edgecolor=SURFACE, lw=1.5)
+        a.scatter(
+            r.outcome_free_noise,
+            yi,
+            s=70,
+            facecolor=SURFACE,
+            edgecolor=c,
+            lw=1.8,
+            zorder=3,
+        )
+        a.text(
+            min(r.core_noise, r.outcome_free_noise) - 0.06,
+            yi,
+            f"{r.core_noise:.2f}",
+            ha="right",
+            va="center",
+            fontsize=11,
+            color=INK2,
+        )
+    ref = m.loc["current stack + ridge rr", "core_noise"]
+    a.axvline(ref, color=RR_EDGE, lw=1, ls=(0, (3, 3)))
+    a.axhline(y[stack.sum() - 1] - 0.5, color=AXIS, lw=1)
+    a.set_yticks(y, [FIT_LABELS[k] for k in m.index], fontsize=12)
+    for lab, yy in (
+        ("current stack", y[0] + 0.55),
+        (
+            "one cloglog model, fit on the other half of the chromosomes",
+            y[stack.sum()] + 0.55,
+        ),
+    ):
+        a.text(
+            0.01,
+            yy,
+            lab,
+            transform=a.get_yaxis_transform(),
+            fontsize=11.5,
+            color=INK2,
+            style="italic",
+            va="center",
+        )
+    a.set_ylim(-0.6, y[0] + 0.9)
+    a.set_xlim(1.2, 3.8)
+    a.set_xlabel("per-gene synonymous noise (mean (obs − exp)² / exp; 1 = Poisson)")
+    a.scatter([], [], s=70, color=INK2, label="core genes (unflagged, exp ≥ 20)")
+    a.scatter(
+        [],
+        [],
+        s=70,
+        facecolor=SURFACE,
+        edgecolor=INK2,
+        lw=1.8,
+        label="outcome-free set (no gene QC flag)",
+    )
+    a.legend(loc="lower right", fontsize=11.5, frameon=False)
+    a.set_title("a  Per-gene noise, held-out chromosome halves", loc="left")
+    style_axis(a, grid_axis="x")
+
+    # (b) obs/exp by coverage.
+    a = fig.add_subplot(gs[0, 1])
+    bins = ["[20, 50)", "[50, 80)", "[80, 90)", "[90, 101)"]
+    labels = ["20–50", "50–80", "80–90", "≥ 90"]
+    for k, lab, c, filled in FIT_SHOWN:
+        d = cov[cov.model == k].set_index("bin").reindex(bins)
+        a.plot(
+            range(len(bins)),
+            d.oe,
+            color=c,
+            lw=2,
+            marker="o",
+            ms=8,
+            label=lab,
+            ls="-" if filled else (0, (4, 2)),
+            mfc=c if filled else SURFACE,
+            mew=1.8,
+        )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.set_xticks(range(len(bins)), labels)
+    a.set_xlabel("exome AN %")
+    a.set_ylabel("synonymous obs/exp")
+    a.set_title("b  By coverage", loc="left")
+    a.legend(loc="upper right", fontsize=10.5, frameon=False)
+    style_axis(a, grid_axis="y")
+
+    # (c) obs/exp by context class.
+    a = fig.add_subplot(gs[1, 1])
+    cols = ["obs_over_exp", "oe_A/T", "oe_C non-CpG", "oe_CpG"]
+    for j, (k, lab, c, filled) in enumerate(FIT_SHOWN):
+        a.scatter(
+            np.arange(len(cols)) + (j - 2) * 0.14,
+            m.loc[k, cols],
+            s=60,
+            zorder=3,
+            facecolor=c if filled else SURFACE,
+            edgecolor=c if not filled else SURFACE,
+            lw=1.8 if not filled else 1,
+        )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.set_xticks(range(len(cols)), ["all", "A/T", "C non-CpG", "CpG"])
+    a.set_ylabel("synonymous obs/exp")
+    a.set_title("c  By context class (colors as in b)", loc="left")
+    style_axis(a, grid_axis="y")
+
+    fig.savefig(
+        os.path.join(OUT_DIR, "one_model_fit.png"),
+        dpi=150,
+        bbox_inches="tight",
+        facecolor=SURFACE,
+    )
+    plt.close(fig)
+
+
+def draw_fit_checks(prefix: str = "data/one_model/one_model_eval") -> None:
+    """Draw the report's other synonymous checks for the single cloglog models."""
+    out = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.outliers.tsv"), sep="\t")
+    sc = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.scores.tsv"), sep="\t")
+    dec = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.deciles.tsv"), sep="\t")
+    hot = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.hotspots.tsv"), sep="\t")
+    order = [k for k in FIT_LABELS if k in set(sc.model)]
+
+    fig = plt.figure(figsize=(20, 13))
+    gs = fig.add_gridspec(
+        2,
+        6,
+        hspace=0.42,
+        wspace=0.9,
+        left=0.15,
+        right=0.98,
+        top=0.93,
+        bottom=0.07,
+        width_ratios=[1, 1, 1, 0.55, 1, 1],
+    )
+
+    # (a) Outliers by category.
+    a = fig.add_subplot(gs[0, :3])
+    cats = [
+        ("unflagged", "excess", "no QC flag, excess", INK),
+        ("unflagged", "deficit", "no QC flag, deficit", INK2),
+        ("histone genes", None, "histone genes", "#b0aa9c"),
+        ("low_exome_coverage", None, "low exome coverage flag", "#d6d2c4"),
+        (
+            "low_exome_mapping_quality",
+            "deficit",
+            "low mapping quality flag, deficit",
+            NONE_C,
+        ),
+        (
+            "low_exome_mapping_quality",
+            "excess",
+            "low mapping quality flag, excess",
+            "#c9c4b6",
+        ),
+    ]
+    y = np.arange(len(order))[::-1]
+    left = np.zeros(len(order))
+    for cat, direction, label, color in cats:
+        m = out.category.eq(cat) & (out.direction.eq(direction) if direction else True)
+        n = out[m].groupby("model").n.sum().reindex(order).fillna(0).to_numpy()
+        a.barh(
+            y,
+            n,
+            left=left,
+            color=color,
+            edgecolor=SURFACE,
+            lw=1,
+            height=0.72,
+            label=label,
+            hatch="//" if direction == "excess" and cat != "unflagged" else None,
+        )
+        left += n
+    for yi, k in zip(y, order):
+        n = out[out.model.eq(k) & out.category.eq("unflagged")].n.sum()
+        a.text(
+            left[order.index(k)] + 3,
+            yi,
+            f"{int(left[order.index(k)])} ({int(n)} unflagged)",
+            va="center",
+            fontsize=11,
+            color=INK2,
+        )
+    a.set_yticks(y, [FIT_LABELS[k] for k in order], fontsize=11.5)
+    a.axhline(y[3] - 0.5, color=AXIS, lw=1)
+    a.set_xlim(0, 330)
+    a.set_xlabel("synonymous outliers (|z| > 8)")
+    a.set_title("a  Outliers by release flag", loc="left")
+    a.legend(loc="lower right", fontsize=10.5, frameon=False)
+    style_axis(a)
+
+    # (b) Calibration slope against the current stack.
+    b = fig.add_subplot(gs[0, 4:])
+    shown = [
+        k
+        for k in order
+        if k not in ("current stack, no rr", "one model: groups + coverage")
+    ]
+    yb = np.arange(len(shown))[::-1]
+    v = sc.set_index("model").slope_vs_current.reindex(shown)
+    for yi, k in zip(yb, shown):
+        c = NONE_C if k.startswith("current") else LEGACY_C
+        b.plot([1, v[k]], [yi, yi], color=c, lw=1.2, alpha=0.6)
+        b.scatter(v[k], yi, s=70, color=c, zorder=3, edgecolor=SURFACE, lw=1.2)
+        b.text(
+            v[k] + (0.03 if v[k] >= 1 else -0.03),
+            yi,
+            f"{v[k]:.2f}",
+            va="center",
+            ha="left" if v[k] >= 1 else "right",
+            fontsize=11,
+            color=INK2,
+        )
+    b.axvline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    b.set_yticks(yb, [FIT_LABELS[k] for k in shown], fontsize=11)
+    b.set_xlim(0.4, 1.4)
+    b.set_xlabel(
+        "calibration slope against the current stack\n(below 1: too strong; above 1: too weak)"
+    )
+    b.set_title("b  How strong the changes are", loc="left")
+    style_axis(b)
+
+    # (c, d) Synonymous obs/exp by LOEUF and s_het decile.
+    x = np.arange(10)
+    for col, binning, title, xlabel in (
+        (
+            0,
+            "decile",
+            "c  By LOEUF decile",
+            "LOEUF decile (v4.1.2; 1 = most constrained)",
+        ),
+        (2, "shet_decile", "d  By s_het decile", "s_het decile (1 = highest s_het)"),
+    ):
+        a = fig.add_subplot(gs[1, col : col + 2] if col == 0 else gs[1, 2:4])
+        for k, lab, c, filled in FIT_SHOWN:
+            d = dec[dec.model.eq(k) & dec.binning.eq(binning)].sort_values("decile")
+            a.plot(
+                x,
+                d.oe,
+                color=c,
+                lw=2,
+                marker="o",
+                ms=6,
+                label=lab,
+                ls="-" if filled else (0, (4, 2)),
+                mfc=c if filled else SURFACE,
+                mew=1.6,
+            )
+        a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+        a.set_xticks(x, [str(i + 1) for i in x])
+        a.set_ylim(0.96, 1.14)
+        a.set_xlabel(xlabel)
+        a.set_ylabel("synonymous obs/exp")
+        a.set_title(title, loc="left")
+        style_axis(a, grid_axis="y")
+        if col == 0:
+            a.legend(loc="upper left", fontsize=10, frameon=False)
+
+    # (e) Maternal hotspot regions: the control genes there, as in the report.
+    a = fig.add_subplot(gs[1, 4:])
+    regions = list(dict.fromkeys(hot.region))
+    for j, (k, lab, c, filled) in enumerate(FIT_SHOWN):
+        h = (
+            hot[hot.model.eq(k) & hot.set.eq("control genes")]
+            .set_index("region")
+            .reindex(regions)
+        )
+        a.scatter(
+            np.arange(len(regions)) + (j - 2) * 0.13,
+            h.oe,
+            s=55,
+            zorder=3,
+            facecolor=c if filled else SURFACE,
+            edgecolor=c if not filled else SURFACE,
+            lw=1.6 if not filled else 1,
+        )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.set_xticks(range(len(regions)), [r.replace(", first 20 Mb", "") for r in regions])
+    a.set_ylabel("obs/exp of the control genes there\n(relative to the core set)")
+    a.set_title("e  Maternal hotspot regions (colors as in c)", loc="left")
+    style_axis(a, grid_axis="y")
+
+    fig.savefig(
+        os.path.join(OUT_DIR, "one_model_checks.png"),
+        dpi=150,
+        bbox_inches="tight",
+        facecolor=SURFACE,
+    )
+    plt.close(fig)
+
+
+def draw_coverage_check() -> None:
+    """Draw the stored coverage model against the share seen at each AN %."""
+    g = pd.read_csv(
+        os.path.join(OUT_DIR, "data/one_model/coverage_check.by_an.tsv"), sep="\t"
+    )
+    fig, (a, b) = plt.subplots(
+        2,
+        1,
+        figsize=(12, 8.2),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.12},
+    )
+    size = 8 + 160 * np.sqrt(g.possible / g.possible.max())
+    a.scatter(
+        g.coverage,
+        g.y_pipeline,
+        s=size,
+        facecolor=SURFACE,
+        edgecolor=NONE_C,
+        lw=1.4,
+        zorder=3,
+        label="what the coverage model is fit to: obs / (scale × Σ possible·μ)",
+    )
+    a.scatter(
+        g.coverage,
+        g.y_plateau,
+        s=size,
+        color=LEGACY_C,
+        alpha=0.8,
+        lw=0,
+        zorder=4,
+        label="relative to the plateau it multiplies: obs / Σ possible·f(μ)",
+    )
+    x = np.linspace(20, 89.99, 100)
+    a.plot(
+        x,
+        COVERAGE_MODEL[0] + COVERAGE_MODEL[1] * x,
+        color=INK,
+        lw=2.2,
+        zorder=5,
+        label="stored coverage model h (a straight line, one point per AN % value)",
+    )
+    a.plot([90, 100], [1, 1], color=INK, lw=2.2, zorder=5)
+    a.plot(
+        [89.99, 90],
+        [COVERAGE_MODEL[0] + COVERAGE_MODEL[1] * 89.99, 1],
+        color=INK,
+        lw=1,
+        ls=(0, (2, 2)),
+    )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.axvline(90, color=AXIS, lw=1)
+    a.set_ylabel("share seen, relative to AN ≥ 90")
+    a.set_ylim(0, 1.3)
+    a.legend(loc="lower right", fontsize=11, frameon=False)
+    a.set_title(
+        "Synonymous variants seen by exome AN %, and the coverage model", loc="left"
+    )
+    style_axis(a, grid_axis="both")
+
+    b.bar(g.coverage, g.possible, width=0.8, color=NONE_C, lw=0)
+    b.set_yscale("log")
+    b.axvline(90, color=AXIS, lw=1)
+    b.set_ylabel("possible variants")
+    b.set_xlabel("exome AN % (sites below 20 are dropped by the pipeline)")
+    style_axis(b, grid_axis="y")
+    fig.savefig(
+        os.path.join(OUT_DIR, "one_model_coverage_check.png"),
+        dpi=150,
+        bbox_inches="tight",
+        facecolor=SURFACE,
+    )
+    plt.close(fig)
+
+
+def draw_coverage_oe_current(prefix: str = FIT_PREFIX) -> None:
+    """Draw synonymous obs/exp by exome AN % under the current models."""
+    cov = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.coverage.tsv"), sep="\t")
+    cov = cov[cov.model == "current stack, no rr"]
+    g = pd.read_csv(
+        os.path.join(OUT_DIR, "data/one_model/coverage_check.by_an.tsv"), sep="\t"
+    )
+    fig, a = plt.subplots(figsize=(12, 5.6))
+    a.scatter(
+        g.coverage,
+        g.oe_stack,
+        s=8 + 160 * np.sqrt(g.possible / g.possible.max()),
+        color=NONE_C,
+        alpha=0.85,
+        lw=0,
+        zorder=3,
+        label="each AN % value (sized by possible variants)",
+    )
+    for lo, hi, b in (
+        (20, 50, "[20, 50)"),
+        (50, 80, "[50, 80)"),
+        (80, 90, "[80, 90)"),
+        (90, 101, "[90, 101)"),
+    ):
+        oe = cov.set_index("bin").loc[b, "oe"]
+        a.plot(
+            [lo, hi - 1],
+            [oe, oe],
+            color=INK,
+            lw=3,
+            solid_capstyle="butt",
+            zorder=4,
+            label="each bin, as in panel b of the fit figure" if lo == 20 else None,
+        )
+        a.text(
+            (lo + hi - 1) / 2,
+            oe + (0.1 if lo == 90 else 0.05),
+            f"{oe:.2f}",
+            ha="center",
+            fontsize=12,
+            weight="bold",
+        )
+    a.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    a.axvline(90, color=AXIS, lw=1)
+    a.set_xlabel("exome AN %")
+    a.set_ylabel("synonymous obs/exp")
+    a.set_ylim(0.5, 2.25)
+    a.set_title(
+        "Synonymous obs/exp by exome AN %, current plateau and coverage models (no rr)",
+        loc="left",
+    )
+    a.legend(loc="upper right", fontsize=11, frameon=False)
+    style_axis(a, grid_axis="y")
+    fig.savefig(
+        os.path.join(OUT_DIR, "one_model_coverage_oe.png"),
+        dpi=150,
+        bbox_inches="tight",
+        facecolor=SURFACE,
+    )
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    draw_stack()
+    draw_fit_results()
+    draw_fit_checks()
+    draw_coverage_check()
+    draw_coverage_oe_current()

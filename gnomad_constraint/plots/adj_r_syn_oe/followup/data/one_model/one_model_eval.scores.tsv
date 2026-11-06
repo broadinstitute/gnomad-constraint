@@ -1,0 +1,12 @@
+model	slope_vs_current	sd_log_change
+current stack, no rr		0.0
+current stack + ridge rr	0.8564571765050158	0.044920810538099196
+current stack x Roulette	1.1272437835542197	0.04772678943745695
+current stack x Roulette + ridge rr	0.6521731244739085	0.08145355751637127
+one model: groups + coverage	-0.31853484293005724	0.012250258565063149
+one model: + window MQ	0.7816120715309741	0.05402069515572649
+one model: + DNM regional	0.8172062840878842	0.03935404761169996
+one model: + DNM regional + window MQ	0.8367833565770839	0.06494976729456459
+one model: + gnomAD regional + window MQ	0.8247697977955208	0.07390207536753787
+one model: + window MQ + Roulette	1.0420939432582124	0.06409713405171967
+one model: + DNM regional + window MQ + Roulette	0.9693636116602412	0.07196353567455191

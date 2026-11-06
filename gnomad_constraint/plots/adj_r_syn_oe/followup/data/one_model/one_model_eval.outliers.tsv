@@ -1,0 +1,51 @@
+model	direction	category	n
+current stack, no rr	deficit	low_exome_mapping_quality	132
+current stack, no rr	deficit	unflagged	2
+current stack, no rr	excess	histone genes	24
+current stack, no rr	excess	low_exome_coverage	16
+current stack, no rr	excess	unflagged	84
+current stack + ridge rr	deficit	low_exome_mapping_quality	132
+current stack + ridge rr	deficit	unflagged	1
+current stack + ridge rr	excess	histone genes	24
+current stack + ridge rr	excess	low_exome_coverage	17
+current stack + ridge rr	excess	unflagged	38
+current stack x Roulette	deficit	low_exome_mapping_quality	141
+current stack x Roulette	deficit	unflagged	1
+current stack x Roulette	excess	histone genes	23
+current stack x Roulette	excess	low_exome_coverage	13
+current stack x Roulette	excess	unflagged	14
+current stack x Roulette + ridge rr	deficit	low_exome_mapping_quality	138
+current stack x Roulette + ridge rr	deficit	unflagged	4
+current stack x Roulette + ridge rr	excess	histone genes	22
+current stack x Roulette + ridge rr	excess	low_exome_coverage	14
+current stack x Roulette + ridge rr	excess	unflagged	8
+one model: groups + coverage	deficit	low_exome_mapping_quality	132
+one model: groups + coverage	deficit	unflagged	1
+one model: groups + coverage	excess	histone genes	24
+one model: groups + coverage	excess	low_exome_coverage	5
+one model: groups + coverage	excess	unflagged	86
+one model: + window MQ	deficit	low_exome_mapping_quality	1
+one model: + window MQ	deficit	unflagged	2
+one model: + window MQ	excess	histone genes	24
+one model: + window MQ	excess	low_exome_mapping_quality	15
+one model: + window MQ	excess	unflagged	86
+one model: + DNM regional	deficit	low_exome_mapping_quality	136
+one model: + DNM regional	deficit	unflagged	1
+one model: + DNM regional	excess	histone genes	24
+one model: + DNM regional	excess	low_exome_coverage	4
+one model: + DNM regional	excess	unflagged	47
+one model: + DNM regional + window MQ	deficit	low_exome_mapping_quality	1
+one model: + DNM regional + window MQ	deficit	unflagged	1
+one model: + DNM regional + window MQ	excess	histone genes	24
+one model: + DNM regional + window MQ	excess	low_exome_mapping_quality	15
+one model: + DNM regional + window MQ	excess	unflagged	52
+one model: + gnomAD regional + window MQ	excess	histone genes	23
+one model: + gnomAD regional + window MQ	excess	low_exome_mapping_quality	13
+one model: + gnomAD regional + window MQ	excess	unflagged	41
+one model: + window MQ + Roulette	deficit	low_exome_mapping_quality	1
+one model: + window MQ + Roulette	excess	histone genes	24
+one model: + window MQ + Roulette	excess	low_exome_mapping_quality	13
+one model: + window MQ + Roulette	excess	unflagged	16
+one model: + DNM regional + window MQ + Roulette	excess	histone genes	23
+one model: + DNM regional + window MQ + Roulette	excess	low_exome_mapping_quality	13
+one model: + DNM regional + window MQ + Roulette	excess	unflagged	14
