@@ -3548,6 +3548,381 @@ def draw_plateau(prefix="plateau_models"):
     plt.close(fig)
 
 
+PLATEAU_RUNS = [
+    ("none", "Current: 2 straight lines", NONE_C),
+    ("plateau_saturating", "Saturating curve", RR_EDGE),
+    ("plateau_logistic", "Logistic curve", LEGACY_C),
+    ("plateau_by_substitution", "1 line per substitution type", ADJ_R_C),
+]
+"""Plateau versions run through the full pipeline without rr: (name, label, color)."""
+
+
+def draw_plateau_pipeline(
+    release="release_plateau",
+    downstream="downstream_plateau",
+    pr="disease_gene_pr_plateau",
+):
+    """Draw what each plateau version does to the released metrics (no rr)."""
+    scores = pd.read_csv(os.path.join(OUT_DIR, f"{release}.scores.tsv"), sep="\t")
+    scores = scores.set_index("version")
+    dec = pd.read_csv(os.path.join(OUT_DIR, f"{release}.deciles.tsv"), sep="\t")
+    down = pd.read_csv(os.path.join(OUT_DIR, f"{downstream}.scores.tsv"), sep="\t")
+    down = down.set_index("version")
+    auprc = pd.read_csv(os.path.join(OUT_DIR, f"{pr}.auprc.tsv"), sep="\t")
+    others = PLATEAU_RUNS[1:]
+
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12.4))
+    fig.subplots_adjust(
+        left=0.06, right=0.98, top=0.88, bottom=0.12, wspace=0.34, hspace=0.45
+    )
+    x = np.arange(10)
+
+    # (a) Synonymous obs/exp by LOEUF decile.
+    ax = axes[0, 0]
+    for k, label, c in PLATEAU_RUNS:
+        d = dec[(dec.version == k) & (dec.csq == "syn")].sort_values("decile_none")
+        ax.plot(
+            x,
+            d.oe,
+            color=c,
+            lw=2.6 if k == "none" else 2,
+            marker="o",
+            ms=6,
+            label=f"{label} (all {scores.loc[k, 'syn_oe']:.3f})",
+        )
+    ax.axhline(1, **THEORY)
+    ax.set_xticks(x, [str(i + 1) for i in x])
+    ax.set_xlabel("LOEUF decile of the current run (1 = most constrained)")
+    ax.set_ylabel("synonymous obs/exp")
+    ax.set_title("a  Synonymous: every version brings the level to 1")
+    ax.legend(loc="upper left", fontsize=11.5, frameon=False)
+    ax.set_ylim(0.97, 1.13)
+    style_axis(ax, grid_axis="y")
+
+    # (b, c) LoF and missense obs/exp by LOEUF decile, relative to the current run.
+    for ax, csq, what, letter in (
+        (axes[0, 1], "lof", "pLoF", "b  pLoF"),
+        (axes[0, 2], "mis", "missense", "c  Missense"),
+    ):
+        base = (
+            dec[(dec.version == "none") & (dec.csq == csq)].set_index("decile_none").oe
+        )
+        for k, label, c in others:
+            d = dec[(dec.version == k) & (dec.csq == csq)].set_index("decile_none").oe
+            ax.plot(
+                x, 100 * (d / base - 1), color=c, lw=2, marker="o", ms=6, label=label
+            )
+        ax.axhline(0, color=NONE_C, lw=2.6)
+        ax.set_xticks(x, [str(i + 1) for i in x])
+        ax.set_xlabel("LOEUF decile of the current run (1 = most constrained)")
+        ax.set_ylabel(f"{what} obs/exp, % change from the current run")
+        ax.set_title(f"{letter} obs/exp, against the current run")
+        style_axis(ax, grid_axis="y")
+    lo = min(axes[0, 1].get_ylim()[0], axes[0, 2].get_ylim()[0])
+    hi = max(axes[0, 1].get_ylim()[1], axes[0, 2].get_ylim()[1])
+    for ax in (axes[0, 1], axes[0, 2]):
+        ax.set_ylim(lo, hi)
+    axes[0, 1].legend(
+        loc="center left", bbox_to_anchor=(0.02, 0.36), fontsize=11.5, frameon=False
+    )
+
+    # (d) LoF and missense levels relative to synonymous.
+    ax = axes[1, 0]
+    groups = [("lof_oe", "pLoF ÷ synonymous"), ("mis_oe", "missense ÷ synonymous")]
+    for gi, (col, glabel) in enumerate(groups):
+        ref = scores.loc["none", col] / scores.loc["none", "syn_oe"]
+        for j, (k, label, c) in enumerate(others):
+            v = 100 * (scores.loc[k, col] / scores.loc[k, "syn_oe"] / ref - 1)
+            y = gi * 4 + j
+            ax.barh(y, v, height=0.8, color=c, lw=0)
+            ax.text(
+                v + (0.12 if v >= 0 else -0.12),
+                y,
+                f"{v:+.1f}%",
+                va="center",
+                ha="left" if v >= 0 else "right",
+                fontsize=12,
+            )
+        ax.text(-4.9, gi * 4 - 0.9, glabel, fontsize=12.5, color=INK2, va="center")
+    ax.axvline(0, color=NONE_C, lw=2.6)
+    ax.set_yticks([])
+    ax.set_xlim(-5, 5)
+    ax.set_ylim(6.7, -1.6)
+    ax.set_xlabel("% change from the current run")
+    ax.set_title("d  pLoF and missense levels, relative to synonymous")
+    style_axis(ax)
+
+    # (e) Per-gene synonymous noise.
+    ax = axes[1, 1]
+    for j, (k, label, c) in enumerate(PLATEAU_RUNS):
+        for dy, col, hollow in (
+            (-0.2, "core_noise", False),
+            (0.2, "outcome_free_noise", True),
+        ):
+            v = down.loc[k, col]
+            ax.barh(
+                j + dy,
+                v,
+                height=0.38,
+                color=SURFACE if hollow else c,
+                edgecolor=c,
+                lw=1.8,
+            )
+            ax.text(v + 0.04, j + dy, f"{v:.2f}", va="center", fontsize=12)
+    ax.set_yticks(range(len(PLATEAU_RUNS)), [v[1] for v in PLATEAU_RUNS], fontsize=12)
+    ax.invert_yaxis()
+    ax.set_xlim(0, 4.4)
+    ax.set_xlabel("per-gene synonymous noise, mean z²")
+    ax.set_title("e  Per-gene noise barely changes")
+    ax.legend(
+        handles=[
+            Patch(facecolor=INK2, label="core genes"),
+            Patch(facecolor=SURFACE, edgecolor=INK2, lw=1.8, label="outcome-free set"),
+        ],
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.13),
+        ncol=2,
+        fontsize=12,
+        frameon=False,
+    )
+    style_axis(ax)
+
+    # (f) NDD and HI precision-recall, change in AUPRC with 95% intervals.
+    ax = axes[1, 2]
+    rows = [
+        ("NDD", "all genes", "NDD, all genes"),
+        ("NDD", "expected pLoF < 50", "NDD, < 50 expected pLoF"),
+        ("HI", "all genes", "HI, all genes"),
+        ("HI", "expected pLoF < 50", "HI, < 50 expected pLoF"),
+    ]
+    for i, (test, gs, rlabel) in enumerate(rows):
+        a = auprc[(auprc.test == test) & (auprc.gene_set == gs)].set_index("version")
+        for j, (k, label, c) in enumerate(others):
+            y = i + (j - 1) * 0.22
+            r = a.loc[k]
+            ax.plot([r.diff_lo, r.diff_hi], [y, y], color=c, lw=2)
+            ax.scatter(
+                r.diff_vs_none, y, s=60, color=c, zorder=3, edgecolor=SURFACE, lw=1
+            )
+    ax.axvline(0, color=NONE_C, lw=2.6)
+    ax.set_yticks(range(len(rows)), [r[2] for r in rows], fontsize=12)
+    ax.invert_yaxis()
+    ax.set_xlabel("AUPRC of LOEUF, change from the current run")
+    ax.set_title("f  NDD and HI genes (as in Fig. 4d / Ext. Data 5b, 7b)")
+    ax.legend(
+        handles=[Patch(color=c, label=label) for _, label, c in others],
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.13),
+        ncol=3,
+        fontsize=11.5,
+        frameon=False,
+    )
+    style_axis(ax)
+
+    fig.suptitle(
+        "The plateau versions through the full pipeline (no rr): the synonymous level"
+        " is fixed by all three; pLoF and missense move by up to 3–4%",
+        x=0.06,
+        ha="left",
+        fontsize=17.5,
+        weight="bold",
+    )
+    fig.text(
+        0.06,
+        0.925,
+        "Ensembl MANE Select transcripts on the autosomes; noise on the report's core"
+        " and outcome-free gene sets; AUPRC intervals from 1,000 bootstraps of genes",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_plateau_pipeline.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
+def draw_plateau_pipeline_shet(release="release_plateau"):
+    """Draw each plateau version's obs/exp by s_het decile (no rr)."""
+    dec = pd.read_csv(os.path.join(OUT_DIR, f"{release}.shet_deciles.tsv"), sep="\t")
+    others = PLATEAU_RUNS[1:]
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6.2))
+    fig.subplots_adjust(left=0.06, right=0.98, top=0.8, bottom=0.16, wspace=0.34)
+    x = np.arange(10)
+    xlabel = "gnomAD v4 s_het decile (1 = highest s_het, most constrained)"
+
+    # (a) Synonymous obs/exp.
+    ax = axes[0]
+    for k, label, c in PLATEAU_RUNS:
+        d = dec[(dec.version == k) & (dec.csq == "syn")].sort_values("shet_decile")
+        ax.plot(
+            x,
+            d.oe,
+            color=c,
+            lw=2.6 if k == "none" else 2,
+            marker="o",
+            ms=6,
+            label=label,
+        )
+    ax.axhline(1, **THEORY)
+    ax.set_xticks(x, [str(i + 1) for i in x])
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("synonymous obs/exp")
+    ax.set_title("a  Synonymous by s_het: nearly flat, 1.5% lower")
+    ax.legend(loc="upper left", fontsize=11.5, frameon=False, ncol=2)
+    # The same scale as panel a of the LOEUF figure, so the two compare by eye.
+    ax.set_ylim(0.97, 1.13)
+    style_axis(ax, grid_axis="y")
+
+    # (b, c) pLoF and missense, relative to the current run.
+    for ax, csq, what, letter in (
+        (axes[1], "lof", "pLoF", "b  pLoF"),
+        (axes[2], "mis", "missense", "c  Missense"),
+    ):
+        base = (
+            dec[(dec.version == "none") & (dec.csq == csq)].set_index("shet_decile").oe
+        )
+        for k, label, c in others:
+            d = dec[(dec.version == k) & (dec.csq == csq)].set_index("shet_decile").oe
+            ax.plot(
+                x, 100 * (d / base - 1), color=c, lw=2, marker="o", ms=6, label=label
+            )
+        ax.axhline(0, color=NONE_C, lw=2.6)
+        ax.set_xticks(x, [str(i + 1) for i in x])
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(f"{what} obs/exp, % change from the current run")
+        ax.set_title(f"{letter} by s_het, against the current run")
+        ax.set_ylim(-4, 2.5)
+        style_axis(ax, grid_axis="y")
+
+    fig.suptitle(
+        "The plateau versions by s_het decile (no rr): the same shifts as by LOEUF",
+        x=0.06,
+        ha="left",
+        fontsize=17.5,
+        weight="bold",
+    )
+    fig.text(
+        0.06,
+        0.87,
+        "Ensembl MANE Select transcripts on the autosomes with a gnomAD v4 s_het"
+        " (Kar et al. 2026); the deciles are the same in every version",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_plateau_pipeline_shet.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
+def draw_plateau_pipeline_release(release="release_plateau"):
+    """Draw each plateau version's LOEUF and missense changes in the release (no rr)."""
+    sc = pd.read_csv(os.path.join(OUT_DIR, f"{release}.scores.tsv"), sep="\t")
+    sc = sc.set_index("version")
+    fig, axes = plt.subplots(1, 3, figsize=(20, 5.6))
+    fig.subplots_adjust(left=0.12, right=0.98, top=0.78, bottom=0.16, wspace=0.6)
+    others = PLATEAU_RUNS[1:]
+    y = np.arange(len(others))[::-1]
+
+    # (a) Genes crossing LOEUF 0.6.
+    ax = axes[0]
+    for yi, (k, label, c) in zip(y, others):
+        out, into = int(sc.loc[k, "out_of_loeuf_lt_0.6"]), int(
+            sc.loc[k, "into_loeuf_lt_0.6"]
+        )
+        ax.barh(yi, -out, height=0.6, color=c, lw=0)
+        ax.barh(yi, into, height=0.6, color=c, lw=0)
+        ax.text(
+            -out - 8,
+            yi,
+            f"−{out}" if out else "0",
+            ha="right",
+            va="center",
+            fontsize=13,
+        )
+        ax.text(into + 8, yi, f"+{into}" if into else "0", va="center", fontsize=13)
+    ax.axvline(0, color=INK2, lw=1)
+    ax.set_yticks(y, [v[1] for v in others], fontsize=12.5)
+    ax.set_xlim(-230, 340)
+    ax.set_xlabel("← no longer below 0.6      newly below 0.6 →")
+    ax.set_title("a  Genes crossing LOEUF 0.6")
+    style_axis(ax)
+
+    # (b) LOEUF deciles: genes changing decile, and in or out of the most constrained.
+    ax = axes[1]
+    for yi, (k, label, c) in zip(y, others):
+        v = 100 * sc.loc[k, "decile_changed"]
+        ax.barh(yi, v, height=0.6, color=c, lw=0)
+        ax.text(
+            v + 0.1,
+            yi,
+            f"{v:.1f}%  (top decile +{int(sc.loc[k, 'into_top_decile'])} / "
+            f"−{int(sc.loc[k, 'out_of_top_decile'])})",
+            va="center",
+            fontsize=12,
+        )
+    ax.set_yticks(y, [""] * len(others))
+    ax.set_xlim(0, 11)
+    ax.set_xlabel("genes changing LOEUF decile (%; none by 2 or more)")
+    ax.set_title("b  LOEUF deciles")
+    style_axis(ax)
+
+    # (c) Missense-constrained genes and pLI.
+    ax = axes[2]
+    keys = PLATEAU_RUNS
+    yk = np.arange(len(keys))[::-1]
+    for yi, (k, label, c) in zip(yk, keys):
+        n = int(sc.loc[k, "mis_z_ge_3.09"])
+        ax.barh(yi + 0.18, n, height=0.34, color=c, lw=0)
+        ax.text(
+            n + 30,
+            yi + 0.18,
+            f"missense z ≥ 3.09: {n:,} (÷ {sc.loc[k, 'mis_z_scale']:.2f})",
+            va="center",
+            fontsize=11.5,
+        )
+        m = int(sc.loc[k, "pli_ge_0.9"])
+        ax.barh(yi - 0.18, m, height=0.34, color=SURFACE, edgecolor=c, lw=1.8)
+        ax.text(m + 30, yi - 0.18, f"pLI ≥ 0.9: {m:,}", va="center", fontsize=11.5)
+    ax.set_yticks(yk, [v[1] for v in keys], fontsize=12)
+    ax.set_xlim(0, 5200)
+    ax.set_xlabel("genes")
+    ax.set_title("c  Missense z ≥ 3.09 (filled) and pLI ≥ 0.9 (outline)")
+    style_axis(ax)
+
+    fig.suptitle(
+        "The plateau versions through the full pipeline (no rr): LOEUF and missense in"
+        " the release",
+        x=0.03,
+        ha="left",
+        fontsize=17.5,
+        weight="bold",
+    )
+    fig.text(
+        0.03,
+        0.86,
+        f"{int(sc.loc['none', 'n']):,} autosomal Ensembl MANE Select transcripts, against"
+        " the current lines (= the released v4.1.1 metrics). LOEUF rank correlation with"
+        f" the current lines ≥ {sc.loeuf_spearman_vs_none.min():.4f}; ClinGen HI AUC"
+        f" {sc.hi_auc.min():.3f}–{sc.hi_auc.max():.3f} in every version.",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "rr_plateau_pipeline_release.png"),
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
+    plt.close(fig)
+
+
 NDD_VERSIONS = [
     ("none", "No rr (= released v4.1.1)", NONE_C, "-"),
     ("bonferroni_full", "Current method", RUCHIT_C, "-"),
@@ -3570,18 +3945,28 @@ NDD_VERSIONS = [
 """Versions in the NDD precision-recall figure: key, label, colour, line style."""
 
 
-def draw_disease_gene_pr(prefix="disease_gene_pr"):
+def draw_disease_gene_pr(
+    prefix="disease_gene_pr",
+    versions=None,
+    shown=None,
+    emph="ridge_qcexcl",
+    baseline="no rr",
+    out="rr_disease_gene_pr.png",
+    suptitle="Classifying NDD and haploinsufficient genes by LOEUF, for each version of"
+    " the full run",
+):
     """Draw LOEUF's precision-recall for NDD and HI genes, as in the flagship preprint."""
     auprc = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.auprc.tsv"), sep="\t")
     curves = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.curves.tsv"), sep="\t")
-    shown = [
+    versions = versions or NDD_VERSIONS
+    shown = shown or [
         "none",
         "bonferroni_full",
         "ridge_qcexcl",
         "roulette_ridge",
         "homebuilt_ridge",
     ]
-    style = {k: (label, c, ls) for k, label, c, ls in NDD_VERSIONS}
+    style = {k: (label, c, ls) for k, label, c, ls in versions}
     sets = list(dict.fromkeys(auprc.gene_set))
     tests = [
         ("NDD", "NDD genes", "Extended Data Fig. 7b", "Fig. 4d", (0.6, 0.45)),
@@ -3612,7 +3997,7 @@ def draw_disease_gene_pr(prefix="disease_gene_pr"):
                     cv.precision,
                     color=c,
                     ls=ls,
-                    lw=2.6 if k == "ridge_qcexcl" else 1.8,
+                    lw=2.6 if k == emph else 1.8,
                     label=f"{label.split(' (')[0]} ({a.loc[k, 'auprc']:.3f})",
                 )
             base = a.n_positive.iloc[0] / a.n_genes.iloc[0]
@@ -3656,7 +4041,7 @@ def draw_disease_gene_pr(prefix="disease_gene_pr"):
 
         # Each version's AUPRC difference from no rr, with paired bootstrap intervals.
         ax = axes[row, 2]
-        keys = [k for k, *_ in NDD_VERSIONS if k != "none"]
+        keys = [k for k, *_ in versions if k != "none"]
         y0 = np.arange(len(keys))[::-1]
         for j, (gs, dy, marker) in enumerate(zip(sets, (0.17, -0.17), ("o", "s"))):
             a = auprc[(auprc.test == test) & (auprc.gene_set == gs)].set_index(
@@ -3682,7 +4067,7 @@ def draw_disease_gene_pr(prefix="disease_gene_pr"):
             [style[k][0].replace(" (", "\n(").replace(", ", ",\n") for k in keys],
             fontsize=12,
         )
-        ax.set_xlabel("AUPRC difference from no rr (95% bootstrap interval)")
+        ax.set_xlabel(f"AUPRC difference from {baseline} (95% bootstrap interval)")
         ax.set_title(f"{next(letters)}  {what}: change from the released LOEUF")
         ax.legend(
             handles=[
@@ -3708,8 +4093,7 @@ def draw_disease_gene_pr(prefix="disease_gene_pr"):
         )
         style_axis(ax)
     fig.suptitle(
-        "Classifying NDD and haploinsufficient genes by LOEUF, for each version of the"
-        " full run",
+        suptitle,
         x=0.05,
         ha="left",
         fontsize=17,
@@ -3724,7 +4108,7 @@ def draw_disease_gene_pr(prefix="disease_gene_pr"):
         color=INK2,
     )
     fig.savefig(
-        os.path.join(OUT_DIR, "rr_disease_gene_pr.png"),
+        os.path.join(OUT_DIR, out),
         dpi=170,
         bbox_inches="tight",
         pad_inches=0.3,
@@ -6823,6 +7207,19 @@ if __name__ == "__main__":
     draw_outliers()
     draw_outlier_size()
     draw_plateau()
+    draw_plateau_pipeline()
+    draw_plateau_pipeline_shet()
+    draw_plateau_pipeline_release()
+    draw_disease_gene_pr(
+        "disease_gene_pr_plateau",
+        versions=[(k, label, c, "-") for k, label, c in PLATEAU_RUNS],
+        shown=[k for k, *_ in PLATEAU_RUNS],
+        emph="plateau_saturating",
+        baseline="the current lines",
+        out="rr_plateau_pipeline_pr.png",
+        suptitle="Classifying NDD and haploinsufficient genes by LOEUF, for each plateau"
+        " version (no rr)",
+    )
     draw_per_variant_math()
     draw_old_vs_new_expected()
     draw_alternatives()

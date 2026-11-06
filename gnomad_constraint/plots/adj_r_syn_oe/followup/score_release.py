@@ -11,12 +11,15 @@ version, on Ensembl MANE Select transcripts off chrX/Y, against the run without 
   the most constrained decile and in the two most constrained, and median LOEUF; the
   same shares for autosomal recessive genes (score 30) and genes where dosage
   sensitivity is unlikely (score 40), which shouldn't look constrained;
-- LoF and missense obs/exp by LOEUF decile of the run without rr (so the bins don't
-  move between versions), missense-constrained genes (missense z >= 3.09) and pLI >=
+- total synonymous, LoF and missense obs/exp; LoF and missense obs/exp by LOEUF
+  decile of the run without rr (so the bins don't move between versions),
+  missense-constrained genes (missense z >= 3.09) and pLI >=
   0.9;
 - the missense z-score scale: the spread the pipeline divides each raw missense z by
   (raw z = (exp - obs) / sqrt(exp), over the z-score);
-- constraint flag counts.
+- constraint flag counts;
+- with ``--shet``, synonymous, LoF and missense obs/exp by gnomAD v4 s_het decile
+  (Kar et al. 2026; decile 0 = highest s_het, the most constrained).
 """
 
 import argparse
@@ -25,6 +28,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from remap_rr_to_shet import read_shet
 from scipy.stats import mannwhitneyu, spearmanr
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
@@ -68,7 +72,13 @@ def main(args: argparse.Namespace) -> None:
     clingen = read_clingen(args.clingen)
     base = load(os.path.join(args.release_dir, "none.tsv.bgz"))
     base_dec = base[DECILE]
-    rows, deciles, flags = [], [], []
+    shet_dec = None
+    if args.shet:
+        shet = read_shet(args.shet).drop_duplicates("gene_id").set_index("gene_id").shet
+        # Decile 0 = highest s_het, the most constrained, as for LOEUF deciles.
+        rank = (-base.gene_id.map(shet)).rank(method="first")
+        shet_dec = pd.qcut(rank, 10, labels=False)
+    rows, deciles, flags, shet_deciles = [], [], [], []
     for v in args.versions:
         d = load(os.path.join(args.release_dir, f"{v}.tsv.bgz"))
         d = d.join(base[[LOEUF, DECILE]], rsuffix="_none")
@@ -97,6 +107,7 @@ def main(args: argparse.Namespace) -> None:
             "hi_median_loeuf": float(d[LOEUF][hi].median()),
             "ar_top_decile": float(d[DECILE][ar].eq(0).mean()),
             "unlikely_top_decile": float(d[DECILE][unlikely].eq(0).mean()),
+            "syn_oe": float(d["syn.obs"].sum() / d["syn.exp"].sum()),
             "lof_oe": float(d["lof.obs"].sum() / d["lof.exp"].sum()),
             "mis_oe": float(d["mis.obs"].sum() / d["mis.exp"].sum()),
             "mis_z_ge_3.09": int(d["mis.z_score"].ge(3.09).sum()),
@@ -119,6 +130,14 @@ def main(args: argparse.Namespace) -> None:
                 deciles.append(
                     {"version": v, "csq": csq, "decile_none": int(dec), "oe": val}
                 )
+        if shet_dec is not None:
+            g = d.groupby(shet_dec.reindex(d.index))
+            for csq in ("lof", "mis", "syn"):
+                oe = g[f"{csq}.obs"].sum() / g[f"{csq}.exp"].sum()
+                for dec, val in oe.items():
+                    shet_deciles.append(
+                        {"version": v, "csq": csq, "shet_decile": int(dec), "oe": val}
+                    )
         f = (
             d.constraint_flags.fillna("[]")
             .str.strip("[]")
@@ -138,6 +157,10 @@ def main(args: argparse.Namespace) -> None:
     pd.DataFrame(deciles).to_csv(
         f"{args.out_prefix}.deciles.tsv", sep="\t", index=False
     )
+    if shet_deciles:
+        pd.DataFrame(shet_deciles).to_csv(
+            f"{args.out_prefix}.shet_deciles.tsv", sep="\t", index=False
+        )
     pd.DataFrame(flags).pivot(index="flag", columns="version", values="n").fillna(
         0
     ).astype(int)[args.versions].to_csv(f"{args.out_prefix}.flags.tsv", sep="\t")
@@ -151,4 +174,5 @@ if __name__ == "__main__":
     parser.add_argument("--versions", nargs="+", required=True)
     parser.add_argument("--clingen", required=True)
     parser.add_argument("--out-prefix", required=True)
+    parser.add_argument("--shet", help="Kar et al. 2026 Supplementary Table 3 (xlsx).")
     main(parser.parse_args())

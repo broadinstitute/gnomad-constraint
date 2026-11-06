@@ -1,0 +1,7 @@
+flag	none	plateau_saturating	plateau_logistic	plateau_by_substitution
+no_exp_lof	831	831	831	831
+no_exp_mis	32	32	32	32
+no_exp_syn	45	45	45	45
+outlier_lof	6	6	6	6
+outlier_mis	215	204	177	207
+outlier_syn	262	246	259	254

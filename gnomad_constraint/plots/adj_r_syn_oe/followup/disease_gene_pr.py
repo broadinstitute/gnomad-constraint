@@ -65,10 +65,10 @@ def read_list(path: str, header: bool = False) -> set:
     return set(pd.read_csv(path, sep="\t", header=0 if header else None).iloc[:, 0])
 
 
-def load_versions(release_dir: str) -> pd.DataFrame:
+def load_versions(release_dir: str, versions: list) -> pd.DataFrame:
     """Get each version's LOEUF on Ensembl MANE Select transcripts, one row per gene."""
     out = None
-    for v in VERSIONS:
+    for v in versions:
         d = pd.read_csv(
             os.path.join(release_dir, f"{v}.tsv.bgz"),
             sep="\t",
@@ -85,7 +85,7 @@ def load_versions(release_dir: str) -> pd.DataFrame:
             out = d[["gene", "gene_id", "transcript", "exp_none", v]]
         else:
             out = out.merge(d[["transcript", v]], on="transcript")
-    return out[np.isfinite(out[VERSIONS]).all(axis=1)]
+    return out[np.isfinite(out[versions]).all(axis=1)]
 
 
 def score(
@@ -94,6 +94,7 @@ def score(
     test: str,
     rng: np.random.Generator,
     n_boot: int,
+    versions: list,
 ) -> tuple:
     """Score each version on all genes and on short genes."""
     rows, curves = [], []
@@ -102,15 +103,15 @@ def score(
         (f"expected pLoF < {EXP_CUTOFF}", (g.exp_none < EXP_CUTOFF).to_numpy()),
     ):
         y = positive.to_numpy()[m]
-        scores = {v: -g[v].to_numpy()[m] for v in VERSIONS}
+        scores = {v: -g[v].to_numpy()[m] for v in versions}
         ap = {v: average_precision_score(y, s) for v, s in scores.items()}
-        boot = {v: [] for v in VERSIONS}
+        boot = {v: [] for v in versions}
         for _ in range(n_boot):
             i = rng.integers(0, len(y), len(y))
             base = average_precision_score(y[i], scores["none"][i])
-            for v in VERSIONS:
+            for v in versions:
                 boot[v].append(average_precision_score(y[i], scores[v][i]) - base)
-        for v in VERSIONS:
+        for v in versions:
             lo, hi = np.percentile(boot[v], [2.5, 97.5])
             rows.append(
                 {
@@ -147,7 +148,7 @@ def score(
 def main(args: argparse.Namespace) -> None:
     """Score each version for both tests and write the tables."""
     d = args.lists
-    g = load_versions(args.release_dir)
+    g = load_versions(args.release_dir, args.versions)
     rng = np.random.default_rng(args.seed)
 
     ndd = read_list(os.path.join(d, "ndd.txt"), header=True)
@@ -164,7 +165,7 @@ def main(args: argparse.Namespace) -> None:
         ("HI", g, g.gene.isin(hi)),
     ):
         logger.info("%s: %d genes, %d positive.", test, len(sub), pos.sum())
-        r, c = score(sub, pos, test, rng, args.n_boot)
+        r, c = score(sub, pos, test, rng, args.n_boot, args.versions)
         rows += r
         curves += c
     out = pd.DataFrame(rows)
@@ -181,4 +182,10 @@ if __name__ == "__main__":
     parser.add_argument("--n-boot", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out-prefix", default="disease_gene_pr")
+    parser.add_argument(
+        "--versions",
+        nargs="+",
+        default=VERSIONS,
+        help="Must include 'none', the baseline.",
+    )
     main(parser.parse_args())

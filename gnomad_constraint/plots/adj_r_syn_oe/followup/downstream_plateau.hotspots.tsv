@@ -1,0 +1,49 @@
+version	region	set	n	oe	still_outliers
+none	8p, first 20 Mb	control genes	62	1.3219345082317573	3
+none	8p, first 20 Mb	excess outliers	6	1.5035561759292397	6
+none	2p16-22	control genes	106	1.1271605785331817	0
+none	2p16-22	excess outliers	2	1.4878747238543835	2
+none	7p	control genes	268	1.082139430938275	7
+none	7p	excess outliers	1	1.2574841402698225	1
+none	9p	control genes	180	1.079624127110087	2
+none	9p	excess outliers	2	1.3816978844846965	2
+none	16p	control genes	387	1.0978239616142245	4
+none	16p	excess outliers	4	1.4988196126368292	4
+none	16q	control genes	331	1.0806542235724736	6
+none	16q	excess outliers	9	1.417290416663544	7
+plateau_saturating	8p, first 20 Mb	control genes	62	1.3206703755522748	5
+plateau_saturating	8p, first 20 Mb	excess outliers	6	1.502886111329335	6
+plateau_saturating	2p16-22	control genes	106	1.1300951025994757	1
+plateau_saturating	2p16-22	excess outliers	2	1.4948515507084528	2
+plateau_saturating	7p	control genes	268	1.081526903369007	6
+plateau_saturating	7p	excess outliers	1	1.259448981982615	1
+plateau_saturating	9p	control genes	180	1.080471474970759	2
+plateau_saturating	9p	excess outliers	2	1.3784194060090913	2
+plateau_saturating	16p	control genes	387	1.0962675402742705	3
+plateau_saturating	16p	excess outliers	4	1.5000700792195911	4
+plateau_saturating	16q	control genes	331	1.079973689593634	6
+plateau_saturating	16q	excess outliers	9	1.4148278496271656	7
+plateau_logistic	8p, first 20 Mb	control genes	62	1.3233403112490405	4
+plateau_logistic	8p, first 20 Mb	excess outliers	6	1.5005285004128064	6
+plateau_logistic	2p16-22	control genes	106	1.1215607428256305	0
+plateau_logistic	2p16-22	excess outliers	2	1.49555513646621	2
+plateau_logistic	7p	control genes	268	1.0839411844880762	7
+plateau_logistic	7p	excess outliers	1	1.2529840866376438	1
+plateau_logistic	9p	control genes	180	1.0762858741241128	2
+plateau_logistic	9p	excess outliers	2	1.367925493737991	2
+plateau_logistic	16p	control genes	387	1.1038258368928546	5
+plateau_logistic	16p	excess outliers	4	1.5040886229986008	4
+plateau_logistic	16q	control genes	331	1.0842983075733268	6
+plateau_logistic	16q	excess outliers	9	1.4264042717417083	7
+plateau_by_substitution	8p, first 20 Mb	control genes	62	1.3215007362121354	3
+plateau_by_substitution	8p, first 20 Mb	excess outliers	6	1.5041590453351124	6
+plateau_by_substitution	2p16-22	control genes	106	1.1286800053879924	1
+plateau_by_substitution	2p16-22	excess outliers	2	1.4904876891055316	2
+plateau_by_substitution	7p	control genes	268	1.0822053105825702	7
+plateau_by_substitution	7p	excess outliers	1	1.2522759039671225	1
+plateau_by_substitution	9p	control genes	180	1.0794499978691123	2
+plateau_by_substitution	9p	excess outliers	2	1.382233120273698	2
+plateau_by_substitution	16p	control genes	387	1.09773326934696	4
+plateau_by_substitution	16p	excess outliers	4	1.5033061672738879	4
+plateau_by_substitution	16q	control genes	331	1.0805840639860103	6
+plateau_by_substitution	16q	excess outliers	9	1.4137948724339797	7
