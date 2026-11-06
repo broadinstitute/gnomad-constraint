@@ -10,6 +10,10 @@ per-gene regional factor along chr8 (``compare_rate_parts.genes.tsv.gz``).
 with the current stack: per-gene noise, and synonymous obs/exp by coverage and by
 context class.
 
+``draw_release_checks``: the same fits applied to missense and pLoF variants: pLoF and
+missense obs/exp by LOEUF decile, levels relative to synonymous, LOEUF changes, and NDD
+and HI precision-recall (``one_model_release_eval.py``).
+
 ``draw_coverage_check``: the stored coverage model against the share of synonymous
 variants seen at each exome AN % (``coverage_check.py``).
 
@@ -43,9 +47,11 @@ from make_followup_figures import (
     SUB_C,
     SURFACE,
     arrow,
+    draw_disease_gene_pr,
     style_axis,
 )
 from matplotlib.patches import FancyBboxPatch
+from one_model_release_eval import KEYS
 
 PATCH_C = "#c4302b"
 
@@ -764,6 +770,168 @@ def draw_fit_checks(prefix: str = "data/one_model/one_model_eval") -> None:
     plt.close(fig)
 
 
+def draw_release_checks(prefix: str = "data/one_model/one_model") -> None:
+    """Draw the single cloglog models' pLoF and missense results, and NDD/HI PR."""
+    sc = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}_release.scores.tsv"), sep="\t")
+    dec = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}_release.deciles.tsv"), sep="\t")
+    sc = sc.set_index("model")
+    others = FIT_SHOWN[1:]
+
+    fig, axes = plt.subplots(
+        1, 4, figsize=(24, 6.2), gridspec_kw={"width_ratios": [1, 1, 0.9, 1.1]}
+    )
+    fig.subplots_adjust(left=0.04, right=0.99, top=0.8, bottom=0.17, wspace=0.62)
+    x = np.arange(10)
+    for ax, csq, what in ((axes[0], "lof", "a  pLoF"), (axes[1], "mis", "b  Missense")):
+        base = (
+            dec[dec.model.eq(FIT_SHOWN[0][0]) & dec.csq.eq(csq)].set_index("decile").oe
+        )
+        for k, lab, c, filled in others:
+            d = dec[dec.model.eq(k) & dec.csq.eq(csq)].set_index("decile").oe
+            ax.plot(
+                x,
+                100 * (d / base - 1),
+                color=c,
+                lw=2,
+                marker="o",
+                ms=6,
+                label=lab,
+                ls="-" if filled else (0, (4, 2)),
+                mfc=c if filled else SURFACE,
+                mew=1.6,
+            )
+        ax.axhline(0, color=NONE_C, lw=2.6)
+        ax.set_xticks(x, [str(i + 1) for i in x])
+        ax.set_xlabel("LOEUF decile (v4.1.2; 1 = most constrained)")
+        ax.set_ylabel("obs/exp, % change from the current stack")
+        ax.set_title(f"{what} obs/exp, against the current stack", loc="left")
+        style_axis(ax, grid_axis="y")
+    lo = min(a.get_ylim()[0] for a in axes[:2])
+    hi = max(a.get_ylim()[1] for a in axes[:2])
+    for a in axes[:2]:
+        a.set_ylim(lo, hi)
+    axes[0].legend(loc="best", fontsize=10.5, frameon=False)
+
+    # (c) pLoF and missense relative to synonymous.
+    ax = axes[2]
+    ref = sc.loc[FIT_SHOWN[0][0]]
+    for gi, (col, glabel) in enumerate(
+        (
+            ("lof_over_syn", "pLoF ÷ synonymous"),
+            ("mis_over_syn", "missense ÷ synonymous"),
+        )
+    ):
+        for j, (k, lab, c, filled) in enumerate(others):
+            v = 100 * (sc.loc[k, col] / ref[col] - 1)
+            y = gi * 5 + j
+            ax.barh(
+                y, v, height=0.8, color=c if filled else SURFACE, edgecolor=c, lw=1.6
+            )
+            ax.text(
+                v + (0.15 if v >= 0 else -0.15),
+                y,
+                f"{v:+.1f}%",
+                va="center",
+                ha="left" if v >= 0 else "right",
+                fontsize=11.5,
+            )
+        ax.text(
+            0.02,
+            gi * 5 - 0.95,
+            glabel,
+            fontsize=12,
+            color=INK2,
+            va="center",
+            transform=ax.get_yaxis_transform(),
+        )
+    ax.axvline(0, color=NONE_C, lw=2.6)
+    ax.set_yticks([])
+    ax.set_ylim(9.0, -1.8)
+    lim = max(abs(np.array(ax.get_xlim()))) + 1.5
+    ax.set_xlim(-lim, lim)
+    ax.set_xlabel("% change from the current stack")
+    ax.set_title("c  Levels relative to synonymous", loc="left")
+    style_axis(ax)
+
+    # (d) Genes crossing LOEUF 0.6, and changing decile.
+    ax = axes[3]
+    y = np.arange(len(others))[::-1]
+    for yi, (k, lab, c, filled) in zip(y, others):
+        out, into = int(sc.loc[k, "out_of_loeuf_lt_0.6"]), int(
+            sc.loc[k, "into_loeuf_lt_0.6"]
+        )
+        kw = dict(height=0.6, color=c if filled else SURFACE, edgecolor=c, lw=1.6)
+        ax.barh(yi, -out, **kw)
+        ax.barh(yi, into, **kw)
+        ax.text(
+            -out - 10,
+            yi,
+            f"−{out}" if out else "0",
+            ha="right",
+            va="center",
+            fontsize=12,
+        )
+        ax.text(into + 10, yi, f"+{into}" if into else "0", va="center", fontsize=12)
+    ax.axvline(0, color=INK2, lw=1)
+    ax.set_yticks(
+        y,
+        [
+            lab.replace("one model: + ", "one model:\n+ ")
+            + f"\n({100 * sc.loc[k, 'decile_changed']:.1f}% change LOEUF decile)"
+            for k, lab, c, filled in others
+        ],
+        fontsize=10.5,
+    )
+    m = max(
+        sc.loc[
+            [v[0] for v in others], ["out_of_loeuf_lt_0.6", "into_loeuf_lt_0.6"]
+        ].max()
+    )
+    ax.set_xlim(-m * 1.35 - 40, m * 1.35 + 40)
+    ax.set_xlabel("← no longer below 0.6      newly below 0.6 →")
+    ax.set_title("d  Genes crossing LOEUF 0.6", loc="left")
+    style_axis(ax)
+
+    fig.suptitle(
+        "The single cloglog models on pLoF and missense (fit on synonymous variants,"
+        " applied to the other chromosome half)",
+        x=0.04,
+        ha="left",
+        fontsize=17,
+        weight="bold",
+    )
+    fig.text(
+        0.04,
+        0.87,
+        f"{int(sc.n.iloc[0]):,} autosomal Ensembl MANE Select transcripts with a pLoF"
+        " expected count; LOEUF from the 90% gamma interval, as in the pipeline."
+        f" ClinGen HI AUC of LOEUF: {sc.hi_auc.min():.3f}–{sc.hi_auc.max():.3f}.",
+        fontsize=13,
+        color=INK2,
+    )
+    fig.savefig(
+        os.path.join(OUT_DIR, "one_model_release.png"),
+        dpi=150,
+        bbox_inches="tight",
+        facecolor=SURFACE,
+    )
+    plt.close(fig)
+
+    draw_disease_gene_pr(
+        f"{prefix}_pr",
+        versions=[
+            (KEYS[k], lab, c, "-" if filled else (0, (4, 2)))
+            for k, lab, c, filled in FIT_SHOWN
+        ],
+        shown=[KEYS[k] for k, *_ in FIT_SHOWN],
+        emph=KEYS[FIT_SHOWN[-1][0]],
+        baseline="the current stack",
+        out="one_model_pr.png",
+        suptitle="Classifying NDD and haploinsufficient genes by LOEUF, for the single"
+        " cloglog models",
+    )
+
+
 def draw_coverage_check() -> None:
     """Draw the stored coverage model against the share seen at each AN %."""
     g = pd.read_csv(
@@ -905,5 +1073,6 @@ if __name__ == "__main__":
     draw_stack()
     draw_fit_results()
     draw_fit_checks()
+    draw_release_checks()
     draw_coverage_check()
     draw_coverage_oe_current()

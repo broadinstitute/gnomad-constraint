@@ -1,8 +1,10 @@
-"""Export synonymous variant cells for trying a single expected-count model.
+"""Export variant cells for trying a single expected-count model.
 
-From the v4.1.1 preprocessed context Table: every possible autosomal synonymous SNV in
-an Ensembl MANE Select transcript that the pipeline applies the models to, grouped
-into cells of (transcript, 1-kb window, context, ref, alt, methylation level,
+From the v4.1.1 preprocessed context Table: every possible autosomal SNV in an Ensembl
+MANE Select transcript that the pipeline applies the models to, of the consequence sets
+in ``--csqs`` (the pipeline's constraint groups: ``syn`` = synonymous_variant, ``mis`` =
+missense_variant, ``lof`` = LOFTEE HC, the release's ``lof``), grouped into cells of
+(consequence set, transcript, 1-kb window, context, ref, alt, methylation level,
 coverage). Per cell:
 
 - ``possible`` and ``observed`` (the calibration counts: PASS, adj AC > 0, AF below the
@@ -14,7 +16,7 @@ coverage). Per cell:
 - ``m_sum``: the sum over possible variants of Roulette's multiplier (1 where it has
   none), for a cell-mean offset.
 
-Also writes ``window_mq.tsv.bgz`` next to the cells: per 1-kb window, the mean
+Unless ``--skip-window-mq``, also writes ``window_mq.tsv.bgz`` next to the cells: per 1-kb window, the mean
 allele-specific mapping quality (``info.AS_MQ``) of the gnomAD v4.1 exome SNV sites
 in it, their number, and the share with AS_MQ below 50. Mapping quality is only known
 where a variant was called, so it is summarized over the window rather than used at
@@ -75,12 +77,24 @@ def main(args: argparse.Namespace) -> None:
     ht = ht.filter(ht.locus.in_autosome())
     cal = ht.calibrate_mu
     ht = ht.filter(hl.is_defined(cal.apply_model) & (cal.possible_variants > 0))
+    # x.lof is missing outside pLoF consequences, and a missing condition would make
+    # the whole case missing.
+    csq_of = (
+        lambda x: hl.case()
+        .when(hl.or_else(x.lof == "HC", False), "lof")
+        .when(x.most_severe_consequence == "missense_variant", "mis")
+        .when(x.most_severe_consequence == "synonymous_variant", "syn")
+        .or_missing()
+    )
     tc = ht.vep.transcript_consequences.filter(
         lambda x: hl.is_defined(x.mane_select)
         & x.transcript_id.startswith("ENST")
-        & (x.most_severe_consequence == "synonymous_variant")
+        & hl.literal(set(args.csqs)).contains(csq_of(x))
     )
-    ht = ht.annotate(transcript=hl.or_missing(hl.len(tc) > 0, tc[0].transcript_id))
+    ht = ht.annotate(
+        transcript=hl.or_missing(hl.len(tc) > 0, tc[0].transcript_id),
+        csq=hl.or_missing(hl.len(tc) > 0, csq_of(tc[0])),
+    )
     ht = ht.filter(hl.is_defined(ht.transcript))
 
     cal = ht.calibrate_mu
@@ -109,6 +123,7 @@ def main(args: argparse.Namespace) -> None:
     )
     ht = ht.filter(hl.is_defined(ht.mu))
     cells = ht.group_by(
+        "csq",
         "transcript",
         "win",
         "context",
@@ -127,6 +142,8 @@ def main(args: argparse.Namespace) -> None:
     )
     cells.export(args.out)
     logger.info("Wrote %s", args.out)
+    if args.skip_window_mq:
+        return
 
     sites = constraint_res.get_sites_resource("exomes", version="4.1.1").ht()
     if args.test:
@@ -155,4 +172,8 @@ if __name__ == "__main__":
         "--out", default="gs://gnomad-tmp/jg/one_model/syn_model_cells.tsv.bgz"
     )
     parser.add_argument("--test", action="store_true", help="chr22 only.")
+    parser.add_argument(
+        "--csqs", nargs="+", default=["syn"], choices=["syn", "mis", "lof"]
+    )
+    parser.add_argument("--skip-window-mq", action="store_true")
     main(parser.parse_args())

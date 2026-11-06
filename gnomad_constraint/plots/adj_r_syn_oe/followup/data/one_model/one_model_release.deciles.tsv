@@ -1,0 +1,331 @@
+model	key	csq	decile	oe
+current stack, no rr	none	syn	0	0.9981317523693183
+current stack, no rr	none	syn	1	0.9996635701596805
+current stack, no rr	none	syn	2	1.007812617867987
+current stack, no rr	none	syn	3	1.0014380406692078
+current stack, no rr	none	syn	4	1.0023034920847118
+current stack, no rr	none	syn	5	1.0037738484402752
+current stack, no rr	none	syn	6	1.019489595412019
+current stack, no rr	none	syn	7	1.0391258579261695
+current stack, no rr	none	syn	8	1.0656186970611488
+current stack, no rr	none	syn	9	1.117293069096333
+current stack, no rr	none	mis	0	0.7396729949939744
+current stack, no rr	none	mis	1	0.8128936185930835
+current stack, no rr	none	mis	2	0.8614995129585057
+current stack, no rr	none	mis	3	0.8949982542776745
+current stack, no rr	none	mis	4	0.9300528078351662
+current stack, no rr	none	mis	5	0.949964296050336
+current stack, no rr	none	mis	6	0.9774775500725216
+current stack, no rr	none	mis	7	1.0025469551139419
+current stack, no rr	none	mis	8	1.0385057640611222
+current stack, no rr	none	mis	9	1.084528636914603
+current stack, no rr	none	lof	0	0.1687335401503777
+current stack, no rr	none	lof	1	0.33245786239199
+current stack, no rr	none	lof	2	0.46072144157492945
+current stack, no rr	none	lof	3	0.5795975334150597
+current stack, no rr	none	lof	4	0.6820064230994718
+current stack, no rr	none	lof	5	0.7687034624982781
+current stack, no rr	none	lof	6	0.8437132169318947
+current stack, no rr	none	lof	7	0.9223174338260168
+current stack, no rr	none	lof	8	1.0243863605979495
+current stack, no rr	none	lof	9	1.247263870970409
+current stack + ridge rr	stack_ridge	syn	0	1.0012460865792774
+current stack + ridge rr	stack_ridge	syn	1	1.0033731963785697
+current stack + ridge rr	stack_ridge	syn	2	1.008163775004303
+current stack + ridge rr	stack_ridge	syn	3	1.0035493359497496
+current stack + ridge rr	stack_ridge	syn	4	1.0071178150926179
+current stack + ridge rr	stack_ridge	syn	5	1.0095788597945592
+current stack + ridge rr	stack_ridge	syn	6	1.020634010032182
+current stack + ridge rr	stack_ridge	syn	7	1.033149031076318
+current stack + ridge rr	stack_ridge	syn	8	1.0515436883449667
+current stack + ridge rr	stack_ridge	syn	9	1.0895141733928901
+current stack + ridge rr	stack_ridge	mis	0	0.7433497867700097
+current stack + ridge rr	stack_ridge	mis	1	0.8173817615620403
+current stack + ridge rr	stack_ridge	mis	2	0.8638177980034021
+current stack + ridge rr	stack_ridge	mis	3	0.898610745058253
+current stack + ridge rr	stack_ridge	mis	4	0.9355507501831289
+current stack + ridge rr	stack_ridge	mis	5	0.9566576641636232
+current stack + ridge rr	stack_ridge	mis	6	0.9804884707024747
+current stack + ridge rr	stack_ridge	mis	7	1.0000267086028698
+current stack + ridge rr	stack_ridge	mis	8	1.0297072907559748
+current stack + ridge rr	stack_ridge	mis	9	1.0662205200101067
+current stack + ridge rr	stack_ridge	lof	0	0.17022729772749667
+current stack + ridge rr	stack_ridge	lof	1	0.33591546583012905
+current stack + ridge rr	stack_ridge	lof	2	0.4641439453180018
+current stack + ridge rr	stack_ridge	lof	3	0.5848848363610374
+current stack + ridge rr	stack_ridge	lof	4	0.6885059977320916
+current stack + ridge rr	stack_ridge	lof	5	0.7766284732470609
+current stack + ridge rr	stack_ridge	lof	6	0.8486772554185659
+current stack + ridge rr	stack_ridge	lof	7	0.9216534025208472
+current stack + ridge rr	stack_ridge	lof	8	1.0130459440110422
+current stack + ridge rr	stack_ridge	lof	9	1.218030060186516
+current stack x Roulette	stack_roulette	syn	0	1.0156221443667124
+current stack x Roulette	stack_roulette	syn	1	1.0238181413997811
+current stack x Roulette	stack_roulette	syn	2	1.0327158997668549
+current stack x Roulette	stack_roulette	syn	3	1.0270146097275226
+current stack x Roulette	stack_roulette	syn	4	1.0280674738317903
+current stack x Roulette	stack_roulette	syn	5	1.0323581912899842
+current stack x Roulette	stack_roulette	syn	6	1.0405566601456453
+current stack x Roulette	stack_roulette	syn	7	1.0498327034016246
+current stack x Roulette	stack_roulette	syn	8	1.0566849880495706
+current stack x Roulette	stack_roulette	syn	9	1.0894892342605917
+current stack x Roulette	stack_roulette	mis	0	0.7282790154568172
+current stack x Roulette	stack_roulette	mis	1	0.8082491097290844
+current stack x Roulette	stack_roulette	mis	2	0.8577795262912669
+current stack x Roulette	stack_roulette	mis	3	0.8920447514163818
+current stack x Roulette	stack_roulette	mis	4	0.9309282176230634
+current stack x Roulette	stack_roulette	mis	5	0.9534640993641197
+current stack x Roulette	stack_roulette	mis	6	0.9741266345753973
+current stack x Roulette	stack_roulette	mis	7	0.992270545341634
+current stack x Roulette	stack_roulette	mis	8	1.0086312924007486
+current stack x Roulette	stack_roulette	mis	9	1.040695883567452
+current stack x Roulette	stack_roulette	lof	0	0.17717024781185609
+current stack x Roulette	stack_roulette	lof	1	0.35193259645227204
+current stack x Roulette	stack_roulette	lof	2	0.48890124636989796
+current stack x Roulette	stack_roulette	lof	3	0.6145677338958667
+current stack x Roulette	stack_roulette	lof	4	0.7259713177801449
+current stack x Roulette	stack_roulette	lof	5	0.8190346321578854
+current stack x Roulette	stack_roulette	lof	6	0.8943519588380443
+current stack x Roulette	stack_roulette	lof	7	0.967769382822375
+current stack x Roulette	stack_roulette	lof	8	1.0468269046107777
+current stack x Roulette	stack_roulette	lof	9	1.240858466940677
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	0	1.0172893974703998
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	1	1.0262114363385795
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	2	1.0312640218762184
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	3	1.0274923859758618
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	4	1.031086733838331
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	5	1.0366084416492645
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	6	1.0398491480956276
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	7	1.0416867946378412
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	8	1.0396062428270063
+current stack x Roulette + ridge rr	stack_roulette_ridge	syn	9	1.058930736757162
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	0	0.731295020235675
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	1	0.81218619010841
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	2	0.8592549806415435
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	3	0.8948649819878328
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	4	0.9355891940335375
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	5	0.9594652789189095
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	6	0.976237331447656
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	7	0.9888670384461822
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	8	0.9984905571012767
+current stack x Roulette + ridge rr	stack_roulette_ridge	mis	9	1.021331761866651
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	0	0.17861705785154908
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	1	0.3554803645280398
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	2	0.4921375744523698
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	3	0.6198070894616815
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	4	0.7322587558080789
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	5	0.8268436705572807
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	6	0.8986835398157695
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	7	0.9660736909561171
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	8	1.0330842804534395
+current stack x Roulette + ridge rr	stack_roulette_ridge	lof	9	1.208657979620873
+one model: groups + coverage	om_groups_coverage	syn	0	0.9825010831759013
+one model: groups + coverage	om_groups_coverage	syn	1	0.983693671704524
+one model: groups + coverage	om_groups_coverage	syn	2	0.9911800718347583
+one model: groups + coverage	om_groups_coverage	syn	3	0.9853001915975701
+one model: groups + coverage	om_groups_coverage	syn	4	0.9856263039286287
+one model: groups + coverage	om_groups_coverage	syn	5	0.9862797452114723
+one model: groups + coverage	om_groups_coverage	syn	6	1.0005383556225362
+one model: groups + coverage	om_groups_coverage	syn	7	1.0206872584176543
+one model: groups + coverage	om_groups_coverage	syn	8	1.048255088226638
+one model: groups + coverage	om_groups_coverage	syn	9	1.0965449301134536
+one model: groups + coverage	om_groups_coverage	mis	0	0.7349437619661605
+one model: groups + coverage	om_groups_coverage	mis	1	0.8078545853475221
+one model: groups + coverage	om_groups_coverage	mis	2	0.8561893266120586
+one model: groups + coverage	om_groups_coverage	mis	3	0.8900927129368866
+one model: groups + coverage	om_groups_coverage	mis	4	0.9245418271132105
+one model: groups + coverage	om_groups_coverage	mis	5	0.9443155598123425
+one model: groups + coverage	om_groups_coverage	mis	6	0.9706021205730602
+one model: groups + coverage	om_groups_coverage	mis	7	0.9964282992355811
+one model: groups + coverage	om_groups_coverage	mis	8	1.033292757045409
+one model: groups + coverage	om_groups_coverage	mis	9	1.0763939661385058
+one model: groups + coverage	om_groups_coverage	lof	0	0.17131340084148725
+one model: groups + coverage	om_groups_coverage	lof	1	0.337254804080761
+one model: groups + coverage	om_groups_coverage	lof	2	0.46719876552761347
+one model: groups + coverage	om_groups_coverage	lof	3	0.5877037164971401
+one model: groups + coverage	om_groups_coverage	lof	4	0.6908768589595041
+one model: groups + coverage	om_groups_coverage	lof	5	0.7788933985059736
+one model: groups + coverage	om_groups_coverage	lof	6	0.8525935760315952
+one model: groups + coverage	om_groups_coverage	lof	7	0.9316932164689978
+one model: groups + coverage	om_groups_coverage	lof	8	1.0357904516435392
+one model: groups + coverage	om_groups_coverage	lof	9	1.2555895262650267
+one model: + window MQ	om_mq	syn	0	0.9917956485146671
+one model: + window MQ	om_mq	syn	1	0.9847279508727599
+one model: + window MQ	om_mq	syn	2	0.988023822462539
+one model: + window MQ	om_mq	syn	3	0.983416581894726
+one model: + window MQ	om_mq	syn	4	0.9851455896645968
+one model: + window MQ	om_mq	syn	5	0.9814084992359484
+one model: + window MQ	om_mq	syn	6	0.9947446643205833
+one model: + window MQ	om_mq	syn	7	1.0146275429850753
+one model: + window MQ	om_mq	syn	8	1.0454135609098103
+one model: + window MQ	om_mq	syn	9	1.091032970744419
+one model: + window MQ	om_mq	mis	0	0.7419863872850695
+one model: + window MQ	om_mq	mis	1	0.8090961062565006
+one model: + window MQ	om_mq	mis	2	0.853795027682975
+one model: + window MQ	om_mq	mis	3	0.8889957065182775
+one model: + window MQ	om_mq	mis	4	0.9242177210266991
+one model: + window MQ	om_mq	mis	5	0.9400149469526078
+one model: + window MQ	om_mq	mis	6	0.9654188959985976
+one model: + window MQ	om_mq	mis	7	0.990866388119137
+one model: + window MQ	om_mq	mis	8	1.0310067095719684
+one model: + window MQ	om_mq	mis	9	1.0720631920764856
+one model: + window MQ	om_mq	lof	0	0.1727713344021682
+one model: + window MQ	om_mq	lof	1	0.3377538471895755
+one model: + window MQ	om_mq	lof	2	0.4660794803663396
+one model: + window MQ	om_mq	lof	3	0.5867195762879897
+one model: + window MQ	om_mq	lof	4	0.6886295092675991
+one model: + window MQ	om_mq	lof	5	0.7743436798477027
+one model: + window MQ	om_mq	lof	6	0.8469600149609898
+one model: + window MQ	om_mq	lof	7	0.9250881208986205
+one model: + window MQ	om_mq	lof	8	1.0303721966515358
+one model: + window MQ	om_mq	lof	9	1.2373817200020245
+one model: + DNM regional	om_dnm	syn	0	0.9848951645811802
+one model: + DNM regional	om_dnm	syn	1	0.9860561490118587
+one model: + DNM regional	om_dnm	syn	2	0.9911156637451931
+one model: + DNM regional	om_dnm	syn	3	0.9869194430565227
+one model: + DNM regional	om_dnm	syn	4	0.9927557344804239
+one model: + DNM regional	om_dnm	syn	5	0.994286633209523
+one model: + DNM regional	om_dnm	syn	6	1.0072235184158642
+one model: + DNM regional	om_dnm	syn	7	1.0209778211367113
+one model: + DNM regional	om_dnm	syn	8	1.0437741714748041
+one model: + DNM regional	om_dnm	syn	9	1.0833731548945476
+one model: + DNM regional	om_dnm	mis	0	0.7354726373707334
+one model: + DNM regional	om_dnm	mis	1	0.8082734722846446
+one model: + DNM regional	om_dnm	mis	2	0.854523276903339
+one model: + DNM regional	om_dnm	mis	3	0.889792313474371
+one model: + DNM regional	om_dnm	mis	4	0.929429282875516
+one model: + DNM regional	om_dnm	mis	5	0.950370641769565
+one model: + DNM regional	om_dnm	mis	6	0.9753672870235596
+one model: + DNM regional	om_dnm	mis	7	0.9952834933786726
+one model: + DNM regional	om_dnm	mis	8	1.0275151474177342
+one model: + DNM regional	om_dnm	mis	9	1.063332638827645
+one model: + DNM regional	om_dnm	lof	0	0.1719246076245056
+one model: + DNM regional	om_dnm	lof	1	0.338604094610686
+one model: + DNM regional	om_dnm	lof	2	0.4677935855587514
+one model: + DNM regional	om_dnm	lof	3	0.5892576337388233
+one model: + DNM regional	om_dnm	lof	4	0.697056520325065
+one model: + DNM regional	om_dnm	lof	5	0.7864951734042982
+one model: + DNM regional	om_dnm	lof	6	0.8592659042594075
+one model: + DNM regional	om_dnm	lof	7	0.9322349852572765
+one model: + DNM regional	om_dnm	lof	8	1.0289758961796194
+one model: + DNM regional	om_dnm	lof	9	1.2339963534164122
+one model: + DNM regional + window MQ	om_dnm_mq	syn	0	0.9938996783366357
+one model: + DNM regional + window MQ	om_dnm_mq	syn	1	0.9867887362426504
+one model: + DNM regional + window MQ	om_dnm_mq	syn	2	0.9878909293914219
+one model: + DNM regional + window MQ	om_dnm_mq	syn	3	0.9848445014850494
+one model: + DNM regional + window MQ	om_dnm_mq	syn	4	0.9916697758364172
+one model: + DNM regional + window MQ	om_dnm_mq	syn	5	0.9889823049679497
+one model: + DNM regional + window MQ	om_dnm_mq	syn	6	1.0010891016983496
+one model: + DNM regional + window MQ	om_dnm_mq	syn	7	1.0149365624221929
+one model: + DNM regional + window MQ	om_dnm_mq	syn	8	1.0408578316691626
+one model: + DNM regional + window MQ	om_dnm_mq	syn	9	1.0781652030170514
+one model: + DNM regional + window MQ	om_dnm_mq	mis	0	0.7422798856192375
+one model: + DNM regional + window MQ	om_dnm_mq	mis	1	0.809281335549241
+one model: + DNM regional + window MQ	om_dnm_mq	mis	2	0.8520960495137074
+one model: + DNM regional + window MQ	om_dnm_mq	mis	3	0.8885461919048764
+one model: + DNM regional + window MQ	om_dnm_mq	mis	4	0.928546285566532
+one model: + DNM regional + window MQ	om_dnm_mq	mis	5	0.9456683556540699
+one model: + DNM regional + window MQ	om_dnm_mq	mis	6	0.9698867272483033
+one model: + DNM regional + window MQ	om_dnm_mq	mis	7	0.9897492034851475
+one model: + DNM regional + window MQ	om_dnm_mq	mis	8	1.0251810065962828
+one model: + DNM regional + window MQ	om_dnm_mq	mis	9	1.0592299743160534
+one model: + DNM regional + window MQ	om_dnm_mq	lof	0	0.17332376057973375
+one model: + DNM regional + window MQ	om_dnm_mq	lof	1	0.338981483295338
+one model: + DNM regional + window MQ	om_dnm_mq	lof	2	0.4666379576502333
+one model: + DNM regional + window MQ	om_dnm_mq	lof	3	0.5881501933115881
+one model: + DNM regional + window MQ	om_dnm_mq	lof	4	0.6943808312200701
+one model: + DNM regional + window MQ	om_dnm_mq	lof	5	0.7815385259753964
+one model: + DNM regional + window MQ	om_dnm_mq	lof	6	0.8532738185528426
+one model: + DNM regional + window MQ	om_dnm_mq	lof	7	0.9255929492193584
+one model: + DNM regional + window MQ	om_dnm_mq	lof	8	1.0236190995675283
+one model: + DNM regional + window MQ	om_dnm_mq	lof	9	1.2172396842144562
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	0	0.9972197935035575
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	1	0.9887021998485305
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	2	0.9896418889663213
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	3	0.9869472905479938
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	4	0.9933163562117682
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	5	0.9914247756518584
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	6	0.9993635564287373
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	7	1.012024351179161
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	8	1.0316837528848692
+one model: + gnomAD regional + window MQ	om_gnomad_mq	syn	9	1.05887114512449
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	0	0.7480607383960046
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	1	0.8142582788681033
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	2	0.856952302820678
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	3	0.8941052783964386
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	4	0.9340958573483006
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	5	0.9523611865956629
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	6	0.9724564842944229
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	7	0.9904691158690487
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	8	1.0196004260654359
+one model: + gnomAD regional + window MQ	om_gnomad_mq	mis	9	1.0415542593425602
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	0	0.17597244869787693
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	1	0.3435491115534885
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	2	0.4728474705474243
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	3	0.595987674278374
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	4	0.702340046111097
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	5	0.7912731040398732
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	6	0.860089950263262
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	7	0.9312349995443122
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	8	1.0206157081159346
+one model: + gnomAD regional + window MQ	om_gnomad_mq	lof	9	1.201235668453736
+one model: + window MQ + Roulette	om_mq_roulette	syn	0	0.9914784962784736
+one model: + window MQ + Roulette	om_mq_roulette	syn	1	0.9906286682449045
+one model: + window MQ + Roulette	om_mq_roulette	syn	2	0.9948318360604754
+one model: + window MQ + Roulette	om_mq_roulette	syn	3	0.9907304472225757
+one model: + window MQ + Roulette	om_mq_roulette	syn	4	0.9933746918814294
+one model: + window MQ + Roulette	om_mq_roulette	syn	5	0.9913997835002684
+one model: + window MQ + Roulette	om_mq_roulette	syn	6	0.9998889696917851
+one model: + window MQ + Roulette	om_mq_roulette	syn	7	1.0118337596362545
+one model: + window MQ + Roulette	om_mq_roulette	syn	8	1.026997875053726
+one model: + window MQ + Roulette	om_mq_roulette	syn	9	1.0595853677266283
+one model: + window MQ + Roulette	om_mq_roulette	mis	0	0.725388368918177
+one model: + window MQ + Roulette	om_mq_roulette	mis	1	0.7977339407633351
+one model: + window MQ + Roulette	om_mq_roulette	mis	2	0.8430489874891544
+one model: + window MQ + Roulette	om_mq_roulette	mis	3	0.8783451850686035
+one model: + window MQ + Roulette	om_mq_roulette	mis	4	0.9167481536345943
+one model: + window MQ + Roulette	om_mq_roulette	mis	5	0.9343029057999608
+one model: + window MQ + Roulette	om_mq_roulette	mis	6	0.9543842505311589
+one model: + window MQ + Roulette	om_mq_roulette	mis	7	0.9737098606914846
+one model: + window MQ + Roulette	om_mq_roulette	mis	8	0.9971364082333684
+one model: + window MQ + Roulette	om_mq_roulette	mis	9	1.0280515743810728
+one model: + window MQ + Roulette	om_mq_roulette	lof	0	0.17910103824160167
+one model: + window MQ + Roulette	om_mq_roulette	lof	1	0.35261455962251526
+one model: + window MQ + Roulette	om_mq_roulette	lof	2	0.48753710327119104
+one model: + window MQ + Roulette	om_mq_roulette	lof	3	0.6132924460421773
+one model: + window MQ + Roulette	om_mq_roulette	lof	4	0.7223020933506881
+one model: + window MQ + Roulette	om_mq_roulette	lof	5	0.812989809274505
+one model: + window MQ + Roulette	om_mq_roulette	lof	6	0.8854035398549887
+one model: + window MQ + Roulette	om_mq_roulette	lof	7	0.9588793872652098
+one model: + window MQ + Roulette	om_mq_roulette	lof	8	1.0445889827562163
+one model: + window MQ + Roulette	om_mq_roulette	lof	9	1.2304379668380991
+one model: + DNM regional + window MQ + Roulette	om_full	syn	0	0.9929784441644259
+one model: + DNM regional + window MQ + Roulette	om_full	syn	1	0.9921731970997775
+one model: + DNM regional + window MQ + Roulette	om_full	syn	2	0.9949996695175984
+one model: + DNM regional + window MQ + Roulette	om_full	syn	3	0.9918729918558894
+one model: + DNM regional + window MQ + Roulette	om_full	syn	4	0.9975819979906445
+one model: + DNM regional + window MQ + Roulette	om_full	syn	5	0.9962924945260251
+one model: + DNM regional + window MQ + Roulette	om_full	syn	6	1.0039351913358228
+one model: + DNM regional + window MQ + Roulette	om_full	syn	7	1.0122625844073703
+one model: + DNM regional + window MQ + Roulette	om_full	syn	8	1.0243623999361833
+one model: + DNM regional + window MQ + Roulette	om_full	syn	9	1.0520972801419735
+one model: + DNM regional + window MQ + Roulette	om_full	mis	0	0.7257828718441864
+one model: + DNM regional + window MQ + Roulette	om_full	mis	1	0.7981284791100344
+one model: + DNM regional + window MQ + Roulette	om_full	mis	2	0.8422613407035907
+one model: + DNM regional + window MQ + Roulette	om_full	mis	3	0.8783172474219365
+one model: + DNM regional + window MQ + Roulette	om_full	mis	4	0.9195731070536448
+one model: + DNM regional + window MQ + Roulette	om_full	mis	5	0.9379685599609501
+one model: + DNM regional + window MQ + Roulette	om_full	mis	6	0.9572290742541556
+one model: + DNM regional + window MQ + Roulette	om_full	mis	7	0.9732515973613171
+one model: + DNM regional + window MQ + Roulette	om_full	mis	8	0.9937887493829228
+one model: + DNM regional + window MQ + Roulette	om_full	mis	9	1.0207138840854781
+one model: + DNM regional + window MQ + Roulette	om_full	lof	0	0.17947938431825125
+one model: + DNM regional + window MQ + Roulette	om_full	lof	1	0.35347139333995486
+one model: + DNM regional + window MQ + Roulette	om_full	lof	2	0.48794796336002744
+one model: + DNM regional + window MQ + Roulette	om_full	lof	3	0.6142674160744018
+one model: + DNM regional + window MQ + Roulette	om_full	lof	4	0.7260795399629547
+one model: + DNM regional + window MQ + Roulette	om_full	lof	5	0.8176765050449033
+one model: + DNM regional + window MQ + Roulette	om_full	lof	6	0.889442125471339
+one model: + DNM regional + window MQ + Roulette	om_full	lof	7	0.959345047533338
+one model: + DNM regional + window MQ + Roulette	om_full	lof	8	1.0404166970413655
+one model: + DNM regional + window MQ + Roulette	om_full	lof	9	1.2183565155647704

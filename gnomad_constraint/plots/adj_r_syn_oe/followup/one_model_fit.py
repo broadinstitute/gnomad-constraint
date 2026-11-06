@@ -31,6 +31,11 @@ Compared with the current stack (stored plateau lines and coverage model) with a
 without the full run's ridge rr. Writes ``<prefix>.metrics.tsv`` (noise on the core
 and outcome-free sets, outliers, total obs/exp, obs/exp by context class and by
 coverage), ``<prefix>.coverage.tsv`` and ``<prefix>.per_transcript.tsv.gz``.
+
+With ``--apply-cells`` (missense and pLoF cells from ``export_model_cells.py --csqs mis
+lof``), also applies every fit to those cells, each from the other chromosome half, and
+writes observed and expected counts per consequence set and transcript
+(``<prefix>.by_csq.per_transcript.tsv.gz``, for ``one_model_release_eval.py``).
 """
 
 import argparse
@@ -52,9 +57,8 @@ MQ_KNOTS = [60, 55, 50, 40]
 COV_BINS = [0, 20, 50, 80, 90, 101]
 
 
-def load(args: argparse.Namespace) -> tuple:
-    """Load the cells, window features and gene sets."""
-    c = pd.read_csv(args.cells, sep="\t", compression="gzip")
+def prep_cells(c: pd.DataFrame, test: bool) -> pd.DataFrame:
+    """Add the strand-collapsed context, substitution type, class, fold and log mu."""
     c = c[(c.coverage > 0) & (c.possible > 0)].reset_index(drop=True)
     flip = ~c.ref.isin(["A", "C"])
     ref = c.ref.where(~flip, c.ref.str.translate(COMP))
@@ -66,11 +70,17 @@ def load(args: argparse.Namespace) -> tuple:
     )
     c["contig"] = c.win.str.split("-").str[0]
     c["fold"] = chrom_fold(c.contig)
-    if args.test:
+    if test:
         # One chromosome: alternate 1-Mb blocks instead of chromosome halves.
         mb = c.win.str.split("-").str[1].astype(int) // 1_000_000
         c["fold"] = np.where(mb % 2 == 1, "odd", "even")
     c["log_mu"] = np.log(c.mu)
+    return c
+
+
+def load(args: argparse.Namespace) -> tuple:
+    """Load the cells, window features and gene sets."""
+    c = prep_cells(pd.read_csv(args.cells, sep="\t", compression="gzip"), args.test)
 
     w = pd.read_csv(args.windows, sep="\t", compression="gzip")
     feats = [x for x in w.columns if x not in ("win", "contig")]
@@ -91,11 +101,25 @@ def load(args: argparse.Namespace) -> tuple:
     c["mq"] = mean_mq[c.wi]
     c["low_mq"] = low_mq[c.wi]
 
-    rr = pd.read_csv(
-        args.rr_cells, sep="\t", usecols=["win", "context", "rr_ridge_qcexcl"]
-    ).drop_duplicates(["win", "context"])
-    c = c.merge(rr.rename(columns={"context": "ctx"}), on=["win", "ctx"], how="left")
+    rr = (
+        pd.read_csv(
+            args.rr_cells, sep="\t", usecols=["win", "context", "rr_ridge_qcexcl"]
+        )
+        .drop_duplicates(["win", "context"])
+        .rename(columns={"context": "ctx"})
+    )
+    c = c.merge(rr, on=["win", "ctx"], how="left")
     c["rr_ridge"] = c.rr_ridge_qcexcl.fillna(1.0)
+    # What applying the fits to other cells needs (--apply-cells).
+    aux = {
+        "win_idx": win_idx,
+        "n_win": len(w),
+        "mq": mq.set_index("win")[["mean_as_mq", "frac_mq_below_50"]],
+        "mq_mean": w.mean_as_mq.mean(),
+        "low_mean": w.frac_mq_below_50.mean(),
+        "rr": rr,
+        "center": c.log_mu.mean(),
+    }
 
     tx = pd.read_csv(args.transcripts, sep="\t", compression="gzip").set_index(
         "transcript"
@@ -108,13 +132,13 @@ def load(args: argparse.Namespace) -> tuple:
         na_values=["NA"],
     ).drop_duplicates("transcript")
     flags = rel.set_index("transcript").gene_flags.astype(str)
-    return c, F, tx, flags
+    return c, F, tx, flags, aux
 
 
-def design(c: pd.DataFrame, mq: bool) -> tuple:
+def design(c: pd.DataFrame, mq: bool, center: float) -> tuple:
     """Get the dense design columns: group intercepts and slopes, coverage, MQ."""
     cols, names = [], []
-    lm = c.log_mu.to_numpy() - c.log_mu.mean()
+    lm = c.log_mu.to_numpy() - center
     for s in SUBS:
         m = (c["sub"] == s).to_numpy().astype(float)
         cols += [m, m * lm]
@@ -202,7 +226,7 @@ def fit_dnm(c: pd.DataFrame, F: np.ndarray, m: np.ndarray, lam: float) -> np.nda
     Fit DNM counts: Poisson with E = possible * mu * exp(a_ctx + F[w] @ gamma_class).
 
     Returns the regional score F[w] @ gamma_class for every cell (intercepts left
-    out), and the full linear predictor.
+    out), the full linear predictor, and gamma.
     """
     ctxs = sorted(c.ctx.unique())
     ci = pd.Categorical(c.ctx, categories=ctxs).codes
@@ -231,7 +255,7 @@ def fit_dnm(c: pd.DataFrame, F: np.ndarray, m: np.ndarray, lam: float) -> np.nda
     r = minimize(f, t0, jac=True, method="L-BFGS-B", options={"maxiter": 3000})
     a, gamma = r.x[:n_c], r.x[n_c:].reshape(n_k, p)
     reg = (F @ gamma.T)[wi, ki]
-    return reg, off + a[ci] + reg
+    return reg, off + a[ci] + reg, gamma
 
 
 def score(
@@ -287,7 +311,7 @@ def score(
 
 def main(args: argparse.Namespace) -> None:
     """Fit and score every model."""
-    c, F, tx, flags = load(args)
+    c, F, tx, flags, aux = load(args)
     logger.info(
         "%d cells, %d windows, %d transcripts.",
         len(c),
@@ -306,16 +330,16 @@ def main(args: argparse.Namespace) -> None:
     d = c.dnm.to_numpy(float)
     best = None
     for lam in args.dnm_lambdas:
-        reg, nll = np.zeros(len(c)), 0.0
+        reg, nll, gam = np.zeros(len(c)), 0.0, {}
         for f in ("odd", "even"):
             train = folds != f
-            r_, eta = fit_dnm(c, F, train.astype(float), lam)
+            r_, eta, gam[f] = fit_dnm(c, F, train.astype(float), lam)
             reg[~train] = r_[~train]
             nll += float((np.exp(eta[~train]) - d[~train] * eta[~train]).sum())
         logger.info("DNM penalty %g: held-out Poisson NLL %.2f", lam, nll)
         if best is None or nll < best[0]:
-            best = (nll, lam, reg)
-    _, lam_dnm, reg_dnm = best
+            best = (nll, lam, reg, gam)
+    _, lam_dnm, reg_dnm, gam_dnm = best
     logger.info("DNM penalty %g chosen; regional score sd %.3f", lam_dnm, reg_dnm.std())
 
     models = {
@@ -334,8 +358,10 @@ def main(args: argparse.Namespace) -> None:
         ("one model: + window MQ + Roulette", True, None, True),
         ("one model: + DNM regional + window MQ + Roulette", True, "dnm", True),
     ]
+    fitted = {}
     for name, use_mq, regional, use_rou in specs:
-        D, names = design(c, use_mq)
+        fitted[name] = {"use_mq": use_mq, "regional": regional, "use_rou": use_rou}
+        D, names = design(c, use_mq, aux["center"])
         if regional == "dnm":
             D = np.column_stack([D, reg_dnm])
         offset = np.zeros(len(c))
@@ -363,6 +389,7 @@ def main(args: argparse.Namespace) -> None:
                 t = fit_cloglog(n[tr], y[tr], D[tr], offset[tr])
                 p = predict_cloglog(t, D[te], offset[te])
             e[te] = n[te] * p
+            fitted[name][f] = t
             if regional == "dnm":
                 logger.info(
                     "%s (%s fold): DNM regional strength %.3f",
@@ -388,6 +415,92 @@ def main(args: argparse.Namespace) -> None:
     pd.set_option("display.width", 250)
     logger.info("\n%s", out.round(4).to_string(index=False))
 
+    if args.apply_cells:
+        syn = (
+            c[["transcript", "observed", "possible"]]
+            .assign(**models)
+            .groupby("transcript")
+            .sum()
+            .assign(csq="syn")
+            .set_index("csq", append=True)
+            .swaplevel()
+        )
+        applied = apply_fits(args, aux, F, fitted, gam_dnm)
+        pd.concat([syn, applied]).reset_index().to_csv(
+            f"{args.out_prefix}.by_csq.per_transcript.tsv.gz", sep="\t", index=False
+        )
+        logger.info("Wrote %s.by_csq.per_transcript.tsv.gz", args.out_prefix)
+
+
+def apply_fits(
+    args: argparse.Namespace,
+    aux: dict,
+    F: np.ndarray,
+    fitted: dict,
+    gam_dnm: dict,
+) -> pd.DataFrame:
+    """
+    Apply every fitted model to other cells (missense and pLoF), summed per transcript.
+
+    Each cell gets the fit from the other chromosome half, as the synonymous cells do.
+    Windows without synonymous cells get no regional term, and the mean window MQ.
+    The cells are read in chunks.
+
+    :return: Observed, possible and each model's expected count by consequence set
+        and transcript.
+    """
+    F_ext = np.vstack([F, np.zeros((1, F.shape[1]))])
+    sums = []
+    for a in pd.read_csv(
+        args.apply_cells, sep="\t", compression="gzip", chunksize=2_000_000
+    ):
+        a = prep_cells(a, args.test)
+        a["wi"] = (
+            aux["win_idx"].reindex(a.win).fillna(aux["n_win"]).astype(int).to_numpy()
+        )
+        mq = aux["mq"].reindex(a.win)
+        a["mq"] = mq.mean_as_mq.fillna(aux["mq_mean"]).to_numpy()
+        a["low_mq"] = mq.frac_mq_below_50.fillna(aux["low_mean"]).to_numpy()
+        a = a.merge(aux["rr"], on=["win", "ctx"], how="left")
+        a["rr_ridge"] = a.rr_ridge_qcexcl.fillna(1.0)
+        n = a.possible.to_numpy(float)
+        rou = np.log(a.m_sum.to_numpy() / n)
+        wi = a.wi.to_numpy()
+        ki = pd.Categorical(a.cls, categories=CLASSES).codes
+        folds = a.fold.to_numpy()
+        out = a[["csq", "transcript", "observed", "possible"]].copy()
+        out["current stack, no rr"] = a.e_old.to_numpy()
+        out["current stack + ridge rr"] = (a.e_old * a.rr_ridge).to_numpy()
+        out["current stack x Roulette"] = a.e_old.to_numpy() * np.exp(rou)
+        out["current stack x Roulette + ridge rr"] = out[
+            "current stack + ridge rr"
+        ] * np.exp(rou)
+        reg = np.zeros(len(a))
+        for f in ("odd", "even"):
+            m = folds == f
+            reg[m] = (F_ext @ gam_dnm[f].T)[wi[m], ki[m]]
+        for name, spec in fitted.items():
+            D, _ = design(a, spec["use_mq"], aux["center"])
+            if spec["regional"] == "dnm":
+                D = np.column_stack([D, reg])
+            off = rou if spec["use_rou"] else np.zeros(len(a))
+            e = np.zeros(len(a))
+            for f in ("odd", "even"):
+                m = folds == f
+                if not m.any():
+                    continue
+                if spec["regional"] == "gnomad":
+                    p = predict_cloglog(
+                        spec[f], D[m], off[m], F_ext, wi[m], ki[m], len(CLASSES)
+                    )
+                else:
+                    p = predict_cloglog(spec[f], D[m], off[m])
+                e[m] = n[m] * p
+            out[name] = e
+        sums.append(out.groupby(["csq", "transcript"]).sum())
+        logger.info("Applied the fits to %d more cells.", len(a))
+    return pd.concat(sums).groupby(level=[0, 1]).sum()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
@@ -410,6 +523,10 @@ if __name__ == "__main__":
         default=[300, 1000, 3000, 10000, 30000, 100000],
     )
     parser.add_argument("--gnomad-lambda", type=float, default=1000.0)
+    parser.add_argument(
+        "--apply-cells",
+        help="Cells to apply the fits to (export_model_cells.py --csqs mis lof).",
+    )
     parser.add_argument("--out-prefix", default="one_model")
     parser.add_argument(
         "--test",

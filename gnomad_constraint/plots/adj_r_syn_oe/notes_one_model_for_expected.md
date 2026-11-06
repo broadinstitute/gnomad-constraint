@@ -97,7 +97,7 @@ with the same $\boldsymbol\gamma$ in both (or $\boldsymbol\gamma$ shared plus a 
   - **a flag,** which leaves expected counts alone and stops the metrics being read as constraint.
 - **The neutral-calibration premise.** Fitting on synonymous variants and applying the model to LoF and missense assumes the mutation process doesn't depend on consequence. That isn't a gap to close; it is what constraint is: expected is "what would be seen with no selection", and synonymous variants are the stand-in for no selection. Every version of the pipeline, stacked or single, relies on it.
 
-## Is anyone doing this?
+## Related work
 
 Roughly, yes, for the mutation-rate part: Roulette (Seplyarskiy et al. 2023) fits one model of the chance a site stays monomorphic from sequence, methylation, transcription and regional terms, with recurrent mutation built in; Carlson et al. 2018 fit a logistic model of singleton sites on sequence context and genomic features. Neither carries it through to exome calibration and coverage the way the constraint pipeline needs. The pieces we've tried here map onto it: the saturating plateau curve is its link, per-substitution lines are its $\beta_g$, rr is its window term, Roulette is its offset.
 
@@ -152,7 +152,7 @@ What it doesn't settle:
 
 - **AN 80–90%:** the one-model obs/exp is 1.02–1.05 there. The linear spline, with knots every 10%, is too coarse at that range. The current stack is at 0.95 there because of the overshoot.
 - **Outcome-free set:** the best one model (1.91) is only a little better than stack × Roulette (1.94). The core-set gain (1.65 vs 1.96) is bigger, and part of it is MQ.
-- **Synonymous only.** LoF and missense levels need these expected counts carried through the pipeline. The multiplier route from the plateau tests would do it, with multiplier = one-model P / (current f × h) per variant.
+- **Which pLoF level is right.** The full model lowers expected pLoF by about 7% relative to synonymous, more than any plateau version did. Synonymous variants alone can't tell which level is right.
 - **Penalties:** the DNM regional penalty is tuned on held-out DNMs (3000, inside the grid of 300–100,000). The gnomAD-regional penalty is fixed at 1000, not tuned.
 
 <dl><dd>
@@ -178,12 +178,41 @@ Core genes are unflagged with current expected ≥ 20. The outcome-free set is g
 </details>
 </dd></dl>
 
+### pLoF and missense (2026-11-06)
+
+![The single cloglog models on pLoF and missense](followup/one_model_release.png)
+
+The same fits were applied to every possible missense and pLoF (LOFTEE HC) SNV in the same MANE Select transcripts. Each variant gets the fit from the other chromosome half. The cells come from `followup/cluster/export_model_cells.py --csqs mis lof`, applied with `followup/one_model_fit.py --apply-cells` and scored with `followup/one_model_release_eval.py`.
+
+LOEUF is the upper end of the 90% gamma interval, as in the pipeline. For the current stack this reproduces the released LOEUF for 97.9% of transcripts; the rest differ from the release by a few variants in their counts. Working this way skips the pipeline's metrics step, which takes hours. Missense z isn't computed.
+
+- **a–c: levels.** Relative to synonymous:
+  - ridge rr: pLoF +0.7%, missense +0.2%;
+  - stack × Roulette: pLoF +3.6%, missense −2.6%;
+  - groups + coverage: pLoF +3.0%, missense +1.1%;
+  - full one model: pLoF +7.1%, missense −0.8%.
+
+  Groups + coverage moves pLoF the same way as one line per substitution type did in the plateau tests (+3.6%). Under the full model, pLoF obs/exp rises by about 6% in LOEUF deciles 1–6. So expected pLoF falls by about 6% in the constrained genes.
+- **d: LOEUF.**
+  - Groups + coverage changes the decile of 7.0% of genes: 114 leave LOEUF < 0.6 and 13 join.
+  - The full model changes the decile of 26.9% (611 leave, 64 join).
+  - Stack × Roulette changes the decile of 24.4% (486 leave, 32 join).
+
+![Classifying NDD and HI genes by LOEUF, for the single cloglog models](followup/one_model_pr.png)
+
+- **NDD and HI precision-recall.** These use the flagship preprint's gene lists and rules, on autosomal MANE Select transcripts with a pLoF expected count. That is why the current stack's NDD AUPRC is 0.160 here, not the 0.144 of the release's gene set.
+  - Full one model: NDD +0.014 (interval +0.009 to +0.019), and +0.015 for genes with under 50 expected pLoF; HI +0.017 (+0.001 to +0.033). ClinGen HI AUC goes from 0.868 to 0.874.
+  - Groups + coverage: NDD +0.001. Ridge rr: +0.003. Stack × Roulette: no change.
+  - **Most of the gain is the window MQ term.** MQ alone gives NDD +0.012. It moves 101 genes out of the most constrained LOEUF decile, and 93% of them carry the release's `low_exome_mapping_quality` flag; their LOEUF about doubles.
+  - With QC-flagged genes left out, the full model's gain shrinks to NDD +0.004 (+0.001 to +0.008) and HI +0.005 (−0.009 to +0.018). The ridge rr is at +0.003 and −0.002.
+  - So the one model mostly does, on a continuous scale, what the mapping-quality flag does by hand, plus a small gain from the regional and Roulette terms.
+
 ## What to do next
 
 - **Promising:**
   - **Groups + coverage in one cloglog fit, in place of the plateau and coverage models.** It fixes the synonymous level (1.015 → 1.00), halves the spread between contexts and brings low-coverage obs/exp near 1 (1.34 → 1.02 at AN 20–50%), with no cost in noise. The per-variant expected Table stays. This is the cheapest change.
   - **Roulette as an offset in the same fit, with the DNM regional term.** It does best on noise (1.65 core, 1.91 outcome-free) and on strength (0.97), with 14 outliers without a QC flag. Only stack × Roulette + ridge does better in the hotspot regions (8p at 0.99 against 1.09), and that combination is too strong overall. It also sets the strengths of Roulette and the regional term itself, instead of by hand.
 - **Fix regardless:** the coverage model. Weight its fit, fit it relative to the plateau rather than to μ, and don't let it go above 1, or use the fit's coverage term. The blocks below 56% AN still need a flag or a coarser treatment.
-- **Worth a closer look:** window MQ. It removes the low-mapping-quality deficit outliers, but overcorrects 13–15 genes.
+- **Worth a closer look:** window MQ. Most of the NDD and HI gain comes from it, because it stops genes with low mapping quality looking constrained. It works like a continuous version of the `low_exome_mapping_quality` flag. On synonymous variants it overcorrects 13–15 genes.
 - **Not promising:** a regional term fit on gnomAD, which is gnomAD fitting gnomAD and can't be checked with synonymous variants. Also the logistic plateau.
-- **Next step:** carry both promising models through the pipeline as per-variant multipliers, as for the plateau versions (aggregation on 0.2.134, metrics on 0.2.137). Then score pLoF and missense levels, LOEUF, ClinGen and NDD/HI as in the report before choosing.
+- **Next step:** decide how far pLoF expected can move relative to synonymous (+3% with groups + coverage, +7% with the full model), and whether the MQ term should replace the mapping-quality flag. Then build the chosen model into the pipeline as per-variant multipliers, for missense z and a release.
