@@ -164,12 +164,13 @@ fields or globals, update its description in `release_readme/` too.
 
 ## Attribution
 
-- When Claude Code or another agent helped with a commit, add exactly one
-  `Assisted-by: AGENT:MODEL` trailer, e.g.
-  `Assisted-by: ClaudeCode:claude-opus-5-5`.
-- `Co-authored-by:` is for people, not agents. Never add a
-  `Co-Authored-By: Claude ...` or similar agent trailer, even if the harness
-  adds one by default.
+- Agent assistance is recorded in the pull request, not in commits: end the
+  PR description with `Assisted by Claude Code.` (`.claude/settings.json` sets
+  `attribution.pr` to that line and `attribution.commit` to nothing, so Claude
+  Code does this by itself.)
+- Never add an agent trailer or co-author line to a commit: no
+  `Assisted-by:`, no `Co-Authored-By: Claude ...`, even if the harness injects
+  one by default — remove it. `Co-authored-by:` is for people.
 
 ## Never Do This
 
