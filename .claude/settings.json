@@ -3,26 +3,6 @@
     "commit": "",
     "pr": "Assisted by Claude Code."
   },
-  "permissions": {
-    "allow": [
-      "Bash(git status:*)",
-      "Bash(git log:*)",
-      "Bash(git diff:*)",
-      "Bash(git show:*)",
-      "Bash(git branch)",
-      "Bash(git branch -a)",
-      "Bash(git branch -vv)",
-      "Bash(git branch --show-current)",
-      "Bash(git check-ignore:*)",
-      "Bash(ls:*)",
-      "Bash(grep:*)",
-      "Bash(wc:*)",
-      "Bash(head:*)",
-      "Bash(tail:*)",
-      "Bash(python -m pytest:*)",
-      "Bash(pytest:*)"
-    ]
-  },
   "hooks": {
     "SessionStart": [
       {
@@ -30,8 +10,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/update-review-skill.sh",
-            "timeout": 20
+            "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/update-gnomad-skills.sh",
+            "timeout": 30
           }
         ]
       }

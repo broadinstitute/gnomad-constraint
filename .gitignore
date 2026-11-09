@@ -111,5 +111,3 @@ slack_creds.py
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/worktrees/
-# Prompts and completion markers written by the /review skill
-.code_review/

@@ -33,7 +33,7 @@ see [Updating the flowchart](#updating-the-flowchart).
 | `release_readme/` | Field descriptions for the released constraint and mutation rate Tables |
 | `requirements.txt` | What the pipeline needs to run: gnomad_methods, gnomad_qc, and Hail |
 | `requirements-dev.in`, `requirements-dev.txt` | Development tools; the `.txt` is generated from the `.in` |
-| `.claude/` | Shared Claude Code configuration (`settings.json`): a hook that installs the `/review` skill into `~/.claude/skills/review` and keeps it updated (set `GNOMAD_SKIP_REVIEW_HOOK=1` to turn it off), a permission allowlist for routine inspection commands and tests, and `attribution` settings that put `Assisted by Claude Code.` in PR descriptions and nothing on commits. The shared gnomAD skills live in [gnomad-skills](https://github.com/broadinstitute/gnomad-skills); install them from there. |
+| `.claude/` | Shared Claude Code configuration (`settings.json`): a hook that installs the shared skills from [gnomad-skills](https://github.com/broadinstitute/gnomad-skills) into `~/.claude/skills/` and keeps them updated (set `GNOMAD_SKIP_SKILLS_HOOK=1` to turn it off), and `attribution` settings that put `Assisted by Claude Code.` in PR descriptions and nothing on commits. |
 
 ## Pipeline steps
 
