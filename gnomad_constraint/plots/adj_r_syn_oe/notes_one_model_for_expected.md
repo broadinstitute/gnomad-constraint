@@ -207,6 +207,107 @@ LOEUF is the upper end of the 90% gamma interval, as in the pipeline. For the cu
   - With QC-flagged genes left out, the full model's gain shrinks to NDD +0.004 (+0.001 to +0.008) and HI +0.005 (−0.009 to +0.018). The ridge rr is at +0.003 and −0.002.
   - So the one model mostly does, on a continuous scale, what the mapping-quality flag does by hand, plus a small gain from the regional and Roulette terms.
 
+## Problems with the current expected counts, and what each fix does
+
+"Current" is the v4.1.1 expected count with no regional correction: possible variants × stored plateau line × coverage model. Each fix is scored on the exported MANE Select synonymous cells:
+
+- the one models out of fold;
+- the plateau versions applied as in the pipeline test;
+- rr and Roulette from the full run.
+
+The pLoF side effect and the NDD ranking come from the pLoF runs. For the one models, rr and Roulette that is the exported cells; for the plateau versions it is the pipeline runs. The weighted plateau wasn't run through the pipeline (n/t).
+
+Each verdict is the share of the current gap to the target that the fix closes: yes is at least 80%, partly 20–80%, no −10% to 20%, and worse means the gap grows by more than 10%. 1M = one model; full = + DNM regional + MQ + Roulette. The table and its data come from `followup/one_model_issues.py`.
+
+| Problem (metric) | Current | Ridge rr | × Roulette | × Roulette + ridge | Plateau: weighted | Plateau: saturating | Plateau: logistic | Plateau: per substitution | 1M: groups + coverage | 1M: + MQ | 1M: + DNM regional + MQ | 1M: + gnomAD regional + MQ | 1M: full |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Synonymous level is off 1 (total obs/exp) | 1.015 | no | worse | worse | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Contexts are offset from each other (weighted SD of the 32 contexts' obs/exp) | 6.7% | no | partly | partly | no | no | worse | partly | partly | partly | partly | partly | partly |
+| Low coverage is miscalibrated (obs/exp at AN 20–49% / 80–89%) | 1.34 / 0.95 | no | no | no | no | no | no | no | yes | yes | yes | yes | yes |
+| Regional variation: per-gene noise (noise, core / no QC flag (1 = Poisson)) | 2.91 / 3.54 | partly | partly | partly | no | no | no | no | no | no | partly | partly | partly |
+| Maternal hotspot regions run high (control genes' obs/exp, highest region (8p)) | 1.32 | partly | partly | yes | no | no | no | no | no | no | partly | partly | partly |
+| Least constrained LOEUF decile runs high (obs/exp in decile 10 minus deciles 1–6) | +0.110 | partly | partly | partly | no | no | no | no | no | no | partly | partly | partly |
+| Outliers with no QC flag (genes with \|z\| > 8) | 86 | partly | yes | yes | no | no | no | no | no | no | partly | partly | yes |
+| Low-mapping-quality genes look depleted (flagged genes with z < −8) | 132 | no | no | no | no | no | no | no | no | yes, overshoots | yes, overshoots | yes, overshoots | yes, overshoots |
+| Histone genes run high (outliers) | 24 | no | no | no | no | no | no | no | no | no | no | no | no |
+| *Side effect:* pLoF expected vs synonymous | 0 | +0.7% | +3.6% | +4.4% | n/t | +0.9% | -1.9% | +3.6% | +3.0% | +3.0% | +3.1% | +4.3% | +7.1% |
+| *Outcome:* NDD AUPRC change | 0 | +0.003 | -0.000 | +0.002 | n/t | +0.001 | -0.000 | -0.000 | +0.001 | +0.012 | +0.014 | +0.017 | +0.014 |
+
+#### Synonymous level
+
+![Synonymous level under each fix](followup/one_model_issue_level.png)
+
+Currently 1.015. rr is normalized per context, so it keeps the level; Roulette raises it to 1.033. Every plateau version and every one model brings it to 1.000 ± 0.002.
+
+#### Offsets between contexts
+
+![Offsets between contexts under each fix](followup/one_model_issue_contexts.png)
+
+The weighted SD across the 32 contexts is 6.7% now. Among the plateau versions:
+
+- one line per substitution type: 4.8%;
+- the saturating curve: 5.6%;
+- weighted lines: 6.4%;
+- the logistic curve: 8.8%, which is worse.
+
+Roulette gives 4.8%. The one models give 4.1–4.2%, and the full model 3.1%.
+
+#### Low-coverage calibration
+
+![Synonymous obs/exp by exome AN % under each fix](followup/one_model_issue_coverage.png)
+
+Currently obs/exp is 1.34 at AN 20–49% and 0.95 at 80–89%. rr, Roulette and the plateau versions all keep the coverage model, so they stay at 1.32–1.34 and 0.90–0.95.
+
+Every one model brings AN 20–49% to 1.00–1.02, but runs 1.02–1.05 at 80–89%. Below 56%, the individual AN values swing between 0.59 and 1.48 with groups + coverage (0.68–2.13 now). With the MQ and regional terms in, the full model narrows that to 0.92–1.11.
+
+#### Regional variation: per-gene noise
+
+![Per-gene noise under each fix](followup/one_model_issue_noise.png)
+
+Currently 2.91 on core genes and 3.54 on genes with no QC flag.
+
+- Ridge rr: 2.43 / 2.76.
+- × Roulette: 1.96 / 1.94.
+- Full one model: 1.65 / 1.91.
+
+The plateau versions and groups + coverage don't change it.
+
+#### Maternal hotspot regions
+
+![Maternal hotspot regions under each fix](followup/one_model_issue_hotspots.png)
+
+8p's control genes run at 1.32 now. They are at 1.21 with the ridge, 1.08 with × Roulette, 0.99 with × Roulette + ridge, and 1.09 with the full one model. The plateau versions and groups + coverage leave 8p at 1.32–1.33.
+
+#### Rise in the least constrained LOEUF decile
+
+![Synonymous obs/exp by LOEUF decile under each fix](followup/one_model_issue_loeuf_rise.png)
+
+Decile 10 runs 0.110 above deciles 1–6 now. That drops to 0.080 with the ridge, 0.059 with × Roulette, 0.028 with × Roulette + ridge, and 0.054 with the full one model. The plateau versions and groups + coverage move the whole curve but keep the rise (0.106–0.111).
+
+#### Outliers with no QC flag
+
+![Synonymous outliers with no QC flag under each fix](followup/one_model_issue_outliers.png)
+
+86 now. 39 with the ridge, 15 with × Roulette, 12 with × Roulette + ridge, and 14 with the full one model. The plateau versions and groups + coverage leave 82–90.
+
+#### Genes with low mapping quality
+
+![Outliers among genes flagged for low mapping quality under each fix](followup/one_model_issue_low_mq.png)
+
+132 flagged genes are deficit outliers now, and every fix without the MQ term keeps them. With the MQ term, 0–1 remain, but 13–15 of these genes become excess outliers instead.
+
+#### Histone genes
+
+![Histone genes under each fix](followup/one_model_issue_histones.png)
+
+There are 22–24 histone outliers under every fix, with pooled obs/exp 1.65–1.74. None of the fixes targets them.
+
+#### Side effects on pLoF and missense, and the NDD ranking
+
+![pLoF and missense levels and NDD ranking under each fix](followup/one_model_issue_side_effects.png)
+
+These are relative to synonymous. Expected pLoF moves from −1.9% (logistic plateau) to +7.1% (full one model), and missense from −2.6% (× Roulette) to +1.4%. NDD AUPRC improves only with the MQ term (+0.012 to +0.017); everything else stays within ±0.003. With QC-flagged genes left out, most of that gain goes (see the pLoF section above).
+
 ## What to do next
 
 - **Promising:**

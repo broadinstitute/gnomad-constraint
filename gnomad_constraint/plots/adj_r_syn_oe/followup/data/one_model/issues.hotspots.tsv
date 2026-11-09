@@ -1,0 +1,79 @@
+method	region	oe
+current stack, no rr	8p, first 20 Mb	1.3218625110364548
+current stack, no rr	2p16-22	1.1270982873523188
+current stack, no rr	7p	1.0820811743753243
+current stack, no rr	9p	1.079563288440354
+current stack, no rr	16p	1.097762715035973
+current stack, no rr	16q	1.0805948665419727
+current stack + ridge rr	8p, first 20 Mb	1.2093442205729439
+current stack + ridge rr	2p16-22	1.0900630070941548
+current stack + ridge rr	7p	1.0454893546680146
+current stack + ridge rr	9p	1.06398727411219
+current stack + ridge rr	16p	1.0483643017688629
+current stack + ridge rr	16q	1.0565771819221117
+current stack x Roulette	8p, first 20 Mb	1.0807123869527415
+current stack x Roulette	2p16-22	1.0450326097940215
+current stack x Roulette	7p	1.033895222518994
+current stack x Roulette	9p	1.0209711100270582
+current stack x Roulette	16p	1.0266721174277318
+current stack x Roulette	16q	1.0225034788280962
+current stack x Roulette + ridge rr	8p, first 20 Mb	0.9909436310941431
+current stack x Roulette + ridge rr	2p16-22	1.0117062668171097
+current stack x Roulette + ridge rr	7p	0.9963076995413157
+current stack x Roulette + ridge rr	9p	1.00489746850953
+current stack x Roulette + ridge rr	16p	0.9765150585760386
+current stack x Roulette + ridge rr	16q	0.9960730901406725
+plateau: weighted	8p, first 20 Mb	1.3228381468068735
+plateau: weighted	2p16-22	1.1255294957282478
+plateau: weighted	7p	1.0829905820578247
+plateau: weighted	9p	1.0782426178728937
+plateau: weighted	16p	1.0996440484850032
+plateau: weighted	16q	1.081735265455084
+plateau: saturating	8p, first 20 Mb	1.3205968881418273
+plateau: saturating	2p16-22	1.1300341284688902
+plateau: saturating	7p	1.0814664742772389
+plateau: saturating	9p	1.0804112022526842
+plateau: saturating	16p	1.0962051588521535
+plateau: saturating	16q	1.0799130103920307
+plateau: logistic	8p, first 20 Mb	1.3232750108905926
+plateau: logistic	2p16-22	1.1215043618635046
+plateau: logistic	7p	1.0838852108562451
+plateau: logistic	9p	1.0762315746016207
+plateau: logistic	16p	1.1037678210628756
+plateau: logistic	16q	1.0842420145068201
+plateau: by_substitution	8p, first 20 Mb	1.3214300882863417
+plateau: by_substitution	2p16-22	1.1286177400732311
+plateau: by_substitution	7p	1.0821473847382315
+plateau: by_substitution	9p	1.0793896053566097
+plateau: by_substitution	16p	1.0976726254049105
+plateau: by_substitution	16q	1.080525376225952
+one model: groups + coverage	8p, first 20 Mb	1.3326145417577393
+one model: groups + coverage	2p16-22	1.1381549282500951
+one model: groups + coverage	7p	1.076710536171047
+one model: groups + coverage	9p	1.073431782464967
+one model: groups + coverage	16p	1.1061174836181835
+one model: groups + coverage	16q	1.0891252457234555
+one model: + window MQ	8p, first 20 Mb	1.32879821754261
+one model: + window MQ	2p16-22	1.1312350032665102
+one model: + window MQ	7p	1.074762938326094
+one model: + window MQ	9p	1.0746567102853033
+one model: + window MQ	16p	1.107891607898252
+one model: + window MQ	16q	1.0847114511268523
+one model: + DNM regional + window MQ	8p, first 20 Mb	1.248686062485813
+one model: + DNM regional + window MQ	2p16-22	1.0903820225114846
+one model: + DNM regional + window MQ	7p	1.0247210911137272
+one model: + DNM regional + window MQ	9p	1.0230354338865508
+one model: + DNM regional + window MQ	16p	1.0775078488104755
+one model: + DNM regional + window MQ	16q	1.0687582268436073
+one model: + gnomAD regional + window MQ	8p, first 20 Mb	1.187378087909532
+one model: + gnomAD regional + window MQ	2p16-22	1.0820683409275818
+one model: + gnomAD regional + window MQ	7p	1.0079837635257431
+one model: + gnomAD regional + window MQ	9p	1.0334267475711023
+one model: + gnomAD regional + window MQ	16p	1.0612987072533135
+one model: + gnomAD regional + window MQ	16q	1.0633442153931656
+one model: + DNM regional + window MQ + Roulette	8p, first 20 Mb	1.089354534188123
+one model: + DNM regional + window MQ + Roulette	2p16-22	1.0351880544193486
+one model: + DNM regional + window MQ + Roulette	7p	1.0095315808151895
+one model: + DNM regional + window MQ + Roulette	9p	0.9942056400983522
+one model: + DNM regional + window MQ + Roulette	16p	1.0347099773958837
+one model: + DNM regional + window MQ + Roulette	16q	1.028281067357739

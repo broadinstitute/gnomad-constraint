@@ -1,0 +1,109 @@
+problem	method	share_closed	verdict
+Synonymous level is off 1	current stack + ridge rr	0.0005133061096495029	no
+Synonymous level is off 1	current stack x Roulette	-1.1675052119043379	worse
+Synonymous level is off 1	current stack x Roulette + ridge rr	-1.0409222724438534	worse
+Synonymous level is off 1	plateau: weighted	0.9440445831339622	yes
+Synonymous level is off 1	plateau: saturating	0.9893102463011049	yes
+Synonymous level is off 1	plateau: logistic	0.9751495881994876	yes
+Synonymous level is off 1	plateau: by_substitution	0.9463346583156521	yes
+Synonymous level is off 1	one model: groups + coverage	0.8737601620744608	yes
+Synonymous level is off 1	one model: + window MQ	0.8913692741458431	yes
+Synonymous level is off 1	one model: + DNM regional + window MQ	0.9921054901994709	yes
+Synonymous level is off 1	one model: + gnomAD regional + window MQ	0.9946104371097234	yes
+Synonymous level is off 1	one model: + DNM regional + window MQ + Roulette	0.9137657515723281	yes
+Contexts are offset from each other	current stack + ridge rr	-2.6421645093810397e-05	no
+Contexts are offset from each other	current stack x Roulette	0.27696641970510183	partly
+Contexts are offset from each other	current stack x Roulette + ridge rr	0.2828830254878746	partly
+Contexts are offset from each other	plateau: weighted	0.040294314973331025	no
+Contexts are offset from each other	plateau: saturating	0.15885495206796774	no
+Contexts are offset from each other	plateau: logistic	-0.32846054623876686	worse
+Contexts are offset from each other	plateau: by_substitution	0.27357629335951195	partly
+Contexts are offset from each other	one model: groups + coverage	0.3872680254692571	partly
+Contexts are offset from each other	one model: + window MQ	0.3832787034173739	partly
+Contexts are offset from each other	one model: + DNM regional + window MQ	0.37432252727790094	partly
+Contexts are offset from each other	one model: + gnomAD regional + window MQ	0.3660704064923317	partly
+Contexts are offset from each other	one model: + DNM regional + window MQ + Roulette	0.5276979096246268	partly
+Low coverage is miscalibrated	current stack + ridge rr	0.02884283039994151	no
+Low coverage is miscalibrated	current stack x Roulette	0.004398852972023359	no
+Low coverage is miscalibrated	current stack x Roulette + ridge rr	0.03979776468051521	no
+Low coverage is miscalibrated	plateau: weighted	0.06099474038738939	no
+Low coverage is miscalibrated	plateau: saturating	0.05802450252734981	no
+Low coverage is miscalibrated	plateau: logistic	0.05871946668157213	no
+Low coverage is miscalibrated	plateau: by_substitution	0.06283647378494817	no
+Low coverage is miscalibrated	one model: groups + coverage	0.8963709441943988	yes
+Low coverage is miscalibrated	one model: + window MQ	0.8526424289708787	yes
+Low coverage is miscalibrated	one model: + DNM regional + window MQ	0.8723329997366275	yes
+Low coverage is miscalibrated	one model: + gnomAD regional + window MQ	0.9283445873501014	yes
+Low coverage is miscalibrated	one model: + DNM regional + window MQ + Roulette	0.8658501141814907	yes
+Regional variation: per-gene noise	current stack + ridge rr	0.2805470687332108	partly
+Regional variation: per-gene noise	current stack x Roulette	0.5728518054783733	partly
+Regional variation: per-gene noise	current stack x Roulette + ridge rr	0.469593872903997	partly
+Regional variation: per-gene noise	plateau: weighted	-0.017232437339783635	no
+Regional variation: per-gene noise	plateau: saturating	0.013459944416350234	no
+Regional variation: per-gene noise	plateau: logistic	-0.06410120564429289	no
+Regional variation: per-gene noise	plateau: by_substitution	-0.0023941913680891602	no
+Regional variation: per-gene noise	one model: groups + coverage	-0.027212632162144423	no
+Regional variation: per-gene noise	one model: + window MQ	0.051918669872767276	no
+Regional variation: per-gene noise	one model: + DNM regional + window MQ	0.28646863838701764	partly
+Regional variation: per-gene noise	one model: + gnomAD regional + window MQ	0.4095549721635344	partly
+Regional variation: per-gene noise	one model: + DNM regional + window MQ + Roulette	0.6507010980190286	partly
+Maternal hotspot regions run high	current stack + ridge rr	0.34958495197586603	partly
+Maternal hotspot regions run high	current stack x Roulette	0.7492333397485988	partly
+Maternal hotspot regions run high	current stack x Roulette + ridge rr	0.9636296045183602	yes
+Maternal hotspot regions run high	plateau: weighted	-0.00303121903596959	no
+Maternal hotspot regions run high	plateau: saturating	0.003932184865369948	no
+Maternal hotspot regions run high	plateau: logistic	-0.004388519338860863	no
+Maternal hotspot regions run high	plateau: by_substitution	0.001343501449487361	no
+Maternal hotspot regions run high	one model: groups + coverage	-0.033405663451332224	no
+Maternal hotspot regions run high	one model: + window MQ	-0.021548662140927988	no
+Maternal hotspot regions run high	one model: + DNM regional + window MQ	0.2273531276289389	partly
+Maternal hotspot regions run high	one model: + gnomAD regional + window MQ	0.4178318956558781	partly
+Maternal hotspot regions run high	one model: + DNM regional + window MQ + Roulette	0.7223829084649049	partly
+Least constrained LOEUF decile runs high	current stack + ridge rr	0.26808645662397157	partly
+Least constrained LOEUF decile runs high	current stack x Roulette	0.46698178140744717	partly
+Least constrained LOEUF decile runs high	current stack x Roulette + ridge rr	0.7460796289789011	partly
+Least constrained LOEUF decile runs high	plateau: weighted	0.011980627645727604	no
+Least constrained LOEUF decile runs high	plateau: saturating	0.030324435300446262	no
+Least constrained LOEUF decile runs high	plateau: logistic	-0.014158093658157789	no
+Least constrained LOEUF decile runs high	plateau: by_substitution	0.023722505192932175	no
+Least constrained LOEUF decile runs high	one model: groups + coverage	0.03666292103279778	no
+Least constrained LOEUF decile runs high	one model: + window MQ	0.08580520707943762	no
+Least constrained LOEUF decile runs high	one model: + DNM regional + window MQ	0.2248839476946891	partly
+Least constrained LOEUF decile runs high	one model: + gnomAD regional + window MQ	0.4076292208749286	partly
+Least constrained LOEUF decile runs high	one model: + DNM regional + window MQ + Roulette	0.5109361182119825	partly
+Outliers with no QC flag	current stack + ridge rr	0.5465116279069768	partly
+Outliers with no QC flag	current stack x Roulette	0.8255813953488372	yes
+Outliers with no QC flag	current stack x Roulette + ridge rr	0.8604651162790697	yes
+Outliers with no QC flag	plateau: weighted	-0.023255813953488413	no
+Outliers with no QC flag	plateau: saturating	0.046511627906976716	no
+Outliers with no QC flag	plateau: logistic	-0.04651162790697683	no
+Outliers with no QC flag	plateau: by_substitution	-0.011627906976744207	no
+Outliers with no QC flag	one model: groups + coverage	-0.011627906976744207	no
+Outliers with no QC flag	one model: + window MQ	-0.023255813953488413	no
+Outliers with no QC flag	one model: + DNM regional + window MQ	0.38372093023255816	partly
+Outliers with no QC flag	one model: + gnomAD regional + window MQ	0.5232558139534884	partly
+Outliers with no QC flag	one model: + DNM regional + window MQ + Roulette	0.8372093023255813	yes
+Low-mapping-quality genes look depleted	current stack + ridge rr	0.0	no
+Low-mapping-quality genes look depleted	current stack x Roulette	-0.06818181818181812	no
+Low-mapping-quality genes look depleted	current stack x Roulette + ridge rr	-0.045454545454545414	no
+Low-mapping-quality genes look depleted	plateau: weighted	0.007575757575757569	no
+Low-mapping-quality genes look depleted	plateau: saturating	-0.007575757575757569	no
+Low-mapping-quality genes look depleted	plateau: logistic	0.0	no
+Low-mapping-quality genes look depleted	plateau: by_substitution	-0.015151515151515138	no
+Low-mapping-quality genes look depleted	one model: groups + coverage	0.0	no
+Low-mapping-quality genes look depleted	one model: + window MQ	0.9924242424242424	yes, overshoots
+Low-mapping-quality genes look depleted	one model: + DNM regional + window MQ	0.9924242424242424	yes, overshoots
+Low-mapping-quality genes look depleted	one model: + gnomAD regional + window MQ	1.0	yes, overshoots
+Low-mapping-quality genes look depleted	one model: + DNM regional + window MQ + Roulette	1.0	yes, overshoots
+Histone genes run high	current stack + ridge rr	0.0	no
+Histone genes run high	current stack x Roulette	0.04166666666666663	no
+Histone genes run high	current stack x Roulette + ridge rr	0.08333333333333337	no
+Histone genes run high	plateau: weighted	0.0	no
+Histone genes run high	plateau: saturating	0.0	no
+Histone genes run high	plateau: logistic	0.0	no
+Histone genes run high	plateau: by_substitution	0.0	no
+Histone genes run high	one model: groups + coverage	0.0	no
+Histone genes run high	one model: + window MQ	0.0	no
+Histone genes run high	one model: + DNM regional + window MQ	0.0	no
+Histone genes run high	one model: + gnomAD regional + window MQ	0.04166666666666663	no
+Histone genes run high	one model: + DNM regional + window MQ + Roulette	0.04166666666666663	no

@@ -1,0 +1,417 @@
+method	ctx	oe
+current stack, no rr	AAA	1.0454321206130952
+current stack, no rr	AAC	1.0630900311556544
+current stack, no rr	AAG	1.136531008865026
+current stack, no rr	AAT	0.9045319137530236
+current stack, no rr	ACA	0.9852425494050479
+current stack, no rr	ACC	0.9710988598034158
+current stack, no rr	ACG	0.9367045479573614
+current stack, no rr	ACT	1.0297419629141107
+current stack, no rr	CAA	1.019359435028902
+current stack, no rr	CAC	1.0143721574264155
+current stack, no rr	CAG	1.0563230286605465
+current stack, no rr	CAT	0.862194303875714
+current stack, no rr	CCA	0.9908652969018296
+current stack, no rr	CCC	1.0192690954212122
+current stack, no rr	CCG	1.0175778652861234
+current stack, no rr	CCT	1.0382091931410855
+current stack, no rr	GAA	0.9007600842152056
+current stack, no rr	GAC	0.9631182644890636
+current stack, no rr	GAG	1.0552291953025565
+current stack, no rr	GAT	0.9086895578054891
+current stack, no rr	GCA	1.0006278722558706
+current stack, no rr	GCC	0.9772933960536646
+current stack, no rr	GCG	0.9091944973962128
+current stack, no rr	GCT	0.966404092114765
+current stack, no rr	TAA	0.9486403092108656
+current stack, no rr	TAC	1.0052190715651497
+current stack, no rr	TAG	1.02489016095913
+current stack, no rr	TAT	0.7868123270133566
+current stack, no rr	TCA	1.0757105314651876
+current stack, no rr	TCC	1.082172356596341
+current stack, no rr	TCG	1.0346673111467195
+current stack, no rr	TCT	1.0945723511415297
+current stack + ridge rr	AAA	1.0454395314492
+current stack + ridge rr	AAC	1.0630804954848587
+current stack + ridge rr	AAG	1.1365338160252971
+current stack + ridge rr	AAT	0.9045209882990886
+current stack + ridge rr	ACA	0.9852149158712776
+current stack + ridge rr	ACC	0.9710551313013307
+current stack + ridge rr	ACG	0.9366806034487747
+current stack + ridge rr	ACT	1.029733884548367
+current stack + ridge rr	CAA	1.0193602540397495
+current stack + ridge rr	CAC	1.0143978969062464
+current stack + ridge rr	CAG	1.056316441031158
+current stack + ridge rr	CAT	0.8621799110357606
+current stack + ridge rr	CCA	0.9908610985948502
+current stack + ridge rr	CCC	1.0192378271032658
+current stack + ridge rr	CCG	1.0175976385135697
+current stack + ridge rr	CCT	1.0382043057919033
+current stack + ridge rr	GAA	0.9007767491820364
+current stack + ridge rr	GAC	0.9631396242848491
+current stack + ridge rr	GAG	1.0552245092444992
+current stack + ridge rr	GAT	0.9086857715877904
+current stack + ridge rr	GCA	1.000642496145538
+current stack + ridge rr	GCC	0.9773029120460882
+current stack + ridge rr	GCG	0.9092201281034348
+current stack + ridge rr	GCT	0.9664056071356143
+current stack + ridge rr	TAA	0.9486404975570248
+current stack + ridge rr	TAC	1.005207481466543
+current stack + ridge rr	TAG	1.024889187296714
+current stack + ridge rr	TAT	0.7868205942455557
+current stack + ridge rr	TCA	1.0757131577568233
+current stack + ridge rr	TCC	1.0821762711348772
+current stack + ridge rr	TCG	1.0346891717353583
+current stack + ridge rr	TCT	1.0945996657467394
+current stack x Roulette	AAA	1.0400547014719965
+current stack x Roulette	AAC	1.0973793648198933
+current stack x Roulette	AAG	1.1132632913834646
+current stack x Roulette	AAT	1.0661194277651105
+current stack x Roulette	ACA	0.9818559076028153
+current stack x Roulette	ACC	0.9750903916836915
+current stack x Roulette	ACG	0.9205511586458786
+current stack x Roulette	ACT	1.0385401272503945
+current stack x Roulette	CAA	1.0218816429749484
+current stack x Roulette	CAC	0.9820143755753707
+current stack x Roulette	CAG	1.0532017246896483
+current stack x Roulette	CAT	0.950740517167103
+current stack x Roulette	CCA	0.9860970743134635
+current stack x Roulette	CCC	0.9901840125711602
+current stack x Roulette	CCG	1.0000298225777169
+current stack x Roulette	CCT	1.0227490438378344
+current stack x Roulette	GAA	0.8833139062523818
+current stack x Roulette	GAC	0.943064410124698
+current stack x Roulette	GAG	1.0243527843205427
+current stack x Roulette	GAT	0.9677478678593303
+current stack x Roulette	GCA	0.9893539701948777
+current stack x Roulette	GCC	0.9783020281865261
+current stack x Roulette	GCG	0.893515516538988
+current stack x Roulette	GCT	0.983199400016138
+current stack x Roulette	TAA	0.9933168029331337
+current stack x Roulette	TAC	1.0059761213237954
+current stack x Roulette	TAG	1.0215089250873708
+current stack x Roulette	TAT	0.9651714607179264
+current stack x Roulette	TCA	1.0742127843540779
+current stack x Roulette	TCC	1.0201484689123406
+current stack x Roulette	TCG	1.0168245624152605
+current stack x Roulette	TCT	1.052801492321465
+current stack x Roulette + ridge rr	AAA	1.0414810140712722
+current stack x Roulette + ridge rr	AAC	1.0990996605884193
+current stack x Roulette + ridge rr	AAG	1.1150031880564288
+current stack x Roulette + ridge rr	AAT	1.0672490344211736
+current stack x Roulette + ridge rr	ACA	0.9811432484729217
+current stack x Roulette + ridge rr	ACC	0.9730992712912158
+current stack x Roulette + ridge rr	ACG	0.9222448681054438
+current stack x Roulette + ridge rr	ACT	1.036004856065779
+current stack x Roulette + ridge rr	CAA	1.0238817047238487
+current stack x Roulette + ridge rr	CAC	0.9835251010114732
+current stack x Roulette + ridge rr	CAG	1.0551506533938728
+current stack x Roulette + ridge rr	CAT	0.9512742780443842
+current stack x Roulette + ridge rr	CCA	0.9849154523798725
+current stack x Roulette + ridge rr	CCC	0.9887726113825479
+current stack x Roulette + ridge rr	CCG	1.0019148431813145
+current stack x Roulette + ridge rr	CCT	1.0205370345772011
+current stack x Roulette + ridge rr	GAA	0.8851937264083403
+current stack x Roulette + ridge rr	GAC	0.9439038139181843
+current stack x Roulette + ridge rr	GAG	1.02617951781279
+current stack x Roulette + ridge rr	GAT	0.9723873115041154
+current stack x Roulette + ridge rr	GCA	0.9885494014268682
+current stack x Roulette + ridge rr	GCC	0.9776371658885294
+current stack x Roulette + ridge rr	GCG	0.8952076022864118
+current stack x Roulette + ridge rr	GCT	0.9828343416057944
+current stack x Roulette + ridge rr	TAA	0.995461733595929
+current stack x Roulette + ridge rr	TAC	1.0075094635486381
+current stack x Roulette + ridge rr	TAG	1.0237098615448055
+current stack x Roulette + ridge rr	TAT	0.9669950271007183
+current stack x Roulette + ridge rr	TCA	1.0731433032728843
+current stack x Roulette + ridge rr	TCC	1.018384311398784
+current stack x Roulette + ridge rr	TCG	1.0187429687385343
+current stack x Roulette + ridge rr	TCT	1.0468925561643638
+plateau: weighted	AAA	1.0335924285739024
+plateau: weighted	AAC	1.0599627195740444
+plateau: weighted	AAG	1.1256633904980475
+plateau: weighted	AAT	0.9068529916823329
+plateau: weighted	ACA	0.9872290601942361
+plateau: weighted	ACC	0.9748640165783825
+plateau: weighted	ACG	0.9603569811784262
+plateau: weighted	ACT	1.0326971135141974
+plateau: weighted	CAA	1.0065026833138646
+plateau: weighted	CAC	1.0065740816359663
+plateau: weighted	CAG	1.0446854001388268
+plateau: weighted	CAT	0.8650971817882476
+plateau: weighted	CCA	0.9849827620810755
+plateau: weighted	CCC	1.0175423456328396
+plateau: weighted	CCG	1.0332460979071842
+plateau: weighted	CCT	1.038426558982911
+plateau: weighted	GAA	0.8854236278259172
+plateau: weighted	GAC	0.9535832668969193
+plateau: weighted	GAG	1.0366925653382253
+plateau: weighted	GAT	0.9058809121188739
+plateau: weighted	GCA	0.9972959643711828
+plateau: weighted	GCC	0.9769312029512035
+plateau: weighted	GCG	0.9232326809120789
+plateau: weighted	GCT	0.967540305686181
+plateau: weighted	TAA	0.9380770056206467
+plateau: weighted	TAC	0.9981904963136198
+plateau: weighted	TAG	1.0113959057225217
+plateau: weighted	TAT	0.7892538648088431
+plateau: weighted	TCA	1.0692537456885811
+plateau: weighted	TCC	1.0799782885793112
+plateau: weighted	TCG	1.052278856834268
+plateau: weighted	TCT	1.0922796133728687
+plateau: saturating	AAA	1.0346232674228901
+plateau: saturating	AAC	1.024087175248
+plateau: saturating	AAG	1.1229213746057287
+plateau: saturating	AAT	0.890000185087383
+plateau: saturating	ACA	0.9962908270694248
+plateau: saturating	ACC	0.9942903929463963
+plateau: saturating	ACG	0.9710605279388552
+plateau: saturating	ACT	1.0182189111381676
+plateau: saturating	CAA	1.0323541012244495
+plateau: saturating	CAC	1.0026493872141566
+plateau: saturating	CAG	1.0731838001930247
+plateau: saturating	CAT	0.9105967979004963
+plateau: saturating	CCA	0.9836458926218348
+plateau: saturating	CCC	1.0044933334131043
+plateau: saturating	CCG	1.0114230242341302
+plateau: saturating	CCT	1.032944530217416
+plateau: saturating	GAA	0.9424802532965147
+plateau: saturating	GAC	0.9575412347440759
+plateau: saturating	GAG	1.10835581001417
+plateau: saturating	GAT	0.8764451554667997
+plateau: saturating	GCA	0.9818329530015399
+plateau: saturating	GCC	0.9710486220440815
+plateau: saturating	GCG	0.928928703694336
+plateau: saturating	GCT	0.9554548169212446
+plateau: saturating	TAA	0.9469282672226847
+plateau: saturating	TAC	1.0151069386922196
+plateau: saturating	TAG	1.0653220815653335
+plateau: saturating	TAT	0.8327054426788663
+plateau: saturating	TCA	1.0534711629325613
+plateau: saturating	TCC	1.065632166720261
+plateau: saturating	TCG	1.0025287520834147
+plateau: saturating	TCT	1.0488099539911113
+plateau: logistic	AAA	1.0579754978243976
+plateau: logistic	AAC	1.1308276563944575
+plateau: logistic	AAG	1.1551149355765185
+plateau: logistic	AAT	0.9165125871706781
+plateau: logistic	ACA	0.9526409482360318
+plateau: logistic	ACC	0.9218770932968471
+plateau: logistic	ACG	0.9899841211072805
+plateau: logistic	ACT	1.0334084637701688
+plateau: logistic	CAA	0.9929944075944686
+plateau: logistic	CAC	1.0283219927250415
+plateau: logistic	CAG	1.021936080064589
+plateau: logistic	CAT	0.7910058506571902
+plateau: logistic	CCA	0.9931835163577074
+plateau: logistic	CCC	1.0327704951459982
+plateau: logistic	CCG	1.0686820350295443
+plateau: logistic	CCT	1.0317515593376743
+plateau: logistic	GAA	0.8327416009365358
+plateau: logistic	GAC	0.9678617978361745
+plateau: logistic	GAG	0.9692800683440022
+plateau: logistic	GAT	0.9641428355594513
+plateau: logistic	GCA	1.023961051214364
+plateau: logistic	GCC	0.9747607825003558
+plateau: logistic	GCG	0.9290258767494005
+plateau: logistic	GCT	0.9710695716903
+plateau: logistic	TAA	0.945982684811319
+plateau: logistic	TAC	0.9810772945736513
+plateau: logistic	TAG	0.9573596207014665
+plateau: logistic	TAT	0.7175210763800344
+plateau: logistic	TCA	1.107327327001406
+plateau: logistic	TCC	1.0976417924676227
+plateau: logistic	TCG	1.0483380719638349
+plateau: logistic	TCT	1.1753817291256046
+plateau: by_substitution	AAA	0.8856221876748405
+plateau: by_substitution	AAC	1.041238090630282
+plateau: by_substitution	AAG	1.0526112115636648
+plateau: by_substitution	AAT	0.9735572477474717
+plateau: by_substitution	ACA	1.0033508802580886
+plateau: by_substitution	ACC	1.0021057368400488
+plateau: by_substitution	ACG	0.9647839561319086
+plateau: by_substitution	ACT	1.007337249114344
+plateau: by_substitution	CAA	0.9810804620209671
+plateau: by_substitution	CAC	1.0248362761288419
+plateau: by_substitution	CAG	1.091425397175146
+plateau: by_substitution	CAT	1.0048435627192753
+plateau: by_substitution	CCA	0.9725593123146573
+plateau: by_substitution	CCC	1.017909933824242
+plateau: by_substitution	CCG	1.0292758084290463
+plateau: by_substitution	CCT	1.0236511568031026
+plateau: by_substitution	GAA	0.827128528315861
+plateau: by_substitution	GAC	0.9384645986265708
+plateau: by_substitution	GAG	1.0105326417732063
+plateau: by_substitution	GAT	0.9016349154795388
+plateau: by_substitution	GCA	0.9886315482235296
+plateau: by_substitution	GCC	0.9909726920532151
+plateau: by_substitution	GCG	0.9415860141840193
+plateau: by_substitution	GCT	0.9453006311038209
+plateau: by_substitution	TAA	0.9302882941485249
+plateau: by_substitution	TAC	1.057846368841619
+plateau: by_substitution	TAG	1.0669084679013718
+plateau: by_substitution	TAT	0.9193230312469375
+plateau: by_substitution	TCA	1.019631206896631
+plateau: by_substitution	TCC	1.0710046012472787
+plateau: by_substitution	TCG	1.0572505986265661
+plateau: by_substitution	TCT	0.994915332771384
+one model: groups + coverage	AAA	0.9344258533300368
+one model: groups + coverage	AAC	1.0165163935618504
+one model: groups + coverage	AAG	1.0602255363743252
+one model: groups + coverage	AAT	0.9459985090904028
+one model: groups + coverage	ACA	1.0042682415714663
+one model: groups + coverage	ACC	1.009821950553938
+one model: groups + coverage	ACG	0.9811402527307049
+one model: groups + coverage	ACT	1.0027206735474952
+one model: groups + coverage	CAA	0.9881544706775902
+one model: groups + coverage	CAC	1.0062819697346397
+one model: groups + coverage	CAG	1.0721081797886918
+one model: groups + coverage	CAT	1.0233108037237681
+one model: groups + coverage	CCA	0.9750368710715221
+one model: groups + coverage	CCC	1.0075506758660482
+one model: groups + coverage	CCG	1.0246587461425005
+one model: groups + coverage	CCT	1.0222071801889576
+one model: groups + coverage	GAA	0.8642399098375738
+one model: groups + coverage	GAC	0.937395101930841
+one model: groups + coverage	GAG	1.0394588799671276
+one model: groups + coverage	GAT	0.8843178007371347
+one model: groups + coverage	GCA	0.9813444460172145
+one model: groups + coverage	GCC	0.9840986330451228
+one model: groups + coverage	GCG	0.9647519971751829
+one model: groups + coverage	GCT	0.942565803219892
+one model: groups + coverage	TAA	0.9314357176796999
+one model: groups + coverage	TAC	1.0314541867596452
+one model: groups + coverage	TAG	1.0508041758383295
+one model: groups + coverage	TAT	0.9324935754977187
+one model: groups + coverage	TCA	1.0262174495686385
+one model: groups + coverage	TCC	1.0625923361544822
+one model: groups + coverage	TCG	1.0181488557574212
+one model: groups + coverage	TCT	0.9991956132363439
+one model: + window MQ	AAA	0.9345183206404405
+one model: + window MQ	AAC	1.0173543903354232
+one model: + window MQ	AAG	1.0604881674387758
+one model: + window MQ	AAT	0.9461594919418567
+one model: + window MQ	ACA	1.005755830387606
+one model: + window MQ	ACC	1.0109257503152478
+one model: + window MQ	ACG	0.9816514367145732
+one model: + window MQ	ACT	1.0031242569283572
+one model: + window MQ	CAA	0.9881482250898956
+one model: + window MQ	CAC	1.0063706881030097
+one model: + window MQ	CAG	1.0725031737051156
+one model: + window MQ	CAT	1.0236207003800648
+one model: + window MQ	CCA	0.9751475423527367
+one model: + window MQ	CCC	1.0071111214194435
+one model: + window MQ	CCG	1.0227559996813151
+one model: + window MQ	CCT	1.0232333918960226
+one model: + window MQ	GAA	0.8642610606377392
+one model: + window MQ	GAC	0.9380091810515535
+one model: + window MQ	GAG	1.0394200344587876
+one model: + window MQ	GAT	0.8847936077828166
+one model: + window MQ	GCA	0.9805343408637309
+one model: + window MQ	GCC	0.9818723392726947
+one model: + window MQ	GCG	0.9633539166122485
+one model: + window MQ	GCT	0.9419979111584136
+one model: + window MQ	TAA	0.93053081048535
+one model: + window MQ	TAC	1.0316507270376434
+one model: + window MQ	TAG	1.0503060125909371
+one model: + window MQ	TAT	0.9319299842570997
+one model: + window MQ	TCA	1.0268476880488626
+one model: + window MQ	TCC	1.0638583802879649
+one model: + window MQ	TCG	1.0190796342289574
+one model: + window MQ	TCT	1.0005034785170552
+one model: + DNM regional + window MQ	AAA	0.9328780570767982
+one model: + DNM regional + window MQ	AAC	1.0152337858967913
+one model: + DNM regional + window MQ	AAG	1.0587187985957085
+one model: + DNM regional + window MQ	AAT	0.9439228263962729
+one model: + DNM regional + window MQ	ACA	1.0096223325092626
+one model: + DNM regional + window MQ	ACC	1.0129997313329377
+one model: + DNM regional + window MQ	ACG	0.9797669506718558
+one model: + DNM regional + window MQ	ACT	1.0071446996809363
+one model: + DNM regional + window MQ	CAA	0.9874509651302024
+one model: + DNM regional + window MQ	CAC	1.004347221591004
+one model: + DNM regional + window MQ	CAG	1.0711953097197993
+one model: + DNM regional + window MQ	CAT	1.0223670852494045
+one model: + DNM regional + window MQ	CCA	0.9790029583327482
+one model: + DNM regional + window MQ	CCC	1.0027468691816315
+one model: + DNM regional + window MQ	CCG	1.026716774222266
+one model: + DNM regional + window MQ	CCT	1.0247000814684424
+one model: + DNM regional + window MQ	GAA	0.8631048982278968
+one model: + DNM regional + window MQ	GAC	0.9350491629057022
+one model: + DNM regional + window MQ	GAG	1.0370306478589664
+one model: + DNM regional + window MQ	GAT	0.883279431526864
+one model: + DNM regional + window MQ	GCA	0.9760800565442429
+one model: + DNM regional + window MQ	GCC	0.9741583933444529
+one model: + DNM regional + window MQ	GCG	0.9687274723916978
+one model: + DNM regional + window MQ	GCT	0.9401353406380976
+one model: + DNM regional + window MQ	TAA	0.9288244752161339
+one model: + DNM regional + window MQ	TAC	1.0297274788878974
+one model: + DNM regional + window MQ	TAG	1.0491334286143108
+one model: + DNM regional + window MQ	TAT	0.9299288814542039
+one model: + DNM regional + window MQ	TCA	1.0321465871001982
+one model: + DNM regional + window MQ	TCC	1.0676297210625867
+one model: + DNM regional + window MQ	TCG	1.012763368277372
+one model: + DNM regional + window MQ	TCT	1.0012321153510584
+one model: + gnomAD regional + window MQ	AAA	0.9397387900946004
+one model: + gnomAD regional + window MQ	AAC	1.0162551630021155
+one model: + gnomAD regional + window MQ	AAG	1.0606469034836483
+one model: + gnomAD regional + window MQ	AAT	0.9487213842054545
+one model: + gnomAD regional + window MQ	ACA	1.0196947213974017
+one model: + gnomAD regional + window MQ	ACC	1.0173183252980385
+one model: + gnomAD regional + window MQ	ACG	0.983065947508446
+one model: + gnomAD regional + window MQ	ACT	1.016705110337555
+one model: + gnomAD regional + window MQ	CAA	0.9927747916915861
+one model: + gnomAD regional + window MQ	CAC	0.998427495747881
+one model: + gnomAD regional + window MQ	CAG	1.0662043942465023
+one model: + gnomAD regional + window MQ	CAT	1.0236538723225
+one model: + gnomAD regional + window MQ	CCA	0.9755816563924335
+one model: + gnomAD regional + window MQ	CCC	0.9975607222055233
+one model: + gnomAD regional + window MQ	CCG	1.026668334304485
+one model: + gnomAD regional + window MQ	CCT	1.0214922992352142
+one model: + gnomAD regional + window MQ	GAA	0.8671890214943168
+one model: + gnomAD regional + window MQ	GAC	0.9293838228166216
+one model: + gnomAD regional + window MQ	GAG	1.0319711590140117
+one model: + gnomAD regional + window MQ	GAT	0.8858438609943192
+one model: + gnomAD regional + window MQ	GCA	0.9686498306859418
+one model: + gnomAD regional + window MQ	GCC	0.964384953307246
+one model: + gnomAD regional + window MQ	GCG	0.967078169155244
+one model: + gnomAD regional + window MQ	GCT	0.9339121329766077
+one model: + gnomAD regional + window MQ	TAA	0.9367725362029511
+one model: + gnomAD regional + window MQ	TAC	1.0316840032039298
+one model: + gnomAD regional + window MQ	TAG	1.052882638853704
+one model: + gnomAD regional + window MQ	TAT	0.9346563636997705
+one model: + gnomAD regional + window MQ	TCA	1.0370614904957025
+one model: + gnomAD regional + window MQ	TCC	1.0693577383082213
+one model: + gnomAD regional + window MQ	TCG	1.0242569028723945
+one model: + gnomAD regional + window MQ	TCT	1.0062155422027474
+one model: + DNM regional + window MQ + Roulette	AAA	0.9724197227018829
+one model: + DNM regional + window MQ + Roulette	AAC	1.0307132397686476
+one model: + DNM regional + window MQ + Roulette	AAG	1.0453702859245575
+one model: + DNM regional + window MQ + Roulette	AAT	1.0414441925915454
+one model: + DNM regional + window MQ + Roulette	ACA	1.0081142346275638
+one model: + DNM regional + window MQ + Roulette	ACC	1.0157549189579473
+one model: + DNM regional + window MQ + Roulette	ACG	0.9804746713737956
+one model: + DNM regional + window MQ + Roulette	ACT	1.0160445128562308
+one model: + DNM regional + window MQ + Roulette	CAA	0.9987316582230465
+one model: + DNM regional + window MQ + Roulette	CAC	0.958406719721789
+one model: + DNM regional + window MQ + Roulette	CAG	1.0448511860686014
+one model: + DNM regional + window MQ + Roulette	CAT	0.9936078637722185
+one model: + DNM regional + window MQ + Roulette	CCA	0.9818462489020845
+one model: + DNM regional + window MQ + Roulette	CCC	0.9919565955185513
+one model: + DNM regional + window MQ + Roulette	CCG	1.0284132442651392
+one model: + DNM regional + window MQ + Roulette	CCT	1.0157647814875272
+one model: + DNM regional + window MQ + Roulette	GAA	0.8777390664010961
+one model: + DNM regional + window MQ + Roulette	GAC	0.9157939254399488
+one model: + DNM regional + window MQ + Roulette	GAG	1.0299691741145562
+one model: + DNM regional + window MQ + Roulette	GAT	0.9132829562152386
+one model: + DNM regional + window MQ + Roulette	GCA	0.9787400601578149
+one model: + DNM regional + window MQ + Roulette	GCC	0.987506597071151
+one model: + DNM regional + window MQ + Roulette	GCG	0.9710515591684322
+one model: + DNM regional + window MQ + Roulette	GCT	0.959698718186858
+one model: + DNM regional + window MQ + Roulette	TAA	0.9794626345533483
+one model: + DNM regional + window MQ + Roulette	TAC	1.002905910583164
+one model: + DNM regional + window MQ + Roulette	TAG	1.0259346259440005
+one model: + DNM regional + window MQ + Roulette	TAT	1.008142245368954
+one model: + DNM regional + window MQ + Roulette	TCA	1.0435497095149475
+one model: + DNM regional + window MQ + Roulette	TCC	1.0236268518357001
+one model: + DNM regional + window MQ + Roulette	TCG	1.0157455714814858
+one model: + DNM regional + window MQ + Roulette	TCT	0.9879749361975915

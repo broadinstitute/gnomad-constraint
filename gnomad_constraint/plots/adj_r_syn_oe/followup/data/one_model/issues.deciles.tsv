@@ -1,0 +1,131 @@
+method	decile	oe
+current stack, no rr	0	0.9986319061820963
+current stack, no rr	1	0.9990603787769641
+current stack, no rr	2	1.0075092293024488
+current stack, no rr	3	1.0020063044489227
+current stack, no rr	4	1.0020755327086446
+current stack, no rr	5	1.0030411612705992
+current stack, no rr	6	1.019004079298883
+current stack, no rr	7	1.0361242548440812
+current stack, no rr	8	1.0645521031143734
+current stack, no rr	9	1.1119073422617933
+current stack + ridge rr	0	1.0018615771528292
+current stack + ridge rr	1	1.0026535900895392
+current stack + ridge rr	2	1.0082833233265762
+current stack + ridge rr	3	1.003651514423469
+current stack + ridge rr	4	1.006687965460337
+current stack + ridge rr	5	1.008411834604734
+current stack + ridge rr	6	1.0215382616188364
+current stack + ridge rr	7	1.0309469196304035
+current stack + ridge rr	8	1.0504796167906985
+current stack + ridge rr	9	1.0856613872886898
+current stack x Roulette	0	1.0162051591838164
+current stack x Roulette	1	1.023298038196253
+current stack x Roulette	2	1.032659089753321
+current stack x Roulette	3	1.0270869852947042
+current stack x Roulette	4	1.0285362330659535
+current stack x Roulette	5	1.0308046598218323
+current stack x Roulette	6	1.0414125051935001
+current stack x Roulette	7	1.0476650731587578
+current stack x Roulette	8	1.0579802058289178
+current stack x Roulette	9	1.084985481472643
+current stack x Roulette + ridge rr	0	1.0180056642383164
+current stack x Roulette + ridge rr	1	1.0255578805957046
+current stack x Roulette + ridge rr	2	1.031671535160219
+current stack x Roulette + ridge rr	3	1.0270457425343185
+current stack x Roulette + ridge rr	4	1.0312824952182869
+current stack x Roulette + ridge rr	5	1.0346246903519758
+current stack x Roulette + ridge rr	6	1.0422745424192021
+current stack x Roulette + ridge rr	7	1.0403615593404651
+current stack x Roulette + ridge rr	8	1.04088380344713
+current stack x Roulette + ridge rr	9	1.0559253144111005
+plateau: weighted	0	0.9826406255512359
+plateau: weighted	1	0.9833190543394941
+plateau: weighted	2	0.9916881130274617
+plateau: weighted	3	0.9860564245956333
+plateau: weighted	4	0.9860692147201177
+plateau: weighted	5	0.9869234715471923
+plateau: weighted	6	1.0028206677300018
+plateau: weighted	7	1.019732162398678
+plateau: weighted	8	1.0478669143895374
+plateau: weighted	9	1.09465329647815
+plateau: saturating	0	0.9847795097280426
+plateau: saturating	1	0.98467700738586
+plateau: saturating	2	0.9927415835547427
+plateau: saturating	3	0.9872524349537665
+plateau: saturating	4	0.9872932091238906
+plateau: saturating	5	0.9879637817841966
+plateau: saturating	6	1.0033524737140331
+plateau: saturating	7	1.0202432087598015
+plateau: saturating	8	1.0478259279715667
+plateau: saturating	9	1.093973273256479
+plateau: logistic	0	0.9816990796335768
+plateau: logistic	1	0.9831829034402243
+plateau: logistic	2	0.9920264947662372
+plateau: logistic	3	0.98638628694453
+plateau: logistic	4	0.9866208005419104
+plateau: logistic	5	0.9871900321786569
+plateau: logistic	6	1.0036739084101158
+plateau: logistic	7	1.0214524187550678
+plateau: logistic	8	1.049791602598337
+plateau: logistic	9	1.0975928357629892
+plateau: by_substitution	0	0.9840021907593467
+plateau: by_substitution	1	0.9840697490416195
+plateau: by_substitution	2	0.9919822191802575
+plateau: by_substitution	3	0.9860844264549585
+plateau: by_substitution	4	0.9859454802817678
+plateau: by_substitution	5	0.9866058881684043
+plateau: by_substitution	6	1.0022012144124925
+plateau: by_substitution	7	1.0189072882473003
+plateau: by_substitution	8	1.046987094301203
+plateau: by_substitution	9	1.0936955880060206
+one model: groups + coverage	0	0.982955474763557
+one model: groups + coverage	1	0.9831369500141472
+one model: groups + coverage	2	0.9908252878316852
+one model: groups + coverage	3	0.9859719589825083
+one model: groups + coverage	4	0.9853983907578888
+one model: groups + coverage	5	0.9854475168115119
+one model: groups + coverage	6	1.0002236637328326
+one model: groups + coverage	7	1.0178599624055376
+one model: groups + coverage	8	1.0468752546497186
+one model: groups + coverage	9	1.0914483120606475
+one model: + window MQ	0	0.9918808803454786
+one model: + window MQ	1	0.9843736762376895
+one model: + window MQ	2	0.9877576030254065
+one model: + window MQ	3	0.98406721177565
+one model: + window MQ	4	0.9850561907206729
+one model: + window MQ	5	0.9805380406153973
+one model: + window MQ	6	0.9941413336987449
+one model: + window MQ	7	1.0125048584742136
+one model: + window MQ	8	1.043412829833984
+one model: + window MQ	9	1.086039542484329
+one model: + DNM regional + window MQ	0	0.9940705320554166
+one model: + DNM regional + window MQ	1	0.9863442460404372
+one model: + DNM regional + window MQ	2	0.9878635400331337
+one model: + DNM regional + window MQ	3	0.9851244718678601
+one model: + DNM regional + window MQ	4	0.9913433087643458
+one model: + DNM regional + window MQ	5	0.9881644963740046
+one model: + DNM regional + window MQ	6	1.0012280003458698
+one model: + DNM regional + window MQ	7	1.0128781448069168
+one model: + DNM regional + window MQ	8	1.0392587252352403
+one model: + DNM regional + window MQ	9	1.0739674552767056
+one model: + gnomAD regional + window MQ	0	0.9974903915900534
+one model: + gnomAD regional + window MQ	1	0.9880912779612278
+one model: + gnomAD regional + window MQ	2	0.9899001546048366
+one model: + gnomAD regional + window MQ	3	0.9870422661994055
+one model: + gnomAD regional + window MQ	4	0.9931265799252028
+one model: + gnomAD regional + window MQ	5	0.9900559652453832
+one model: + gnomAD regional + window MQ	6	1.0000792310066609
+one model: + gnomAD regional + window MQ	7	1.0101939517424612
+one model: + gnomAD regional + window MQ	8	1.0304522508615852
+one model: + gnomAD regional + window MQ	9	1.056024965249066
+one model: + DNM regional + window MQ + Roulette	0	0.9931891298286184
+one model: + DNM regional + window MQ + Roulette	1	0.9918516975867575
+one model: + DNM regional + window MQ + Roulette	2	0.995041522071318
+one model: + DNM regional + window MQ + Roulette	3	0.9919401365857797
+one model: + DNM regional + window MQ + Roulette	4	0.997953574581864
+one model: + DNM regional + window MQ + Roulette	5	0.9948290950592619
+one model: + DNM regional + window MQ + Roulette	6	1.0046748359030646
+one model: + DNM regional + window MQ + Roulette	7	1.0107557126562143
+one model: + DNM regional + window MQ + Roulette	8	1.0247486738711624
+one model: + DNM regional + window MQ + Roulette	9	1.0478594528232064

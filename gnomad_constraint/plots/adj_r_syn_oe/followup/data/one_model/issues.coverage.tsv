@@ -1,0 +1,1054 @@
+method	coverage	oe
+current stack, no rr	20	2.075459621978837
+current stack, no rr	21	2.133355463340673
+current stack, no rr	22	1.753241062846211
+current stack, no rr	23	1.2690746647388254
+current stack, no rr	24	1.3358681469157447
+current stack, no rr	25	1.2048152936899788
+current stack, no rr	26	0.989155884043234
+current stack, no rr	27	0.9556220104501183
+current stack, no rr	28	0.9716622568623416
+current stack, no rr	29	0.8951804061085309
+current stack, no rr	30	0.7786640086962568
+current stack, no rr	31	0.786351975779697
+current stack, no rr	32	0.906903147495509
+current stack, no rr	33	0.9298610578360854
+current stack, no rr	34	1.0382933809451542
+current stack, no rr	35	1.06228795222543
+current stack, no rr	36	1.3554478692807088
+current stack, no rr	37	1.7700793022078578
+current stack, no rr	38	1.6003496019978576
+current stack, no rr	39	1.3705195413525328
+current stack, no rr	40	1.4734758849440843
+current stack, no rr	41	1.5220079195361436
+current stack, no rr	42	1.552805951318269
+current stack, no rr	43	1.2969079229376979
+current stack, no rr	44	0.7156987000996928
+current stack, no rr	45	0.6904570099774816
+current stack, no rr	46	0.753479003353596
+current stack, no rr	47	0.7428130176763622
+current stack, no rr	48	0.7293370838382306
+current stack, no rr	49	1.0725860207482145
+current stack, no rr	50	0.7097636614640265
+current stack, no rr	51	0.6820472224129428
+current stack, no rr	52	0.7085507195323434
+current stack, no rr	53	0.7948591657726173
+current stack, no rr	54	0.7320437613751019
+current stack, no rr	55	0.7162440017666895
+current stack, no rr	56	0.9530826981579867
+current stack, no rr	57	0.9988374152631536
+current stack, no rr	58	0.9620186403073916
+current stack, no rr	59	0.9827223198624155
+current stack, no rr	60	1.0423588491246711
+current stack, no rr	61	1.0192951740192382
+current stack, no rr	62	0.9512126228280227
+current stack, no rr	63	0.9752617750525745
+current stack, no rr	64	0.978079957675652
+current stack, no rr	65	0.979875069722117
+current stack, no rr	66	0.9518465483137176
+current stack, no rr	67	0.9697215140511256
+current stack, no rr	68	0.9890541513305602
+current stack, no rr	69	0.9963146101168531
+current stack, no rr	70	0.9973539978188858
+current stack, no rr	71	1.0088454097928992
+current stack, no rr	72	1.0189963649659834
+current stack, no rr	73	0.9629190568038235
+current stack, no rr	74	0.9957112525537731
+current stack, no rr	75	1.0036979142667015
+current stack, no rr	76	0.991294721173013
+current stack, no rr	77	0.9550638433490191
+current stack, no rr	78	0.9646166782819969
+current stack, no rr	79	0.9959108116952691
+current stack, no rr	80	0.9848453764606362
+current stack, no rr	81	1.0107271085613854
+current stack, no rr	82	0.9851677953211531
+current stack, no rr	83	0.9834967744293999
+current stack, no rr	84	0.9622732771360832
+current stack, no rr	85	0.9414486652928523
+current stack, no rr	86	0.9367659231407627
+current stack, no rr	87	0.9265947865321973
+current stack, no rr	88	0.9272409923230558
+current stack, no rr	89	0.9204770148816821
+current stack, no rr	90	1.0615833386399953
+current stack, no rr	91	1.0701089792314682
+current stack, no rr	92	1.0712868384131358
+current stack, no rr	93	1.0614294804825395
+current stack, no rr	94	1.0332877738259083
+current stack, no rr	95	1.0236600189373015
+current stack, no rr	96	1.0616880032467655
+current stack, no rr	97	1.0591743771458086
+current stack, no rr	98	1.0495466256551356
+current stack, no rr	99	1.00999254613302
+current stack, no rr	100	1.0030041979953364
+current stack + ridge rr	20	2.0788405260861986
+current stack + ridge rr	21	2.1300404743680295
+current stack + ridge rr	22	1.7454629527466106
+current stack + ridge rr	23	1.260826951007412
+current stack + ridge rr	24	1.3341204603725174
+current stack + ridge rr	25	1.199956950903732
+current stack + ridge rr	26	0.988677871764976
+current stack + ridge rr	27	0.9484482752792607
+current stack + ridge rr	28	0.9697510306681411
+current stack + ridge rr	29	0.8926801181325462
+current stack + ridge rr	30	0.781505893646358
+current stack + ridge rr	31	0.7932460804325089
+current stack + ridge rr	32	0.907630273611195
+current stack + ridge rr	33	0.9360825645160278
+current stack + ridge rr	34	1.044601711716282
+current stack + ridge rr	35	1.0560728324663522
+current stack + ridge rr	36	1.3373894116335727
+current stack + ridge rr	37	1.758611240200366
+current stack + ridge rr	38	1.5832536451126882
+current stack + ridge rr	39	1.3307625507857073
+current stack + ridge rr	40	1.429080154040456
+current stack + ridge rr	41	1.4915006990296962
+current stack + ridge rr	42	1.5234039445759988
+current stack + ridge rr	43	1.3050878417139489
+current stack + ridge rr	44	0.7144155682295469
+current stack + ridge rr	45	0.6933154838200789
+current stack + ridge rr	46	0.7525728193909448
+current stack + ridge rr	47	0.7439495194254667
+current stack + ridge rr	48	0.7316893712380039
+current stack + ridge rr	49	1.0883764540288008
+current stack + ridge rr	50	0.7041689276182794
+current stack + ridge rr	51	0.6813407397357293
+current stack + ridge rr	52	0.7092307697039966
+current stack + ridge rr	53	0.7936824129543113
+current stack + ridge rr	54	0.730067168935967
+current stack + ridge rr	55	0.7187571409065971
+current stack + ridge rr	56	0.9209808323481823
+current stack + ridge rr	57	0.9641173499356781
+current stack + ridge rr	58	0.9298260973350712
+current stack + ridge rr	59	0.9558410696881525
+current stack + ridge rr	60	1.01246291408888
+current stack + ridge rr	61	0.9870802142744505
+current stack + ridge rr	62	0.9266156033453476
+current stack + ridge rr	63	0.9397349630660781
+current stack + ridge rr	64	0.9462505427106784
+current stack + ridge rr	65	0.947771861089996
+current stack + ridge rr	66	0.9254256511815008
+current stack + ridge rr	67	0.9435692165318909
+current stack + ridge rr	68	0.9619133480468331
+current stack + ridge rr	69	0.9635014078716092
+current stack + ridge rr	70	0.9645254624694602
+current stack + ridge rr	71	0.9723676023989052
+current stack + ridge rr	72	0.981542492192605
+current stack + ridge rr	73	0.9332759647269901
+current stack + ridge rr	74	0.9639481627753266
+current stack + ridge rr	75	0.9681287244836292
+current stack + ridge rr	76	0.9562567316971994
+current stack + ridge rr	77	0.9272499992026032
+current stack + ridge rr	78	0.9398790511827189
+current stack + ridge rr	79	0.957898868410457
+current stack + ridge rr	80	0.9470221922117781
+current stack + ridge rr	81	0.9713903098693512
+current stack + ridge rr	82	0.9502053530957786
+current stack + ridge rr	83	0.9511515136214993
+current stack + ridge rr	84	0.9286160591146501
+current stack + ridge rr	85	0.9112496054986001
+current stack + ridge rr	86	0.9046931798851011
+current stack + ridge rr	87	0.8931988841033788
+current stack + ridge rr	88	0.8927277070857358
+current stack + ridge rr	89	0.8872075162113917
+current stack + ridge rr	90	1.0265470062952515
+current stack + ridge rr	91	1.0365031077272715
+current stack + ridge rr	92	1.039710643053823
+current stack + ridge rr	93	1.0322252110965096
+current stack + ridge rr	94	1.0137279003969575
+current stack + ridge rr	95	1.0100501474680814
+current stack + ridge rr	96	1.0366755412444153
+current stack + ridge rr	97	1.039199426633485
+current stack + ridge rr	98	1.0335085863989024
+current stack + ridge rr	99	1.0153333463374934
+current stack + ridge rr	100	1.0208380811429265
+current stack x Roulette	20	2.0784108603992344
+current stack x Roulette	21	2.1460576372985933
+current stack x Roulette	22	1.7893112412015766
+current stack x Roulette	23	1.2591845186033492
+current stack x Roulette	24	1.3250369345496225
+current stack x Roulette	25	1.2002865545344017
+current stack x Roulette	26	0.9879500787445452
+current stack x Roulette	27	0.9530692550308978
+current stack x Roulette	28	0.9703495369243424
+current stack x Roulette	29	0.8934174947179743
+current stack x Roulette	30	0.7765422635713471
+current stack x Roulette	31	0.7868316864037209
+current stack x Roulette	32	0.906914601527755
+current stack x Roulette	33	0.9281506271367961
+current stack x Roulette	34	1.0357841169422934
+current stack x Roulette	35	1.0602957280034893
+current stack x Roulette	36	1.348569577670946
+current stack x Roulette	37	1.765866798643026
+current stack x Roulette	38	1.6153998818991315
+current stack x Roulette	39	1.3509539043835557
+current stack x Roulette	40	1.4487797918571992
+current stack x Roulette	41	1.517480474859692
+current stack x Roulette	42	1.5391630044018805
+current stack x Roulette	43	1.3096819702685223
+current stack x Roulette	44	0.7148001510631329
+current stack x Roulette	45	0.693203321659438
+current stack x Roulette	46	0.7525312242587183
+current stack x Roulette	47	0.7410653616696795
+current stack x Roulette	48	0.7301903086227749
+current stack x Roulette	49	1.0972615608716394
+current stack x Roulette	50	0.7118864014892239
+current stack x Roulette	51	0.6818958578792067
+current stack x Roulette	52	0.7103541157089792
+current stack x Roulette	53	0.7894957373032145
+current stack x Roulette	54	0.7325840864528211
+current stack x Roulette	55	0.7146787649328193
+current stack x Roulette	56	0.9460139752579383
+current stack x Roulette	57	0.983241538599431
+current stack x Roulette	58	0.9446274409066361
+current stack x Roulette	59	0.964997495909058
+current stack x Roulette	60	1.0306814160578526
+current stack x Roulette	61	0.9996482971219494
+current stack x Roulette	62	0.9392206375669127
+current stack x Roulette	63	0.9640026154940756
+current stack x Roulette	64	0.9622782157735751
+current stack x Roulette	65	0.9714905150658877
+current stack x Roulette	66	0.9368395044295118
+current stack x Roulette	67	0.9591442109982943
+current stack x Roulette	68	0.9785952268873701
+current stack x Roulette	69	0.9887269870069801
+current stack x Roulette	70	0.9723939503379281
+current stack x Roulette	71	0.9927215578545796
+current stack x Roulette	72	1.001892179190344
+current stack x Roulette	73	0.9605148301658425
+current stack x Roulette	74	0.9800296609521495
+current stack x Roulette	75	0.9941122830009358
+current stack x Roulette	76	0.9758081564735245
+current stack x Roulette	77	0.9490700468031915
+current stack x Roulette	78	0.960198162647373
+current stack x Roulette	79	0.9836070235041641
+current stack x Roulette	80	0.9728972641342952
+current stack x Roulette	81	0.9963122849666862
+current stack x Roulette	82	0.9761537966721952
+current stack x Roulette	83	0.9745947386599394
+current stack x Roulette	84	0.9552264956298606
+current stack x Roulette	85	0.9350727568423102
+current stack x Roulette	86	0.9336270773853896
+current stack x Roulette	87	0.9201371244336795
+current stack x Roulette	88	0.9209615215790318
+current stack x Roulette	89	0.9117486185742383
+current stack x Roulette	90	1.0551432389100701
+current stack x Roulette	91	1.0652311095796598
+current stack x Roulette	92	1.0680556759056392
+current stack x Roulette	93	1.0615093756520713
+current stack x Roulette	94	1.0375603458127978
+current stack x Roulette	95	1.028902717264098
+current stack x Roulette	96	1.0651351134936569
+current stack x Roulette	97	1.0663300533515527
+current stack x Roulette	98	1.0594742429846649
+current stack x Roulette	99	1.0314054565547428
+current stack x Roulette	100	1.039687022514353
+current stack x Roulette + ridge rr	20	2.081096360956075
+current stack x Roulette + ridge rr	21	2.1415594711560084
+current stack x Roulette + ridge rr	22	1.778944826842716
+current stack x Roulette + ridge rr	23	1.2496830875343339
+current stack x Roulette + ridge rr	24	1.321063784125111
+current stack x Roulette + ridge rr	25	1.1950152756921357
+current stack x Roulette + ridge rr	26	0.9873210552355469
+current stack x Roulette + ridge rr	27	0.9454705387496647
+current stack x Roulette + ridge rr	28	0.9678480302000795
+current stack x Roulette + ridge rr	29	0.8905654749825826
+current stack x Roulette + ridge rr	30	0.7791175702333158
+current stack x Roulette + ridge rr	31	0.7938012525091948
+current stack x Roulette + ridge rr	32	0.9069396005173419
+current stack x Roulette + ridge rr	33	0.9336847225626334
+current stack x Roulette + ridge rr	34	1.0406079644802724
+current stack x Roulette + ridge rr	35	1.0526248479362827
+current stack x Roulette + ridge rr	36	1.3273876888467162
+current stack x Roulette + ridge rr	37	1.7505712356373353
+current stack x Roulette + ridge rr	38	1.594190509169179
+current stack x Roulette + ridge rr	39	1.3071774692462497
+current stack x Roulette + ridge rr	40	1.4001742629378662
+current stack x Roulette + ridge rr	41	1.4855694026824824
+current stack x Roulette + ridge rr	42	1.506136504746228
+current stack x Roulette + ridge rr	43	1.3173150521531132
+current stack x Roulette + ridge rr	44	0.7132448123468476
+current stack x Roulette + ridge rr	45	0.6959552091028345
+current stack x Roulette + ridge rr	46	0.7512724941072092
+current stack x Roulette + ridge rr	47	0.7412508531859137
+current stack x Roulette + ridge rr	48	0.7316937216954719
+current stack x Roulette + ridge rr	49	1.1127327430198002
+current stack x Roulette + ridge rr	50	0.7061711659198793
+current stack x Roulette + ridge rr	51	0.6807034315457023
+current stack x Roulette + ridge rr	52	0.7110805142333878
+current stack x Roulette + ridge rr	53	0.7873664668646747
+current stack x Roulette + ridge rr	54	0.7306585112763746
+current stack x Roulette + ridge rr	55	0.716595993608244
+current stack x Roulette + ridge rr	56	0.9116577823074983
+current stack x Roulette + ridge rr	57	0.9453969800328867
+current stack x Roulette + ridge rr	58	0.9096560157322311
+current stack x Roulette + ridge rr	59	0.9352062495689695
+current stack x Roulette + ridge rr	60	0.9986623778582824
+current stack x Roulette + ridge rr	61	0.9655558762717376
+current stack x Roulette + ridge rr	62	0.9123161209348724
+current stack x Roulette + ridge rr	63	0.926215409583833
+current stack x Roulette + ridge rr	64	0.9283839453453734
+current stack x Roulette + ridge rr	65	0.9382409111336539
+current stack x Roulette + ridge rr	66	0.9081664087174288
+current stack x Roulette + ridge rr	67	0.9315364095081147
+current stack x Roulette + ridge rr	68	0.9500745273126262
+current stack x Roulette + ridge rr	69	0.9545149121285701
+current stack x Roulette + ridge rr	70	0.9374963972985794
+current stack x Roulette + ridge rr	71	0.9544292669956042
+current stack x Roulette + ridge rr	72	0.9628755024081211
+current stack x Roulette + ridge rr	73	0.928962163318695
+current stack x Roulette + ridge rr	74	0.9464499139198315
+current stack x Roulette + ridge rr	75	0.9571772515697922
+current stack x Roulette + ridge rr	76	0.9392483918888992
+current stack x Roulette + ridge rr	77	0.9194895356678835
+current stack x Roulette + ridge rr	78	0.9336500691679042
+current stack x Roulette + ridge rr	79	0.9437288492694367
+current stack x Roulette + ridge rr	80	0.9334488588103008
+current stack x Roulette + ridge rr	81	0.9550908747702459
+current stack x Roulette + ridge rr	82	0.9390636911233922
+current stack x Roulette + ridge rr	83	0.939895444427753
+current stack x Roulette + ridge rr	84	0.919834230481255
+current stack x Roulette + ridge rr	85	0.9029579850591232
+current stack x Roulette + ridge rr	86	0.8997820092193316
+current stack x Roulette + ridge rr	87	0.8846996296859971
+current stack x Roulette + ridge rr	88	0.8845276105595175
+current stack x Roulette + ridge rr	89	0.876479029043138
+current stack x Roulette + ridge rr	90	1.0178313694980397
+current stack x Roulette + ridge rr	91	1.0291303455053715
+current stack x Roulette + ridge rr	92	1.0340791349731464
+current stack x Roulette + ridge rr	93	1.0297831592269862
+current stack x Roulette + ridge rr	94	1.0154785949655731
+current stack x Roulette + ridge rr	95	1.012322132758073
+current stack x Roulette + ridge rr	96	1.036882946128874
+current stack x Roulette + ridge rr	97	1.0432438940903885
+current stack x Roulette + ridge rr	98	1.0404544491303034
+current stack x Roulette + ridge rr	99	1.035251897736312
+current stack x Roulette + ridge rr	100	1.0577807720098111
+plateau: weighted	20	2.043820795779812
+plateau: weighted	21	2.102462383288489
+plateau: weighted	22	1.7268247499316383
+plateau: weighted	23	1.2503736062621118
+plateau: weighted	24	1.3161244872846403
+plateau: weighted	25	1.1871304824335382
+plateau: weighted	26	0.974848986986304
+plateau: weighted	27	0.9423033942521565
+plateau: weighted	28	0.9573519673322811
+plateau: weighted	29	0.8818463652614202
+plateau: weighted	30	0.766504369536711
+plateau: weighted	31	0.7742067861923057
+plateau: weighted	32	0.8926397242413021
+plateau: weighted	33	0.9154907066159665
+plateau: weighted	34	1.02269702609792
+plateau: weighted	35	1.046248950458064
+plateau: weighted	36	1.33534199836599
+plateau: weighted	37	1.7406379657606565
+plateau: weighted	38	1.5753532164049444
+plateau: weighted	39	1.3494624676321152
+plateau: weighted	40	1.4505173909243259
+plateau: weighted	41	1.4996081183930368
+plateau: weighted	42	1.529590694819994
+plateau: weighted	43	1.2756701186522212
+plateau: weighted	44	0.7048031201661595
+plateau: weighted	45	0.6804506006422596
+plateau: weighted	46	0.7419880661114412
+plateau: weighted	47	0.7323584703795637
+plateau: weighted	48	0.7180921338020313
+plateau: weighted	49	1.0548047582603612
+plateau: weighted	50	0.6992567540234752
+plateau: weighted	51	0.6719129250952155
+plateau: weighted	52	0.6985016607452498
+plateau: weighted	53	0.7835824470386162
+plateau: weighted	54	0.7214649033393938
+plateau: weighted	55	0.706069777103517
+plateau: weighted	56	0.9401885653300902
+plateau: weighted	57	0.9863353804659762
+plateau: weighted	58	0.9497286872640838
+plateau: weighted	59	0.9702569328844117
+plateau: weighted	60	1.02886782785231
+plateau: weighted	61	1.006115971253997
+plateau: weighted	62	0.9391454108268336
+plateau: weighted	63	0.9628635911185468
+plateau: weighted	64	0.9654194462819937
+plateau: weighted	65	0.9671189098072795
+plateau: weighted	66	0.9396814370031281
+plateau: weighted	67	0.9571655155073994
+plateau: weighted	68	0.9763803487691639
+plateau: weighted	69	0.9835115460298608
+plateau: weighted	70	0.9846458983658447
+plateau: weighted	71	0.9963425328446237
+plateau: weighted	72	1.0060359402624466
+plateau: weighted	73	0.9494879285203263
+plateau: weighted	74	0.9827081572163617
+plateau: weighted	75	0.9906959615447287
+plateau: weighted	76	0.9784086911580394
+plateau: weighted	77	0.942188014246206
+plateau: weighted	78	0.9515898782201776
+plateau: weighted	79	0.9827661932990974
+plateau: weighted	80	0.9716179043543399
+plateau: weighted	81	0.9972647428795994
+plateau: weighted	82	0.9719465311492955
+plateau: weighted	83	0.9702381440115836
+plateau: weighted	84	0.9493389475352727
+plateau: weighted	85	0.9287702236570563
+plateau: weighted	86	0.9239036990250182
+plateau: weighted	87	0.9139863994599042
+plateau: weighted	88	0.9144732749753001
+plateau: weighted	89	0.9078684090971675
+plateau: weighted	90	1.0468285931564727
+plateau: weighted	91	1.0550028808162828
+plateau: weighted	92	1.0558506831591934
+plateau: weighted	93	1.0460484987237662
+plateau: weighted	94	1.0174470417747894
+plateau: weighted	95	1.007928317584457
+plateau: weighted	96	1.0459260250777545
+plateau: weighted	97	1.043042172815524
+plateau: weighted	98	1.0332470841403048
+plateau: weighted	99	0.9937343097354394
+plateau: weighted	100	0.985345215341775
+plateau: saturating	20	2.0458611882648765
+plateau: saturating	21	2.099012565479519
+plateau: saturating	22	1.7284659121207242
+plateau: saturating	23	1.249204843670319
+plateau: saturating	24	1.3179155666752542
+plateau: saturating	25	1.1867419977672788
+plateau: saturating	26	0.9757352871062257
+plateau: saturating	27	0.9403759804324928
+plateau: saturating	28	0.9568704276702881
+plateau: saturating	29	0.8825094426825296
+plateau: saturating	30	0.7666711533314856
+plateau: saturating	31	0.7750594733949356
+plateau: saturating	32	0.8934398189814097
+plateau: saturating	33	0.9155083426895855
+plateau: saturating	34	1.0224797202001914
+plateau: saturating	35	1.0480864779354035
+plateau: saturating	36	1.3347850711204408
+plateau: saturating	37	1.743836995751441
+plateau: saturating	38	1.5782157918479416
+plateau: saturating	39	1.3519689841915272
+plateau: saturating	40	1.4539629214667187
+plateau: saturating	41	1.4993831407860154
+plateau: saturating	42	1.5299198063040231
+plateau: saturating	43	1.2761234575279763
+plateau: saturating	44	0.7048355628344823
+plateau: saturating	45	0.6799701612694073
+plateau: saturating	46	0.7412158131054676
+plateau: saturating	47	0.7333308433312772
+plateau: saturating	48	0.7173767365422273
+plateau: saturating	49	1.0571590118228134
+plateau: saturating	50	0.700956484331652
+plateau: saturating	51	0.6728780115677993
+plateau: saturating	52	0.6981885728231462
+plateau: saturating	53	0.7829553804793171
+plateau: saturating	54	0.721407231732962
+plateau: saturating	55	0.7076742515295565
+plateau: saturating	56	0.9417832306118435
+plateau: saturating	57	0.9882208428498729
+plateau: saturating	58	0.9530138763213801
+plateau: saturating	59	0.9734036979158022
+plateau: saturating	60	1.0307131768185254
+plateau: saturating	61	1.0073714352809102
+plateau: saturating	62	0.9391358815456724
+plateau: saturating	63	0.9629984663764624
+plateau: saturating	64	0.9663617726478072
+plateau: saturating	65	0.9680363258331538
+plateau: saturating	66	0.9410590320464621
+plateau: saturating	67	0.9592942411009779
+plateau: saturating	68	0.9788973161408981
+plateau: saturating	69	0.9855015844250669
+plateau: saturating	70	0.986348018825981
+plateau: saturating	71	0.9970055211844574
+plateau: saturating	72	1.0071323767697946
+plateau: saturating	73	0.9496366147719658
+plateau: saturating	74	0.9842246127261639
+plateau: saturating	75	0.9915110304185218
+plateau: saturating	76	0.9794289051440301
+plateau: saturating	77	0.9427559140536746
+plateau: saturating	78	0.9522998324464007
+plateau: saturating	79	0.9832785935769587
+plateau: saturating	80	0.9722282415171258
+plateau: saturating	81	0.9990193660470394
+plateau: saturating	82	0.9730383797225475
+plateau: saturating	83	0.9710969623709158
+plateau: saturating	84	0.9499545391145677
+plateau: saturating	85	0.9296267860988935
+plateau: saturating	86	0.924000101853288
+plateau: saturating	87	0.9139842696906189
+plateau: saturating	88	0.9144162019222398
+plateau: saturating	89	0.9076145554125324
+plateau: saturating	90	1.0466844034698468
+plateau: saturating	91	1.0543291225760212
+plateau: saturating	92	1.0553865569169494
+plateau: saturating	93	1.0455526084276663
+plateau: saturating	94	1.0173797557183946
+plateau: saturating	95	1.0075394040786063
+plateau: saturating	96	1.045083276861979
+plateau: saturating	97	1.0429662835548241
+plateau: saturating	98	1.033692683093884
+plateau: saturating	99	0.9949653555429461
+plateau: saturating	100	0.9886770334033029
+plateau: logistic	20	2.049134465030764
+plateau: logistic	21	2.107569190965341
+plateau: logistic	22	1.7271218797354373
+plateau: logistic	23	1.2532615208260312
+plateau: logistic	24	1.319488685786913
+plateau: logistic	25	1.1868163490980794
+plateau: logistic	26	0.9763657939055694
+plateau: logistic	27	0.9438980838259784
+plateau: logistic	28	0.9585548139904564
+plateau: logistic	29	0.8822209063148009
+plateau: logistic	30	0.7671370847968807
+plateau: logistic	31	0.775373191110263
+plateau: logistic	32	0.8921079741992392
+plateau: logistic	33	0.9159227028092415
+plateau: logistic	34	1.0245268741926792
+plateau: logistic	35	1.050378577119655
+plateau: logistic	36	1.3391265905562815
+plateau: logistic	37	1.7378447053627049
+plateau: logistic	38	1.5730912255392246
+plateau: logistic	39	1.3524868533001204
+plateau: logistic	40	1.450253885002254
+plateau: logistic	41	1.5029114270212316
+plateau: logistic	42	1.5316822747731582
+plateau: logistic	43	1.2753275759864313
+plateau: logistic	44	0.706353636578364
+plateau: logistic	45	0.682592551476931
+plateau: logistic	46	0.7429833274318814
+plateau: logistic	47	0.7345457051497125
+plateau: logistic	48	0.7189676953412009
+plateau: logistic	49	1.0526888327796702
+plateau: logistic	50	0.701304856855754
+plateau: logistic	51	0.6730937867310774
+plateau: logistic	52	0.7000314058010845
+plateau: logistic	53	0.7868465574171947
+plateau: logistic	54	0.725160083712467
+plateau: logistic	55	0.7106912739986418
+plateau: logistic	56	0.9518837257728511
+plateau: logistic	57	1.0050314146649535
+plateau: logistic	58	0.9663304159477422
+plateau: logistic	59	0.9878654803494672
+plateau: logistic	60	1.0484927882195818
+plateau: logistic	61	1.0206405669960512
+plateau: logistic	62	0.9529731307465654
+plateau: logistic	63	0.9770570585761794
+plateau: logistic	64	0.9787419670560136
+plateau: logistic	65	0.9803615568590958
+plateau: logistic	66	0.9544595012005243
+plateau: logistic	67	0.9746734990521719
+plateau: logistic	68	0.9925926180414097
+plateau: logistic	69	1.0009091079285928
+plateau: logistic	70	1.0018804300362942
+plateau: logistic	71	1.014838138459117
+plateau: logistic	72	1.0238987914827657
+plateau: logistic	73	0.9597602796754983
+plateau: logistic	74	0.9988479737234899
+plateau: logistic	75	1.0079301700563403
+plateau: logistic	76	0.9943976016626536
+plateau: logistic	77	0.9552463403540249
+plateau: logistic	78	0.9641355174236453
+plateau: logistic	79	0.9976743893214097
+plateau: logistic	80	0.9852649233198142
+plateau: logistic	81	1.0135439281650724
+plateau: logistic	82	0.985811971146967
+plateau: logistic	83	0.9836488590518995
+plateau: logistic	84	0.9623352456841753
+plateau: logistic	85	0.9420800433072596
+plateau: logistic	86	0.9348723714042291
+plateau: logistic	87	0.9253343307626214
+plateau: logistic	88	0.9249923165379713
+plateau: logistic	89	0.9184846260971721
+plateau: logistic	90	1.0573651361184522
+plateau: logistic	91	1.0646600749967157
+plateau: logistic	92	1.0641318660470405
+plateau: logistic	93	1.053114697553126
+plateau: logistic	94	1.0208264359369772
+plateau: logistic	95	1.0102066509960765
+plateau: logistic	96	1.0494829134760546
+plateau: logistic	97	1.0454922861180551
+plateau: logistic	98	1.0342768245284828
+plateau: logistic	99	0.9931710832784499
+plateau: logistic	100	0.9822828105861418
+plateau: by_substitution	20	2.042777120970352
+plateau: by_substitution	21	2.098313493260113
+plateau: by_substitution	22	1.7262586202995909
+plateau: by_substitution	23	1.2476894102828564
+plateau: by_substitution	24	1.3163144821886588
+plateau: by_substitution	25	1.1863513756670427
+plateau: by_substitution	26	0.9753232138451283
+plateau: by_substitution	27	0.9414063263218087
+plateau: by_substitution	28	0.9558974350893585
+plateau: by_substitution	29	0.8813308756889667
+plateau: by_substitution	30	0.7654221708982009
+plateau: by_substitution	31	0.7728184589913256
+plateau: by_substitution	32	0.8916352462747721
+plateau: by_substitution	33	0.9149776097490868
+plateau: by_substitution	34	1.0214212198914243
+plateau: by_substitution	35	1.0453358845867957
+plateau: by_substitution	36	1.3339289494251905
+plateau: by_substitution	37	1.7415113447022996
+plateau: by_substitution	38	1.5766007310455845
+plateau: by_substitution	39	1.3484933886696926
+plateau: by_substitution	40	1.4498744620848187
+plateau: by_substitution	41	1.4970460070348204
+plateau: by_substitution	42	1.5287595375695762
+plateau: by_substitution	43	1.2727852696250759
+plateau: by_substitution	44	0.7032831341860041
+plateau: by_substitution	45	0.6799001678512211
+plateau: by_substitution	46	0.7420078370736206
+plateau: by_substitution	47	0.7318325310038574
+plateau: by_substitution	48	0.7177494234577743
+plateau: by_substitution	49	1.0566804226063207
+plateau: by_substitution	50	0.6990221063874896
+plateau: by_substitution	51	0.6716147041532702
+plateau: by_substitution	52	0.6983241334671942
+plateau: by_substitution	53	0.7834656035205955
+plateau: by_substitution	54	0.7220025975332086
+plateau: by_substitution	55	0.7080648675352318
+plateau: by_substitution	56	0.9410483277565433
+plateau: by_substitution	57	0.9863652938845228
+plateau: by_substitution	58	0.9509997178254113
+plateau: by_substitution	59	0.9719804841519325
+plateau: by_substitution	60	1.0286513242027853
+plateau: by_substitution	61	1.0078720612601957
+plateau: by_substitution	62	0.9396447136802378
+plateau: by_substitution	63	0.9631878333966364
+plateau: by_substitution	64	0.9669011822642618
+plateau: by_substitution	65	0.9697629650555185
+plateau: by_substitution	66	0.9416071920090316
+plateau: by_substitution	67	0.9589539975403328
+plateau: by_substitution	68	0.9788834034698091
+plateau: by_substitution	69	0.9852358209861394
+plateau: by_substitution	70	0.9868422453457064
+plateau: by_substitution	71	0.9977123707758492
+plateau: by_substitution	72	1.0080712984148912
+plateau: by_substitution	73	0.9501959500059016
+plateau: by_substitution	74	0.9839130676570201
+plateau: by_substitution	75	0.9909791177486192
+plateau: by_substitution	76	0.9793378579623582
+plateau: by_substitution	77	0.9427670585123114
+plateau: by_substitution	78	0.952160851789448
+plateau: by_substitution	79	0.9835788946666102
+plateau: by_substitution	80	0.9728152099731046
+plateau: by_substitution	81	0.9979424949900076
+plateau: by_substitution	82	0.9733248163059195
+plateau: by_substitution	83	0.9713108713432481
+plateau: by_substitution	84	0.9506194822747763
+plateau: by_substitution	85	0.9290993433511141
+plateau: by_substitution	86	0.9251152531425968
+plateau: by_substitution	87	0.9147477587927265
+plateau: by_substitution	88	0.9150788221803389
+plateau: by_substitution	89	0.9082689082365232
+plateau: by_substitution	90	1.0477094603134751
+plateau: by_substitution	91	1.0555577336649367
+plateau: by_substitution	92	1.0564770263704952
+plateau: by_substitution	93	1.0466423170371282
+plateau: by_substitution	94	1.017845951794116
+plateau: by_substitution	95	1.0075101401441533
+plateau: by_substitution	96	1.0459909612975649
+plateau: by_substitution	97	1.043263693638167
+plateau: by_substitution	98	1.0339187080779049
+plateau: by_substitution	99	0.9936958441086713
+plateau: by_substitution	100	0.9849378021255338
+one model: groups + coverage	20	1.1671234386375384
+one model: groups + coverage	21	1.3714691940452497
+one model: groups + coverage	22	1.2505614571239954
+one model: groups + coverage	23	0.9423103872811902
+one model: groups + coverage	24	1.078733768375549
+one model: groups + coverage	25	1.0348779061780646
+one model: groups + coverage	26	0.9034114254111897
+one model: groups + coverage	27	0.9127981818893952
+one model: groups + coverage	28	1.014348992436636
+one model: groups + coverage	29	0.9916713129364305
+one model: groups + coverage	30	0.9325469666316976
+one model: groups + coverage	31	0.8746855620876575
+one model: groups + coverage	32	0.9353325845558912
+one model: groups + coverage	33	0.8767236683119908
+one model: groups + coverage	34	0.9023225740011445
+one model: groups + coverage	35	0.8678304876787475
+one model: groups + coverage	36	1.0179437032502459
+one model: groups + coverage	37	1.258816396030962
+one model: groups + coverage	38	1.0414034950754532
+one model: groups + coverage	39	0.810465663144896
+one model: groups + coverage	40	0.8072127542400499
+one model: groups + coverage	41	0.9114284137903607
+one model: groups + coverage	42	1.0439382189743616
+one model: groups + coverage	43	0.9808853253877095
+one model: groups + coverage	44	0.5865791971690114
+one model: groups + coverage	45	0.6219190800845547
+one model: groups + coverage	46	0.7546480430351172
+one model: groups + coverage	47	0.8108630330747537
+one model: groups + coverage	48	0.8921029397235422
+one model: groups + coverage	49	1.4837539769874806
+one model: groups + coverage	50	1.047848444809728
+one model: groups + coverage	51	0.9694198651877843
+one model: groups + coverage	52	0.9552277876416067
+one model: groups + coverage	53	1.037421355638692
+one model: groups + coverage	54	0.9139385276205362
+one model: groups + coverage	55	0.870712976590338
+one model: groups + coverage	56	1.1024478300706455
+one model: groups + coverage	57	1.1085097469373315
+one model: groups + coverage	58	1.0345402453058343
+one model: groups + coverage	59	1.0178442973920447
+one model: groups + coverage	60	1.030562192402446
+one model: groups + coverage	61	1.0139616782835659
+one model: groups + coverage	62	0.9485997275321549
+one model: groups + coverage	63	0.9797504329311311
+one model: groups + coverage	64	0.9899077476233127
+one model: groups + coverage	65	1.0034094101492899
+one model: groups + coverage	66	0.9792188463336897
+one model: groups + coverage	67	1.0084022083839408
+one model: groups + coverage	68	1.0319130074891012
+one model: groups + coverage	69	1.044891296924924
+one model: groups + coverage	70	1.0522507221825717
+one model: groups + coverage	71	1.0576326869697654
+one model: groups + coverage	72	1.0654286717433732
+one model: groups + coverage	73	0.9977306803567282
+one model: groups + coverage	74	1.0342726047531943
+one model: groups + coverage	75	1.0360791388636008
+one model: groups + coverage	76	1.0196195207061571
+one model: groups + coverage	77	0.9735299311844686
+one model: groups + coverage	78	0.9755820794230058
+one model: groups + coverage	79	1.0078139330517741
+one model: groups + coverage	80	0.9920343299914807
+one model: groups + coverage	81	1.0355425654680774
+one model: groups + coverage	82	1.023015615193569
+one model: groups + coverage	83	1.036840366078415
+one model: groups + coverage	84	1.0296198534456122
+one model: groups + coverage	85	1.0223725928881904
+one model: groups + coverage	86	1.0313542417995045
+one model: groups + coverage	87	1.03517338224267
+one model: groups + coverage	88	1.0496644804954138
+one model: groups + coverage	89	1.0568171875744359
+one model: groups + coverage	90	1.0477491743527987
+one model: groups + coverage	91	1.0547793168794841
+one model: groups + coverage	92	1.0552707117999058
+one model: groups + coverage	93	1.0451235770200655
+one model: groups + coverage	94	1.0152962945692652
+one model: groups + coverage	95	1.0047835982525062
+one model: groups + coverage	96	1.0427784715874315
+one model: groups + coverage	97	1.0403630301223774
+one model: groups + coverage	98	1.0310285306028013
+one model: groups + coverage	99	0.9907794760130194
+one model: groups + coverage	100	0.9825631033714238
+one model: + window MQ	20	1.0305431770195992
+one model: + window MQ	21	0.977876342379456
+one model: + window MQ	22	0.8921325694184469
+one model: + window MQ	23	0.9556119913021529
+one model: + window MQ	24	1.0074449406642256
+one model: + window MQ	25	1.0339261112177929
+one model: + window MQ	26	0.943759012443434
+one model: + window MQ	27	0.92047144267817
+one model: + window MQ	28	0.9901040991339913
+one model: + window MQ	29	1.0347526046207558
+one model: + window MQ	30	0.9533698761035236
+one model: + window MQ	31	1.0817591545483962
+one model: + window MQ	32	0.9999818749623286
+one model: + window MQ	33	0.9818152035254807
+one model: + window MQ	34	1.0168393961368074
+one model: + window MQ	35	0.98955616339473
+one model: + window MQ	36	1.0592445708377531
+one model: + window MQ	37	0.9882692771294226
+one model: + window MQ	38	0.9636581577648206
+one model: + window MQ	39	1.0687425460730204
+one model: + window MQ	40	1.1101778744918054
+one model: + window MQ	41	1.0241023346024756
+one model: + window MQ	42	0.9961185365206546
+one model: + window MQ	43	1.045462999577929
+one model: + window MQ	44	0.9465214878842314
+one model: + window MQ	45	0.9063936034117371
+one model: + window MQ	46	1.0122360879298706
+one model: + window MQ	47	1.049623466273742
+one model: + window MQ	48	0.9167011025921487
+one model: + window MQ	49	1.103001922529059
+one model: + window MQ	50	1.0735685747761352
+one model: + window MQ	51	1.0361026266201057
+one model: + window MQ	52	1.0404535346513724
+one model: + window MQ	53	1.1047003268777975
+one model: + window MQ	54	1.0458360316583086
+one model: + window MQ	55	0.9849910868623584
+one model: + window MQ	56	0.9235565728134396
+one model: + window MQ	57	0.9095967862086765
+one model: + window MQ	58	0.9836460389209781
+one model: + window MQ	59	1.0272731037625469
+one model: + window MQ	60	1.0901507282364686
+one model: + window MQ	61	1.059965581688259
+one model: + window MQ	62	1.03202607016984
+one model: + window MQ	63	1.041043725943753
+one model: + window MQ	64	1.0631035049270638
+one model: + window MQ	65	1.0751927454950092
+one model: + window MQ	66	1.055452494665243
+one model: + window MQ	67	1.0684190118487855
+one model: + window MQ	68	1.1108524606821955
+one model: + window MQ	69	1.0875776699064352
+one model: + window MQ	70	1.0802298792542575
+one model: + window MQ	71	1.0694344464518357
+one model: + window MQ	72	1.057944537513833
+one model: + window MQ	73	0.9517472012604485
+one model: + window MQ	74	1.0065874123428282
+one model: + window MQ	75	1.0191625837649239
+one model: + window MQ	76	1.00636097631841
+one model: + window MQ	77	0.950111947405765
+one model: + window MQ	78	0.9515982644398502
+one model: + window MQ	79	0.9958766221777718
+one model: + window MQ	80	0.9796368228235187
+one model: + window MQ	81	1.028824968015337
+one model: + window MQ	82	1.0234149682556528
+one model: + window MQ	83	1.0372679944703502
+one model: + window MQ	84	1.0434887216435245
+one model: + window MQ	85	1.034691163844065
+one model: + window MQ	86	1.0556653333354735
+one model: + window MQ	87	1.0599364397369098
+one model: + window MQ	88	1.0761695134533842
+one model: + window MQ	89	1.0861676967632836
+one model: + window MQ	90	1.0813103821221672
+one model: + window MQ	91	1.0851738373216828
+one model: + window MQ	92	1.080167829295388
+one model: + window MQ	93	1.0673438833210447
+one model: + window MQ	94	1.0312157433269042
+one model: + window MQ	95	1.0089319097902694
+one model: + window MQ	96	1.052078299790174
+one model: + window MQ	97	1.0511159701739121
+one model: + window MQ	98	1.041034625461467
+one model: + window MQ	99	0.9889535630930569
+one model: + window MQ	100	0.9784525936353577
+one model: + DNM regional + window MQ	20	1.0456675724860853
+one model: + DNM regional + window MQ	21	1.0143685702614111
+one model: + DNM regional + window MQ	22	0.9108002846850327
+one model: + DNM regional + window MQ	23	0.959422592269466
+one model: + DNM regional + window MQ	24	1.0184331560926227
+one model: + DNM regional + window MQ	25	1.046011324940736
+one model: + DNM regional + window MQ	26	0.9502568481658603
+one model: + DNM regional + window MQ	27	0.9285118177131165
+one model: + DNM regional + window MQ	28	0.9899006415923711
+one model: + DNM regional + window MQ	29	1.0358342134195162
+one model: + DNM regional + window MQ	30	0.9565935505315126
+one model: + DNM regional + window MQ	31	1.086936657268644
+one model: + DNM regional + window MQ	32	0.9986230897436918
+one model: + DNM regional + window MQ	33	0.9866632190759026
+one model: + DNM regional + window MQ	34	1.017557867490065
+one model: + DNM regional + window MQ	35	0.9842510129515677
+one model: + DNM regional + window MQ	36	1.0574429979299313
+one model: + DNM regional + window MQ	37	0.9979113555947332
+one model: + DNM regional + window MQ	38	0.9609860744433041
+one model: + DNM regional + window MQ	39	1.0356304394372169
+one model: + DNM regional + window MQ	40	1.0830714330345281
+one model: + DNM regional + window MQ	41	1.015611882125018
+one model: + DNM regional + window MQ	42	0.9874090337109561
+one model: + DNM regional + window MQ	43	1.0589992678186044
+one model: + DNM regional + window MQ	44	0.9491725084716289
+one model: + DNM regional + window MQ	45	0.9137956171727379
+one model: + DNM regional + window MQ	46	1.0194935956336513
+one model: + DNM regional + window MQ	47	1.0479226308027396
+one model: + DNM regional + window MQ	48	0.9155645215273757
+one model: + DNM regional + window MQ	49	1.1028932193628944
+one model: + DNM regional + window MQ	50	1.0547265364122271
+one model: + DNM regional + window MQ	51	1.022585727749976
+one model: + DNM regional + window MQ	52	1.0418565900642531
+one model: + DNM regional + window MQ	53	1.091839459852521
+one model: + DNM regional + window MQ	54	1.0369237974827625
+one model: + DNM regional + window MQ	55	0.9891364826107201
+one model: + DNM regional + window MQ	56	0.9074852290500927
+one model: + DNM regional + window MQ	57	0.9127418681561312
+one model: + DNM regional + window MQ	58	0.972248653832066
+one model: + DNM regional + window MQ	59	1.0235315041705104
+one model: + DNM regional + window MQ	60	1.0813567214411837
+one model: + DNM regional + window MQ	61	1.0542164652796544
+one model: + DNM regional + window MQ	62	1.0284238978131142
+one model: + DNM regional + window MQ	63	1.0337644260200174
+one model: + DNM regional + window MQ	64	1.05624690444855
+one model: + DNM regional + window MQ	65	1.0699494297143055
+one model: + DNM regional + window MQ	66	1.05427332549248
+one model: + DNM regional + window MQ	67	1.0645331025856128
+one model: + DNM regional + window MQ	68	1.1076712057853964
+one model: + DNM regional + window MQ	69	1.088938370353047
+one model: + DNM regional + window MQ	70	1.078340394702916
+one model: + DNM regional + window MQ	71	1.0711719309982095
+one model: + DNM regional + window MQ	72	1.057653388148836
+one model: + DNM regional + window MQ	73	0.9495589768201425
+one model: + DNM regional + window MQ	74	1.0080436272618252
+one model: + DNM regional + window MQ	75	1.0200139639147237
+one model: + DNM regional + window MQ	76	1.0072954052116174
+one model: + DNM regional + window MQ	77	0.9600311324090809
+one model: + DNM regional + window MQ	78	0.966640604895599
+one model: + DNM regional + window MQ	79	0.9963998014873903
+one model: + DNM regional + window MQ	80	0.9785885348121468
+one model: + DNM regional + window MQ	81	1.0290337381203196
+one model: + DNM regional + window MQ	82	1.0228345421436853
+one model: + DNM regional + window MQ	83	1.0356661259990776
+one model: + DNM regional + window MQ	84	1.0399766238477897
+one model: + DNM regional + window MQ	85	1.0309090865440111
+one model: + DNM regional + window MQ	86	1.0462940469409843
+one model: + DNM regional + window MQ	87	1.0504127624359705
+one model: + DNM regional + window MQ	88	1.0640647211089937
+one model: + DNM regional + window MQ	89	1.0730461239065374
+one model: + DNM regional + window MQ	90	1.0661275278726234
+one model: + DNM regional + window MQ	91	1.0709953193193265
+one model: + DNM regional + window MQ	92	1.066038164988945
+one model: + DNM regional + window MQ	93	1.0543891027613455
+one model: + DNM regional + window MQ	94	1.0241568365601852
+one model: + DNM regional + window MQ	95	1.0029334958114897
+one model: + DNM regional + window MQ	96	1.040195130934969
+one model: + DNM regional + window MQ	97	1.0403806203716344
+one model: + DNM regional + window MQ	98	1.0319401991934471
+one model: + DNM regional + window MQ	99	0.992907658546181
+one model: + DNM regional + window MQ	100	0.9936348972937282
+one model: + gnomAD regional + window MQ	20	1.0870154612405265
+one model: + gnomAD regional + window MQ	21	1.0541694683120875
+one model: + gnomAD regional + window MQ	22	0.9363073510175991
+one model: + gnomAD regional + window MQ	23	0.9588767008091835
+one model: + gnomAD regional + window MQ	24	1.0167261539173067
+one model: + gnomAD regional + window MQ	25	1.0471779510923347
+one model: + gnomAD regional + window MQ	26	0.9490972270235956
+one model: + gnomAD regional + window MQ	27	0.9227796240906123
+one model: + gnomAD regional + window MQ	28	0.977456034469193
+one model: + gnomAD regional + window MQ	29	1.02067733564883
+one model: + gnomAD regional + window MQ	30	0.9390490390940953
+one model: + gnomAD regional + window MQ	31	1.0656536407097343
+one model: + gnomAD regional + window MQ	32	0.9833486814257505
+one model: + gnomAD regional + window MQ	33	0.9742256739167654
+one model: + gnomAD regional + window MQ	34	1.0038965050514856
+one model: + gnomAD regional + window MQ	35	0.9614177443055684
+one model: + gnomAD regional + window MQ	36	1.0349614265274025
+one model: + gnomAD regional + window MQ	37	1.0016633279091895
+one model: + gnomAD regional + window MQ	38	0.9636316431567257
+one model: + gnomAD regional + window MQ	39	1.019258270332892
+one model: + gnomAD regional + window MQ	40	1.064919271839479
+one model: + gnomAD regional + window MQ	41	1.010366570053514
+one model: + gnomAD regional + window MQ	42	0.9941316649484077
+one model: + gnomAD regional + window MQ	43	1.0709628404381621
+one model: + gnomAD regional + window MQ	44	0.9374721088922575
+one model: + gnomAD regional + window MQ	45	0.9104881825660722
+one model: + gnomAD regional + window MQ	46	1.0152876794591963
+one model: + gnomAD regional + window MQ	47	1.0381660009016611
+one model: + gnomAD regional + window MQ	48	0.9188708835899756
+one model: + gnomAD regional + window MQ	49	1.1383756642741585
+one model: + gnomAD regional + window MQ	50	1.0399128824001451
+one model: + gnomAD regional + window MQ	51	1.0240124506789783
+one model: + gnomAD regional + window MQ	52	1.047647551169308
+one model: + gnomAD regional + window MQ	53	1.105193707577512
+one model: + gnomAD regional + window MQ	54	1.0500329019458596
+one model: + gnomAD regional + window MQ	55	1.007339868534545
+one model: + gnomAD regional + window MQ	56	0.9303456255155282
+one model: + gnomAD regional + window MQ	57	0.9212640909444899
+one model: + gnomAD regional + window MQ	58	0.9872837149543041
+one model: + gnomAD regional + window MQ	59	1.0508052005726887
+one model: + gnomAD regional + window MQ	60	1.1244515568796258
+one model: + gnomAD regional + window MQ	61	1.0839194646986152
+one model: + gnomAD regional + window MQ	62	1.0528056132649846
+one model: + gnomAD regional + window MQ	63	1.0488340095580735
+one model: + gnomAD regional + window MQ	64	1.0648008623617167
+one model: + gnomAD regional + window MQ	65	1.0766405549019695
+one model: + gnomAD regional + window MQ	66	1.0483319423651858
+one model: + gnomAD regional + window MQ	67	1.050934534722756
+one model: + gnomAD regional + window MQ	68	1.0832842181626552
+one model: + gnomAD regional + window MQ	69	1.0565671363312086
+one model: + gnomAD regional + window MQ	70	1.0361625325558994
+one model: + gnomAD regional + window MQ	71	1.0332817383894883
+one model: + gnomAD regional + window MQ	72	1.028902016796888
+one model: + gnomAD regional + window MQ	73	0.9527026593403216
+one model: + gnomAD regional + window MQ	74	1.0037590449750566
+one model: + gnomAD regional + window MQ	75	1.0172145568864628
+one model: + gnomAD regional + window MQ	76	1.009534374406768
+one model: + gnomAD regional + window MQ	77	0.9750123790472293
+one model: + gnomAD regional + window MQ	78	0.9907239980295819
+one model: + gnomAD regional + window MQ	79	1.0180629645711712
+one model: + gnomAD regional + window MQ	80	1.0044890681589775
+one model: + gnomAD regional + window MQ	81	1.0474463317939673
+one model: + gnomAD regional + window MQ	82	1.0347538210115537
+one model: + gnomAD regional + window MQ	83	1.0403452076852675
+one model: + gnomAD regional + window MQ	84	1.0304478240613175
+one model: + gnomAD regional + window MQ	85	1.015663571639541
+one model: + gnomAD regional + window MQ	86	1.0214251109014496
+one model: + gnomAD regional + window MQ	87	1.0163784888573193
+one model: + gnomAD regional + window MQ	88	1.021222708174036
+one model: + gnomAD regional + window MQ	89	1.0215415672559771
+one model: + gnomAD regional + window MQ	90	1.0086283206579274
+one model: + gnomAD regional + window MQ	91	1.0170869329101702
+one model: + gnomAD regional + window MQ	92	1.0178288876425854
+one model: + gnomAD regional + window MQ	93	1.0115943986637652
+one model: + gnomAD regional + window MQ	94	0.9941367602671349
+one model: + gnomAD regional + window MQ	95	0.9844904993124952
+one model: + gnomAD regional + window MQ	96	1.0138991361504701
+one model: + gnomAD regional + window MQ	97	1.021178794522785
+one model: + gnomAD regional + window MQ	98	1.0184317772734626
+one model: + gnomAD regional + window MQ	99	0.9976530818799858
+one model: + gnomAD regional + window MQ	100	1.004185666254529
+one model: + DNM regional + window MQ + Roulette	20	1.0449202986975972
+one model: + DNM regional + window MQ + Roulette	21	1.0198120165117002
+one model: + DNM regional + window MQ + Roulette	22	0.9356025969363525
+one model: + DNM regional + window MQ + Roulette	23	0.9507241918042364
+one model: + DNM regional + window MQ + Roulette	24	1.0078790377213993
+one model: + DNM regional + window MQ + Roulette	25	1.0424783483038296
+one model: + DNM regional + window MQ + Roulette	26	0.9541207810944604
+one model: + DNM regional + window MQ + Roulette	27	0.9284579872782138
+one model: + DNM regional + window MQ + Roulette	28	0.9953402450157524
+one model: + DNM regional + window MQ + Roulette	29	1.0369021724950418
+one model: + DNM regional + window MQ + Roulette	30	0.95539017009329
+one model: + DNM regional + window MQ + Roulette	31	1.0917943119152396
+one model: + DNM regional + window MQ + Roulette	32	1.0046502236845791
+one model: + DNM regional + window MQ + Roulette	33	0.9895810955017044
+one model: + DNM regional + window MQ + Roulette	34	1.021274964480379
+one model: + DNM regional + window MQ + Roulette	35	0.9899322443361271
+one model: + DNM regional + window MQ + Roulette	36	1.0574095954704374
+one model: + DNM regional + window MQ + Roulette	37	0.9901469524184426
+one model: + DNM regional + window MQ + Roulette	38	0.9693559458594656
+one model: + DNM regional + window MQ + Roulette	39	1.0382144956636985
+one model: + DNM regional + window MQ + Roulette	40	1.0812721675716883
+one model: + DNM regional + window MQ + Roulette	41	1.0228366685111143
+one model: + DNM regional + window MQ + Roulette	42	0.981098850148485
+one model: + DNM regional + window MQ + Roulette	43	1.062561593307834
+one model: + DNM regional + window MQ + Roulette	44	0.9508606143869074
+one model: + DNM regional + window MQ + Roulette	45	0.9207362037545705
+one model: + DNM regional + window MQ + Roulette	46	1.0182478755981628
+one model: + DNM regional + window MQ + Roulette	47	1.0475184594503932
+one model: + DNM regional + window MQ + Roulette	48	0.9181507232202475
+one model: + DNM regional + window MQ + Roulette	49	1.1144543085925847
+one model: + DNM regional + window MQ + Roulette	50	1.0648407496848424
+one model: + DNM regional + window MQ + Roulette	51	1.0256562136196739
+one model: + DNM regional + window MQ + Roulette	52	1.0458115505309746
+one model: + DNM regional + window MQ + Roulette	53	1.0908837147254182
+one model: + DNM regional + window MQ + Roulette	54	1.0472306704431353
+one model: + DNM regional + window MQ + Roulette	55	0.9900233767396137
+one model: + DNM regional + window MQ + Roulette	56	0.9135868944377666
+one model: + DNM regional + window MQ + Roulette	57	0.9073792940028895
+one model: + DNM regional + window MQ + Roulette	58	0.9714579059220346
+one model: + DNM regional + window MQ + Roulette	59	1.0221876450572358
+one model: + DNM regional + window MQ + Roulette	60	1.0914228151773886
+one model: + DNM regional + window MQ + Roulette	61	1.052939740641446
+one model: + DNM regional + window MQ + Roulette	62	1.0324834291366134
+one model: + DNM regional + window MQ + Roulette	63	1.0398636087865192
+one model: + DNM regional + window MQ + Roulette	64	1.0586314545792341
+one model: + DNM regional + window MQ + Roulette	65	1.0785322375212627
+one model: + DNM regional + window MQ + Roulette	66	1.0515770546291618
+one model: + DNM regional + window MQ + Roulette	67	1.0689738823520745
+one model: + DNM regional + window MQ + Roulette	68	1.1111195479126745
+one model: + DNM regional + window MQ + Roulette	69	1.0918370652041225
+one model: + DNM regional + window MQ + Roulette	70	1.0665709538456074
+one model: + DNM regional + window MQ + Roulette	71	1.0665489253254659
+one model: + DNM regional + window MQ + Roulette	72	1.053548216270669
+one model: + DNM regional + window MQ + Roulette	73	0.9538810237375093
+one model: + DNM regional + window MQ + Roulette	74	1.0046829483834416
+one model: + DNM regional + window MQ + Roulette	75	1.0244908471249052
+one model: + DNM regional + window MQ + Roulette	76	1.0069252994488853
+one model: + DNM regional + window MQ + Roulette	77	0.9628126199427716
+one model: + DNM regional + window MQ + Roulette	78	0.9683868282866467
+one model: + DNM regional + window MQ + Roulette	79	1.0000185464030473
+one model: + DNM regional + window MQ + Roulette	80	0.9835586117904217
+one model: + DNM regional + window MQ + Roulette	81	1.0315792747795767
+one model: + DNM regional + window MQ + Roulette	82	1.027253851530259
+one model: + DNM regional + window MQ + Roulette	83	1.0388296003079631
+one model: + DNM regional + window MQ + Roulette	84	1.0447901724689297
+one model: + DNM regional + window MQ + Roulette	85	1.0346459294068493
+one model: + DNM regional + window MQ + Roulette	86	1.0521551384021035
+one model: + DNM regional + window MQ + Roulette	87	1.051741343768336
+one model: + DNM regional + window MQ + Roulette	88	1.0641342826677762
+one model: + DNM regional + window MQ + Roulette	89	1.0699924583920342
+one model: + DNM regional + window MQ + Roulette	90	1.063850920312248
+one model: + DNM regional + window MQ + Roulette	91	1.0701434524666553
+one model: + DNM regional + window MQ + Roulette	92	1.0654550545856811
+one model: + DNM regional + window MQ + Roulette	93	1.055147442675894
+one model: + DNM regional + window MQ + Roulette	94	1.0218589456807086
+one model: + DNM regional + window MQ + Roulette	95	0.9993663832787752
+one model: + DNM regional + window MQ + Roulette	96	1.0417757040969702
+one model: + DNM regional + window MQ + Roulette	97	1.0436362702736834
+one model: + DNM regional + window MQ + Roulette	98	1.0354613349936885
+one model: + DNM regional + window MQ + Roulette	99	0.9941073201950577
+one model: + DNM regional + window MQ + Roulette	100	1.0040181634803074

@@ -14,6 +14,9 @@ context class.
 missense obs/exp by LOEUF decile, levels relative to synonymous, LOEUF changes, and NDD
 and HI precision-recall (``one_model_release_eval.py``).
 
+``draw_issue_figures``: one figure per problem of the current expected counts, with
+every tried fix (``one_model_issues.py``).
+
 ``draw_coverage_check``: the stored coverage model against the share of synonymous
 variants seen at each exome AN % (``coverage_check.py``).
 
@@ -932,6 +935,284 @@ def draw_release_checks(prefix: str = "data/one_model/one_model") -> None:
     )
 
 
+ISSUE_FAMILY_C = {
+    "current": NONE_C,
+    "rr": RR_EDGE,
+    "roulette": ROULETTE_C,
+    "plateau": "#1baf7a",
+    "one model": LEGACY_C,
+}
+"""Colors of the method families in the issue figures."""
+ISSUE_LINES = [
+    ("current stack, no rr", NONE_C, "-"),
+    ("current stack + ridge rr", RR_EDGE, "-"),
+    ("current stack x Roulette", ROULETTE_C, (0, (4, 2))),
+    ("plateau: saturating", "#1baf7a", "-"),
+    ("one model: groups + coverage", LEGACY_C, "-"),
+    ("one model: + DNM regional + window MQ + Roulette", "#0b2f6b", "-"),
+]
+"""Methods drawn in the issue figures' line plots: (name, color, line style)."""
+
+
+def issue_family(m: str) -> str:
+    """Get a method's family for its color."""
+    if m == "current stack, no rr":
+        return "current"
+    if m.startswith("plateau"):
+        return "plateau"
+    if m.startswith("one model"):
+        return "one model"
+    return "roulette" if "Roulette" in m else "rr"
+
+
+def draw_issue_figures(prefix: str = "data/one_model/issues") -> None:
+    """Draw one figure per problem of the current expected counts, with each fix."""
+    sm = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.summary.tsv"), sep="\t")
+    ctx = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.contexts.tsv"), sep="\t")
+    cov = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.coverage.tsv"), sep="\t")
+    dec = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.deciles.tsv"), sep="\t")
+    hot = pd.read_csv(os.path.join(OUT_DIR, f"{prefix}.hotspots.tsv"), sep="\t")
+    sm = sm.set_index("method")
+    order = list(sm.index)
+    labels = sm.label.to_dict()
+    y = np.arange(len(order))[::-1]
+    colors = [ISSUE_FAMILY_C[issue_family(m)] for m in order]
+    line_labels = {m: labels[m] for m, *_ in ISSUE_LINES}
+
+    def method_axis(ax):
+        ax.set_yticks(y, [labels[m] for m in order], fontsize=11)
+        ax.get_yticklabels()[0].set_fontweight("bold")
+        style_axis(ax)
+
+    def save(fig, name):
+        fig.savefig(
+            os.path.join(OUT_DIR, f"one_model_issue_{name}.png"),
+            dpi=150,
+            bbox_inches="tight",
+            facecolor=SURFACE,
+        )
+        plt.close(fig)
+
+    def dots(ax, col, fmt, ref=None):
+        v = sm[col].reindex(order).to_numpy(float)
+        if ref is not None:
+            ax.axvline(ref, color=INK2, lw=1, ls=(0, (3, 3)))
+            ax.hlines(y, ref, v, color=colors, lw=1.2, alpha=0.6)
+        ax.scatter(v, y, s=70, color=colors, zorder=3, edgecolor=SURFACE, lw=1)
+        for yi, vi in zip(y, v):
+            ax.text(vi, yi + 0.3, fmt.format(vi), ha="center", fontsize=10, color=INK2)
+
+    # 1. Synonymous level.
+    fig, ax = plt.subplots(figsize=(10, 6))
+    dots(ax, "syn_oe", "{:.3f}", ref=1)
+    method_axis(ax)
+    ax.set_xlabel("synonymous obs/exp, all exported MANE Select synonymous sites")
+    ax.set_title("Synonymous level", loc="left")
+    save(fig, "level")
+
+    # 2. Offsets between contexts.
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    rng = np.random.default_rng(0)
+    for yi, m, c in zip(y, order, colors):
+        v = ctx[ctx.method == m].oe.to_numpy()
+        ax.scatter(
+            v, yi + rng.uniform(-0.18, 0.18, len(v)), s=18, color=c, alpha=0.7, lw=0
+        )
+        ax.text(
+            1.31,
+            yi,
+            f"SD {100 * sm.loc[m, 'context_sd']:.1f}%",
+            va="center",
+            fontsize=10.5,
+        )
+    ax.axvline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    ax.set_xlim(0.72, 1.38)
+    method_axis(ax)
+    ax.set_xlabel("synonymous obs/exp of each of the 32 contexts (total scaled to 1)")
+    ax.set_title("Offsets between contexts", loc="left")
+    save(fig, "contexts")
+
+    # 3. Low-coverage calibration.
+    fig, ax = plt.subplots(figsize=(12, 5.5))
+    for m, c, ls in ISSUE_LINES:
+        if m in ("current stack + ridge rr", "current stack x Roulette"):
+            continue
+        d = cov[cov.method == m].sort_values("coverage")
+        ax.plot(
+            d.coverage,
+            d.oe,
+            color=c,
+            ls=ls,
+            lw=2 if m == ISSUE_LINES[0][0] else 1.6,
+            marker="o",
+            ms=3.5,
+            label=line_labels[m],
+        )
+    ax.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    ax.axvline(90, color=AXIS, lw=1)
+    ax.set_ylim(0.5, 2.2)
+    ax.set_xlabel("exome AN %")
+    ax.set_ylabel("synonymous obs/exp")
+    ax.legend(loc="upper right", fontsize=10.5, frameon=False)
+    ax.set_title(
+        "Low-coverage calibration (rr and Roulette leave it as it is)", loc="left"
+    )
+    style_axis(ax, grid_axis="y")
+    save(fig, "coverage")
+
+    # 4. Per-gene noise.
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for yi, m, c in zip(y, order, colors):
+        a, b = sm.loc[m, "core_noise"], sm.loc[m, "outcome_free_noise"]
+        ax.plot([a, b], [yi, yi], color=c, lw=1.2, alpha=0.6)
+        ax.scatter(a, yi, s=70, color=c, zorder=3, edgecolor=SURFACE, lw=1)
+        ax.scatter(b, yi, s=70, facecolor=SURFACE, edgecolor=c, lw=1.6, zorder=3)
+        ax.text(
+            min(a, b) - 0.05,
+            yi,
+            f"{a:.2f}",
+            ha="right",
+            va="center",
+            fontsize=10,
+            color=INK2,
+        )
+    ax.axvline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    ax.text(1.02, y[-1] - 0.6, "Poisson", fontsize=10, color=INK2)
+    ax.set_xlim(0.8, 4)
+    method_axis(ax)
+    ax.set_xlabel(
+        "per-gene synonymous noise, mean (obs − exp)² / exp"
+        "\n(filled: core genes; hollow: genes with no QC flag)"
+    )
+    ax.set_title("Regional variation: per-gene noise", loc="left")
+    save(fig, "noise")
+
+    # 5. Maternal hotspot regions.
+    fig, ax = plt.subplots(figsize=(12, 5))
+    regions = list(dict.fromkeys(hot.region))
+    shown = [m for m, *_ in ISSUE_LINES] + ["current stack x Roulette + ridge rr"]
+    for j, m in enumerate(shown):
+        h = hot[hot.method == m].set_index("region").reindex(regions)
+        c = dict((k, cc) for k, cc, _ in ISSUE_LINES).get(m, "#c4302b")
+        ax.scatter(
+            np.arange(len(regions)) + (j - 3) * 0.11,
+            h.oe,
+            s=45,
+            color=c,
+            zorder=3,
+            label=labels[m],
+            edgecolor=SURFACE,
+            lw=0.8,
+        )
+    ax.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    ax.set_xticks(range(len(regions)), regions)
+    ax.set_ylabel("synonymous obs/exp of control genes\n(relative to the core set)")
+    ax.legend(loc="upper right", fontsize=9.5, frameon=False, ncol=2)
+    ax.set_title("Maternal hotspot regions", loc="left")
+    style_axis(ax, grid_axis="y")
+    save(fig, "hotspots")
+
+    # 6. The rise in the least constrained LOEUF decile.
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    x = np.arange(10)
+    for m, c, ls in ISSUE_LINES:
+        d = dec[dec.method == m].sort_values("decile")
+        ax.plot(x, d.oe, color=c, ls=ls, lw=2, marker="o", ms=5, label=line_labels[m])
+    ax.axhline(1, color=INK2, lw=1, ls=(0, (3, 3)))
+    ax.set_xticks(x, [str(i + 1) for i in x])
+    ax.set_xlabel("LOEUF decile (v4.1.2; 1 = most constrained)")
+    ax.set_ylabel("synonymous obs/exp")
+    ax.legend(loc="upper left", fontsize=10, frameon=False)
+    ax.set_title("Rise in the least constrained LOEUF decile", loc="left")
+    style_axis(ax, grid_axis="y")
+    save(fig, "loeuf_rise")
+
+    # 7-9. Outliers with no QC flag, low-mapping-quality genes, histone genes.
+    for name, cols, title, xlabel in (
+        (
+            "outliers",
+            ["outliers_no_flag_excess", "outliers_no_flag_deficit"],
+            "Synonymous outliers with no QC flag (|z| > 8)",
+            "genes (filled: excess; hollow: deficit)",
+        ),
+        (
+            "low_mq",
+            ["low_mq_deficit", "low_mq_excess"],
+            "Genes flagged for low exome mapping quality: outliers",
+            "genes (filled: deficit, looking depleted; hollow: excess, overcorrected)",
+        ),
+        ("histones", ["histone_outliers"], "Histone genes", "outliers (|z| > 8)"),
+    ):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        left = np.zeros(len(order))
+        for j, col in enumerate(cols):
+            v = sm[col].reindex(order).to_numpy(float)
+            ax.barh(
+                y,
+                v,
+                left=left,
+                height=0.65,
+                color=colors if j == 0 else SURFACE,
+                edgecolor=colors,
+                lw=1.4,
+            )
+            left += v
+        for yi, m, lv in zip(y, order, left):
+            extra = (
+                f"  (pooled obs/exp {sm.loc[m, 'histone_oe']:.2f})"
+                if name == "histones"
+                else ""
+            )
+            ax.text(
+                lv + 1, yi, f"{int(lv)}{extra}", va="center", fontsize=10.5, color=INK2
+            )
+        ax.set_xlim(0, max(left) * 1.4 + 5)
+        method_axis(ax)
+        ax.set_xlabel(xlabel)
+        ax.set_title(title, loc="left")
+        save(fig, name)
+
+    # 10. Side effects: pLoF and missense levels, NDD ranking.
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(15, 7), gridspec_kw={"wspace": 0.08})
+    for dy, col, hollow in ((0.17, "lof_vs_syn", False), (-0.17, "mis_vs_syn", True)):
+        v = sm[col].reindex(order).to_numpy(float)
+        a1.barh(
+            y + dy,
+            np.nan_to_num(v),
+            height=0.32,
+            color=SURFACE if hollow else colors,
+            edgecolor=colors,
+            lw=1.4,
+        )
+        for yi, vi in zip(y, v):
+            a1.text(
+                (vi if np.isfinite(vi) else 0)
+                + (0.2 if not np.isfinite(vi) or vi >= 0 else -0.2),
+                yi + dy,
+                f"{vi:+.1f}%" if np.isfinite(vi) else "not run",
+                va="center",
+                ha="left" if not np.isfinite(vi) or vi >= 0 else "right",
+                fontsize=9.5,
+                color=INK2,
+            )
+    a1.axvline(0, color=INK2, lw=1)
+    a1.set_xlim(-6, 10)
+    method_axis(a1)
+    a1.set_xlabel("% change relative to synonymous (filled: pLoF; hollow: missense)")
+    a1.set_title("Side effect: pLoF and missense levels", loc="left")
+    v, lo, hi = (
+        sm[k].reindex(order).to_numpy(float) for k in ("ndd_change", "ndd_lo", "ndd_hi")
+    )
+    a2.hlines(y, lo, hi, color=colors, lw=1.6)
+    a2.scatter(v, y, s=60, color=colors, zorder=3, edgecolor=SURFACE, lw=1)
+    a2.axvline(0, color=INK2, lw=1)
+    a2.set_yticks(y, [""] * len(y))
+    a2.set_xlabel("NDD AUPRC, change from the current (95% interval)")
+    a2.set_title("Outcome: ranking NDD genes", loc="left")
+    style_axis(a2)
+    save(fig, "side_effects")
+
+
 def draw_coverage_check() -> None:
     """Draw the stored coverage model against the share seen at each AN %."""
     g = pd.read_csv(
@@ -1074,5 +1355,6 @@ if __name__ == "__main__":
     draw_fit_results()
     draw_fit_checks()
     draw_release_checks()
+    draw_issue_figures()
     draw_coverage_check()
     draw_coverage_oe_current()

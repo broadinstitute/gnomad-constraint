@@ -55,6 +55,8 @@ CLASSES = ["A/T", "C non-CpG", "CpG"]
 COV_KNOTS = [90, 80, 70, 60, 50, 40, 30, 20, 10]
 MQ_KNOTS = [60, 55, 50, 40]
 COV_BINS = [0, 20, 50, 80, 90, 101]
+GROUP = ["context", "ref", "alt", "methylation_level", "cpg", "coverage"]
+"""Mutation group and exome AN %, for the per-group outputs."""
 
 
 def prep_cells(c: pd.DataFrame, test: bool) -> pd.DataFrame:
@@ -412,6 +414,12 @@ def main(args: argparse.Namespace) -> None:
     pd.concat(per_tx, axis=1).reset_index().to_csv(
         f"{args.out_prefix}.per_transcript.tsv.gz", sep="\t", index=False
     )
+    # Observed and each model's expected by mutation group and exome AN %.
+    c[GROUP + ["observed", "possible"]].assign(**models).groupby(
+        GROUP
+    ).sum().reset_index().to_csv(
+        f"{args.out_prefix}.by_group.tsv.gz", sep="\t", index=False
+    )
     pd.set_option("display.width", 250)
     logger.info("\n%s", out.round(4).to_string(index=False))
 
@@ -425,9 +433,12 @@ def main(args: argparse.Namespace) -> None:
             .set_index("csq", append=True)
             .swaplevel()
         )
-        applied = apply_fits(args, aux, F, fitted, gam_dnm)
+        applied, applied_groups = apply_fits(args, aux, F, fitted, gam_dnm)
         pd.concat([syn, applied]).reset_index().to_csv(
             f"{args.out_prefix}.by_csq.per_transcript.tsv.gz", sep="\t", index=False
+        )
+        applied_groups.reset_index().to_csv(
+            f"{args.out_prefix}.by_csq.by_group.tsv.gz", sep="\t", index=False
         )
         logger.info("Wrote %s.by_csq.per_transcript.tsv.gz", args.out_prefix)
 
@@ -447,10 +458,10 @@ def apply_fits(
     The cells are read in chunks.
 
     :return: Observed, possible and each model's expected count by consequence set
-        and transcript.
+        and transcript, and by consequence set, mutation group and exome AN %.
     """
     F_ext = np.vstack([F, np.zeros((1, F.shape[1]))])
-    sums = []
+    sums, groups = [], []
     for a in pd.read_csv(
         args.apply_cells, sep="\t", compression="gzip", chunksize=2_000_000
     ):
@@ -468,7 +479,7 @@ def apply_fits(
         wi = a.wi.to_numpy()
         ki = pd.Categorical(a.cls, categories=CLASSES).codes
         folds = a.fold.to_numpy()
-        out = a[["csq", "transcript", "observed", "possible"]].copy()
+        out = a[["csq", "transcript", *GROUP, "observed", "possible"]].copy()
         out["current stack, no rr"] = a.e_old.to_numpy()
         out["current stack + ridge rr"] = (a.e_old * a.rr_ridge).to_numpy()
         out["current stack x Roulette"] = a.e_old.to_numpy() * np.exp(rou)
@@ -497,9 +508,12 @@ def apply_fits(
                     p = predict_cloglog(spec[f], D[m], off[m])
                 e[m] = n[m] * p
             out[name] = e
-        sums.append(out.groupby(["csq", "transcript"]).sum())
+        num = [col for col in out.columns if col not in ("csq", "transcript", *GROUP)]
+        sums.append(out.groupby(["csq", "transcript"])[num].sum())
+        groups.append(out.groupby(["csq", *GROUP])[num].sum())
         logger.info("Applied the fits to %d more cells.", len(a))
-    return pd.concat(sums).groupby(level=[0, 1]).sum()
+    by_group = pd.concat(groups).groupby(level=list(range(len(GROUP) + 1))).sum()
+    return pd.concat(sums).groupby(level=[0, 1]).sum(), by_group
 
 
 if __name__ == "__main__":
