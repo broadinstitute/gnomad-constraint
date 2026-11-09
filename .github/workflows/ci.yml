@@ -7,7 +7,11 @@ on:
 jobs:
   checks:
     name: Checks
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to Ubuntu 26.04, where setup-r-dependencies installs
+    # pak as root through the repo's renv project (activated by .Rprofile). pak
+    # then lands in root's renv cache, and the next step, run as the runner
+    # user, fails with "there is no package called 'pak'".
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
