@@ -139,10 +139,13 @@ and at what scale rather than calling a change verified.
 
 Use the shared skills from
 [gnomad-skills](https://github.com/broadinstitute/gnomad-skills). A SessionStart
-hook in `.claude/settings.json` installs them into `~/.claude/skills` the first
-time you open this repo and keeps them updated; if you already linked them from
-your own checkout of gnomad-skills, it updates that checkout instead. Set
-`GNOMAD_SKIP_SKILLS_HOOK=1` to turn the hook off.
+hook in `.claude/settings.json` installs them the first time you open this repo:
+it clones gnomad-skills into `~/.claude/gnomad-skills` (set `GNOMAD_SKILLS_DIR`
+to put it elsewhere) and links each skill into `~/.claude/skills`. If
+`gnomad-pr-review` is already linked from your own checkout of gnomad-skills, it
+uses that checkout instead. After that it relinks the skills at every session
+start and pulls the checkout at most once a day. Set `GNOMAD_SKIP_SKILLS_HOOK=1`
+to turn the hook off.
 
 - **Run `/gnomad-pr-review` on every pull request before requesting review from
   a team member.** It replaces `/review`, which this repo no longer uses. Its
