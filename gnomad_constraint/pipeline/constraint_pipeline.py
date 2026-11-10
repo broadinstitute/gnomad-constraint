@@ -284,22 +284,26 @@ def check_regional_rr_input(per_variant_ht: hl.Table, regional_rr_ht: hl.Table) 
     (the fitted plateau and coverage models) of the per-variant expected Table it
     normalizes rr on. If the per-variant Table being aggregated has different models,
     it was rewritten after rr was computed, and the rr normalization factors no
-    longer match it. An rr Table without the record, like the Gnocchi ``syn_adj_r``
-    Table, is used with a warning.
+    longer match it. An rr Table with no ``rr_globals``, like the Gnocchi
+    ``syn_adj_r`` Table, is used with a warning. One whose ``rr_globals`` lacks the
+    record was written by older code and is rejected, since the release step expects
+    the record.
 
     :param per_variant_ht: Per-variant expected Table to aggregate.
     :param regional_rr_ht: rr Table to apply.
     :return: None.
     """
-    if (
-        "rr_globals" not in regional_rr_ht.globals
-        or "per_variant_apply_models_globals" not in regional_rr_ht.rr_globals
-    ):
+    if "rr_globals" not in regional_rr_ht.globals:
         logger.warning(
             "The rr Table doesn't record the per-variant expected Table it was"
             " normalized on, so it can't be checked against this one."
         )
         return
+    if "per_variant_apply_models_globals" not in regional_rr_ht.rr_globals:
+        raise ValueError(
+            "The rr Table's rr_globals don't record the per-variant expected Table it"
+            " was normalized on. Rerun regional_rate_pipeline.py --compute-rr."
+        )
 
     recorded = hl.eval(regional_rr_ht.rr_globals.per_variant_apply_models_globals)
     if recorded != hl.eval(per_variant_ht.apply_models_globals):
@@ -1074,8 +1078,10 @@ if __name__ == "__main__":
             " (rr) of the variant's 1kb window and context before aggregating. Reads"
             " the rr Table written by regional_rate_pipeline.py --compute-rr with the"
             " same --version, --test, --directory-post-fix, and --path-post-fix. The"
-            " output keeps the unadjusted Table's name, so use --path-post-fix or"
-            " --directory-post-fix to keep both."
+            " output keeps the unadjusted Table's name. To keep both, use"
+            " --path-post-fix or --directory-post-fix; the per-variant expected and rr"
+            " Tables are read with the same post-fixes, so rerun"
+            " --create-training-set onward and regional_rate_pipeline.py with them."
         ),
         action="store_true",
     )

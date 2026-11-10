@@ -43,7 +43,7 @@ Parameters used when applying the models to compute expected variant counts.
 Present only when the expected variant counts were multiplied by a regional mutation rate (rr): a per-1kb-window, per-trinucleotide-context factor modeled from synonymous de novo mutations and regional genomic features.
 
 - `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models
-- `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1 over exome synonymous sites (weighted by expected count) in each context
+- `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in rr windows in each context
 
 ### `downsamplings`
 

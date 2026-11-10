@@ -83,7 +83,7 @@ calibration: it multiplies each variant's expected count by the rr of its window
 context, or by 1 where there is none (chrX, chrY, and windows without features). It
 reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
 `--path-post-fix`, and stops with an error if that Table was normalized on a
-per-variant expected Table with other models. The output keeps the unadjusted
+per-variant expected Table with other models, or doesn't record which. The output keeps the unadjusted
 Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
 replace the unadjusted ones unless you set `--path-post-fix` (rerun
 `--create-training-set` onward with it) or `--directory-post-fix`. The release Table
