@@ -74,11 +74,9 @@ post-fix applies to every output; the path post-fix only to the outputs from
 
 ### Regional mutation rate (rr)
 
-The regional mutation rate (rr) scales a variant's expected count by how much more
-or less often sites like it mutate in its region than on average. As in Gnocchi, a
-logistic model for each trinucleotide context separates synonymous de novo
-mutations (DNMs) from a sample of non-mutated synonymous sites, using 13 regional
-genomic features of the site's 1kb window at four flanking scales.
+The regional mutation rate (rr) is a factor for each 1kb window and trinucleotide
+context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
+regional genomic features of each site's window at four flanking scales.
 
 `--aggregate-per-variant-expected --apply-regional-rr` applies rr after model
 calibration: it multiplies each variant's expected count by the rr of its window and
@@ -91,9 +89,9 @@ replace the unadjusted ones unless you set `--path-post-fix` (rerun
 `--create-training-set` onward with it) or `--directory-post-fix`. The release Table
 records the rr settings in its `regional_rr_params` global.
 
-`import_data.py` imports the DNMs and genomic features the models are trained on,
-writing under `imported_data/` in the constraint output directory (with `--test`,
-in the testing bucket):
+`import_data.py` imports the DNMs and genomic features rr is modeled from, writing
+under `imported_data/` in the constraint output directory (with `--test`, in the
+testing bucket):
 
 | Flag | Step |
 |---|---|

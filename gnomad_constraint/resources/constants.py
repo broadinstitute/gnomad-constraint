@@ -270,3 +270,6 @@ GENOMIC_FEATURE_COLUMNS = [
     f"{f}_{s}" for s in GENOMIC_FEATURE_SCALES for f in GENOMIC_FEATURES
 ]
 """Feature matrix columns (``{feature}_{scale}``), in published column order."""
+
+GENOMIC_FEATURE_MISSING = ["NA", "nan", "NaN", ""]
+"""Spellings of a missing value in the published genomic feature matrix."""

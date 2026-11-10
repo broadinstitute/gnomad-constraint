@@ -1,8 +1,13 @@
 """Tests for the import functions in ``gnomad_constraint.utils.import_data``."""
 
+from pathlib import Path
+
 import hail as hl
 
-from gnomad_constraint.resources.constants import GENOMIC_FEATURE_COLUMNS
+from gnomad_constraint.resources.constants import (
+    GENOMIC_FEATURE_COLUMNS,
+    GENOMIC_FEATURE_MISSING,
+)
 from gnomad_constraint.utils.import_data import format_dnm_ht, format_genomic_features
 
 
@@ -73,4 +78,37 @@ class TestFormatGenomicFeatures:
             1001: ("chr1-1000-2000", 2.0),
             2000: ("chr1-1000-2000", 2.0),
             2001: (None, None),
+        }
+
+
+class TestGenomicFeatureMissing:
+    """Test the GENOMIC_FEATURE_MISSING constant used to import the feature matrix."""
+
+    def test_spellings_are_missing(self, tmp_path: Path) -> None:
+        """
+        Test that each missing-value spelling is imported as missing, not NaN.
+
+        ``import_data.py --import-genomic-features`` imports the matrix with float
+        types and ``missing=GENOMIC_FEATURE_MISSING``, so NaN never reaches the rr
+        models.
+        """
+        columns = GENOMIC_FEATURE_COLUMNS[:4]
+        path = tmp_path / "features.tsv"
+        path.write_text(
+            "\t".join(["element_id", *columns])
+            + "\n"
+            + "\t".join(["chr1-0-1000", "NA", "nan", "NaN", ""])
+            + "\n"
+            + "\t".join(["chr1-1000-2000", "0.5", "1", "2.5", "3"])
+            + "\n"
+        )
+        ht = hl.import_table(
+            str(path),
+            types={c: hl.tfloat64 for c in columns},
+            missing=GENOMIC_FEATURE_MISSING,
+        )
+        rows = {r.element_id: [r[c] for c in columns] for r in ht.collect()}
+        assert rows == {
+            "chr1-0-1000": [None, None, None, None],
+            "chr1-1000-2000": [0.5, 1.0, 2.5, 3.0],
         }

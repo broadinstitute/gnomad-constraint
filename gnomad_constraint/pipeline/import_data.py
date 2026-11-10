@@ -15,11 +15,13 @@ import argparse
 import logging
 
 import hail as hl
+from hail.utils.misc import new_temp_file
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
     GENOMIC_FEATURE_COLUMNS,
+    GENOMIC_FEATURE_MISSING,
     VERSIONS,
 )
 from gnomad_constraint.utils.import_data import format_dnm_ht, format_genomic_features
@@ -75,14 +77,16 @@ def main(args: argparse.Namespace) -> None:
             ht = hl.import_table(
                 res.published_features_path,
                 types={c: hl.tfloat64 for c in GENOMIC_FEATURE_COLUMNS},
-                missing=["NA", "nan", "NaN", ""],
+                missing=GENOMIC_FEATURE_MISSING,
                 min_partitions=100,
             )
             ht = format_genomic_features(ht)
-            ht = ht.checkpoint(res.genomic_features_ht.path, overwrite=overwrite)
+            ht = ht.checkpoint(new_temp_file("genomic_features", "ht"))
+            # Check before writing, so a bad matrix never replaces a good Table.
             n_duplicated = ht.count() - ht.distinct().count()
             if n_duplicated:
                 raise ValueError(f"{n_duplicated} windows are duplicated!")
+            ht.write(res.genomic_features_ht.path, overwrite=overwrite)
             logger.info("Done importing the regional genomic feature matrix.")
 
     finally:
