@@ -95,16 +95,17 @@ and runs these steps in order:
 
 | Flag | Step |
 |---|---|
-| `--create-rr-training-set` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes, annotate them with their window's features, and leave out genes with a QC gene flag |
+| `--create-rr-training-set` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag |
 | `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
 | `--train-rr-models` | Fit the per-context models with the chosen penalty |
-| `--compute-rr` | Compute rr per window and context, divided by its expected-weighted mean over exome synonymous sites in each context, so rr moves expected counts between regions without changing each context's total |
+| `--compute-rr` | Compute rr per window and context, divided by its mean, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in each context, so rr moves those sites' expected counts between regions without changing their total per context (other consequences' totals can shift) |
 
 `--compute-rr` normalizes rr on the per-variant expected Table that
 `--apply-regional-rr` applies it to, so run both scripts with the same `--version`,
-`--test`, `--directory-post-fix` and `--path-post-fix`. With `--test`,
+`--test`, `--directory-post-fix` and `--path-post-fix`; the training set comes from
+the annotated context Table of the same run. With `--test`,
 `regional_rate_pipeline.py` reads the `import_data.py --test` outputs and the
-`constraint_pipeline.py --test` per-variant expected Table. The models are fit with
+`constraint_pipeline.py --test` annotated context and per-variant expected Tables. The models are fit with
 scikit-learn, which gnomad_methods installs.
 
 ### Release constraint metrics Table

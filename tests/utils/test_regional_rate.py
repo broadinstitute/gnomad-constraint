@@ -6,7 +6,6 @@ import pytest
 
 from gnomad_constraint.resources.constants import (
     GENOMIC_FEATURE_COLUMNS,
-    METHYLATION_CORRELATED_FEATURES,
     RR_CONTEXT_FEATURES,
 )
 from gnomad_constraint.utils.regional_rate import (
@@ -27,13 +26,20 @@ class TestRrContextFeatures:
     """Test the RR_CONTEXT_FEATURES constant."""
 
     def test_cpg_contexts_leave_out_methylation_features(self) -> None:
-        """Test that only CpG contexts leave out the methylation-correlated features."""
+        """
+        Test that only CpG contexts leave out the methylation-correlated features.
+
+        Every context has all 13 features at 4 scales (52), except the 4 CpG
+        contexts, which leave out 5 features at every scale (32).
+        """
+        assert len(RR_CONTEXT_FEATURES) == 32
+        counts = {c: len(f) for c, f in RR_CONTEXT_FEATURES.items()}
+        cpg = {"ACG", "CCG", "GCG", "TCG"}
+        assert {c for c, n in counts.items() if n == 32} == cpg
+        assert all(n == 52 for c, n in counts.items() if c not in cpg)
         assert RR_CONTEXT_FEATURES["AAA"] == GENOMIC_FEATURE_COLUMNS
-        assert RR_CONTEXT_FEATURES["ACG"] == [
-            c
-            for c in GENOMIC_FEATURE_COLUMNS
-            if c.rsplit("_", 1)[0] not in METHYLATION_CORRELATED_FEATURES
-        ]
+        assert "GC_content_1k" not in RR_CONTEXT_FEATURES["TCG"]
+        assert "GC_content_1k" in RR_CONTEXT_FEATURES["CCA"]
 
 
 class TestCreateRrTrainingHt:
@@ -44,12 +50,14 @@ class TestCreateRrTrainingHt:
         """
         Return context Table rows at chr1 positions 10-70.
 
-        10 and 20 are synonymous DNMs, 20 also in exomes. 30 has two synonymous
-        alleles absent from exomes, 40 is in exomes and passes, 50 is in exomes as
-        AC0, 60 is missense, and 70 is absent from exomes.
+        10 and 20 are synonymous DNMs, 20 also in exomes; 10 has a second
+        synonymous allele absent from exomes. 30 has two synonymous alleles absent
+        from exomes, 40 is in exomes and passes, 50 is in exomes as AC0, 60 is
+        missense, and 70 is absent from exomes.
         """
         rows = [
             (10, ["A", "G"], "synonymous_variant", None),
+            (10, ["A", "C"], "synonymous_variant", None),
             (20, ["C", "T"], "synonymous_variant", set()),
             (30, ["A", "G"], "synonymous_variant", None),
             (30, ["A", "C"], "synonymous_variant", None),
@@ -77,6 +85,7 @@ class TestCreateRrTrainingHt:
                 filters=hl.tstruct(exomes=hl.tset(hl.tstr), genomes=hl.tset(hl.tstr)),
             ),
             key=["locus", "alleles"],
+            globals=hl.Struct(version="test"),
         )
 
     @staticmethod
@@ -132,11 +141,15 @@ class TestCreateRrTrainingHt:
 
         DNMs are the synonymous context sites in the DNM Table, even if in exomes
         (20); the missense DNM (60) and the indel (70) aren't. The background (all of
-        it, with a fraction of 1) is the other synonymous sites with no exomes
-        filters, one per locus (30, 70), so sites in exomes, passing (40) or AC0
-        (50), aren't in it. Every site gets its window's features.
+        it, with a fraction of 1) is the synonymous sites with no exomes filters at
+        the other loci, one per locus (30, 70): sites in exomes, passing (40) or AC0
+        (50), aren't in it, and neither is the second allele at the DNM locus 10.
+        Every site gets its window's features, and the context Table's globals are
+        dropped.
         """
-        rows = self._training_ht(1.0).collect()
+        ht = self._training_ht(1.0)
+        assert len(ht.globals.dtype) == 0
+        rows = ht.collect()
         assert sorted((r.locus.position, r.y, r.dist2telo_1k) for r in rows) == [
             (10, 1, 1.0),
             (20, 1, 1.0),
@@ -144,15 +157,49 @@ class TestCreateRrTrainingHt:
             (70, 0, 2.0),
         ]
 
+    def test_no_background(self) -> None:
+        """Test that a background fraction of 0 keeps only the DNM sites."""
+        rows = self._training_ht(0.0).collect()
+        assert sorted((r.locus.position, r.y) for r in rows) == [(10, 1), (20, 1)]
+
     def test_background_sample(self) -> None:
-        """Test that a sampled background is a subset of it and repeats with the seed."""
+        """
+        Test that the background is sampled per locus, at the fraction, by the seed.
 
-        def _background(seed: int) -> list:
-            ht = self._training_ht(0.5, seed)
-            return sorted(r.locus.position for r in ht.collect() if r.y == 0)
+        Each of 60 loci has 3 synonymous alleles absent from exomes. Sampling half
+        the loci keeps about 30; sampling alleles before keeping one per locus would
+        keep about 52. Different seeds give different samples, and a seed repeats.
+        """
+        n = 60
+        context_ht = hl.Table.parallelize(
+            [
+                {
+                    "locus": _locus(10 * (i + 1)),
+                    "alleles": ["A", alt],
+                    "context": "AAA",
+                    "vep": {"most_severe_consequence": "synonymous_variant"},
+                    "filters": {"exomes": None, "genomes": None},
+                }
+                for i in range(n)
+                for alt in ["C", "G", "T"]
+            ],
+            self._context_ht().row.dtype,
+            key=["locus", "alleles"],
+        )
+        dnm_ht = self._dnm_ht().filter(False)
 
-        assert set(_background(0)) <= {30, 70}
-        assert _background(0) == _background(0)
+        def _background(fraction: float, seed: int) -> list:
+            ht = create_rr_training_ht(
+                context_ht, dnm_ht, self._features_ht(), fraction, seed
+            )
+            return sorted(r.locus.position for r in ht.collect())
+
+        sample = _background(0.5, 0)
+        assert len(set(sample)) == len(sample)
+        assert 18 <= len(sample) <= 42
+        assert sample == _background(0.5, 0)
+        assert sample != _background(0.5, 1)
+        assert len(_background(1.0, 0)) == n
 
 
 class TestRemoveQcFlaggedGenes:
@@ -213,7 +260,9 @@ class TestRrTrainingHtToPandas:
         """
         Test the columns, the NumPy dtypes the fit relies on, and the folds.
 
-        chr1 is in the odd fold and chr2 in the even one.
+        Odd-numbered chromosomes are in the odd fold and even-numbered ones in the
+        even fold. chrX gets a fold too, but has no features, so it never reaches a
+        fit.
         """
         features = dict.fromkeys(GENOMIC_FEATURE_COLUMNS, 1.0)
         ht = hl.Table.parallelize(
@@ -225,6 +274,14 @@ class TestRrTrainingHtToPandas:
                     "y": 0,
                     **features,
                     "dist2telo_1k": None,
+                },
+                {"locus": _locus(10, "chr3"), "context": "AAA", "y": 0, **features},
+                {"locus": _locus(10, "chr20"), "context": "AAA", "y": 0, **features},
+                {
+                    "locus": _locus(10, "chrX"),
+                    "context": "AAA",
+                    "y": 0,
+                    **dict.fromkeys(GENOMIC_FEATURE_COLUMNS),
                 },
             ],
             hl.tstruct(
@@ -239,5 +296,5 @@ class TestRrTrainingHtToPandas:
         assert list(df.columns) == ["context", "y", *GENOMIC_FEATURE_COLUMNS, "fold"]
         assert df["y"].dtype == np.int64
         assert all(df[c].dtype == np.float64 for c in GENOMIC_FEATURE_COLUMNS)
-        assert df["dist2telo_1k"].isna().sum() == 1
-        assert list(df["fold"]) == ["odd", "even"]
+        assert df["dist2telo_1k"].isna().sum() == 2
+        assert list(df["fold"]) == ["odd", "even", "odd", "even", "odd"]

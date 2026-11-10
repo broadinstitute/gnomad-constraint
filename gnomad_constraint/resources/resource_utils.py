@@ -996,9 +996,9 @@ def get_regional_rate_resources(
     """
     Get PipelineResourceCollection for all resources needed in the regional rate pipeline.
 
-    The annotated context Table is the production one for ``version``. The
-    per-variant expected Table is read with the same ``test`` and post-fixes as the rr
-    outputs, since ``constraint_pipeline.py --apply-regional-rr`` with those values
+    The annotated context Table is read with the same ``test`` and directory post-fix
+    as the rr outputs, and the per-variant expected Table also with the same path
+    post-fix, since ``constraint_pipeline.py --apply-regional-rr`` with those values
     applies rr to it, so rr is normalized on it. The DNM and genomic feature Tables
     are the ``import_data.py`` outputs for ``version`` and ``test``.
 
@@ -1006,7 +1006,7 @@ def get_regional_rate_resources(
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
     :param directory_post_fix: Post-fix to add to the directory path of the outputs
-        and the per-variant expected input. Default is None.
+        and the annotated context and per-variant expected inputs. Default is None.
     :param path_post_fix: Post-fix to add to the path of the outputs and the
         per-variant expected input. Default is None.
     :return: PipelineResourceCollection containing resources for all steps of the
@@ -1037,7 +1037,9 @@ def get_regional_rate_resources(
             },
             **features_input,
             "constraint_pipeline.py --prepare-context-ht": {
-                "annotated_context_ht": get_annotated_context_ht(version=version)
+                "annotated_context_ht": get_annotated_context_ht(
+                    version=version, test=test, directory_post_fix=directory_post_fix
+                )
             },
             "constraint metrics with gene flags": {
                 "gene_flags_ht": get_rr_gene_flags_ht()

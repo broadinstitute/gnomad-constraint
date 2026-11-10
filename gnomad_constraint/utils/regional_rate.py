@@ -33,12 +33,14 @@ def create_rr_training_ht(
     Create the rr training Table of synonymous DNM and non-mutated background sites.
 
     The DNM sites are the synonymous sites of ``context_ht`` that are in ``dnm_ht``.
-    The background is a random sample (``background_fraction``) of the other
-    synonymous sites that are absent from gnomAD exomes (``filters.exomes`` is
-    missing), with one site kept per locus. DNM sites get ``y`` = 1 and background
+    The background is a random sample (``background_fraction``) of the synonymous
+    sites absent from gnomAD exomes (``filters.exomes`` is missing) at the other
+    loci, with one site kept per locus, so no locus is both a DNM and a background
+    site. DNM sites get ``y`` = 1 and background
     sites ``y`` = 0, and every site gets the features of the 1kb window containing it.
+    The Table has no globals.
 
-    Each DNM site is one row, however many DNMs were reported there, since the DNM
+    Each DNM variant is one row, however many DNMs were reported there, since the DNM
     Table can't tell a recurrent DNM from one reported by two cohorts.
 
     :param context_ht: Annotated context Table with ``vep``, ``context``, and
@@ -64,14 +66,16 @@ def create_rr_training_ht(
     #  partly offsets the compression of the rr form (see regional_mutation_rate_expr
     #  in gnomad.utils.constraint). Consider sampling from all non-DNM synonymous
     #  sites; the ridge penalty would need retuning.
-    bg_ht = ht.filter(~ht.in_exomes).anti_join(dnm_ht).key_by("locus").distinct()
-    bg_ht = bg_ht.sample(background_fraction, seed=seed)
+    bg_ht = ht.filter(~ht.in_exomes).key_by("locus").distinct()
+    bg_ht = bg_ht.anti_join(dnm_sites_ht).sample(background_fraction, seed=seed)
 
     ht = dnm_sites_ht.select("alleles", "context", y=1).union(
         bg_ht.select("alleles", "context", y=0)
     )
 
-    return ht.annotate(**features_ht.select(*GENOMIC_FEATURE_COLUMNS)[ht.locus])
+    ht = ht.annotate(**features_ht.select(*GENOMIC_FEATURE_COLUMNS)[ht.locus])
+
+    return ht.select_globals()
 
 
 def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:

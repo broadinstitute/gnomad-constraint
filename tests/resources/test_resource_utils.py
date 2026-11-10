@@ -676,32 +676,34 @@ class TestGetRegionalRateResources:
     @pytest.mark.parametrize("test", [False, True])
     @pytest.mark.parametrize("directory_post_fix", [None, "d"])
     @pytest.mark.parametrize("path_post_fix", [None, "p"])
-    def test_compute_rr_matches_the_constraint_pipeline(
+    def test_inputs_match_the_constraint_pipeline(
         self, test: bool, directory_post_fix: str, path_post_fix: str
     ) -> None:
         """
-        Test that --compute-rr uses the Tables of the same constraint pipeline run.
+        Test that the rr steps read the Tables of the same constraint pipeline run.
 
-        It writes the rr Table that ``--apply-regional-rr`` reads, and normalizes rr
-        on the per-variant expected Table that ``--aggregate-per-variant-expected``
-        aggregates, for the same version, test flag, and post-fixes.
+        For the same version, test flag, and post-fixes, the training set comes from
+        the annotated context Table that ``--prepare-context-ht`` writes, and rr is
+        normalized on the per-variant expected Table that
+        ``--aggregate-per-variant-expected`` aggregates. ``--compute-rr`` writes the
+        rr Table to its getter's path with the same settings.
         """
         kwargs = {
             "test": test,
             "directory_post_fix": directory_post_fix,
             "path_post_fix": path_post_fix,
         }
-        compute_rr = get_regional_rate_resources(
-            "4.1.1", overwrite=False, **kwargs
-        ).compute_rr
-        aggregate = get_constraint_resources(
-            "4.1.1", overwrite=False, **kwargs
-        ).aggregate_per_variant_expected
+        rr = get_regional_rate_resources("4.1.1", overwrite=False, **kwargs)
+        constraint = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
         assert (
-            compute_rr.regional_rr_ht.path
-            == get_regional_rr_ht(version="4.1.1", **kwargs).path
+            rr.create_rr_training_set.annotated_context_ht.path
+            == constraint.prepare_context.annotated_context_ht.path
         )
         assert (
-            compute_rr.per_variant_expected_ht.path
-            == aggregate.per_variant_apply_ht.path
+            rr.compute_rr.per_variant_expected_ht.path
+            == constraint.aggregate_per_variant_expected.per_variant_apply_ht.path
+        )
+        assert (
+            rr.compute_rr.regional_rr_ht.path
+            == get_regional_rr_ht(version="4.1.1", **kwargs).path
         )

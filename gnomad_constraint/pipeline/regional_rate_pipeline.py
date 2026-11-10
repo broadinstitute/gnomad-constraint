@@ -4,16 +4,17 @@ Script to compute the regional mutation rate (rr) of each 1kb window and context
 For each strand-collapsed trinucleotide context, a ridge-penalized logistic model
 separates synonymous de novo mutation (DNM) sites from non-mutated synonymous sites
 using regional genomic features. A window's rr is the model's prediction for the
-window relative to the average window, normalized so that each context's
-expected-weighted mean rr over exome synonymous sites is 1.
+window relative to the average window, normalized so that each context's mean rr,
+weighted by the adj expected count, over exome synonymous Ensembl MANE Select sites
+is 1.
 ``constraint_pipeline.py --aggregate-per-variant-expected --apply-regional-rr``
 applies it.
 
 The DNM and genomic feature Tables are written by ``import_data.py``. The
-per-variant expected Table is read with the same --version, --test,
---directory-post-fix, and --path-post-fix as the rr outputs, the values
-``--apply-regional-rr`` must be run with, so rr is normalized on the Table it is
-applied to.
+annotated context Table is read with the same --version, --test, and
+--directory-post-fix as the rr outputs, and the per-variant expected Table also with
+the same --path-post-fix: the values ``--apply-regional-rr`` must be run with, so rr
+is normalized on the Table it is applied to.
 
 The rr pipeline consists of the following steps:
     - --create-rr-training-set: create the DNM and non-mutated background training
@@ -52,7 +53,6 @@ from gnomad_constraint.resources.constants import (
     RR_TRAINING_N_PARTITIONS,
     VERSIONS,
 )
-from gnomad_constraint.resources.resource_utils import filter_for_test
 from gnomad_constraint.utils.constraint import get_transcript_filter_expr
 from gnomad_constraint.utils.regional_rate import (
     create_rr_training_ht,
@@ -95,11 +95,8 @@ def main(args: argparse.Namespace) -> None:
             res = resources.create_rr_training_set
             res.check_resource_existence()
 
-            context_ht = res.annotated_context_ht.ht()
-            if test:
-                context_ht = filter_for_test(context_ht)
             ht = create_rr_training_ht(
-                context_ht,
+                res.annotated_context_ht.ht(),
                 res.dnm_ht.ht(),
                 res.genomic_features_ht.ht(),
                 RR_BACKGROUND_FRACTION,
@@ -257,10 +254,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test",
         help=(
-            "Whether to filter the context Table to only chromosome 20, chromosome X,"
-            " and chromosome Y for testing. Reads the import_data.py --test outputs"
-            " and the constraint_pipeline.py --test per-variant expected Table, and"
-            " writes the outputs to the testing bucket."
+            "Whether to run on the test data: reads the import_data.py --test outputs"
+            " and the constraint_pipeline.py --test annotated context and"
+            " per-variant expected Tables, and writes the outputs to the testing"
+            " bucket."
         ),
         action="store_true",
     )

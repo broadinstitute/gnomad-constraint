@@ -74,7 +74,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
 apply-models, metrics, and constraint-metrics release outputs. `import_data.py` takes
 neither post-fix. `regional_rate_pipeline.py` applies both to its own outputs and to
-the per-variant expected Table it normalizes rr on, and
+the per-variant expected Table it normalizes rr on, and the directory post-fix to
+the annotated context Table it trains on, and
 `constraint_pipeline.py --apply-regional-rr` reads the rr Table with both, so run the
 two scripts with the same post-fixes.
 
@@ -759,12 +760,12 @@ The published Gnocchi 1kb regional genomic feature matrix
 rr training set, produced by `--create-rr-training-set` /
 [`create_rr_training_ht`](../utils/regional_rate.py). The DNM sites are the
 synonymous sites of `annotated_context.ht` in `dnm.ht`; the background is a
-`RR_BACKGROUND_FRACTION` (5%) sample, with seed `RR_BACKGROUND_SEED`, of the other
-synonymous sites that are absent from gnomAD exomes (`filters.exomes` is missing),
-one per locus. Sites in the span of an Ensembl MANE Select transcript with a
-`gene_flags` entry in the v4.1.2 constraint metrics Table are removed
-([`remove_qc_flagged_genes`](../utils/regional_rate.py)). Each DNM site is one row,
-however many DNMs were reported there.
+`RR_BACKGROUND_FRACTION` (5%) sample, with seed `RR_BACKGROUND_SEED`, of the
+synonymous sites absent from gnomAD exomes (`filters.exomes` is missing) at the
+other loci, one per locus, so no locus is both. Sites in the span of an Ensembl MANE
+Select transcript with a `gene_flags` entry in the v4.1.2 constraint metrics Table
+are removed ([`remove_qc_flagged_genes`](../utils/regional_rate.py)). Each DNM
+variant is one row, however many DNMs were reported there.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_training.ht`
 - **Resource fn:** [`get_rr_training_ht`](resource_utils.py)
