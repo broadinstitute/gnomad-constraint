@@ -20,7 +20,9 @@ Many of the functions are imported from
 | Path | Contents |
 |---|---|
 | `gnomad_constraint/pipeline/constraint_pipeline.py` | The pipeline script; each step is a command-line flag |
+| `gnomad_constraint/pipeline/import_data.py` | Imports the external data used to compute the regional mutation rate: de novo mutations and the regional genomic feature matrix |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
+| `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
 | `gnomad_constraint/resources/README.md` | Schema reference for every pipeline output |
@@ -69,6 +71,23 @@ instead, so a test run never touches production outputs. `--directory-post-fix`
 and `--path-post-fix` keep separate runs of the same version apart. The directory
 post-fix applies to every output; the path post-fix only to the outputs from
 `--create-training-set` onward, except the release mutation rate files.
+
+### Regional mutation rate (rr)
+
+The regional mutation rate (rr) scales a variant's expected count by how much more
+or less often sites like it mutate in its region than on average. As in Gnocchi, a
+logistic model for each trinucleotide context separates synonymous de novo
+mutations (DNMs) from a sample of non-mutated synonymous sites, using 13 regional
+genomic features of the site's 1kb window at four flanking scales.
+
+`import_data.py` imports the DNMs and genomic features the models are trained on,
+writing under `imported_data/` in the constraint output directory (with `--test`,
+in the testing bucket):
+
+| Flag | Step |
+|---|---|
+| `--import-dnms` | Import the Satterstrom 2026 ASD and DDD DNMs as a Table of DNM sites |
+| `--import-genomic-features` | Import the Gnocchi 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
 
 ### Release constraint metrics Table
 

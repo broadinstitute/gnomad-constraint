@@ -27,7 +27,10 @@ from gnomad_constraint.resources.resource_utils import (
     get_constraint_resources,
     get_constraint_root,
     get_coverage_ht,
+    get_dnm_ht,
     get_gene_quality_metrics_ht,
+    get_genomic_features_ht,
+    get_import_data_resources,
     get_lof_threshold_tsv_path,
     get_logging_path,
     get_models,
@@ -35,6 +38,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_per_variant_expected_dataset,
     get_pre_rank_constraint_metrics_dataset,
     get_preprocessed_ht,
+    get_regional_rr_ht,
     get_release_constraint_ht,
     get_release_constraint_tsv_path,
     get_release_downsampling_tsv_path,
@@ -348,6 +352,12 @@ class TestPipelineStepPaths:
                 get_training_tsv_path,
                 "training_data/gnomad.v4.1.1.constraint_training.tsv.bgz",
             ),
+            (get_dnm_ht, "imported_data/gnomad.v4.1.1.dnm.ht"),
+            (
+                get_genomic_features_ht,
+                "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
+            ),
+            (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
         ],
     )
     def test_path(self, func: Callable, path: str) -> None:
@@ -576,3 +586,32 @@ class TestGetConstraintResources:
             ref_grch38.seg_dup_intervals.path,
             ref_grch38.lcr_intervals.path,
         } <= _input_paths(resources.compute_gene_quality_metrics)
+
+
+class TestGetImportDataResources:
+    """Test the steps built by the get_import_data_resources function."""
+
+    @pytest.mark.parametrize("test", [False, True])
+    def test_outputs(self, test: bool) -> None:
+        """Test that each step writes its Table, under the test root in a test run."""
+        resources = get_import_data_resources("4.1.1", overwrite=False, test=test)
+        assert (
+            resources.import_dnms.dnm_ht.path
+            == get_dnm_ht(version="4.1.1", test=test).path
+        )
+        assert resources.import_genomic_features.genomic_features_ht.path == (
+            get_genomic_features_ht(version="4.1.1", test=test).path
+        )
+
+    def test_inputs(self) -> None:
+        """Test that the inputs the import steps read are the published files."""
+        resources = get_import_data_resources("4.1.1", overwrite=False, test=True)
+        assert resources.import_dnms.asd_dnm_path.endswith(
+            "/Satterstrom_2026_ASD_dnv_SNV_indel.txt.gz"
+        )
+        assert resources.import_dnms.ddd_dnm_path.endswith(
+            "/Satterstrom_2026_DDD_dnv_SNV_indel.txt.gz"
+        )
+        assert resources.import_genomic_features.published_features_path.endswith(
+            "/genomic_features13_genome_1kb.txt"
+        )
