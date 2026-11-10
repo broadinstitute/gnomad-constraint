@@ -14,6 +14,7 @@ from gnomad_constraint.pipeline.constraint_pipeline import (
     check_apply_models_resources,
     check_constraint_group_input,
     check_gerp_cutoffs_step,
+    check_regional_rr_input,
     check_skip_coverage_model,
     get_coverage_model,
     get_release_downsamplings,
@@ -153,6 +154,54 @@ class TestCheckConstraintGroupInput:
                 use_aggregated_expected=use_aggregated_expected,
             )
         assert bool(caplog.records) == warned
+
+
+class TestCheckRegionalRrInput:
+    """Test the check_regional_rr_input function."""
+
+    MODELS = hl.Struct(coverage_model=[1.0, 0.5], log10_coverage=False)
+
+    @classmethod
+    def _per_variant_ht(cls, coverage_model: List[float]) -> hl.Table:
+        """Return an empty per-variant Table with the given apply_models_globals."""
+        ht = hl.utils.range_table(0)
+        return ht.annotate_globals(
+            apply_models_globals=cls.MODELS.annotate(coverage_model=coverage_model)
+        )
+
+    @classmethod
+    def _rr_ht(cls, record: bool) -> hl.Table:
+        """Return an empty rr Table, recording the models it was normalized on."""
+        rr_globals = hl.struct(ridge_penalty=0.3)
+        if record:
+            rr_globals = rr_globals.annotate(
+                per_variant_apply_models_globals=hl.literal(cls.MODELS)
+            )
+        return hl.utils.range_table(0).annotate_globals(rr_globals=rr_globals)
+
+    def test_matching_models(self) -> None:
+        """Test that an rr Table normalized on the same models passes."""
+        check_regional_rr_input(
+            self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(True)
+        )
+
+    def test_changed_models(self) -> None:
+        """
+        Test that rr normalized on a per-variant Table with other models is rejected.
+
+        This happens when ``--apply-models-per-variant --overwrite`` is rerun after
+        ``--compute-rr``, which leaves the rr normalization factors stale.
+        """
+        with pytest.raises(ValueError, match="Rerun regional_rate_pipeline.py"):
+            check_regional_rr_input(self._per_variant_ht([1.0, 0.6]), self._rr_ht(True))
+
+    def test_not_recorded(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that an rr Table without the record is only warned about."""
+        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(False)
+            )
+        assert caplog.records
 
 
 class TestGetReleaseDownsamplings:

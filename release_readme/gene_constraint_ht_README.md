@@ -38,6 +38,13 @@ Parameters used when applying the models to compute expected variant counts.
 - `apply_models_params.coverage_model`: Array of coverage correction model coefficients used for expected variant count calculations at low-coverage sites (AN% between 20% and 90%)
 - `apply_models_params.log10_coverage`: Boolean indicating whether log10 transformation was applied to coverage values in the coverage correction model
 
+### `regional_rr_params`
+
+Present only when the expected variant counts were multiplied by a regional mutation rate (rr): a per-1kb-window, per-trinucleotide-context factor modeled from synonymous de novo mutations and regional genomic features.
+
+- `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models
+- `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1 over exome synonymous sites (weighted by expected count) in each context
+
 ### `downsamplings`
 
 Struct mapping each genetic ancestry group to an array of downsampling levels (as integers) corresponding to the indices in `gen_anc_obs` and `gen_anc_exp` arrays in the row fields.
@@ -58,7 +65,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
   - `sd_raw_z.lof_hc_lc`: Standard deviation of raw Z-scores for high and low confidence pLoF variants
   - `sd_raw_z.lof`: Standard deviation of raw Z-scores for high confidence pLoF variants
   - `loeuf_percentile_thresholds`: Pre-computed OE upper confidence interval thresholds used to assign constraint percentile bins. Structured as `loeuf_percentile_thresholds.{granularity}`, where granularity is one of `percentile` (99 thresholds), `decile` (9 thresholds), or `sextile` (5 thresholds). Each value is an `array<float64>` of gamma OE upper CI cutpoints, computed via approximate quantiles over MANE Select transcripts (excluding outliers). A transcript is assigned to bin k if its OE upper CI falls at or below the k-th threshold. For example, `loeuf_percentile_thresholds.decile` contains 9 values dividing LoF-constrained genes into 10 equal-frequency bins.
-  
+
 ## Key Fields
 
 - `gene`: Gene name

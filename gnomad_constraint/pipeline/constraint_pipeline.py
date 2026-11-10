@@ -276,6 +276,40 @@ def check_constraint_group_input(
         )
 
 
+def check_regional_rr_input(per_variant_ht: hl.Table, regional_rr_ht: hl.Table) -> None:
+    """
+    Check that the rr Table was normalized on this per-variant expected Table.
+
+    ``regional_rate_pipeline.py --compute-rr`` records the ``apply_models_globals``
+    (the fitted plateau and coverage models) of the per-variant expected Table it
+    normalizes rr on. If the per-variant Table being aggregated has different models,
+    it was rewritten after rr was computed, and the rr normalization factors no
+    longer match it. An rr Table without the record, like the Gnocchi ``syn_adj_r``
+    Table, is used with a warning.
+
+    :param per_variant_ht: Per-variant expected Table to aggregate.
+    :param regional_rr_ht: rr Table to apply.
+    :return: None.
+    """
+    if (
+        "rr_globals" not in regional_rr_ht.globals
+        or "per_variant_apply_models_globals" not in regional_rr_ht.rr_globals
+    ):
+        logger.warning(
+            "The rr Table doesn't record the per-variant expected Table it was"
+            " normalized on, so it can't be checked against this one."
+        )
+        return
+
+    recorded = hl.eval(regional_rr_ht.rr_globals.per_variant_apply_models_globals)
+    if recorded != hl.eval(per_variant_ht.apply_models_globals):
+        raise ValueError(
+            "The rr Table was normalized on a per-variant expected Table with"
+            " different models than the one being aggregated. Rerun"
+            " regional_rate_pipeline.py --compute-rr."
+        )
+
+
 def main(args: argparse.Namespace) -> None:
     """Execute the constraint pipeline."""
     hl.init(
@@ -296,6 +330,16 @@ def main(args: argparse.Namespace) -> None:
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
     check_gerp_cutoffs_step(args.calculate_gerp_cutoffs, args.preprocess_data)
+    if args.apply_regional_rr and not args.aggregate_per_variant_expected:
+        logger.warning(
+            "--apply-regional-rr only applies to --aggregate-per-variant-expected and"
+            " is ignored without it."
+        )
+    if args.apply_regional_rr and args.use_aggregated_expected:
+        logger.warning(
+            "--use-aggregated-expected makes --aggregate-by-constraint-groups read the"
+            " --apply-models-aggregated output, which has no rr."
+        )
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
@@ -311,6 +355,7 @@ def main(args: argparse.Namespace) -> None:
         path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
         use_aggregated_expected=args.use_aggregated_expected,
+        apply_regional_rr=args.apply_regional_rr,
     )
 
     try:
@@ -530,7 +575,11 @@ def main(args: argparse.Namespace) -> None:
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = aggregate_per_variant_expected_ht(ht)
+            regional_rr_ht = None
+            if args.apply_regional_rr:
+                regional_rr_ht = res.regional_rr_ht.ht()
+                check_regional_rr_input(ht, regional_rr_ht)
+            ht = aggregate_per_variant_expected_ht(ht, regional_rr_ht=regional_rr_ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
 
@@ -1015,6 +1064,18 @@ if __name__ == "__main__":
             "Aggregate the per-variant expected variant counts to get the expected "
             "variant counts for each transcript by consequence annotation and "
             "modifier."
+        ),
+        action="store_true",
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--apply-regional-rr",
+        help=(
+            "Multiply the per-variant expected counts by the regional mutation rate"
+            " (rr) of the variant's 1kb window and context before aggregating. Reads"
+            " the rr Table written by regional_rate_pipeline.py --compute-rr with the"
+            " same --version, --test, --directory-post-fix, and --path-post-fix. The"
+            " output keeps the unadjusted Table's name, so use --path-post-fix or"
+            " --directory-post-fix to keep both."
         ),
         action="store_true",
     )

@@ -49,7 +49,7 @@ flag, in this order:
 | `--create-training-set` | Count observed and possible synonymous variants for model training |
 | `--build-models` | Build the plateau and coverage models |
 | `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
-| `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence |
+| `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence. Add `--apply-regional-rr` to first multiply each variant's expected count by the regional mutation rate (rr) of its 1kb window and context (see [Regional mutation rate](#regional-mutation-rate-rr)) |
 | `--apply-models-aggregated` | Alternative to the two steps above: sum observed and possible counts first, then apply the models |
 | `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
 | `--compute-constraint-metrics` | Compute o/e, confidence intervals, z-scores, flags, pLI, ranks, and bins. `--skip-pre-rank-metrics` reruns only the ranking |
@@ -79,6 +79,17 @@ or less often sites like it mutate in its region than on average. As in Gnocchi,
 logistic model for each trinucleotide context separates synonymous de novo
 mutations (DNMs) from a sample of non-mutated synonymous sites, using 13 regional
 genomic features of the site's 1kb window at four flanking scales.
+
+`--aggregate-per-variant-expected --apply-regional-rr` applies rr after model
+calibration: it multiplies each variant's expected count by the rr of its window and
+context, or by 1 where there is none (chrX, chrY, and windows without features). It
+reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
+`--path-post-fix`, and stops with an error if that Table was normalized on a
+per-variant expected Table with other models. The output keeps the unadjusted
+Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
+replace the unadjusted ones unless you set `--path-post-fix` (rerun
+`--create-training-set` onward with it) or `--directory-post-fix`. The release Table
+records the rr settings in its `regional_rr_params` global.
 
 `import_data.py` imports the DNMs and genomic features the models are trained on,
 writing under `imported_data/` in the constraint output directory (with `--test`,
