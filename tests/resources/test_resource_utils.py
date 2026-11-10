@@ -606,12 +606,13 @@ class TestGetImportDataResources:
     def test_inputs(self) -> None:
         """Test that the inputs the import steps read are the published files."""
         resources = get_import_data_resources("4.1.1", overwrite=False, test=True)
-        assert resources.import_dnms.asd_dnm_path.endswith(
-            "/Satterstrom_2026_ASD_dnv_SNV_indel.txt.gz"
+        dnm_dir = "gs://regional_missense_constraint/resources/GRCh38/reference_data"
+        assert resources.import_dnms.asd_dnm_path == (
+            f"{dnm_dir}/Satterstrom_2026_ASD_dnv_SNV_indel.txt.gz"
         )
-        assert resources.import_dnms.ddd_dnm_path.endswith(
-            "/Satterstrom_2026_DDD_dnv_SNV_indel.txt.gz"
+        assert resources.import_dnms.ddd_dnm_path == (
+            f"{dnm_dir}/Satterstrom_2026_DDD_dnv_SNV_indel.txt.gz"
         )
-        assert resources.import_genomic_features.published_features_path.endswith(
-            "/genomic_features13_genome_1kb.txt"
+        assert resources.import_genomic_features.published_features_path == (
+            "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
         )

@@ -737,8 +737,9 @@ The published Gnocchi 1kb regional genomic feature matrix
   positions, `[start + 1, end]`. (The Gnocchi rr Tables used `[start, end)`, 1bp
   left of the BED window.)
 - `element_id: str` — window ID from the matrix (`chr-start-end`, BED coordinates).
-- `{feature}_{scale}: float64` — the 52 feature columns. Values written as `NA`,
-  `nan`, `NaN`, or empty in the matrix are missing.
+- `{feature}_{scale}: float64` — the 52 feature columns. Values written as one of
+  `GENOMIC_FEATURE_MISSING` (`NA`, `nan`, `NaN`, or empty) in the matrix are
+  missing.
 
 ---
 
