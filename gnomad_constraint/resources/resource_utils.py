@@ -624,6 +624,45 @@ def get_genomic_features_ht(**kwargs) -> TableResource:
     )
 
 
+def get_rr_gene_flags_ht() -> TableResource:
+    """
+    Return the constraint metrics Table whose gene flags pick the genes left out of rr training.
+
+    This is pinned to the v4.1.2 constraint metrics Table, whatever version rr is
+    computed for.
+
+    :return: Constraint metrics TableResource.
+    """
+    return get_constraint_metrics_dataset(version="4.1.2")
+
+
+def get_rr_training_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the rr training Table (DNM and background sites).
+
+    :return: TableResource of the rr training Table.
+    """
+    return get_constraint_data("rr_training", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_penalty_tuning_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the held-out log loss of the rr models per ridge penalty.
+
+    :return: TableResource of the rr penalty tuning Table.
+    """
+    return get_constraint_data("rr_penalty_tuning", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_models_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the per-context rr model parameters.
+
+    :return: TableResource of the rr model Table.
+    """
+    return get_constraint_data("rr_models", sub_dir="regional_rate", **kwargs)
+
+
 def get_regional_rr_ht(**kwargs) -> TableResource:
     """
     Return TableResource of the per-window, per-context regional rr Table.
@@ -945,3 +984,99 @@ def get_import_data_resources(
     )
 
     return import_pipeline
+
+
+def get_regional_rate_resources(
+    version: str,
+    overwrite: bool,
+    test: bool,
+    directory_post_fix: Optional[str] = None,
+    path_post_fix: Optional[str] = None,
+) -> PipelineResourceCollection:
+    """
+    Get PipelineResourceCollection for all resources needed in the regional rate pipeline.
+
+    The annotated context Table is the production one for ``version``. The
+    per-variant expected Table is read with the same ``test`` and post-fixes as the rr
+    outputs, since ``constraint_pipeline.py --apply-regional-rr`` with those values
+    applies rr to it, so rr is normalized on it. The DNM and genomic feature Tables
+    are the ``import_data.py`` outputs for ``version`` and ``test``.
+
+    :param version: Version of constraint resources to use.
+    :param overwrite: Whether to overwrite existing resources.
+    :param test: Whether to use test resources.
+    :param directory_post_fix: Post-fix to add to the directory path of the outputs
+        and the per-variant expected input. Default is None.
+    :param path_post_fix: Post-fix to add to the path of the outputs and the
+        per-variant expected input. Default is None.
+    :return: PipelineResourceCollection containing resources for all steps of the
+        regional rate pipeline.
+    """
+    rr_pipeline = PipelineResourceCollection(
+        pipeline_name="regional_rate",
+        overwrite=overwrite,
+    )
+    out_params = {
+        "version": version,
+        "test": test,
+        "directory_post_fix": directory_post_fix,
+        "path_post_fix": path_post_fix,
+    }
+    features_input = {
+        "import_data.py --import-genomic-features": {
+            "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
+        }
+    }
+
+    create_rr_training_set = PipelineStepResourceCollection(
+        "--create-rr-training-set",
+        output_resources={"rr_training_ht": get_rr_training_ht(**out_params)},
+        input_resources={
+            "import_data.py --import-dnms": {
+                "dnm_ht": get_dnm_ht(version=version, test=test)
+            },
+            **features_input,
+            "constraint_pipeline.py --prepare-context-ht": {
+                "annotated_context_ht": get_annotated_context_ht(version=version)
+            },
+            "constraint metrics with gene flags": {
+                "gene_flags_ht": get_rr_gene_flags_ht()
+            },
+        },
+    )
+    tune_rr_penalty = PipelineStepResourceCollection(
+        "--tune-rr-penalty",
+        output_resources={
+            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**out_params)
+        },
+        pipeline_input_steps=[create_rr_training_set],
+    )
+    train_rr_models = PipelineStepResourceCollection(
+        "--train-rr-models",
+        output_resources={"rr_models_ht": get_rr_models_ht(**out_params)},
+        pipeline_input_steps=[create_rr_training_set, tune_rr_penalty],
+    )
+    compute_rr = PipelineStepResourceCollection(
+        "--compute-rr",
+        output_resources={"regional_rr_ht": get_regional_rr_ht(**out_params)},
+        pipeline_input_steps=[train_rr_models],
+        add_input_resources={
+            **features_input,
+            "constraint_pipeline.py --apply-models-per-variant": {
+                "per_variant_expected_ht": get_per_variant_expected_dataset(
+                    **out_params
+                )
+            },
+        },
+    )
+
+    rr_pipeline.add_steps(
+        {
+            "create_rr_training_set": create_rr_training_set,
+            "tune_rr_penalty": tune_rr_penalty,
+            "train_rr_models": train_rr_models,
+            "compute_rr": compute_rr,
+        }
+    )
+
+    return rr_pipeline

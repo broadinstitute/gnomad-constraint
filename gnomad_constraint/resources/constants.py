@@ -265,3 +265,73 @@ GENOMIC_FEATURE_COLUMNS = [
     f"{f}_{s}" for s in GENOMIC_FEATURE_SCALES for f in GENOMIC_FEATURES
 ]
 """Feature matrix columns (``{feature}_{scale}``), in published column order."""
+
+RR_CONTEXTS = sorted(f"{b1}{c}{b3}" for b1 in "ACGT" for c in "AC" for b3 in "ACGT")
+"""Strand-collapsed trinucleotide contexts (central base A or C) modeled for rr."""
+
+CPG_CONTEXTS = ["ACG", "CCG", "GCG", "TCG"]
+"""Strand-collapsed CpG trinucleotide contexts."""
+
+METHYLATION_CORRELATED_FEATURES = [
+    "GC_content",
+    "SINE",
+    "met_sperm",
+    "Nucleosome",
+    "CpG_island",
+]
+"""
+Features correlated with methylation that are left out of the CpG context rr models.
+
+The mutation rates already model methylation at CpG sites.
+"""
+
+RR_CONTEXT_FEATURES = {
+    context: [
+        f"{f}_{s}"
+        for s in GENOMIC_FEATURE_SCALES
+        for f in GENOMIC_FEATURES
+        if not (context in CPG_CONTEXTS and f in METHYLATION_CORRELATED_FEATURES)
+    ]
+    for context in RR_CONTEXTS
+}
+"""
+Features of each context's rr model.
+
+Every feature at every scale, without the methylation-correlated features for CpG
+contexts.
+"""
+
+RR_RIDGE_PENALTIES = [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
+"""
+Per-site ridge penalties tried by ``regional_rate_pipeline.py --tune-rr-penalty``.
+
+The step picks the penalty with the lowest held-out log loss of models fit on odd
+chromosomes and scored on even ones, and vice versa, summed over contexts. In the
+analysis behind the rr, this chose 0.3 from this range.
+
+Each of those models is fit on about half the training sites, and
+``--train-rr-models`` refits on all of them with the chosen per-site penalty, which
+shrinks the final fit about twice as much in absolute terms as the models that were
+scored. This is kept on purpose, to match how 0.3 was chosen and evaluated.
+"""
+
+RR_RIDGE_PENALTY = 0.3
+"""
+Ridge penalty used when ``--tune-rr-penalty`` has no held-out sites to score.
+
+A ``--test`` run trains on chr20 only, so there is no other chromosome to hold out.
+"""
+
+RR_BACKGROUND_FRACTION = 0.05
+"""Fraction of non-mutated synonymous sites sampled as the rr training background."""
+
+RR_BACKGROUND_SEED = 0
+"""Seed used when sampling the non-mutated rr training background."""
+
+RR_TRAINING_N_PARTITIONS = 100
+"""
+Number of partitions of the written rr training Table.
+
+The sampled training sites keep the partitioning of the context Table (about 5,000
+partitions for about 500,000 rows), so the Table is coalesced before it is written.
+"""

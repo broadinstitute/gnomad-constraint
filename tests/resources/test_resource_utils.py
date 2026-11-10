@@ -38,12 +38,17 @@ from gnomad_constraint.resources.resource_utils import (
     get_per_variant_expected_dataset,
     get_pre_rank_constraint_metrics_dataset,
     get_preprocessed_ht,
+    get_regional_rate_resources,
     get_regional_rr_ht,
     get_release_constraint_ht,
     get_release_constraint_tsv_path,
     get_release_downsampling_tsv_path,
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
+    get_rr_gene_flags_ht,
+    get_rr_models_ht,
+    get_rr_penalty_tuning_ht,
+    get_rr_training_ht,
     get_sites_resource,
     get_syn_adj_r_ht,
     get_training_dataset,
@@ -358,6 +363,12 @@ class TestPipelineStepPaths:
                 "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
             ),
             (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
+            (get_rr_training_ht, "regional_rate/gnomad.v4.1.1.rr_training.ht"),
+            (
+                get_rr_penalty_tuning_ht,
+                "regional_rate/gnomad.v4.1.1.rr_penalty_tuning.ht",
+            ),
+            (get_rr_models_ht, "regional_rate/gnomad.v4.1.1.rr_models.ht"),
         ],
     )
     def test_path(self, func: Callable, path: str) -> None:
@@ -614,4 +625,82 @@ class TestGetImportDataResources:
         )
         assert resources.import_genomic_features.published_features_path.endswith(
             "/genomic_features13_genome_1kb.txt"
+        )
+
+
+class TestGetRegionalRateResources:
+    """Test the steps built by the get_regional_rate_resources function."""
+
+    @pytest.fixture
+    def resources(self) -> PipelineResourceCollection:
+        """Return the regional rate resources for a test run of v4.1.1."""
+        return get_regional_rate_resources("4.1.1", overwrite=False, test=True)
+
+    def test_test_run_writes_only_under_the_test_root(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """Test that every step's outputs in a test run are under the test root."""
+        paths = [
+            _path(resource)
+            for step in resources.pipeline_steps.values()
+            for outputs in step.output_resources.values()
+            for resource in outputs
+        ]
+        assert paths
+        assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
+
+    def test_inputs(self, resources: PipelineResourceCollection) -> None:
+        """
+        Test that the steps read the import outputs, the tuned penalty, and the flags.
+
+        The gene flags come from the v4.1.2 constraint metrics Table whatever the
+        version.
+        """
+        imports = get_import_data_resources("4.1.1", overwrite=False, test=True)
+        training = resources.create_rr_training_set
+        assert training.dnm_ht.path == imports.import_dnms.dnm_ht.path
+        for step in [training, resources.compute_rr]:
+            assert (
+                step.genomic_features_ht.path
+                == imports.import_genomic_features.genomic_features_ht.path
+            )
+        assert training.gene_flags_ht.path == get_rr_gene_flags_ht().path
+        assert "/v4.1.2/" in get_rr_gene_flags_ht().path
+        train = resources.train_rr_models
+        assert (
+            train.rr_penalty_tuning_ht.path
+            == resources.tune_rr_penalty.rr_penalty_tuning_ht.path
+        )
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_compute_rr_matches_the_constraint_pipeline(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that --compute-rr uses the Tables of the same constraint pipeline run.
+
+        It writes the rr Table that ``--apply-regional-rr`` reads, and normalizes rr
+        on the per-variant expected Table that ``--aggregate-per-variant-expected``
+        aggregates, for the same version, test flag, and post-fixes.
+        """
+        kwargs = {
+            "test": test,
+            "directory_post_fix": directory_post_fix,
+            "path_post_fix": path_post_fix,
+        }
+        compute_rr = get_regional_rate_resources(
+            "4.1.1", overwrite=False, **kwargs
+        ).compute_rr
+        aggregate = get_constraint_resources(
+            "4.1.1", overwrite=False, **kwargs
+        ).aggregate_per_variant_expected
+        assert (
+            compute_rr.regional_rr_ht.path
+            == get_regional_rr_ht(version="4.1.1", **kwargs).path
+        )
+        assert (
+            compute_rr.per_variant_expected_ht.path
+            == aggregate.per_variant_apply_ht.path
         )
