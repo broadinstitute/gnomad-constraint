@@ -89,6 +89,9 @@ def create_rr_training_ht(
     per locus. DNM sites get ``y`` = 1 and background sites ``y`` = 0. Each site is
     annotated with the features of the 1kb window containing it.
 
+    Each DNM site is one training row, however many DNMs were reported there: the
+    DNM Table can't tell a recurrent DNM from one reported by overlapping cohorts.
+
     :param syn_sites_ht: Possible synonymous SNVs (:func:`get_syn_sites_ht`).
     :param dnm_ht: DNM Table
         (:func:`~gnomad_constraint.utils.import_data.combine_dnms`).
@@ -154,6 +157,8 @@ def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
         for r in spans.collect()
     ]
     logger.info("Removing sites in %d QC-flagged genes.", len(intervals))
+    if not intervals:
+        return ht
 
     return hl.filter_intervals(ht, intervals, keep=False)
 
@@ -224,11 +229,14 @@ def fit_rr_context_model(
     df = df[["y", *features]].dropna()
     n_dnm = int((df["y"] == 1).sum())
     n_background = int((df["y"] == 0).sum())
-    mean = df[features].mean()
-    sd = df[features].std(ddof=0)
-    features = [f for f in features if sd[f] > 0]
+    # Count distinct values rather than testing sd > 0: rounding can leave the sd of
+    # a constant column at about 1e-17, which would make z explode at prediction.
+    features = [f for f in features if df[f].nunique() > 1]
     if not n_dnm or not n_background or not features:
         return None
+
+    mean = df[features].mean()
+    sd = df[features].std(ddof=0)
 
     z = (df[features] - mean[features]) / sd[features]
     # sklearn minimizes C * sum(log loss) + sum(coef ** 2) / 2, so C = 1 / (n *
@@ -279,6 +287,8 @@ def fit_rr_models(
         constant = [f for f in features if f not in model["features"]]
         if constant:
             logger.info("%s: features left out (constant): %s", context, constant)
+        if not model["converged"]:
+            logger.warning("The rr model fit for %s did not converge.", context)
         models.append({"context": context, **model})
     logger.info("%d of %d contexts modeled.", len(models), len(contexts))
 
@@ -376,6 +386,8 @@ def choose_rr_penalty(
     The log loss is summed over contexts and folds, so one penalty is used for every
     context. If no held-out sites could be scored (the training sites are all on one
     side of the chromosome split, as in a ``--test`` run), ``default`` is returned.
+    A warning is logged when the chosen penalty is at either end of those tried,
+    since the best penalty may then lie outside them.
 
     :param tuning_df: Held-out log loss per penalty (:func:`tune_rr_penalty`).
     :param default: Penalty used when there is no held-out log loss. Default is
@@ -388,7 +400,17 @@ def choose_rr_penalty(
         )
         return default
 
-    return float(tuning_df.groupby("penalty")["log_loss"].sum().idxmin())
+    penalty = float(tuning_df.groupby("penalty")["log_loss"].sum().idxmin())
+    tried = sorted(tuning_df["penalty"].unique())
+    if len(tried) > 1 and penalty in (tried[0], tried[-1]):
+        logger.warning(
+            "The chosen ridge penalty %s is at the end of those tried (%s); consider"
+            " extending --rr-penalties.",
+            penalty,
+            tried,
+        )
+
+    return penalty
 
 
 def rr_models_to_ht(models: List[Dict[str, Any]]) -> hl.Table:

@@ -37,6 +37,11 @@ class TestFormatDnmCohort:
                 hl.tstruct(Variant=hl.tstr, Confidence=hl.tstr),
             ),
             (
+                "satterstrom_2026_ddd",
+                {"Variant": "chr1:100:A:G", "LCR": "False"},
+                hl.tstruct(Variant=hl.tstr, LCR=hl.tstr),
+            ),
+            (
                 "decode_psychencode",
                 {"locus": "chr1:100", "ref": "A", "alt": "G"},
                 hl.tstruct(locus=hl.tstr, ref=hl.tstr, alt=hl.tstr),
@@ -62,6 +67,75 @@ class TestFormatDnmCohort:
         assert ht.collect() == [
             hl.Struct(
                 locus=hl.Locus("chr1", 100, "GRCh38"), alleles=["A", "G"], cohort=cohort
+            )
+        ]
+
+    def test_gnomad_cohort(self) -> None:
+        """Test that the gnomAD de novo Table keeps only its key and gets a cohort."""
+        ht = hl.Table.parallelize(
+            [{"locus": hl.Locus("chr1", 100, "GRCh38"), "alleles": ["A", "G"], "x": 1}],
+            hl.tstruct(
+                locus=hl.tlocus("GRCh38"), alleles=hl.tarray(hl.tstr), x=hl.tint32
+            ),
+        )
+        ht = format_dnm_cohort("gnomad_v4.1", ht)
+        assert ht.collect() == [
+            hl.Struct(
+                locus=hl.Locus("chr1", 100, "GRCh38"),
+                alleles=["A", "G"],
+                cohort="gnomad_v4.1",
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        "cohort, row, schema",
+        [
+            (
+                "chd_2017",
+                {"CHROM": "1", "POS": 100, "REF": "A", "ALT": "G"},
+                hl.tstruct(CHROM=hl.tstr, POS=hl.tint32, REF=hl.tstr, ALT=hl.tstr),
+            ),
+            (
+                "ee_2014",
+                {
+                    "hg19 coordinates (chr:position)": "chr1:100",
+                    "Ref/Alt alleles": "A/G",
+                },
+                hl.tstruct(
+                    **{
+                        "hg19 coordinates (chr:position)": hl.tstr,
+                        "Ref/Alt alleles": hl.tstr,
+                    }
+                ),
+            ),
+            (
+                "cdh_2021",
+                {"chr": 1, "position": 100, "ref": "A", "alt": "G"},
+                hl.tstruct(chr=hl.tint32, position=hl.tint32, ref=hl.tstr, alt=hl.tstr),
+            ),
+        ],
+    )
+    def test_grch37_cohorts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cohort: str,
+        row: dict,
+        schema: hl.tstruct,
+    ) -> None:
+        """
+        Test the GRCh37 cohorts' locus and allele parsing before liftover.
+
+        Liftover needs the chain file on GCS, so it is replaced by the identity: the
+        Table it gets must be keyed by the GRCh37 locus and alleles.
+        """
+        monkeypatch.setattr(
+            "gnomad_constraint.utils.import_data.default_lift_data", lambda ht: ht
+        )
+        ht = format_dnm_cohort(cohort, hl.Table.parallelize([row], schema))
+        assert list(ht.key) == ["locus", "alleles"]
+        assert ht.collect() == [
+            hl.Struct(
+                locus=hl.Locus("1", 100, "GRCh37"), alleles=["A", "G"], cohort=cohort
             )
         ]
 

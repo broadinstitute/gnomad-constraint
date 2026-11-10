@@ -2183,7 +2183,10 @@ def _restructure_release_globals(
     # freq_meta, genetic_ancestry_groups, downsampling_idx, etc.
     for src, dest, drop_fields in RELEASE_PIPELINE_PARAM_GLOBALS:
         if src in ht.globals:
-            global_kwargs[dest] = ht.globals[src].drop(*drop_fields)
+            # Fields added to a global later are absent from older Tables.
+            global_kwargs[dest] = ht.globals[src].drop(
+                *[f for f in drop_fields if f in ht.globals[src]]
+            )
 
     # When downsamplings are present, record the integer downsampling
     # levels per genetic ancestry so consumers can interpret the

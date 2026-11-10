@@ -5,8 +5,9 @@ canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
 This document is the schema reference for every **pipeline output** of the
-constraint pipeline, and of `import_data.py` and `regional_rate_pipeline.py`. The schemas were first captured with `ht.describe()` from
-the v4.1.1 tables on GCS and have been updated by hand as the pipeline changed,
+constraint pipeline, and of `import_data.py` and `regional_rate_pipeline.py`. The
+schemas were first captured with `ht.describe()` from the v4.1.1 tables on GCS and
+have been updated by hand as the pipeline changed,
 so the released v4.1.1 tables differ from them in places. For upstream **input**
 resources (VEP context, sites,
 coverage, methylation, GERP, GENCODE, `all_sites_an`) see
@@ -625,7 +626,8 @@ Public-release flattened constraint table. One row per
   `percentile_thresholds.lof` in §10).
 - `regional_rr_params: struct{ridge_penalty, normalization_factors}` — only when the
   expected counts were adjusted with `--apply-regional-rr`; release-cleaned
-  `regional_rr_globals` (drops the Table paths; see §19).
+  `regional_rr_globals` (drops the Table paths, the per-variant models, and
+  `non_converged_contexts`; see §19).
 
 ### Rows
 Key + GENCODE annotations + per-group structs:
@@ -777,7 +779,9 @@ sample, with seed `RR_BACKGROUND_SEED`, of the possible synonymous sites in
 `annotated_context.ht` that are not a DNM and are absent from the gnomAD exomes
 sites Table, one per locus. Sites in the span of an Ensembl MANE Select transcript
 with a `gene_flags` entry in the v4.1.2 constraint metrics Table are removed
-([`remove_qc_flagged_genes`](../utils/regional_rate.py)).
+([`remove_qc_flagged_genes`](../utils/regional_rate.py)). Each DNM site is one row,
+however many DNMs were reported there, since the DNM Table can't tell a recurrent DNM
+from one reported by overlapping cohorts.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_training.ht`
 - **Resource fn:** [`get_rr_training_ht`](resource_utils.py)
@@ -834,10 +838,13 @@ features, so a window's linear predictor is
 ### Globals
 - `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
   §17.
+- `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
+  converge (also logged as a warning).
 
 ### Rows
 - `context: str` — strand-collapsed trinucleotide context (one of `RR_CONTEXTS`).
-  Contexts without DNM or background training sites have no row.
+  Contexts without DNM or background training sites, or where no feature varies,
+  have no row.
 - `features: array<str>` — model features in coefficient order: every feature at
   every scale, without the `METHYLATION_CORRELATED_FEATURES` for CpG contexts, and
   without any feature that has a single value in the context's training sites.
@@ -848,9 +855,9 @@ features, so a window's linear predictor is
 - `ave: float64` — predicted probability for the average window (all features at
   their mean); rr divides by it. As in Gnocchi, rr is this ratio of probabilities
   rather than the odds ratio, which compresses the regional effect toward 1 by
-  about `1 - ave` on the log scale and caps rr at `1 / ave`. `ave` is the DNM share
-  of the training sites, a few percent for non-CpG contexts but 20-50% for CpG
-  contexts, so CpG rr is damped (see
+  about `1 - ave` on the log scale and caps rr at `1 / ave`. `ave` is about the DNM
+  share of the training sites, a few percent for non-CpG contexts but 20-50% for
+  CpG contexts, so CpG rr is damped (see
   [`_rr_model_expr`](../utils/regional_rate.py)).
 - `n_dnm: int32`, `n_background: int32` — training sites with no missing feature.
 - `converged: bool` — whether the logistic fit converged.
@@ -874,9 +881,15 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` /
   - `normalization_factors: dict<str, float64>` — per-context expected-weighted
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
     of `per_variant_expected.ht` that fall in an rr window; rr is divided by it.
+  - `non_converged_contexts: array<str>` — copied from the model Table (§18).
   - `models_ht_path: str`, `features_ht_path: str`,
     `per_variant_expected_ht_path: str` — paths of the rr model, genomic feature,
     and per-variant expected Tables used.
+  - `per_variant_apply_models_globals: struct` — the `apply_models_globals` (fitted
+    plateau and coverage models) of the per-variant expected Table rr was
+    normalized on. `--apply-regional-rr` stops with an error if the per-variant
+    Table it aggregates has different ones, since the normalization factors would
+    then be stale.
 
 ### Rows
 - `interval: interval<locus<GRCh38>>` — 1kb window, as in

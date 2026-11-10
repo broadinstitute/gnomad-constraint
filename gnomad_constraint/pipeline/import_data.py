@@ -86,13 +86,18 @@ def main(args: argparse.Namespace) -> None:
                 cohort: format_dnm_cohort(cohort, import_dnm_cohort(cohort, resource))
                 for cohort, resource in get_dnm_cohort_resources().items()
             }
+            context_ht = res.annotated_context_ht.ht()
+            if test:
+                context_ht = filter_for_test(context_ht, use_gene_list=test_gene_list)
+                # Filter the cohorts too, so the counts below cover the same regions.
+                cohort_hts = {
+                    cohort: filter_for_test(ht, use_gene_list=test_gene_list)
+                    for cohort, ht in cohort_hts.items()
+                }
             # The cohorts are small, so counting them is cheap. Comparing these
             # counts with the SNV DNMs kept per cohort shows a cohort that lost many
             # rows in the context join (e.g. positions on the wrong build).
             n_input = {cohort: ht.count() for cohort, ht in cohort_hts.items()}
-            context_ht = res.annotated_context_ht.ht()
-            if test:
-                context_ht = filter_for_test(context_ht, use_gene_list=test_gene_list)
 
             ht = combine_dnms(cohort_hts, context_ht)
             ht = ht.checkpoint(res.dnm_ht.path, overwrite=overwrite)
@@ -110,10 +115,16 @@ def main(args: argparse.Namespace) -> None:
             )
             for cohort, n in n_input.items():
                 logger.info(
-                    "    %s: %d DNMs imported (after liftover), %d SNV DNMs kept.",
+                    "    %s: %d DNMs imported (after liftover), %d SNV DNMs kept%s.",
                     cohort,
                     n,
                     stats.n_per_cohort.get(cohort, 0),
+                    (
+                        " (each DNM is listed in both allele orientations, so about"
+                        " half are expected to be dropped)"
+                        if cohort == "decode_psychencode"
+                        else ""
+                    ),
                 )
             logger.info("%d DNM sites after deduplication.", stats.n_sites)
             logger.info(
@@ -186,7 +197,8 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--test-gene-list",
         help=(
             "Whether to filter the annotated context Table to only six genes for"
-            " testing (see --test-gene-list in constraint_pipeline.py)."
+            " testing (see --test-gene-list in constraint_pipeline.py). Implies"
+            " --test."
         ),
         action="store_true",
     )

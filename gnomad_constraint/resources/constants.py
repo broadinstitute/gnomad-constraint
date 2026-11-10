@@ -210,7 +210,13 @@ RELEASE_PIPELINE_PARAM_GLOBALS = [
     (
         "regional_rr_globals",
         "regional_rr_params",
-        ["models_ht_path", "features_ht_path", "per_variant_expected_ht_path"],
+        [
+            "models_ht_path",
+            "features_ht_path",
+            "per_variant_expected_ht_path",
+            "per_variant_apply_models_globals",
+            "non_converged_contexts",
+        ],
     ),
 ]
 """Pipeline parameter globals: (internal name, release name, fields to drop)."""
@@ -299,8 +305,12 @@ fit minimizes mean log loss + penalty / 2 * sum(coef ** 2) on z-scored features 
 intercept is not penalized), so the penalty decides how much each feature counts. The
 step picks the penalty with the lowest held-out log loss of chromosome-split models,
 summed over contexts, so no gnomAD data is used to choose it. In the analysis behind
-the rr, 0.3 was chosen from this range; see
-https://github.com/broadinstitute/gnomad-constraint/blob/64e52edf7dd83e9bc4fa83a7ead3e685e174226c/gnomad_constraint/plots/adj_r_syn_oe/rr_syn_dnm_followup.md#L67-L73.
+the rr, the same split chose 0.3 from this range.
+
+Each split model is fit on about half the training sites, and ``--train-rr-models``
+refits on all of them with the chosen per-site penalty, which shrinks the final fit
+about twice as much in absolute terms as the models that were scored. This is kept
+on purpose, to match how 0.3 was chosen and evaluated.
 """
 
 RR_RIDGE_PENALTY = 0.3

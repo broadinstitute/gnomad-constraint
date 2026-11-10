@@ -14,6 +14,7 @@ from gnomad_constraint.resources.constants import (
     RR_CONTEXTS,
 )
 from gnomad_constraint.utils.regional_rate import (
+    _predict_rr_model,
     choose_rr_penalty,
     compute_rr_ht,
     compute_rr_normalization_factors,
@@ -26,6 +27,8 @@ from gnomad_constraint.utils.regional_rate import (
     get_syn_sites_ht,
     normalize_rr_ht,
     remove_qc_flagged_genes,
+    rr_models_to_ht,
+    rr_training_ht_to_pandas,
     tune_rr_penalty,
 )
 
@@ -99,15 +102,17 @@ class TestFitRrContextModel:
         model = fit_rr_context_model(_training_df(), ["a", "b"], 0.3)
         assert model["ave"] == pytest.approx(expit(model["intercept"]))
 
-    def test_constant_feature_is_left_out(self) -> None:
+    @pytest.mark.parametrize("value", [0.0, 0.4123])
+    def test_constant_feature_is_left_out(self, value: float) -> None:
         """
         Test that a feature with a single value is left out of the model.
 
         Regression test: z-scoring a constant feature gave NaN, so
         ``--train-rr-models --test`` crashed in contexts where a feature was constant
-        on chr20.
+        on chr20. A constant like 0.4123 has a pandas sd of about 1e-17 rather than 0,
+        so a check on the sd kept it, and rr at prediction became 0 or 1 / ave.
         """
-        df = _training_df().assign(c=0.0)
+        df = _training_df().assign(c=value)
         model = fit_rr_context_model(df, ["a", "c", "b"], 0.3)
         assert model["features"] == ["a", "b"]
         assert len(model["mean"]) == len(model["sd"]) == len(model["coefs"]) == 2
@@ -287,6 +292,71 @@ class TestComputeRrHt:
         assert rows[1001]["ACG"] == 1.0
 
 
+class TestRrModelRoundTrip:
+    """Test that the rr --compute-rr writes matches the fitted model."""
+
+    def test_fit_store_apply(self) -> None:
+        """
+        Test fit_rr_context_model, rr_models_to_ht, and compute_rr_ht together.
+
+        The Hail rr of each window must equal the numpy prediction used for tuning,
+        divided by ave. The two features have different means and sds, so the test
+        covers the mean subtraction, each feature's sd and coefficient, and the
+        feature order in both predictors.
+        """
+        model = {
+            "context": "AAA",
+            **fit_rr_context_model(_training_df(), ["a", "b"], 0.3),
+        }
+        windows = pd.DataFrame({"a": [-1.0, 0.5, 2.0], "b": [9.0, 5.0, 1.0]})
+        features_ht = hl.Table.parallelize(
+            [
+                {"interval": _window(1 + 1000 * i, 1001 + 1000 * i), "a": a, "b": b}
+                for i, (a, b) in enumerate(zip(windows["a"], windows["b"]))
+            ],
+            hl.tstruct(interval=INTERVAL_TYPE, a=hl.tfloat64, b=hl.tfloat64),
+            key="interval",
+        )
+        models = rr_models_to_ht([model]).collect()
+        rr = [r.adj_r["AAA"] for r in compute_rr_ht(features_ht, models).collect()]
+        expected = _predict_rr_model(model, windows) / model["ave"]
+        assert rr == pytest.approx(list(expected))
+        assert not np.allclose(expected, 1.0)
+
+
+class TestRrTrainingHtToPandas:
+    """Test the rr_training_ht_to_pandas function."""
+
+    def test_columns_and_types(self) -> None:
+        """Test the columns and NumPy dtypes the fit and the tuning folds rely on."""
+        features = dict.fromkeys(GENOMIC_FEATURE_COLUMNS, 1.0)
+        ht = hl.Table.parallelize(
+            [
+                {"locus": _locus(10), "context": "AAA", "y": 1, **features},
+                {
+                    "locus": hl.Locus("chr2", 10, "GRCh38"),
+                    "context": "AAA",
+                    "y": 0,
+                    **features,
+                    "dist2telo_1k": None,
+                },
+            ],
+            hl.tstruct(
+                locus=hl.tlocus("GRCh38"),
+                context=hl.tstr,
+                y=hl.tint32,
+                **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, hl.tfloat64),
+            ),
+            key="locus",
+        )
+        df = rr_training_ht_to_pandas(ht)
+        assert set(df.columns) == {"contig", "context", "y", *GENOMIC_FEATURE_COLUMNS}
+        assert df["y"].dtype == np.int64
+        assert all(df[c].dtype == np.float64 for c in GENOMIC_FEATURE_COLUMNS)
+        assert df["dist2telo_1k"].isna().sum() == 1
+        assert sorted(df["contig"].map(get_chrom_fold)) == ["even", "odd"]
+
+
 class TestNormalizeRr:
     """Test compute_rr_normalization_factors and normalize_rr_ht."""
 
@@ -436,9 +506,10 @@ class TestCreateRrTrainingHt:
         features_ht = hl.Table.parallelize(
             [
                 {
-                    "interval": _window(1, 1000),
-                    **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, 1.0),
+                    "interval": _window(start, end),
+                    **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, value),
                 }
+                for start, end, value in [(1, 26, 1.0), (26, 1000, 2.0)]
             ],
             hl.tstruct(
                 interval=INTERVAL_TYPE,
@@ -446,30 +517,45 @@ class TestCreateRrTrainingHt:
             ),
             key="interval",
         )
-        ht = create_rr_training_ht(
-            get_syn_sites_ht(context_ht), dnm_ht, exomes_ht, features_ht, 1.0, 0
-        )
+        syn_sites_ht = get_syn_sites_ht(context_ht)
+        ht = create_rr_training_ht(syn_sites_ht, dnm_ht, exomes_ht, features_ht, 1.0, 0)
         rows = ht.collect()
-        assert sorted((r.locus.position, r.y) for r in rows) == [
-            (10, 1),
-            (20, 0),
-            (30, 0),
+        assert sorted((r.locus.position, r.y, r.dist2telo_1k) for r in rows) == [
+            (10, 1, 1.0),
+            (20, 0, 1.0),
+            (30, 0, 2.0),
         ]
-        assert all(r.dist2telo_1k == 1.0 for r in rows)
+
+        # Sampling half the background is a subset of it, and repeats with the seed.
+        def _background(seed: int) -> list:
+            ht = create_rr_training_ht(
+                syn_sites_ht, dnm_ht, exomes_ht, features_ht, 0.5, seed
+            )
+            return sorted(r.locus.position for r in ht.collect() if r.y == 0)
+
+        assert set(_background(0)) <= {20, 30}
+        assert _background(0) == _background(0)
 
 
 class TestRemoveQcFlaggedGenes:
     """Test the remove_qc_flagged_genes function."""
 
-    def test_flagged_ensembl_mane_select_spans(self) -> None:
-        """Test that only the spans of flagged Ensembl MANE Select transcripts are removed."""
+    @pytest.mark.parametrize("flagged", [True, False])
+    def test_flagged_ensembl_mane_select_spans(self, flagged: bool) -> None:
+        """
+        Test that only the spans of flagged Ensembl MANE Select transcripts are removed.
+
+        A span includes its start and end. With no flagged gene, every site is kept.
+        """
+        positions = [100, 149, 150, 200, 250, 251, 300]
         ht = hl.Table.parallelize(
-            [{"locus": _locus(p)} for p in [100, 200, 300]],
+            [{"locus": _locus(p)} for p in positions],
             hl.tstruct(locus=hl.tlocus("GRCh38")),
             key="locus",
         )
+        flags = {"low_exome_coverage"} if flagged else set()
         metrics = [
-            ("ENST1", True, {"low_exome_coverage"}, 150, 250),
+            ("ENST1", True, flags, 150, 250),
             ("ENST2", True, set(), 50, 120),
             ("NM_1", True, {"low_exome_coverage"}, 280, 320),
             ("ENST3", False, {"low_exome_coverage"}, 90, 110),
@@ -496,4 +582,5 @@ class TestRemoveQcFlaggedGenes:
             ),
         )
         out = remove_qc_flagged_genes(ht, metrics_ht).collect()
-        assert [r.locus.position for r in out] == [100, 300]
+        expected = [100, 149, 251, 300] if flagged else positions
+        assert [r.locus.position for r in out] == expected

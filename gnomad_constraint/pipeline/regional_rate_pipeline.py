@@ -167,9 +167,11 @@ def main(args: argparse.Namespace) -> None:
 
             df = rr_training_ht_to_pandas(res.rr_training_ht.ht())
             models = fit_rr_models(df, penalty)
-            rr_models_to_ht(models).annotate_globals(ridge_penalty=penalty).write(
-                res.rr_models_ht.path, overwrite=overwrite
-            )
+            non_converged = [m["context"] for m in models if not m["converged"]]
+            rr_models_to_ht(models).annotate_globals(
+                ridge_penalty=penalty,
+                non_converged_contexts=hl.literal(non_converged, hl.tarray(hl.tstr)),
+            ).write(res.rr_models_ht.path, overwrite=overwrite)
             logger.info("Done training the rr models.")
 
         if args.compute_rr:
@@ -199,12 +201,20 @@ def main(args: argparse.Namespace) -> None:
             rr_ht = rr_ht.annotate_globals(
                 rr_globals=hl.struct(
                     ridge_penalty=models_ht.index_globals().ridge_penalty,
+                    non_converged_contexts=(
+                        models_ht.index_globals().non_converged_contexts
+                    ),
                     normalization_factors=hl.literal(
                         factors, hl.tdict(hl.tstr, hl.tfloat64)
                     ),
                     models_ht_path=res.rr_models_ht.path,
                     features_ht_path=res.genomic_features_ht.path,
                     per_variant_expected_ht_path=res.per_variant_expected_ht.path,
+                    # The fitted models of the per-variant Table rr is normalized
+                    # on; --apply-regional-rr checks they still match.
+                    per_variant_apply_models_globals=(
+                        per_variant_ht.index_globals().apply_models_globals
+                    ),
                 )
             )
             rr_ht = rr_ht.checkpoint(res.regional_rr_ht.path, overwrite=overwrite)
@@ -274,11 +284,11 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--test",
         help=(
-            "Whether to filter the context and exomes sites Tables to only"
-            " chromosome 20, chromosome X, and chromosome Y for testing. Reads the"
-            " import_data.py --test outputs and the constraint_pipeline.py --test"
-            " per-variant expected Table, and writes the outputs to the testing"
-            " bucket."
+            "Whether to filter the context, exomes sites, DNM, and per-variant"
+            " expected Tables to only chromosome 20, chromosome X, and chromosome Y"
+            " for testing. Reads the import_data.py --test outputs and the"
+            " constraint_pipeline.py --test per-variant expected Table, and writes the"
+            " outputs to the testing bucket."
         ),
         action="store_true",
     )

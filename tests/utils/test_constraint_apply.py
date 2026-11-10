@@ -610,11 +610,11 @@ class TestAggregatePerVariantExpectedHt:
         """
         Test that expected counts are multiplied by the rr of the window and context.
 
-        The first rr window covers positions 1-4 of chr1 (rr 2 for the non-CpG context
-        and 0.5 for the CpG one); position 5 is its excluded end, so its rr is 1. The
-        second window covers positions 10 and 11 but has no rr for their context, and
-        the chrX site has no window, so their rr is 1 too. Only the expected counts
-        change.
+        The windows include both ends, as the pipeline's feature windows do. The first
+        covers positions 1-4 of chr1 (rr 2 for the non-CpG context and 0.5 for the CpG
+        one); position 5 is just past its end, so its rr is 1. The second window covers
+        positions 10 and 11 but has no rr for their context, and the chrX site has no
+        window, so their rr is 1 too. Only the expected counts change.
         """
         ht = create_per_variant_expected_ht(
             _preprocessed_ht(),
@@ -626,16 +626,18 @@ class TestAggregatePerVariantExpectedHt:
 
         def _window(start: int, end: int) -> hl.Interval:
             return hl.Interval(
-                hl.Locus("chr1", start, "GRCh38"), hl.Locus("chr1", end, "GRCh38")
+                hl.Locus("chr1", start, "GRCh38"),
+                hl.Locus("chr1", end, "GRCh38"),
+                includes_end=True,
             )
 
         rr_ht = hl.Table.parallelize(
             [
                 {
-                    "interval": _window(1, 5),
+                    "interval": _window(1, 4),
                     "adj_r": {NON_CPG["context"]: 2.0, CPG["context"]: 0.5},
                 },
-                {"interval": _window(10, 12), "adj_r": {CPG["context"]: 3.0}},
+                {"interval": _window(10, 11), "adj_r": {CPG["context"]: 3.0}},
             ],
             hl.tstruct(
                 interval=hl.tinterval(hl.tlocus("GRCh38")),
