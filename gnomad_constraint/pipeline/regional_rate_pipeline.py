@@ -28,7 +28,7 @@ import argparse
 import logging
 
 import hail as hl
-from gnomad.utils.regional_mutation_rate import (
+from gnomad.utils.constraint import (
     choose_regional_mutation_rate_penalty,
     compute_regional_mutation_rate_ht,
     fit_regional_mutation_rate_models,

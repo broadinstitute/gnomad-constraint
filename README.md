@@ -24,7 +24,7 @@ Many of the functions are imported from
 | `gnomad_constraint/pipeline/regional_rate_pipeline.py` | The regional mutation rate (rr) script: trains the rr models on synonymous de novo mutations and computes rr per 1kb window |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
 | `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
-| `gnomad_constraint/utils/regional_rate.py` | Functions that build the rr training set; the models come from `gnomad.utils.regional_mutation_rate` |
+| `gnomad_constraint/utils/regional_rate.py` | Functions that build the rr training set; the models come from `gnomad.utils.constraint.regional_mutation_rate` |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
 | `gnomad_constraint/resources/README.md` | Schema reference for every pipeline output |

@@ -783,9 +783,9 @@ however many DNMs were reported there.
 
 Held-out log loss of the rr models for each ridge penalty tried, produced by
 `--tune-rr-penalty` with `tune_regional_mutation_rate_penalty` from
-`gnomad.utils.regional_mutation_rate`. For each penalty, context, and fold, the
-context's model is fit on the training sites of the other fold's chromosomes (odd
-or even) and scored on the fold's sites.
+`gnomad.utils.constraint.regional_mutation_rate`. For each penalty, context, and
+fold, the context's model is fit on the training sites of the other fold's
+chromosomes (odd or even) and scored on the fold's sites.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_penalty_tuning.ht`
 - **Resource fn:** [`get_rr_penalty_tuning_ht`](resource_utils.py)
@@ -808,9 +808,9 @@ or even) and scored on the fold's sites.
 ## 18. `regional_rate/rr_models.ht`
 
 Per-context ridge-penalized logistic rr models, produced by `--train-rr-models` with
-`fit_regional_mutation_rate_models` from `gnomad.utils.regional_mutation_rate`. The
-models are fit on z-scored features, so a window's linear predictor is
-`intercept + sum(coefs * (x - mean) / sd)`.
+`fit_regional_mutation_rate_models` from
+`gnomad.utils.constraint.regional_mutation_rate`. The models are fit on z-scored
+features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) / sd)`.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_models.ht`
 - **Resource fn:** [`get_rr_models_ht`](resource_utils.py)
@@ -849,7 +849,7 @@ models are fit on z-scored features, so a window's linear predictor is
 
 Normalized rr per 1kb window and context, produced by `--compute-rr` with
 `compute_regional_mutation_rate_ht` and `normalize_regional_mutation_rate_expr` from
-`gnomad.utils.regional_mutation_rate`. Read by
+`gnomad.utils.constraint.regional_mutation_rate`. Read by
 `constraint_pipeline.py --aggregate-per-variant-expected --apply-regional-rr`.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.syn_dnm_rr_1kb.ht`

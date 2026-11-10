@@ -2,7 +2,7 @@
 Functions to build the training set of the regional mutation rate (rr) models.
 
 The models are fit, and rr is computed and normalized, with
-:mod:`gnomad.utils.regional_mutation_rate`.
+:mod:`gnomad.utils.constraint.regional_mutation_rate`.
 """
 
 import logging
@@ -61,10 +61,9 @@ def create_rr_training_ht(
     #  (about half of CpG synonymous sites are seen in gnomAD exomes) and on coverage,
     #  so this background makes the models fit the DNM rate ratio times the ratio of
     #  absence probabilities, which steepens the regional effect, most at CpG. It
-    #  partly offsets the compression of the rr form (see
-    #  gnomad.utils.regional_mutation_rate.regional_mutation_rate_expr). Consider
-    #  sampling from all non-DNM synonymous sites; the ridge penalty would need
-    #  retuning.
+    #  partly offsets the compression of the rr form (see regional_mutation_rate_expr
+    #  in gnomad.utils.constraint). Consider sampling from all non-DNM synonymous
+    #  sites; the ridge penalty would need retuning.
     bg_ht = ht.filter(~ht.in_exomes).anti_join(dnm_ht).key_by("locus").distinct()
     bg_ht = bg_ht.sample(background_fraction, seed=seed)
 
