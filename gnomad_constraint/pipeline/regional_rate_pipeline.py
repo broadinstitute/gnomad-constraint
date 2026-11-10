@@ -13,54 +13,51 @@ rr after model calibration (constraint_pipeline.py --aggregate-per-variant-expec
 The genomic features cover chr1-22 only, so chrX and chrY get no rr (an rr of 1).
 
 The constraint pipeline's annotated context Table and per-variant expected Table are
-read-only inputs; the constraint models are not re-fit or re-applied.
+read-only inputs; the constraint models are not re-fit or re-applied. The per-variant
+expected Table is read with the same --version, --test, --directory-post-fix, and
+--path-post-fix as the rr outputs, which are the values constraint_pipeline.py
+--apply-regional-rr must be run with, so rr is normalized on the Table it is applied
+to. The DNM Table and genomic feature Table are written by ``import_data.py
+--import-dnms`` and ``--import-genomic-features``.
 
 The rr pipeline consists of the following steps:
-    - --prepare-syn-dnms: combine the DNM cohorts into the synonymous DNM Table.
-    - --import-genomic-features: import the 1kb regional genomic feature matrix.
     - --create-rr-training-set: create the DNM / non-mutated background training set,
       leaving out genes with a QC gene flag.
+    - --tune-rr-penalty: choose the ridge penalty by the held-out log loss of
+      chromosome-split models.
     - --train-rr-models: fit the per-context ridge-penalized rr models.
     - --compute-rr: compute the normalized rr per window and context.
 """
 
 import argparse
 import logging
-from typing import Union
 
 import hail as hl
-from gnomad.resources.resource_utils import TableResource
 from hail.utils.misc import new_temp_file
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
-    GENOMIC_FEATURE_COLUMNS,
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
-    RR_RIDGE_PENALTY,
+    RR_RIDGE_PENALTIES,
     RR_TRAINING_N_PARTITIONS,
     VERSIONS,
 )
-from gnomad_constraint.resources.resource_utils import (
-    filter_for_test,
-    get_dnm_cohort_resources,
-)
+from gnomad_constraint.resources.resource_utils import filter_for_test
 from gnomad_constraint.utils.regional_rate import (
-    combine_syn_dnms,
+    choose_rr_penalty,
     compute_rr_ht,
     compute_rr_normalization_factors,
     create_rr_training_ht,
     fit_rr_models,
-    format_dnm_cohort,
-    format_genomic_features,
     get_syn_mane_select_ht,
     get_syn_sites_ht,
     normalize_rr_ht,
     remove_qc_flagged_genes,
     rr_models_to_ht,
     rr_training_ht_to_pandas,
-    summarize_genomic_features,
+    tune_rr_penalty,
 )
 
 logging.basicConfig(
@@ -69,23 +66,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("regional_rate_pipeline")
 logger.setLevel(logging.INFO)
-
-
-def import_dnm_cohort(cohort: str, resource: Union[str, TableResource]) -> hl.Table:
-    """
-    Import one DNM cohort (see ``get_dnm_cohort_resources``).
-
-    :param cohort: Cohort name.
-    :param resource: Path (text cohorts) or TableResource (Hail Table cohorts).
-    :return: Imported cohort Table.
-    """
-    if isinstance(resource, TableResource):
-        return resource.ht()
-    if cohort.startswith("satterstrom_2026"):
-        # The files are gzip (not bgzip) compressed and quote fields with commas.
-        return hl.import_table(resource, delimiter=",", quote='"', force=True)
-
-    return hl.import_table(resource, impute=True)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -111,66 +91,6 @@ def main(args: argparse.Namespace) -> None:
     )
 
     try:
-        if args.prepare_syn_dnms:
-            logger.info("Combining DNM cohorts into the synonymous DNM Table...")
-            res = resources.prepare_syn_dnms
-            res.check_resource_existence()
-
-            cohort_hts = {
-                cohort: format_dnm_cohort(cohort, import_dnm_cohort(cohort, resource))
-                for cohort, resource in get_dnm_cohort_resources().items()
-            }
-            context_ht = res.annotated_context_ht.ht()
-            if test:
-                context_ht = filter_for_test(context_ht, use_gene_list=test_gene_list)
-
-            ht, cohort_counts = combine_syn_dnms(cohort_hts, context_ht)
-            ht = ht.checkpoint(res.syn_dnm_ht.path, overwrite=overwrite)
-
-            # The synonymous DNM Table is small and checkpointed, so counting is
-            # cheap.
-            n_dnms = ht.count()
-            logger.info(
-                "Synonymous DNMs per cohort (before deduplication): %s", cohort_counts
-            )
-            logger.info(
-                "%d synonymous DNMs after deduplication (%d duplicates removed).",
-                n_dnms,
-                sum(cohort_counts.values()) - n_dnms,
-            )
-            logger.info("Done creating the synonymous DNM Table.")
-
-        if args.import_genomic_features:
-            logger.info("Importing the regional genomic feature matrix...")
-            res = resources.import_genomic_features
-            res.check_resource_existence()
-
-            path = res.published_features
-            ht = hl.import_table(
-                path,
-                types={c: hl.tfloat64 for c in GENOMIC_FEATURE_COLUMNS},
-                missing=["NA", "nan", "NaN", ""],
-                min_partitions=100,
-                force=path.endswith(".gz"),
-            )
-            ht = format_genomic_features(ht)
-            ht = ht.checkpoint(res.genomic_features_ht.path, overwrite=overwrite)
-
-            summary = summarize_genomic_features(ht)
-            if summary["n_duplicated_windows"]:
-                raise ValueError(
-                    f"{summary['n_duplicated_windows']} windows are duplicated in the"
-                    " imported feature matrix!"
-                )
-            for contig, s in sorted(summary["contigs"].items()):
-                logger.info(
-                    "    %s: %d windows; features missing in all windows: %s",
-                    contig,
-                    s["n_windows"],
-                    s["missing_features"],
-                )
-            logger.info("Done importing the regional genomic feature matrix.")
-
         if args.create_rr_training_set:
             logger.info("Creating the rr training set...")
             res = resources.create_rr_training_set
@@ -178,15 +98,17 @@ def main(args: argparse.Namespace) -> None:
 
             context_ht = res.annotated_context_ht.ht()
             exomes_ht = res.exomes_sites_ht.ht()
+            dnm_ht = res.dnm_ht.ht()
             if test:
                 context_ht = filter_for_test(context_ht, use_gene_list=test_gene_list)
                 exomes_ht = filter_for_test(exomes_ht, use_gene_list=test_gene_list)
+                dnm_ht = filter_for_test(dnm_ht, use_gene_list=test_gene_list)
             syn_sites_ht = get_syn_sites_ht(context_ht).checkpoint(
                 new_temp_file("rr_syn_sites", "ht")
             )
             ht = create_rr_training_ht(
                 syn_sites_ht,
-                res.syn_dnm_ht.ht(),
+                dnm_ht,
                 exomes_ht,
                 res.genomic_features_ht.ht(),
                 RR_BACKGROUND_FRACTION,
@@ -205,16 +127,49 @@ def main(args: argparse.Namespace) -> None:
             )
             logger.info("Done creating the rr training set.")
 
-        if args.train_rr_models:
-            logger.info(
-                "Training the rr models (ridge penalty %s)...", RR_RIDGE_PENALTY
-            )
-            res = resources.train_rr_models
+        if args.tune_rr_penalty:
+            logger.info("Tuning the rr ridge penalty over %s...", args.rr_penalties)
+            res = resources.tune_rr_penalty
             res.check_resource_existence()
 
             df = rr_training_ht_to_pandas(res.rr_training_ht.ht())
-            models = fit_rr_models(df)
-            rr_models_to_ht(models).write(res.rr_models_ht.path, overwrite=overwrite)
+            tuning_df = tune_rr_penalty(df, args.rr_penalties)
+            penalty = choose_rr_penalty(tuning_df)
+            if not tuning_df.empty:
+                logger.info(
+                    "Held-out log loss per penalty, summed over contexts and"
+                    " folds:\n%s",
+                    tuning_df.groupby("penalty")["log_loss"].sum().to_string(),
+                )
+            logger.info("Chosen ridge penalty: %s", penalty)
+            # The tuning Table is empty in a --test run, so give the schema
+            # explicitly instead of inferring it from the DataFrame.
+            ht = hl.Table.parallelize(
+                tuning_df.to_dict("records"),
+                hl.tstruct(
+                    penalty=hl.tfloat64,
+                    context=hl.tstr,
+                    fold=hl.tstr,
+                    n_test=hl.tint64,
+                    log_loss=hl.tfloat64,
+                ),
+                key=["penalty", "context", "fold"],
+            )
+            ht = ht.annotate_globals(ridge_penalty=penalty)
+            ht.write(res.rr_penalty_tuning_ht.path, overwrite=overwrite)
+            logger.info("Done tuning the rr ridge penalty.")
+
+        if args.train_rr_models:
+            res = resources.train_rr_models
+            res.check_resource_existence()
+            penalty = hl.eval(res.rr_penalty_tuning_ht.ht().ridge_penalty)
+            logger.info("Training the rr models (ridge penalty %s)...", penalty)
+
+            df = rr_training_ht_to_pandas(res.rr_training_ht.ht())
+            models = fit_rr_models(df, penalty)
+            rr_models_to_ht(models).annotate_globals(ridge_penalty=penalty).write(
+                res.rr_models_ht.path, overwrite=overwrite
+            )
             logger.info("Done training the rr models.")
 
         if args.compute_rr:
@@ -234,18 +189,22 @@ def main(args: argparse.Namespace) -> None:
             syn_ht = get_syn_mane_select_ht(per_variant_ht).checkpoint(
                 new_temp_file("rr_syn_mane_select", "ht")
             )
+            # Coalesce after the checkpoint so the filter of the per-variant Table
+            # runs over all of its partitions.
+            syn_ht = syn_ht.naive_coalesce(200)
             factors = compute_rr_normalization_factors(syn_ht, rr_ht)
             logger.info("rr normalization factors: %s", factors)
 
             rr_ht = normalize_rr_ht(rr_ht, factors)
             rr_ht = rr_ht.annotate_globals(
                 rr_globals=hl.struct(
-                    ridge_penalty=RR_RIDGE_PENALTY,
+                    ridge_penalty=models_ht.index_globals().ridge_penalty,
                     normalization_factors=hl.literal(
                         factors, hl.tdict(hl.tstr, hl.tfloat64)
                     ),
                     models_ht_path=res.rr_models_ht.path,
                     features_ht_path=res.genomic_features_ht.path,
+                    per_variant_expected_ht_path=res.per_variant_expected_ht.path,
                 )
             )
             rr_ht = rr_ht.checkpoint(res.regional_rr_ht.path, overwrite=overwrite)
@@ -296,42 +255,40 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--directory-post-fix",
-        help="Post-fix to append to the output directory path.",
+        help=(
+            "Post-fix to append to the output directory path. Also applies to the"
+            " per-variant expected input, as in constraint_pipeline.py."
+        ),
         type=str,
         default=None,
     )
     parser.add_argument(
         "--path-post-fix",
-        help="Post-fix to append to output file names.",
+        help=(
+            "Post-fix to append to output file names. Also applies to the"
+            " per-variant expected input, as in constraint_pipeline.py."
+        ),
         type=str,
         default=None,
     )
     parser.add_argument(
         "--test",
         help=(
-            "Whether to filter the context, exomes sites, and per-variant expected"
-            " Tables to only chromosome 20, chromosome X, and chromosome Y for"
-            " testing."
+            "Whether to filter the context and exomes sites Tables to only"
+            " chromosome 20, chromosome X, and chromosome Y for testing. Reads the"
+            " import_data.py --test outputs and the constraint_pipeline.py --test"
+            " per-variant expected Table, and writes the outputs to the testing"
+            " bucket."
         ),
         action="store_true",
     )
     parser.add_argument(
         "--test-gene-list",
         help=(
-            "Whether to filter the context, exomes sites, and per-variant expected"
-            " Tables to only six genes for testing (see --test-gene-list in"
-            " constraint_pipeline.py)."
+            "Whether to filter the context, exomes sites, DNM, and per-variant"
+            " expected Tables to only six genes for testing (see --test-gene-list in"
+            " constraint_pipeline.py). Implies --test."
         ),
-        action="store_true",
-    )
-    parser.add_argument(
-        "--prepare-syn-dnms",
-        help="Combine the DNM cohorts into the synonymous DNM Table.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--import-genomic-features",
-        help="Import the 1kb regional genomic feature matrix.",
         action="store_true",
     )
     parser.add_argument(
@@ -344,8 +301,30 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
     )
     parser.add_argument(
+        "--tune-rr-penalty",
+        help=(
+            "Choose the ridge penalty of the rr models: the penalty in --rr-penalties"
+            " with the lowest held-out log loss of models fit on odd chromosomes and"
+            " scored on even ones, and vice versa, summed over contexts."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--rr-penalties",
+        help=(
+            "Per-site ridge penalties tried by --tune-rr-penalty. Default is"
+            f" {RR_RIDGE_PENALTIES}."
+        ),
+        type=float,
+        nargs="+",
+        default=RR_RIDGE_PENALTIES,
+    )
+    parser.add_argument(
         "--train-rr-models",
-        help="Fit the per-context ridge-penalized rr models.",
+        help=(
+            "Fit the per-context ridge-penalized rr models with the penalty chosen by"
+            " --tune-rr-penalty."
+        ),
         action="store_true",
     )
     parser.add_argument(

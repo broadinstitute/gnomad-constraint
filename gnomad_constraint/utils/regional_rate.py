@@ -14,30 +14,30 @@ mutations (DNMs):
       synonymous sites in each context, so rr moves expected counts between regions
       without changing each context's total.
 
-rr is applied to the per-variant expected counts after model calibration; see
+The DNMs and genomic features are imported by ``import_data.py`` (see
+:mod:`gnomad_constraint.utils.import_data`). rr is applied to the per-variant
+expected counts after model calibration; see
 :func:`gnomad_constraint.utils.constraint.aggregate_per_variant_expected_ht`.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import hail as hl
 import numpy as np
 import pandas as pd
-import scipy.stats
-from gnomad.utils.liftover import default_lift_data
-from hail.utils.misc import new_temp_file
-from sklearn.decomposition import IncrementalPCA
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss
 
 from gnomad_constraint.resources.constants import (
     ADJ_FREQ_META,
     CPG_CONTEXTS,
     GENOMIC_FEATURE_COLUMNS,
     GENOMIC_FEATURE_SCALES,
+    GENOMIC_FEATURES,
     METHYLATION_CORRELATED_FEATURES,
     RR_CONTEXTS,
-    RR_FEATURE_ORDER,
+    RR_FOLDS,
     RR_RIDGE_PENALTY,
 )
 
@@ -53,223 +53,6 @@ SYNONYMOUS_CSQ = "synonymous_variant"
 
 ENSEMBL_TRANSCRIPT_PREFIX = "ENST"
 """Prefix of Ensembl transcript IDs (RefSeq MANE Select transcripts are excluded)."""
-
-
-# ---------------------------------------------------------------------------
-# Synonymous de novo mutations
-# ---------------------------------------------------------------------------
-
-
-def format_dnm_cohort(cohort: str, ht: hl.Table) -> hl.Table:
-    """
-    Format one imported DNM cohort as a GRCh38 Table keyed by ``locus`` and ``alleles``.
-
-    Supported cohorts (see
-    :func:`gnomad_constraint.resources.resource_utils.get_dnm_cohort_resources`):
-
-        - ``decode_psychencode``: deCODE + PsychENCODE DNMs used by Gnocchi
-          (GRCh38). Each DNM is listed in both allele orientations; the wrong
-          orientation is removed when joining to the context Table.
-        - ``satterstrom_2026_asd``, ``satterstrom_2026_ddd``: Satterstrom 2026 ASD
-          and DD DNMs (GRCh38, with a "chrom:pos:ref:alt" ``Variant`` column).
-          Indels are removed when joining to the context Table.
-        - ``gnomad_v4.1``: gnomAD v4.1 high-quality coding de novos (GRCh38 Hail
-          Table).
-        - ``chd_2017``, ``ee_2014``, ``cdh_2021``: GRCh37, lifted over to GRCh38.
-        - ``ofc_2020``: GRCh38 positions.
-
-    :param cohort: Cohort name.
-    :param ht: Imported cohort Table.
-    :return: Table keyed by ``locus`` and ``alleles`` with a ``cohort`` field.
-    """
-    if cohort == "gnomad_v4.1":
-        ht = ht.key_by("locus", "alleles").select()
-    elif cohort in {"satterstrom_2026_asd", "satterstrom_2026_ddd"}:
-        variant = ht.Variant.split(":")
-        ht = ht.select(
-            locus=hl.locus(variant[0], hl.int(variant[1]), reference_genome="GRCh38"),
-            alleles=variant[2:],
-        ).key_by("locus", "alleles")
-    elif cohort == "decode_psychencode":
-        ht = ht.select(
-            locus=hl.parse_locus(ht.locus, reference_genome="GRCh38"),
-            alleles=hl.array([ht.ref, ht.alt]),
-        ).key_by("locus", "alleles")
-    elif cohort == "chd_2017":
-        ht = ht.select(
-            locus=hl.parse_locus(
-                ht.CHROM + ":" + hl.str(ht.POS), reference_genome="GRCh37"
-            ),
-            alleles=hl.array([ht.REF, ht.ALT]),
-        )
-        ht = default_lift_data(ht.key_by("locus", "alleles")).select()
-    elif cohort == "ofc_2020":
-        ht = ht.select(
-            locus=hl.parse_locus(
-                "chr" + hl.str(ht.Chromosome) + ":" + hl.str(ht["Position (build 38)"]),
-                reference_genome="GRCh38",
-            ),
-            alleles=hl.array([ht.Ref, ht.Alt]),
-        ).key_by("locus", "alleles")
-    elif cohort == "ee_2014":
-        ht = ht.select(
-            locus=hl.parse_locus(
-                ht["hg19 coordinates (chr:position)"].replace("chr", ""),
-                reference_genome="GRCh37",
-            ),
-            alleles=ht["Ref/Alt alleles"].split("/"),
-        )
-        ht = default_lift_data(ht.key_by("locus", "alleles")).select()
-    elif cohort == "cdh_2021":
-        ht = ht.select(
-            locus=hl.parse_locus(
-                hl.str(ht.chr) + ":" + hl.str(ht.position), reference_genome="GRCh37"
-            ),
-            alleles=hl.array([ht.ref, ht.alt]),
-        )
-        ht = default_lift_data(ht.key_by("locus", "alleles")).select()
-    else:
-        raise ValueError(f"Unknown DNM cohort: {cohort}!")
-
-    return ht.annotate(cohort=cohort)
-
-
-def combine_syn_dnms(
-    cohort_hts: Dict[str, hl.Table],
-    context_ht: hl.Table,
-) -> Tuple[hl.Table, Dict[str, int]]:
-    """
-    Combine DNM cohorts, filter to synonymous DNMs, and deduplicate by locus/alleles.
-
-    DNMs are annotated with the strand-collapsed ``context``, ``ref``, ``alt``, and
-    ``methylation_level`` from the annotated context Table (inner join on ``locus``
-    and ``alleles``) and kept if the VEP most severe consequence is synonymous.
-    Duplicate DNMs (same locus and alleles) across or within cohorts are collapsed
-    into one row, with the reporting cohorts in ``cohorts``.
-
-    :param cohort_hts: Dictionary of cohort name to Table returned by
-        :func:`format_dnm_cohort`.
-    :param context_ht: Annotated context Table from the constraint pipeline
-        (``--prepare-context-ht`` output).
-    :return: Tuple of the deduplicated synonymous DNM Table (keyed by ``locus`` and
-        ``alleles``) and a dictionary with the number of synonymous DNMs per cohort
-        before deduplication.
-    """
-    hts = [ht.select("cohort") for ht in cohort_hts.values()]
-    ht = hts[0].union(*hts[1:])
-    ht = ht.checkpoint(new_temp_file("syn_dnm.all_cohorts", "ht"))
-
-    # The cohort Tables have few partitions (text files are imported as one), so
-    # joining the context Table into them would scan most of the context Table in
-    # each DNM partition. Instead, filter the context Table to the DNM sites in a
-    # scan over its own partitions, then join the small filtered Table.
-    context_ht = context_ht.semi_join(ht.select().distinct())
-    context_ht = context_ht.select(
-        "context",
-        "ref",
-        "alt",
-        "methylation_level",
-        csq=context_ht.vep.most_severe_consequence,
-    )
-    context_ht = context_ht.naive_coalesce(50)
-    context_ht = context_ht.checkpoint(new_temp_file("syn_dnm.context", "ht"))
-    ht = ht.annotate(**context_ht[ht.key])
-    ht = ht.filter(ht.csq == SYNONYMOUS_CSQ).drop("csq")
-    ht = ht.checkpoint(new_temp_file("syn_dnm.by_cohort", "ht"))
-    cohort_counts = dict(ht.aggregate(hl.agg.counter(ht.cohort)))
-
-    ht = ht.group_by("locus", "alleles").aggregate(
-        cohorts=hl.agg.collect_as_set(ht.cohort),
-        context=hl.agg.take(ht.context, 1)[0],
-        ref=hl.agg.take(ht.ref, 1)[0],
-        alt=hl.agg.take(ht.alt, 1)[0],
-        methylation_level=hl.agg.take(ht.methylation_level, 1)[0],
-    )
-
-    return ht, cohort_counts
-
-
-# ---------------------------------------------------------------------------
-# Regional genomic features
-# ---------------------------------------------------------------------------
-
-
-def format_genomic_features(ht: hl.Table) -> hl.Table:
-    """
-    Key an imported 1kb regional genomic feature matrix by window interval.
-
-    The matrix has an ``element_id`` column ("chr-start-end", BED coordinates)
-    followed by ``GENOMIC_FEATURE_COLUMNS``. NaN feature values become missing.
-
-    As in the Gnocchi rr Tables, each window's interval is ``[start, end)`` in
-    1-based positions, which is 1bp left of the BED window, and windows starting at 0
-    are removed.
-
-    :param ht: Imported feature matrix with ``element_id`` and the feature columns
-        as floats.
-    :return: Feature Table keyed by ``interval`` with ``element_id`` and the feature
-        columns.
-    """
-    ht = ht.select("element_id", *GENOMIC_FEATURE_COLUMNS)
-    ht = ht.annotate(
-        **{
-            c: hl.if_else(hl.is_nan(ht[c]), hl.missing(hl.tfloat64), ht[c])
-            for c in GENOMIC_FEATURE_COLUMNS
-        }
-    )
-    coords = ht.element_id.split("-")
-    ht = ht.annotate(
-        _contig=coords[0], _start=hl.int(coords[1]), _end=hl.int(coords[2])
-    )
-    ht = ht.filter(ht._start > 0)
-    ht = ht.key_by(
-        interval=hl.locus_interval(
-            ht._contig, ht._start, ht._end, reference_genome="GRCh38"
-        )
-    )
-
-    return ht.drop("_contig", "_start", "_end")
-
-
-def summarize_genomic_features(ht: hl.Table) -> Dict[str, Any]:
-    """
-    Summarize a genomic feature Table per contig.
-
-    Returns the number of windows and the features that are entirely missing per
-    contig, and the number of duplicated window intervals.
-
-    :param ht: Feature Table returned by :func:`format_genomic_features`.
-    :return: Dictionary with ``n_duplicated_windows`` and ``contigs`` (contig ->
-        dict with ``n_windows`` and ``missing_features``).
-    """
-    n_dup = ht.count() - ht.select().distinct().count()
-
-    contig_summary = ht.aggregate(
-        hl.agg.group_by(
-            ht.interval.start.contig,
-            hl.struct(
-                n_windows=hl.agg.count(),
-                n_missing=hl.struct(
-                    **{
-                        c: hl.agg.count_where(hl.is_missing(ht[c]))
-                        for c in GENOMIC_FEATURE_COLUMNS
-                    }
-                ),
-            ),
-        )
-    )
-    contigs = {}
-    for contig, s in contig_summary.items():
-        missing = sorted(
-            {
-                c.rsplit("_", 1)[0]
-                for c in GENOMIC_FEATURE_COLUMNS
-                if s.n_missing[c] == s.n_windows
-            }
-        )
-        contigs[contig] = {"n_windows": s.n_windows, "missing_features": missing}
-
-    return {"n_duplicated_windows": n_dup, "contigs": contigs}
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +74,7 @@ def get_syn_sites_ht(context_ht: hl.Table) -> hl.Table:
 
 def create_rr_training_ht(
     syn_sites_ht: hl.Table,
-    syn_dnm_ht: hl.Table,
+    dnm_ht: hl.Table,
     exomes_sites_ht: hl.Table,
     features_ht: hl.Table,
     background_fraction: float,
@@ -300,33 +83,40 @@ def create_rr_training_ht(
     """
     Create the rr training Table of synonymous DNM and non-mutated background sites.
 
-    The background is a random sample (``background_fraction``) of the possible
-    synonymous sites that are not a DNM and are absent from the gnomAD exomes sites
-    Table, with one site kept per locus. DNM sites get ``y`` = 1 and background
-    sites ``y`` = 0. Each site is annotated with the features of the 1kb window
-    containing it. ``row_idx`` gives the locus order within each class, which is the
-    row order used to train the models.
+    The DNM sites are the synonymous sites of the DNM Table. The background is a
+    random sample (``background_fraction``) of the possible synonymous sites that are
+    not a DNM and are absent from the gnomAD exomes sites Table, with one site kept
+    per locus. DNM sites get ``y`` = 1 and background sites ``y`` = 0. Each site is
+    annotated with the features of the 1kb window containing it.
 
     :param syn_sites_ht: Possible synonymous SNVs (:func:`get_syn_sites_ht`).
-    :param syn_dnm_ht: Synonymous DNM Table (:func:`combine_syn_dnms`).
+    :param dnm_ht: DNM Table
+        (:func:`~gnomad_constraint.utils.import_data.combine_dnms`).
     :param exomes_sites_ht: gnomAD exomes sites Table.
-    :param features_ht: Feature Table (:func:`format_genomic_features`).
+    :param features_ht: Feature Table
+        (:func:`~gnomad_constraint.utils.import_data.format_genomic_features`).
     :param background_fraction: Fraction of non-mutated sites to sample.
     :param seed: Random seed used for sampling.
     :return: Training Table keyed by ``locus`` with ``alleles``, ``context``, ``y``,
-        ``row_idx``, and the feature columns.
+        and the feature columns.
     """
+    syn_dnm_ht = dnm_ht.filter(dnm_ht.most_severe_consequence == SYNONYMOUS_CSQ)
     bg_ht = syn_sites_ht.anti_join(syn_dnm_ht)
+    # TODO: Whether a site is absent from gnomAD depends on its own mutation rate
+    #  (about half of CpG synonymous sites are seen in gnomAD exomes) and on coverage,
+    #  so this background makes the models fit the DNM rate ratio times the ratio of
+    #  absence probabilities, which steepens the regional effect, most at CpG. It
+    #  partly offsets the compression of the sigmoid form of rr (see _rr_model_expr).
+    #  Consider sampling from all non-DNM synonymous sites; the ridge penalty would
+    #  need retuning.
     bg_ht = bg_ht.anti_join(exomes_sites_ht.select().select_globals())
     bg_ht = bg_ht.key_by("locus").distinct()
     bg_ht = bg_ht.sample(background_fraction, seed=seed)
     bg_ht = bg_ht.key_by("locus").select("alleles", "context", y=0)
-    bg_ht = bg_ht.add_index("row_idx")
 
-    dnm_ht = syn_dnm_ht.key_by("locus").select("alleles", "context", y=1)
-    dnm_ht = dnm_ht.add_index("row_idx")
+    syn_dnm_ht = syn_dnm_ht.key_by("locus").select("alleles", "context", y=1)
 
-    ht = dnm_ht.union(bg_ht)
+    ht = syn_dnm_ht.union(bg_ht)
     features_ht = features_ht.select(*GENOMIC_FEATURE_COLUMNS)
 
     return ht.annotate(**features_ht[ht.locus])
@@ -370,32 +160,20 @@ def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
 
 def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
     """
-    Collect the rr training Table into a pandas DataFrame in training row order.
-
-    Rows are ordered by DNM sites first, then background sites, each in ``row_idx``
-    order.
+    Collect the rr training Table into a pandas DataFrame.
 
     :param ht: rr training Table (:func:`create_rr_training_ht`).
-    :return: DataFrame with ``locus`` (as "contig:position"), ``context``, ``y``,
-        ``row_idx``, and the feature columns.
+    :return: DataFrame with ``contig``, ``context``, ``y``, and the feature columns.
     """
     ht = ht.key_by()
-    ht = ht.select(
-        "context", "y", "row_idx", *GENOMIC_FEATURE_COLUMNS, locus=hl.str(ht.locus)
-    )
-    df = ht.to_pandas()
+    df = ht.select(
+        "context", "y", *GENOMIC_FEATURE_COLUMNS, contig=ht.locus.contig
+    ).to_pandas()
     # to_pandas returns nullable extension dtypes (e.g. Float64); use NumPy dtypes
     # (missing values as NaN).
-    df = df.astype(
-        {
-            "y": "int64",
-            "row_idx": "int64",
-            **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, "float64"),
-        }
+    return df.astype(
+        {"y": "int64", **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, "float64")}
     )
-    df = df.sort_values(["y", "row_idx"], ascending=[False, True], kind="stable")
-
-    return df.reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -405,11 +183,10 @@ def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
 
 def get_rr_model_features(context: str) -> List[str]:
     """
-    Get the ordered model features of a context.
+    Get the model features of a context.
 
-    Every feature goes in at every scale, ordered by scale and then by
-    ``RR_FEATURE_ORDER``. Methylation-correlated features are dropped for CpG
-    contexts, since the mutation rates already model methylation there.
+    Every feature goes in at every scale. Methylation-correlated features are dropped
+    for CpG contexts, since the mutation rates already model methylation there.
 
     :param context: Trinucleotide context.
     :return: Feature column names (``{feature}_{scale}``).
@@ -417,7 +194,7 @@ def get_rr_model_features(context: str) -> List[str]:
     return [
         f"{f}_{s}"
         for s in GENOMIC_FEATURE_SCALES
-        for f in RR_FEATURE_ORDER
+        for f in GENOMIC_FEATURES
         if not (context in CPG_CONTEXTS and f in METHYLATION_CORRELATED_FEATURES)
     ]
 
@@ -425,87 +202,193 @@ def get_rr_model_features(context: str) -> List[str]:
 def fit_rr_context_model(
     df: pd.DataFrame,
     features: List[str],
-    ridge_penalty: float = RR_RIDGE_PENALTY,
+    ridge_penalty: float,
 ) -> Optional[Dict[str, Any]]:
     """
     Fit the ridge-penalized rr logistic model of one context.
 
-    Sites with any missing feature are dropped, DNM rows are followed by background
-    rows (training row order), the features are z-scored (ddof=0) and rotated with a
-    full-rank ``IncrementalPCA``, and a logistic regression is fit that minimizes
-    mean log loss + ``ridge_penalty`` / 2 * sum(coef ** 2), with the intercept
-    unpenalized. The PCA rotation is orthogonal, so this is the same ridge fit as on
-    the z-scored features.
-
-    The PCA is folded into the model coefficients so that the linear predictor of a
-    window is ``intercept + sum(coefs * (x - mean) / sd)``. As in the Gnocchi models,
-    ``sd`` is the ddof=1 standard deviation (applied at prediction) while the model
-    is trained on ddof=0 z-scores. ``ave`` is the predicted probability of the
-    average window (all principal components equal to 0).
+    Sites with any missing feature are dropped, and features with a single value in
+    the remaining sites are left out of the model, since they carry no information
+    and can't be standardized. The features are z-scored and a logistic regression
+    is fit that minimizes mean log loss + ``ridge_penalty`` / 2 * sum(coef ** 2),
+    with the intercept unpenalized. The linear predictor of a window is
+    ``intercept + sum(coefs * (x - mean) / sd)``, and ``ave`` is the predicted
+    probability of the average window (every feature at its mean).
 
     :param df: Training rows of one context (:func:`rr_training_ht_to_pandas`).
     :param features: Model features (:func:`get_rr_model_features`).
-    :param ridge_penalty: Per-site ridge penalty. Default is ``RR_RIDGE_PENALTY``.
-    :return: Dictionary of model parameters, or None if there is no training data.
+    :param ridge_penalty: Per-site ridge penalty (:func:`choose_rr_penalty`).
+    :return: Dictionary of model parameters, or None if the context has no DNM or
+        no background sites, or no feature varies.
     """
-    cols = ["locus", *features]
-    df_1 = df[df["y"] == 1][cols].dropna()
-    df_0 = df[df["y"] == 0][cols].dropna()
-    if df_1.empty or df_0.empty:
+    df = df[["y", *features]].dropna()
+    n_dnm = int((df["y"] == 1).sum())
+    n_background = int((df["y"] == 0).sum())
+    mean = df[features].mean()
+    sd = df[features].std(ddof=0)
+    features = [f for f in features if sd[f] > 0]
+    if not n_dnm or not n_background or not features:
         return None
-    df_01 = pd.concat([df_1.assign(group=1), df_0.assign(group=0)])
-    x = df_01[features]
-    y = df_01["group"]
 
-    x_scaled = x.apply(scipy.stats.zscore)
-    pca = IncrementalPCA(n_components=len(features))
-    x_pca = pca.fit_transform(x_scaled)
+    z = (df[features] - mean[features]) / sd[features]
     # sklearn minimizes C * sum(log loss) + sum(coef ** 2) / 2, so C = 1 / (n *
     # penalty) gives the per-site penalty.
-    fit = LogisticRegression(C=1.0 / (len(y) * ridge_penalty), max_iter=10000)
-    fit.fit(x_pca, y)
-    params = np.concatenate([fit.intercept_, fit.coef_[0]])
-
-    coefs = pca.components_.T @ params[1:]
-    intercept = params[0] - pca.mean_ @ coefs
+    fit = LogisticRegression(C=1.0 / (len(df) * ridge_penalty), max_iter=10000)
+    fit.fit(z.to_numpy(), df["y"].to_numpy())
+    intercept = float(fit.intercept_[0])
 
     return {
-        "features": list(features),
-        "mean": [float(v) for v in x.mean()],
-        "sd": [float(v) for v in x.std()],
-        "coefs": [float(v) for v in coefs],
-        "intercept": float(intercept),
-        "ave": float(1.0 / (1.0 + np.exp(-params[0]))),
-        "n_dnm": int(len(df_1)),
-        "n_background": int(len(df_0)),
+        "features": features,
+        "mean": [float(mean[f]) for f in features],
+        "sd": [float(sd[f]) for f in features],
+        "coefs": [float(v) for v in fit.coef_[0]],
+        "intercept": intercept,
+        "ave": float(1.0 / (1.0 + np.exp(-intercept))),
+        "n_dnm": n_dnm,
+        "n_background": n_background,
         "converged": bool(fit.n_iter_[0] < fit.max_iter),
     }
 
 
 def fit_rr_models(
     df: pd.DataFrame,
-    ridge_penalty: float = RR_RIDGE_PENALTY,
+    ridge_penalty: float,
     contexts: List[str] = RR_CONTEXTS,
 ) -> List[Dict[str, Any]]:
     """
     Fit the rr model of every context.
 
     :param df: Training DataFrame (:func:`rr_training_ht_to_pandas`).
-    :param ridge_penalty: Per-site ridge penalty. Default is ``RR_RIDGE_PENALTY``.
+    :param ridge_penalty: Per-site ridge penalty (:func:`choose_rr_penalty`).
     :param contexts: Contexts to model. Default is ``RR_CONTEXTS``.
     :return: List of model dictionaries (:func:`fit_rr_context_model`) with a
         ``context`` field.
     """
     models = []
     for context in contexts:
+        features = get_rr_model_features(context)
         model = fit_rr_context_model(
-            df[df["context"] == context], get_rr_model_features(context), ridge_penalty
+            df[df["context"] == context], features, ridge_penalty
         )
-        if model is not None:
-            models.append({"context": context, **model})
+        if model is None:
+            logger.info(
+                "No rr model for %s: no DNM or background sites, or no feature varies.",
+                context,
+            )
+            continue
+        constant = [f for f in features if f not in model["features"]]
+        if constant:
+            logger.info("%s: features left out (constant): %s", context, constant)
+        models.append({"context": context, **model})
     logger.info("%d of %d contexts modeled.", len(models), len(contexts))
 
     return models
+
+
+def get_chrom_fold(contig: str) -> Optional[str]:
+    """
+    Get the chromosome-split fold of a contig (see ``RR_FOLDS``).
+
+    :param contig: Contig name (e.g. "chr12").
+    :return: "odd" or "even" for an autosome, otherwise None (the genomic features,
+        and so the training sites, are autosomal).
+    """
+    name = contig.replace("chr", "")
+    if not name.isdigit():
+        return None
+
+    return RR_FOLDS[0] if int(name) % 2 == 1 else RR_FOLDS[1]
+
+
+def _predict_rr_model(model: Dict[str, Any], df: pd.DataFrame) -> np.ndarray:
+    """
+    Get the predicted DNM probability of each site from an rr model.
+
+    :param model: Model dictionary (:func:`fit_rr_context_model`).
+    :param df: Sites with the model's feature columns.
+    :return: Predicted probabilities.
+    """
+    z = (df[model["features"]].to_numpy() - model["mean"]) / model["sd"]
+    eta = model["intercept"] + z @ np.array(model["coefs"])
+
+    return 1.0 / (1.0 + np.exp(-eta))
+
+
+def tune_rr_penalty(
+    df: pd.DataFrame,
+    penalties: List[float],
+    contexts: List[str] = RR_CONTEXTS,
+) -> pd.DataFrame:
+    """
+    Get the held-out log loss of chromosome-split rr models for each ridge penalty.
+
+    For each penalty, context, and fold in ``RR_FOLDS``, the context's model is fit
+    on the training sites outside the fold's chromosomes and scored on the sites in
+    them. Only DNMs and the training background are used, no gnomAD data.
+
+    :param df: Training DataFrame (:func:`rr_training_ht_to_pandas`).
+    :param penalties: Per-site ridge penalties to try.
+    :param contexts: Contexts to model. Default is ``RR_CONTEXTS``.
+    :return: DataFrame with ``penalty``, ``context``, ``fold``, the number of held-out
+        sites (``n_test``), and their summed log loss (``log_loss``).
+    """
+    df = df.assign(_fold=df["contig"].map(get_chrom_fold))
+    rows = []
+    for penalty in penalties:
+        for context in contexts:
+            features = get_rr_model_features(context)
+            ctx_df = df[df["context"] == context]
+            for fold in RR_FOLDS:
+                model = fit_rr_context_model(
+                    ctx_df[ctx_df["_fold"] != fold], features, penalty
+                )
+                test_df = ctx_df[ctx_df["_fold"] == fold][["y", *features]].dropna()
+                if model is None or test_df.empty:
+                    continue
+                rows.append(
+                    {
+                        "penalty": float(penalty),
+                        "context": context,
+                        "fold": fold,
+                        "n_test": len(test_df),
+                        "log_loss": float(
+                            log_loss(
+                                test_df["y"],
+                                _predict_rr_model(model, test_df),
+                                labels=[0, 1],
+                                normalize=False,
+                            )
+                        ),
+                    }
+                )
+
+    return pd.DataFrame(
+        rows, columns=["penalty", "context", "fold", "n_test", "log_loss"]
+    )
+
+
+def choose_rr_penalty(
+    tuning_df: pd.DataFrame, default: float = RR_RIDGE_PENALTY
+) -> float:
+    """
+    Choose the ridge penalty with the lowest held-out log loss.
+
+    The log loss is summed over contexts and folds, so one penalty is used for every
+    context. If no held-out sites could be scored (the training sites are all on one
+    side of the chromosome split, as in a ``--test`` run), ``default`` is returned.
+
+    :param tuning_df: Held-out log loss per penalty (:func:`tune_rr_penalty`).
+    :param default: Penalty used when there is no held-out log loss. Default is
+        ``RR_RIDGE_PENALTY``.
+    :return: Chosen per-site ridge penalty.
+    """
+    if tuning_df.empty:
+        logger.warning(
+            "No held-out sites to score the ridge penalties on; using %s.", default
+        )
+        return default
+
+    return float(tuning_df.groupby("penalty")["log_loss"].sum().idxmin())
 
 
 def rr_models_to_ht(models: List[Dict[str, Any]]) -> hl.Table:
@@ -540,8 +423,18 @@ def _rr_model_expr(ht: hl.Table, model: hl.Struct) -> hl.expr.Float64Expression:
     """
     Get the rr expression of one context model for each window of a feature Table.
 
-    rr = sigmoid(intercept + sum(coefs * (x - mean) / sd)) / ave, and is missing when
-    any model feature is missing for the window.
+    rr = sigmoid(intercept + sum(coefs * (x - mean) / sd)) / ave, as in Gnocchi, and
+    is missing when any model feature is missing for the window.
+
+    Because the background is a sample of non-mutated sites, the model is
+    case-control, and the ratio of mutation rates between a window and the average
+    window is closer to the odds ratio ``exp(eta - intercept)`` than to this ratio of
+    probabilities. The sigmoid form compresses the regional effect toward 1 by about
+    ``1 - ave`` on the log scale and caps rr at ``1 / ave``. That is negligible for
+    non-CpG contexts, where DNMs are a few percent of the training sites, but
+    damps CpG contexts, where they are 20-50%, and the damping changes with
+    ``RR_BACKGROUND_FRACTION``. The sigmoid form is kept because it is the form the
+    rr was evaluated with.
 
     :param ht: Feature Table keyed by ``interval``.
     :param model: Model row of the rr model Table.
@@ -565,7 +458,8 @@ def compute_rr_ht(features_ht: hl.Table, models: List[hl.Struct]) -> hl.Table:
     an rr of 1.0. Windows are kept only if at least one modeled context has an rr for
     the window.
 
-    :param features_ht: Feature Table (:func:`format_genomic_features`).
+    :param features_ht: Feature Table
+        (:func:`~gnomad_constraint.utils.import_data.format_genomic_features`).
     :param models: Rows of the rr model Table.
     :return: rr Table keyed by ``interval`` with an ``adj_r`` dict.
     """
@@ -576,6 +470,13 @@ def compute_rr_ht(features_ht: hl.Table, models: List[hl.Struct]) -> hl.Table:
     ht = features_ht.select(_rr=hl.struct(**rr_exprs))
     ht = ht.filter(hl.any([hl.is_defined(ht._rr[c]) for c in rr_exprs]))
 
+    # TODO: Windows missing a context's model features get an rr of 1.0 here, which is
+    #  the model's rr for the average-feature window. normalize_rr_ht then divides it
+    #  by the context's factor, so these windows end up at 1 / factor (on average about
+    #  1.4% below 1), unlike every other site without an rr (chrX/Y, sites outside a
+    #  window, and windows with no rr for any context). Consider leaving them missing
+    #  here, computing the factors over predicted sites only, and filling 1.0 after
+    #  normalization.
     return ht.select(
         adj_r=hl.dict(
             [
@@ -603,9 +504,7 @@ def get_syn_mane_select_ht(per_variant_ht: hl.Table) -> hl.Table:
         & per_variant_ht.mane_select
         & per_variant_ht.transcript.startswith(ENSEMBL_TRANSCRIPT_PREFIX)
     )
-    ht = ht.select("context", exp=ht.expected_variants[adj_idx]).select_globals()
-
-    return ht.naive_coalesce(200)
+    return ht.select("context", exp=ht.expected_variants[adj_idx]).select_globals()
 
 
 def compute_rr_normalization_factors(

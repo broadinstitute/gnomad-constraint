@@ -1194,6 +1194,23 @@ class TestPrepareReleaseHt:
         assert g.loeuf_percentile_thresholds.decile == [0.2] * 9
         assert g.max_af == 0.001
 
+    def test_regional_rr_globals(self, internal_ht: hl.Table) -> None:
+        """Test that the rr settings reach the release globals without Table paths."""
+        ht = internal_ht.annotate_globals(
+            regional_rr_globals=hl.struct(
+                ridge_penalty=0.3,
+                normalization_factors={"ACG": 1.1},
+                models_ht_path="gs://models.ht",
+                features_ht_path="gs://features.ht",
+                per_variant_expected_ht_path="gs://per_variant.ht",
+            )
+        )
+        g = hl.eval(prepare_release_ht(ht, "4.1.2").globals)
+        assert dict(g.regional_rr_params) == {
+            "ridge_penalty": 0.3,
+            "normalization_factors": {"ACG": 1.1},
+        }
+
 
 class TestFlattenReleaseHt:
     """Test the flatten_release_ht function on a prepare_release_ht release Table."""

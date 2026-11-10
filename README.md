@@ -20,8 +20,10 @@ Many of the functions are imported from
 | Path | Contents |
 |---|---|
 | `gnomad_constraint/pipeline/constraint_pipeline.py` | The pipeline script; each step is a command-line flag |
+| `gnomad_constraint/pipeline/import_data.py` | Imports external data used with the pipeline: de novo mutation cohorts and the regional genomic feature matrix |
 | `gnomad_constraint/pipeline/regional_rate_pipeline.py` | The regional mutation rate (rr) script: trains the rr models on synonymous de novo mutations and computes rr per 1kb window |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
+| `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
 | `gnomad_constraint/utils/regional_rate.py` | Functions used by the rr steps |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
@@ -80,19 +82,38 @@ novo mutations from a sample of non-mutated synonymous sites using 13 regional
 genomic features of the site's 1kb window, at four flanking scales. A window's rr is
 the model's prediction for the window relative to the average window, divided by its
 mean over exome synonymous sites in each context, so rr moves expected counts
-between regions without changing each context's total. It reads the constraint
-pipeline's annotated context and per-variant expected Tables, and runs these steps
-in order:
+between regions without changing each context's total.
+
+The de novo mutations (DNMs) and genomic features come from `import_data.py`:
 
 | Flag | Step |
 |---|---|
-| `--prepare-syn-dnms` | Combine the DNM cohorts into the synonymous DNM Table |
+| `--import-dnms` | Combine the DNM cohorts into one Table of SNV DNMs with their context and VEP most severe consequence |
 | `--import-genomic-features` | Import the 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
-| `--create-rr-training-set` | Sample the non-mutated background and annotate DNM and background sites with their window's features, leaving out genes with a QC gene flag |
-| `--train-rr-models` | Fit the per-context ridge-penalized models |
+
+`regional_rate_pipeline.py` then reads those Tables and the constraint pipeline's
+annotated context and per-variant expected Tables, and runs these steps in order:
+
+| Flag | Step |
+|---|---|
+| `--create-rr-training-set` | Take the synonymous DNM sites and a sampled background of non-mutated synonymous sites, annotate them with their window's features, and leave out genes with a QC gene flag |
+| `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
+| `--train-rr-models` | Fit the per-context ridge-penalized models with the chosen penalty |
 | `--compute-rr` | Compute the normalized rr per window and context |
 
-Outputs are written under `regional_rate/` in the constraint output directory.
+`import_data.py` writes under `imported_data/` and `regional_rate_pipeline.py` under
+`regional_rate/` in the constraint output directory. `--compute-rr` normalizes rr on
+the per-variant expected Table that `--apply-regional-rr` applies it to, so run both
+scripts with the same `--version`, `--test`, `--directory-post-fix` and
+`--path-post-fix`. With `--test`, `regional_rate_pipeline.py` reads the
+`import_data.py --test` outputs and the `constraint_pipeline.py --test` per-variant
+expected Table.
+
+`--apply-regional-rr` doesn't rename its output, so the rr-adjusted aggregated,
+constraint-group and metrics Tables replace the unadjusted ones unless you set
+`--path-post-fix` (rerun `--create-training-set` onward with it) or
+`--directory-post-fix`. The release Table records the rr settings in its
+`regional_rr_params` global.
 
 ### Release constraint metrics Table
 

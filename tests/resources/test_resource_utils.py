@@ -27,7 +27,10 @@ from gnomad_constraint.resources.resource_utils import (
     get_constraint_resources,
     get_constraint_root,
     get_coverage_ht,
+    get_dnm_ht,
     get_gene_quality_metrics_ht,
+    get_genomic_features_ht,
+    get_import_data_resources,
     get_lof_threshold_tsv_path,
     get_logging_path,
     get_models,
@@ -35,11 +38,17 @@ from gnomad_constraint.resources.resource_utils import (
     get_per_variant_expected_dataset,
     get_pre_rank_constraint_metrics_dataset,
     get_preprocessed_ht,
+    get_regional_rate_resources,
+    get_regional_rr_ht,
     get_release_constraint_ht,
     get_release_constraint_tsv_path,
     get_release_downsampling_tsv_path,
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
+    get_rr_gene_flags_ht,
+    get_rr_models_ht,
+    get_rr_penalty_tuning_ht,
+    get_rr_training_ht,
     get_sites_resource,
     get_syn_adj_r_ht,
     get_training_dataset,
@@ -348,6 +357,18 @@ class TestPipelineStepPaths:
                 get_training_tsv_path,
                 "training_data/gnomad.v4.1.1.constraint_training.tsv.bgz",
             ),
+            (get_dnm_ht, "imported_data/gnomad.v4.1.1.dnm.ht"),
+            (
+                get_genomic_features_ht,
+                "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
+            ),
+            (get_rr_training_ht, "regional_rate/gnomad.v4.1.1.rr_training.ht"),
+            (
+                get_rr_penalty_tuning_ht,
+                "regional_rate/gnomad.v4.1.1.rr_penalty_tuning.ht",
+            ),
+            (get_rr_models_ht, "regional_rate/gnomad.v4.1.1.rr_models.ht"),
+            (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
         ],
     )
     def test_path(self, func: Callable, path: str) -> None:
@@ -576,3 +597,95 @@ class TestGetConstraintResources:
             ref_grch38.seg_dup_intervals.path,
             ref_grch38.lcr_intervals.path,
         } <= _input_paths(resources.compute_gene_quality_metrics)
+
+
+class TestRegionalRateResources:
+    """Test the steps built by get_import_data_resources and get_regional_rate_resources."""
+
+    @pytest.mark.parametrize(
+        "resources",
+        [
+            get_import_data_resources("4.1.1", overwrite=False, test=True),
+            get_regional_rate_resources("4.1.1", overwrite=False, test=True),
+        ],
+    )
+    def test_test_run_writes_only_under_the_test_root(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """Test that every step's outputs in a test run are under the test root."""
+        paths = [
+            _path(resource)
+            for step in resources.pipeline_steps.values()
+            for outputs in step.output_resources.values()
+            for resource in outputs
+        ]
+        assert paths
+        assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
+
+    def test_rr_inputs_are_the_import_outputs(self) -> None:
+        """Test that the rr steps read the Tables import_data.py writes."""
+        imports = get_import_data_resources("4.1.1", overwrite=False, test=True)
+        rr = get_regional_rate_resources(
+            "4.1.1", overwrite=False, test=True, path_post_fix="x"
+        )
+        assert rr.create_rr_training_set.dnm_ht.path == imports.import_dnms.dnm_ht.path
+        for step in [rr.create_rr_training_set, rr.compute_rr]:
+            assert (
+                step.genomic_features_ht.path
+                == imports.import_genomic_features.genomic_features_ht.path
+            )
+        assert rr.create_rr_training_set.gene_flags_ht.path == (
+            "gs://gnomad/v4.1.2/constraint/metrics/transcript_consequences/"
+            "gnomad.v4.1.2.constraint_metrics.ht"
+        )
+        assert (
+            get_rr_gene_flags_ht().path == rr.create_rr_training_set.gene_flags_ht.path
+        )
+
+    def test_training_uses_the_tuned_penalty(self) -> None:
+        """Test that --train-rr-models reads the --tune-rr-penalty output."""
+        rr = get_regional_rate_resources("4.1.1", overwrite=False, test=True)
+        train = rr.train_rr_models
+        assert (
+            train.rr_penalty_tuning_ht.path
+            == rr.tune_rr_penalty.rr_penalty_tuning_ht.path
+        )
+        assert train.rr_training_ht.path == rr.tune_rr_penalty.rr_training_ht.path
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_constraint_pipeline_reads_the_rr_table(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that --apply-regional-rr reads the rr Table --compute-rr writes.
+
+        Both scripts get the same version, test flag, and post-fixes, and rr is
+        normalized on the per-variant expected Table it is applied to. Regression
+        test: the rr Table was read without the path post-fix, and rr was always
+        normalized on the production per-variant Table.
+        """
+        kwargs = {
+            "test": test,
+            "directory_post_fix": directory_post_fix,
+            "path_post_fix": path_post_fix,
+        }
+        rr = get_regional_rate_resources("4.1.1", overwrite=False, **kwargs).compute_rr
+        aggregate = get_constraint_resources(
+            "4.1.1", overwrite=False, apply_regional_rr=True, **kwargs
+        ).aggregate_per_variant_expected
+        assert aggregate.regional_rr_ht.path == rr.regional_rr_ht.path
+        assert rr.per_variant_expected_ht.path == aggregate.per_variant_apply_ht.path
+
+    def test_apply_regional_rr_input(self) -> None:
+        """Test that --aggregate-per-variant-expected declares the rr Table only with the flag."""
+        key = "regional_rate_pipeline.py --compute-rr"
+        for apply_regional_rr in [False, True]:
+            step = get_constraint_resources(
+                "4.1.1",
+                overwrite=False,
+                test=True,
+                apply_regional_rr=apply_regional_rr,
+            ).aggregate_per_variant_expected
+            assert (key in step.input_resources) == apply_regional_rr

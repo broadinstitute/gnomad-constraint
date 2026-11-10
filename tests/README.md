@@ -36,10 +36,12 @@ implementations against each other is named for the comparison.
 | Module | Covers |
 |---|---|
 | `utils/test_constraint_preprocess.py` | `prepare_context_ht`, frequency filtering, mutation rate site selection, exome coverage metrics, exome observed/possible counts, build-model groups, `prepare_ht_for_constraint_calculations`, the training set, and the mutation rate |
-| `utils/test_constraint_apply.py` | Applying the models with and without a coverage model, the per-variant and aggregated expected paths (checked against each other), and `aggregate_by_constraint_groups` |
+| `utils/test_constraint_apply.py` | Applying the models with and without a coverage model, the per-variant and aggregated expected paths (checked against each other), the regional mutation rate (rr) in `aggregate_per_variant_expected_ht`, and `aggregate_by_constraint_groups` |
 | `utils/test_constraint_metrics.py` | o/e, both CIs, z-scores and flags, transcript selection, ranks and percentile bins, pLI per LoF group, `compute_constraint_metrics`, and the release Tables (values, globals, and the published TSV columns) |
 | `utils/test_constraint_gene_quality.py` | Coverage, mapping quality, segdup/LCR, and flag thresholds in `compute_gene_quality_metrics` |
-| `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
+| `utils/test_regional_rate.py` | The rr model features, the ridge fit, the penalty tuning, rr per window, normalization, and the rr training set |
+| `utils/test_import_data.py` | Formatting the GRCh38 de novo mutation cohorts, combining the cohorts, and the genomic feature windows |
+| `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, `get_import_data_resources`, and `get_regional_rate_resources`, and `filter_for_test` |
 | `pipeline/test_constraint_pipeline.py` | The `--skip-coverage-model` consistency check |
 
 ## How these tests are written

@@ -299,6 +299,11 @@ def main(args: argparse.Namespace) -> None:
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
     check_gerp_cutoffs_step(args.calculate_gerp_cutoffs, args.preprocess_data)
+    if args.apply_regional_rr and not args.aggregate_per_variant_expected:
+        logger.warning(
+            "--apply-regional-rr only applies to --aggregate-per-variant-expected and"
+            " is ignored without it."
+        )
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
@@ -595,6 +600,12 @@ def main(args: argparse.Namespace) -> None:
                 ht = res.aggregated_expected_ht.ht()
             else:
                 ht = res.apply_ht.ht()
+            if "regional_rr_globals" in ht.globals:
+                logger.info(
+                    "The expected counts were adjusted by the regional mutation rate"
+                    " (rr): %s",
+                    hl.eval(ht.regional_rr_globals),
+                )
 
             aggregate_by_constraint_groups(
                 ht,
@@ -1033,8 +1044,10 @@ if __name__ == "__main__":
             "Multiply the per-variant expected counts by the regional mutation rate"
             " (rr) of the variant's 1kb window and context before aggregating, after"
             " model calibration. Reads the rr Table written by"
-            " regional_rate_pipeline.py --compute-rr for the same version, --test, and"
-            " --directory-post-fix."
+            " regional_rate_pipeline.py --compute-rr with the same --version, --test,"
+            " --directory-post-fix, and --path-post-fix. The output keeps the"
+            " unadjusted Table's name, so use --path-post-fix or --directory-post-fix"
+            " to keep both."
         ),
         action="store_true",
     )

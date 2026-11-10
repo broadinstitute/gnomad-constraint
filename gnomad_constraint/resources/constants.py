@@ -207,6 +207,11 @@ RELEASE_PIPELINE_PARAM_GLOBALS = [
         "apply_models_params",
         ["skip_coverage_model", "groupings"],
     ),
+    (
+        "regional_rr_globals",
+        "regional_rr_params",
+        ["models_ht_path", "features_ht_path", "per_variant_expected_ht_path"],
+    ),
 ]
 """Pipeline parameter globals: (internal name, release name, fields to drop)."""
 
@@ -258,28 +263,6 @@ Order matches the columns of the published Gnocchi feature matrix
 (``genomic_features13_genome_1kb.txt``).
 """
 
-RR_FEATURE_ORDER = [
-    "dist2telo",
-    "dist2cent",
-    "LCR",
-    "SINE",
-    "LINE",
-    "GC_content",
-    "recomb_male",
-    "recomb_female",
-    "met_sperm",
-    "Nucleosome",
-    "CpG_island",
-    "cDNM_maternal_05M",
-    "cDNM_paternal_05M",
-]
-"""
-Order of the features in the rr models.
-
-This is the legacy Gnocchi feature order (it differs from the published column
-order). Features are ordered by scale first, then in this order.
-"""
-
 GENOMIC_FEATURE_SCALES = ["1k", "10k", "100k", "1M"]
 """Flanking window scales at which each regional genomic feature is computed."""
 
@@ -307,16 +290,29 @@ Features correlated with methylation that are dropped from CpG context rr models
 The mutation rates already model methylation at CpG sites.
 """
 
-RR_RIDGE_PENALTY = 0.3
+RR_RIDGE_PENALTIES = [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
 """
-Per-site ridge penalty of the rr models.
+Per-site ridge penalties tried by ``regional_rate_pipeline.py --tune-rr-penalty``.
 
 Every feature, at every scale, goes into the model of each context, and the logistic
 fit minimizes mean log loss + penalty / 2 * sum(coef ** 2) on z-scored features (the
-intercept is not penalized), so the penalty decides how much each feature counts.
-0.3 minimized the held-out log loss of synonymous DNMs in chromosome-split models
-(no gnomAD data was used to choose it). Retune it if the training set changes.
+intercept is not penalized), so the penalty decides how much each feature counts. The
+step picks the penalty with the lowest held-out log loss of chromosome-split models,
+summed over contexts, so no gnomAD data is used to choose it. In the analysis behind
+the rr, 0.3 was chosen from this range; see
+https://github.com/broadinstitute/gnomad-constraint/blob/64e52edf7dd83e9bc4fa83a7ead3e685e174226c/gnomad_constraint/plots/adj_r_syn_oe/rr_syn_dnm_followup.md#L67-L73.
 """
+
+RR_RIDGE_PENALTY = 0.3
+"""
+Ridge penalty used when ``--tune-rr-penalty`` has no held-out sites to score.
+
+A ``--test`` run trains on chr20 only, so there is no other chromosome to hold out.
+0.3 is the penalty chosen in the analysis behind the rr.
+"""
+
+RR_FOLDS = ("odd", "even")
+"""Chromosome-split folds for tuning the rr penalty: odd and even autosomes."""
 
 RR_BACKGROUND_FRACTION = 0.05
 """Fraction of non-mutated synonymous sites sampled as the rr training background."""
@@ -328,6 +324,6 @@ RR_TRAINING_N_PARTITIONS = 100
 """
 Number of partitions of the written rr training Table.
 
-The sampled training sites keep the partitioning of the context Table (~15,000
-partitions for ~500,000 rows), so the Table is coalesced before it is written.
+The sampled training sites keep the partitioning of the context Table (about 5,000
+partitions for about 500,000 rows), so the Table is coalesced before it is written.
 """
