@@ -606,6 +606,55 @@ class TestAggregatePerVariantExpectedHt:
         assert list(ht.key) == [*MU_GROUPING, *GROUPINGS]
         assert ht.count() == 6
 
+    def test_regional_rr(self) -> None:
+        """Test that expected counts are multiplied by the rr of the window and context.
+
+        The rr window covers positions 1-4 of chr1 (rr 2 for the non-CpG context and
+        0.5 for the CpG one); positions 10 and 11 and the chrX site have no window, so
+        their rr is 1. Observed counts are unchanged.
+        """
+        ht = create_per_variant_expected_ht(
+            _preprocessed_ht(),
+            _mutation_ht(),
+            hl.literal(PLATEAU_MODELS),
+            _coverage_model_expr(COVERAGE_MODEL),
+            use_mane_select=True,
+        )
+        rr_ht = hl.Table.parallelize(
+            [
+                {
+                    "interval": hl.Interval(
+                        hl.Locus("chr1", 1, "GRCh38"), hl.Locus("chr1", 5, "GRCh38")
+                    ),
+                    "adj_r": {NON_CPG["context"]: 2.0, CPG["context"]: 0.5},
+                }
+            ],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                adj_r=hl.tdict(hl.tstr, hl.tfloat64),
+            ),
+            key="interval",
+        ).annotate_globals(rr_globals=hl.struct(ridge_penalty=0.3))
+        ht = aggregate_per_variant_expected_ht(ht, regional_rr_ht=rr_ht)
+        rows = _rows_by_group(ht)
+        unadjusted = _path_sums("per_variant", COVERAGE_MODEL)["rows"]
+
+        # Positions 1 (high coverage) and 2 (low coverage) get rr 2; 10 and 11 get 1.
+        syn = rows[("T1", "synonymous_variant", "None")]
+        assert syn.expected_variants == pytest.approx(
+            [0.3 * (4 + 2 * LOW_COV_CORRECTION), 0.15 * (4 + 2 * LOW_COV_CORRECTION)]
+        )
+        assert syn.observed_variants == [2, 1]
+        for group, rr in [
+            (("T1", "missense_variant", "None"), 0.5),
+            (("T2", "missense_variant", "None"), 2.0),
+            (("TX", "synonymous_variant", "None"), 1.0),
+        ]:
+            assert rows[group].expected_variants == pytest.approx(
+                [rr * e for e in unadjusted[group].expected_variants]
+            )
+        assert hl.eval(ht.regional_rr_globals.ridge_penalty) == 0.3
+
 
 class TestCreateAggregatedExpectedHt:
     """Test the create_aggregated_expected_ht function."""

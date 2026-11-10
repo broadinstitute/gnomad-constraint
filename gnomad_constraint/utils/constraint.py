@@ -1000,6 +1000,7 @@ def create_per_variant_expected_ht(
 def aggregate_per_variant_expected_ht(
     ht: hl.Table,
     include_mu_annotations_in_grouping: bool = False,
+    regional_rr_ht: Optional[hl.Table] = None,
 ) -> hl.Table:
     """
     Aggregate the per-variant expected Table.
@@ -1008,9 +1009,19 @@ def aggregate_per_variant_expected_ht(
     The Table is aggregated by the groupings stored in
     ``apply_models_globals.groupings`` to get the observed and expected counts.
 
+    With ``regional_rr_ht``, each variant's expected counts are first multiplied by
+    the regional mutation rate (rr) of its 1kb window and strand-collapsed
+    trinucleotide context (``regional_rr_ht[locus].adj_r[context]``), or by 1 if its
+    window has no rr. This happens after model calibration: the plateau and coverage
+    models are not re-fit or re-applied. The rr Table's ``rr_globals`` global is kept
+    as the ``regional_rr_globals`` global.
+
     :param ht: Table returned by ``create_per_variant_expected_ht``.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate
         key annotations in the grouping. Default is False.
+    :param regional_rr_ht: Optional regional rr Table keyed by ``interval`` with an
+        ``adj_r`` dict mapping trinucleotide context to rr (output of
+        ``regional_rate_pipeline.py --compute-rr``). Default is None.
     :return: Table with the observed and expected counts.
     """
     # Build the grouping key: optionally include mutation rate annotations
@@ -1036,6 +1047,18 @@ def aggregate_per_variant_expected_ht(
     # Keep only coding consequences (e.g. synonymous, missense, LoF) — drops
     # non-coding VEP annotations to improve computation time and memory.
     ht = ht.filter(hl.set(CSQ_CODING).contains(ht.annotation))
+
+    # Apply the regional rr to the coding rows. The interval join is ordered on
+    # locus, so it does not shuffle.
+    if regional_rr_ht is not None:
+        rr_expr = regional_rr_ht[ht.locus].adj_r.get(ht.context)
+        ht = ht.annotate(
+            expected_variants=ht.expected_variants * hl.or_else(rr_expr, 1.0)
+        )
+        if "rr_globals" in regional_rr_ht.globals:
+            ht = ht.annotate_globals(
+                regional_rr_globals=regional_rr_ht.index_globals().rr_globals
+            )
 
     # Narrow to just the grouping keys and the fields we need to sum,
     # dropping everything else to minimize shuffle size.

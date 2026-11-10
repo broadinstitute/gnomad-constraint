@@ -231,3 +231,103 @@ RELEASE_CG_SELECT = [
     "gen_anc_exp",
 ]
 """Fields selected from the release constraint-group struct, in display order."""
+
+# ---------------------------------------------------------------------------
+# Regional mutation rate (rr) adjustment
+# ---------------------------------------------------------------------------
+
+GENOMIC_FEATURES = [
+    "dist2telo",
+    "dist2cent",
+    "GC_content",
+    "LCR",
+    "SINE",
+    "LINE",
+    "recomb_male",
+    "recomb_female",
+    "met_sperm",
+    "Nucleosome",
+    "cDNM_maternal_05M",
+    "cDNM_paternal_05M",
+    "CpG_island",
+]
+"""
+Regional genomic features used to model the regional mutation rate (rr).
+
+Order matches the columns of the published Gnocchi feature matrix
+(``genomic_features13_genome_1kb.txt``).
+"""
+
+RR_FEATURE_ORDER = [
+    "dist2telo",
+    "dist2cent",
+    "LCR",
+    "SINE",
+    "LINE",
+    "GC_content",
+    "recomb_male",
+    "recomb_female",
+    "met_sperm",
+    "Nucleosome",
+    "CpG_island",
+    "cDNM_maternal_05M",
+    "cDNM_paternal_05M",
+]
+"""
+Order of the features in the rr models.
+
+This is the legacy Gnocchi feature order (it differs from the published column
+order). Features are ordered by scale first, then in this order.
+"""
+
+GENOMIC_FEATURE_SCALES = ["1k", "10k", "100k", "1M"]
+"""Flanking window scales at which each regional genomic feature is computed."""
+
+GENOMIC_FEATURE_COLUMNS = [
+    f"{f}_{s}" for s in GENOMIC_FEATURE_SCALES for f in GENOMIC_FEATURES
+]
+"""Feature matrix columns (``{feature}_{scale}``), in published column order."""
+
+RR_CONTEXTS = sorted(f"{b1}{c}{b3}" for b1 in "ACGT" for c in "AC" for b3 in "ACGT")
+"""Strand-collapsed trinucleotide contexts (central base A or C) modeled for rr."""
+
+CPG_CONTEXTS = ["ACG", "CCG", "GCG", "TCG"]
+"""Strand-collapsed CpG trinucleotide contexts."""
+
+METHYLATION_CORRELATED_FEATURES = [
+    "GC_content",
+    "SINE",
+    "met_sperm",
+    "Nucleosome",
+    "CpG_island",
+]
+"""
+Features correlated with methylation that are dropped from CpG context rr models.
+
+The mutation rates already model methylation at CpG sites.
+"""
+
+RR_RIDGE_PENALTY = 0.3
+"""
+Per-site ridge penalty of the rr models.
+
+Every feature, at every scale, goes into the model of each context, and the logistic
+fit minimizes mean log loss + penalty / 2 * sum(coef ** 2) on z-scored features (the
+intercept is not penalized), so the penalty decides how much each feature counts.
+0.3 minimized the held-out log loss of synonymous DNMs in chromosome-split models
+(no gnomAD data was used to choose it). Retune it if the training set changes.
+"""
+
+RR_BACKGROUND_FRACTION = 0.05
+"""Fraction of non-mutated synonymous sites sampled as the rr training background."""
+
+RR_BACKGROUND_SEED = 0
+"""Seed used when sampling the non-mutated rr training background."""
+
+RR_TRAINING_N_PARTITIONS = 100
+"""
+Number of partitions of the written rr training Table.
+
+The sampled training sites keep the partitioning of the context Table (~15,000
+partitions for ~500,000 rows), so the Table is coalesced before it is written.
+"""

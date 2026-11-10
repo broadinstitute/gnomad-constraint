@@ -18,6 +18,9 @@ The constraint pipeline consists of the following parts:
     - create training set
     - build models
     - apply models
+    - optionally, apply the regional mutation rate (rr) adjustment to the per-variant
+      expected counts (--aggregate-per-variant-expected --apply-regional-rr; rr is
+      computed by regional_rate_pipeline.py)
     - calculate metrics
 """
 
@@ -311,6 +314,7 @@ def main(args: argparse.Namespace) -> None:
         path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
         use_aggregated_expected=args.use_aggregated_expected,
+        apply_regional_rr=args.apply_regional_rr,
     )
 
     try:
@@ -530,7 +534,12 @@ def main(args: argparse.Namespace) -> None:
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = aggregate_per_variant_expected_ht(ht)
+            ht = aggregate_per_variant_expected_ht(
+                ht,
+                regional_rr_ht=(
+                    res.regional_rr_ht.ht() if args.apply_regional_rr else None
+                ),
+            )
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
 
@@ -1015,6 +1024,17 @@ if __name__ == "__main__":
             "Aggregate the per-variant expected variant counts to get the expected "
             "variant counts for each transcript by consequence annotation and "
             "modifier."
+        ),
+        action="store_true",
+    )
+    aggregate_per_variant_expected_args.add_argument(
+        "--apply-regional-rr",
+        help=(
+            "Multiply the per-variant expected counts by the regional mutation rate"
+            " (rr) of the variant's 1kb window and context before aggregating, after"
+            " model calibration. Reads the rr Table written by"
+            " regional_rate_pipeline.py --compute-rr for the same version, --test, and"
+            " --directory-post-fix."
         ),
         action="store_true",
     )

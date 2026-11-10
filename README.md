@@ -20,7 +20,9 @@ Many of the functions are imported from
 | Path | Contents |
 |---|---|
 | `gnomad_constraint/pipeline/constraint_pipeline.py` | The pipeline script; each step is a command-line flag |
+| `gnomad_constraint/pipeline/regional_rate_pipeline.py` | The regional mutation rate (rr) script: trains the rr models on synonymous de novo mutations and computes rr per 1kb window |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
+| `gnomad_constraint/utils/regional_rate.py` | Functions used by the rr steps |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
 | `gnomad_constraint/resources/README.md` | Schema reference for every pipeline output |
@@ -47,7 +49,7 @@ flag, in this order:
 | `--create-training-set` | Count observed and possible synonymous variants for model training |
 | `--build-models` | Build the plateau and coverage models |
 | `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
-| `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence |
+| `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence. Add `--apply-regional-rr` to first multiply each variant's expected count by the regional mutation rate (rr) of its 1kb window and context (see [Regional mutation rate](#regional-mutation-rate-rr)) |
 | `--apply-models-aggregated` | Alternative to the two steps above: sum observed and possible counts first, then apply the models |
 | `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
 | `--compute-constraint-metrics` | Compute o/e, confidence intervals, z-scores, flags, pLI, ranks, and bins. `--skip-pre-rank-metrics` reruns only the ranking |
@@ -69,6 +71,28 @@ instead, so a test run never touches production outputs. `--directory-post-fix`
 and `--path-post-fix` keep separate runs of the same version apart. The directory
 post-fix applies to every output; the path post-fix only to the outputs from
 `--create-training-set` onward, except the release mutation rate files.
+
+### Regional mutation rate (rr)
+
+`regional_rate_pipeline.py` computes the rr that `--apply-regional-rr` applies. For
+each trinucleotide context, a ridge-penalized logistic model separates synonymous de
+novo mutations from a sample of non-mutated synonymous sites using 13 regional
+genomic features of the site's 1kb window, at four flanking scales. A window's rr is
+the model's prediction for the window relative to the average window, divided by its
+mean over exome synonymous sites in each context, so rr moves expected counts
+between regions without changing each context's total. It reads the constraint
+pipeline's annotated context and per-variant expected Tables, and runs these steps
+in order:
+
+| Flag | Step |
+|---|---|
+| `--prepare-syn-dnms` | Combine the DNM cohorts into the synonymous DNM Table |
+| `--import-genomic-features` | Import the 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
+| `--create-rr-training-set` | Sample the non-mutated background and annotate DNM and background sites with their window's features, leaving out genes with a QC gene flag |
+| `--train-rr-models` | Fit the per-context ridge-penalized models |
+| `--compute-rr` | Compute the normalized rr per window and context |
+
+Outputs are written under `regional_rate/` in the constraint output directory.
 
 ### Release constraint metrics Table
 
