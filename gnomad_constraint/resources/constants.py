@@ -266,6 +266,9 @@ GENOMIC_FEATURE_COLUMNS = [
 ]
 """Feature matrix columns (``{feature}_{scale}``), in published column order."""
 
+GENOMIC_FEATURE_MISSING = ["NA", "nan", "NaN", ""]
+"""Spellings of a missing value in the published genomic feature matrix."""
+
 RR_CONTEXTS = sorted(f"{b1}{c}{b3}" for b1 in "ACGT" for c in "AC" for b3 in "ACGT")
 """Strand-collapsed trinucleotide contexts (central base A or C) modeled for rr."""
 
