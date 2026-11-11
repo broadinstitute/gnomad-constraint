@@ -8,7 +8,6 @@ The models are fit, and rr is computed and normalized, with
 import logging
 
 import hail as hl
-import pandas as pd
 from hail.utils.misc import new_temp_file
 
 from gnomad_constraint.resources.constants import GENOMIC_FEATURE_COLUMNS
@@ -114,27 +113,15 @@ def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
     return hl.filter_intervals(ht, intervals, keep=False)
 
 
-def rr_training_ht_to_pandas(ht: hl.Table) -> pd.DataFrame:
+def get_rr_fold_expr(locus_expr: hl.expr.LocusExpression) -> hl.expr.StringExpression:
     """
-    Collect the rr training Table into a pandas DataFrame with a tuning fold.
+    Get the chromosome-split fold used to tune the rr ridge penalty.
 
     The fold splits the chromosomes into ``odd`` (chr1, chr3, ...) and ``even``. The
     genomic features cover chr1-22 only, so chrX and chrY sites, which have no
     features, are left out of every fit and score whatever their fold.
 
-    :param ht: rr training Table (:func:`create_rr_training_ht`).
-    :return: DataFrame with ``context``, ``y``, ``GENOMIC_FEATURE_COLUMNS``, and
-        ``fold``.
+    :param locus_expr: Locus of each training site.
+    :return: ``odd`` or ``even``.
     """
-    ht = ht.key_by()
-    ht = ht.select(
-        "context",
-        "y",
-        *GENOMIC_FEATURE_COLUMNS,
-        fold=hl.if_else(ht.locus.contig_idx % 2 == 0, "odd", "even"),
-    )
-    # to_pandas returns nullable extension dtypes (e.g. Float64); use NumPy dtypes
-    # (missing values as NaN).
-    return ht.to_pandas().astype(
-        {"y": "int64", **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, "float64")}
-    )
+    return hl.if_else(locus_expr.contig_idx % 2 == 0, "odd", "even")

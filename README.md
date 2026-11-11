@@ -105,8 +105,7 @@ and runs these steps in order:
 `--test`, `--directory-post-fix` and `--path-post-fix`; the training set comes from
 the annotated context Table of the same run. With `--test`,
 `regional_rate_pipeline.py` reads the `import_data.py --test` outputs and the
-`constraint_pipeline.py --test` annotated context and per-variant expected Tables. The models are fit with
-scikit-learn, which gnomad_methods installs.
+`constraint_pipeline.py --test` annotated context and per-variant expected Tables.
 
 ### Release constraint metrics Table
 

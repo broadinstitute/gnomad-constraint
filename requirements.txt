@@ -3,7 +3,7 @@
 # code here is tested with (the jg/constraint_regional_mutation_rate branch, which
 # adds gnomad.utils.constraint.regional_mutation_rate; move this to its merge commit
 # before merging). Move the pin when the code is updated to a newer API.
-git+https://github.com/broadinstitute/gnomad_methods@1053e17566a33bb9ae891b72bab52a1706b3d3b7
+git+https://github.com/broadinstitute/gnomad_methods@a2b3eaf12952a7b3aaa39b89ad6fa0f641e4477d
 git+https://github.com/broadinstitute/gnomad_qc@main
 # Hail 0.2.137 or later is needed for hl.qgamma, which newer gnomad_methods uses for
 # the gamma oe confidence interval. gnomad_methods excludes 0.2.139 for a memory

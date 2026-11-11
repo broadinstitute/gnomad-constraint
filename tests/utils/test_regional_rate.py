@@ -1,7 +1,6 @@
 """Tests for the regional mutation rate (rr) functions in ``gnomad_constraint.utils.regional_rate``."""
 
 import hail as hl
-import numpy as np
 import pytest
 
 from gnomad_constraint.resources.constants import (
@@ -10,8 +9,8 @@ from gnomad_constraint.resources.constants import (
 )
 from gnomad_constraint.utils.regional_rate import (
     create_rr_training_ht,
+    get_rr_fold_expr,
     remove_qc_flagged_genes,
-    rr_training_ht_to_pandas,
 )
 
 INTERVAL_TYPE = hl.tinterval(hl.tlocus("GRCh38"))
@@ -253,48 +252,25 @@ class TestRemoveQcFlaggedGenes:
         assert [r.locus.position for r in out] == expected
 
 
-class TestRrTrainingHtToPandas:
-    """Test the rr_training_ht_to_pandas function."""
+class TestGetRrFoldExpr:
+    """Test the get_rr_fold_expr function."""
 
-    def test_columns_types_and_folds(self) -> None:
+    def test_folds(self) -> None:
         """
-        Test the columns, the NumPy dtypes the fit relies on, and the folds.
+        Test that odd-numbered chromosomes are in the odd fold and even ones even.
 
-        Odd-numbered chromosomes are in the odd fold and even-numbered ones in the
-        even fold. chrX gets a fold too, but has no features, so it never reaches a
-        fit.
+        chrX gets a fold too, but has no features, so it never reaches a fit.
         """
-        features = dict.fromkeys(GENOMIC_FEATURE_COLUMNS, 1.0)
+        contigs = ["chr1", "chr2", "chr3", "chr20", "chrX"]
         ht = hl.Table.parallelize(
-            [
-                {"locus": _locus(10), "context": "AAA", "y": 1, **features},
-                {
-                    "locus": _locus(10, "chr2"),
-                    "context": "AAA",
-                    "y": 0,
-                    **features,
-                    "dist2telo_1k": None,
-                },
-                {"locus": _locus(10, "chr3"), "context": "AAA", "y": 0, **features},
-                {"locus": _locus(10, "chr20"), "context": "AAA", "y": 0, **features},
-                {
-                    "locus": _locus(10, "chrX"),
-                    "context": "AAA",
-                    "y": 0,
-                    **dict.fromkeys(GENOMIC_FEATURE_COLUMNS),
-                },
-            ],
-            hl.tstruct(
-                locus=hl.tlocus("GRCh38"),
-                context=hl.tstr,
-                y=hl.tint32,
-                **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, hl.tfloat64),
-            ),
-            key="locus",
+            [{"locus": _locus(10, c)} for c in contigs],
+            hl.tstruct(locus=hl.tlocus("GRCh38")),
         )
-        df = rr_training_ht_to_pandas(ht)
-        assert list(df.columns) == ["context", "y", *GENOMIC_FEATURE_COLUMNS, "fold"]
-        assert df["y"].dtype == np.int64
-        assert all(df[c].dtype == np.float64 for c in GENOMIC_FEATURE_COLUMNS)
-        assert df["dist2telo_1k"].isna().sum() == 2
-        assert list(df["fold"]) == ["odd", "even", "odd", "even", "odd"]
+        ht = ht.annotate(fold=get_rr_fold_expr(ht.locus))
+        assert {r.locus.contig: r.fold for r in ht.collect()} == {
+            "chr1": "odd",
+            "chr2": "even",
+            "chr3": "odd",
+            "chr20": "even",
+            "chrX": "odd",
+        }
