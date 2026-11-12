@@ -802,7 +802,7 @@ chromosomes (odd or even) and scored on the fold's sites.
 ### Rows
 - `penalty: float64`, `context: str`, `fold: str` — key (`fold` is the held-out
   chromosome set, `odd` or `even`).
-- `n_test: int64` — held-out training sites with no missing feature.
+- `n_test: int64` — held-out training sites with no missing label or feature.
 - `log_loss: float64` — log loss summed over those sites.
 
 ---
@@ -842,7 +842,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
   share of the training sites, a few percent for non-CpG contexts but 20-50% for
   CpG contexts, so CpG rr is damped.
 - `n_mutated: int32`, `n_background: int32` — DNM and background training sites
-  with no missing feature.
+  with no missing label or feature.
 - `converged: bool` — whether the logistic fit converged.
 
 ---
