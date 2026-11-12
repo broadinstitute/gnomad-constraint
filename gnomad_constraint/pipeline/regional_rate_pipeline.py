@@ -31,9 +31,10 @@ import logging
 import hail as hl
 from gnomad.utils.constraint import (
     choose_regional_mutation_rate_penalty,
-    compute_regional_mutation_rate_ht,
     fit_regional_mutation_rate_models,
     normalize_regional_mutation_rate_expr,
+    prepare_regional_mutation_rate_training_ht,
+    regional_mutation_rate_expr,
     regional_mutation_rate_normalization_factors_agg_expr,
     tune_regional_mutation_rate_penalty,
 )
@@ -112,13 +113,11 @@ def main(args: argparse.Namespace) -> None:
             res = resources.tune_rr_penalty
             res.check_resource_existence()
 
-            training_ht = res.rr_training_ht.ht()
-            ht = tune_regional_mutation_rate_penalty(
-                training_ht,
-                RR_CONTEXT_FEATURES,
-                args.rr_penalties,
-                fold_expr=get_rr_fold_expr(training_ht.locus),
+            ht = res.rr_training_ht.ht()
+            ht = prepare_regional_mutation_rate_training_ht(
+                ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(ht.locus)
             )
+            ht = tune_regional_mutation_rate_penalty(ht, args.rr_penalties)
             penalty = choose_regional_mutation_rate_penalty(ht, RR_RIDGE_PENALTY)
             logger.info("Chosen ridge penalty: %s", penalty)
             ht = ht.annotate_globals(ridge_penalty=penalty)
@@ -131,9 +130,10 @@ def main(args: argparse.Namespace) -> None:
             penalty = hl.eval(res.rr_penalty_tuning_ht.ht().ridge_penalty)
             logger.info("Training the rr models (ridge penalty %s)...", penalty)
 
-            ht = fit_regional_mutation_rate_models(
-                res.rr_training_ht.ht(), RR_CONTEXT_FEATURES, penalty
+            ht = prepare_regional_mutation_rate_training_ht(
+                res.rr_training_ht.ht(), RR_CONTEXT_FEATURES
             )
+            ht = fit_regional_mutation_rate_models(ht, penalty)
             # The models Table has one small row per context.
             non_converged = ht.aggregate(
                 hl.agg.filter(~ht.converged, hl.agg.collect(ht.context))
@@ -151,9 +151,17 @@ def main(args: argparse.Namespace) -> None:
             res.check_resource_existence()
 
             models_ht = res.rr_models_ht.ht()
-            rr_ht = compute_regional_mutation_rate_ht(
-                res.genomic_features_ht.ht(), models_ht, RR_CONTEXTS
+            rr_ht = res.genomic_features_ht.ht()
+            # TODO: Windows missing a context's features get 1.0 here, the model's
+            #  rate for the average window. Normalization then divides it by the
+            #  context's factor, so these windows end up at 1 / factor instead of 1,
+            #  unlike sites without a window. Consider missing_feature_rate=None,
+            #  which leaves them missing, and filling 1.0 after normalization.
+            rr_ht = rr_ht.select(
+                adj_r=regional_mutation_rate_expr(rr_ht.row, models_ht, RR_CONTEXTS)
             )
+            # Keep the windows the models cover.
+            rr_ht = rr_ht.filter(hl.is_defined(rr_ht.adj_r))
             rr_ht = rr_ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
 
             # Normalize rr on the synonymous Ensembl MANE Select sites, weighted by
