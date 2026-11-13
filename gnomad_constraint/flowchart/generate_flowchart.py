@@ -4,7 +4,8 @@ The page, ``constraint_pipeline.html`` in this directory, is one self-contained
 file. Three blocks inside it are generated, each between a pair of markers:
 
     - CODE: the pipeline steps, CLI flags, input and output resources, and the
-      function call tree of every step, read from the code by ``--extract``.
+      function call tree of every step, read from the four pipeline scripts by
+      ``--extract``.
       Needs neither a cluster nor GCS.
     - NOTES: the hand-written layer in ``notes.py``, validated against CODE by
       ``--extract`` and ``--check``.
@@ -52,7 +53,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import hail as hl
 
-import gnomad_constraint.pipeline.constraint_pipeline as constraint_pipeline
+import gnomad_constraint.pipeline.constraint_metrics as constraint_metrics
+import gnomad_constraint.pipeline.expected_counts as expected_counts
+import gnomad_constraint.pipeline.expected_models as expected_models
+import gnomad_constraint.pipeline.prepare_data as prepare_data
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.flowchart.notes import NOTES
 from gnomad_constraint.resources.constants import CURRENT_VERSION
@@ -67,8 +71,12 @@ logger.setLevel(logging.INFO)
 HTML_PATH = str(pathlib.Path(__file__).with_name("constraint_pipeline.html"))
 """The page the generated blocks are spliced into."""
 
-PIPELINE_MODULE = "gnomad_constraint.pipeline.constraint_pipeline"
-"""Module whose ``main()`` defines the pipeline steps."""
+PIPELINE_SCRIPTS = {
+    m.__name__: m
+    for m in (prepare_data, expected_models, expected_counts, constraint_metrics)
+}
+"""Pipeline script modules, in the order they run, keyed by module name. Each
+one's ``main()`` defines its steps and ``get_script_argument_parser()`` its flags."""
 
 BUILD = "GRCh38"
 """Reference build of every version the pipeline still supports (v4.x)."""
@@ -80,7 +88,7 @@ REPOS = {
 """Repositories whose functions are documented, keyed by the module prefix."""
 
 REPO_ANCHORS = {
-    "gnomad_constraint": PIPELINE_MODULE,
+    "gnomad_constraint": prepare_data.__name__,
     "gnomad_methods": "gnomad.utils.constraint",
 }
 """A module in each repository, used to find its checkout (``gnomad`` itself is a
@@ -579,7 +587,7 @@ def get_flag_refs(node: ast.AST, aliases: Dict[str, Set[str]]) -> Set[str]:
 
 def get_main_structure(src: ModuleSource) -> Dict[str, Any]:
     """
-    Read the step blocks out of the pipeline's ``main()``.
+    Read the step blocks out of a pipeline script's ``main()``.
 
     Every ``if args.<flag>:`` statement inside the ``try`` block of ``main()`` is
     one pipeline step.
@@ -780,22 +788,31 @@ def describe_step_resources(steps: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 def get_flags() -> List[Dict[str, Any]]:
     """
-    Describe every argument of the pipeline's parser.
+    Describe every argument of the pipeline scripts' parsers.
 
-    :return: One dictionary per argument, in parser order.
+    An argument several scripts take (``--version``, ``--test``, ...) is listed
+    once, as the first script defines it, with every script that takes it.
+
+    :return: One dictionary per argument, in script order and then parser order.
     """
-    parser = constraint_pipeline.get_script_argument_parser()
-    groups: Dict[int, List[str]] = {}
-    for group in parser._action_groups:
-        for action in group._group_actions:
-            groups.setdefault(id(action), []).append(group.title)
-    flags = []
-    for action in parser._actions:
-        if isinstance(action, argparse._HelpAction):
-            continue
-        switch = action.nargs == 0 or isinstance(action, argparse.BooleanOptionalAction)
-        flags.append(
-            {
+    flags: Dict[str, Dict[str, Any]] = {}
+    for module in PIPELINE_SCRIPTS.values():
+        script = pathlib.Path(module.__file__).name
+        parser = module.get_script_argument_parser()
+        groups: Dict[int, List[str]] = {}
+        for group in parser._action_groups:
+            for action in group._group_actions:
+                groups.setdefault(id(action), []).append(group.title)
+        for action in parser._actions:
+            if isinstance(action, argparse._HelpAction):
+                continue
+            if action.dest in flags:
+                flags[action.dest]["scripts"].append(script)
+                continue
+            switch = action.nargs == 0 or isinstance(
+                action, argparse.BooleanOptionalAction
+            )
+            flags[action.dest] = {
                 "flag": action.option_strings[0],
                 "aliases": action.option_strings[1:],
                 "dest": action.dest,
@@ -806,9 +823,9 @@ def get_flags() -> List[Dict[str, Any]]:
                 "choices": list(action.choices) if action.choices else None,
                 "nargs": action.nargs,
                 "switch": switch,
+                "scripts": [script],
             }
-        )
-    return flags
+    return list(flags.values())
 
 
 def get_resource_modes(
@@ -822,7 +839,7 @@ def get_resource_modes(
     through ``models`` instead, so it is added explicitly.
 
     :param resource_kwargs: Keyword arguments of the ``get_constraint_resources``
-        call in ``main()`` mapped to the flags they come from.
+        calls in the scripts' ``main()`` mapped to the flags they come from.
     :param flags: Flag records keyed by argparse destination.
     :return: (flag, keyword arguments) pairs.
     """
@@ -844,60 +861,73 @@ def extract(allow_dirty: bool = False) -> Dict[str, Any]:
         uncommitted changes.
     :return: The CODE block of the page.
     """
-    src = get_source(PIPELINE_MODULE)
-    structure = get_main_structure(src)
-    aliases = structure["aliases"]
+    structures = []
+    resource_kwargs: Dict[str, Set[str]] = {}
+    for module in PIPELINE_SCRIPTS:
+        src = get_source(module)
+        structure = get_main_structure(src)
+        structures.append((src, structure))
+        for kwarg, dests in structure["resource_kwargs"].items():
+            resource_kwargs.setdefault(kwarg, set()).update(dests)
     flags = get_flags()
     flags_by_dest = {f["dest"]: f for f in flags}
 
     default_steps = describe_step_resources(load_pipeline_steps())
     modes = {}
-    for flag, kwargs in get_resource_modes(structure["resource_kwargs"], flags_by_dest):
+    for flag, kwargs in get_resource_modes(resource_kwargs, flags_by_dest):
         for key, step in describe_step_resources(load_pipeline_steps(**kwargs)).items():
             if step != default_steps[key]:
                 modes.setdefault(key, []).append({"flag": flag, **step})
 
     steps = []
     roots = []
-    for i, block in enumerate(structure["blocks"]):
-        node = block["node"]
-        calls, reads = get_calls(node, src)
-        call_records = []
-        for path, call in calls:
-            flags_in, fixed = get_call_arguments(call, path, aliases)
-            call_records.append(
-                {"fn": path, "line": call.lineno, "flags": flags_in, "fixed": fixed}
+    for src, structure in structures:
+        aliases = structure["aliases"]
+        for i, block in enumerate(structure["blocks"]):
+            node = block["node"]
+            calls, reads = get_calls(node, src)
+            call_records = []
+            for path, call in calls:
+                flags_in, fixed = get_call_arguments(call, path, aliases)
+                call_records.append(
+                    {"fn": path, "line": call.lineno, "flags": flags_in, "fixed": fixed}
+                )
+                roots.append(path)
+
+            # Values a block reads that an earlier block of the same script set,
+            # e.g. the GERP cutoffs.
+            values_in = {}
+            for earlier in structure["blocks"][:i]:
+                shared = sorted(block["loads"] & earlier["stores"])
+                if shared:
+                    values_in[earlier["step_id"]] = shared
+
+            refs = get_flag_refs(node, aliases)
+            steps.append(
+                {
+                    "id": block["step_id"],
+                    "triggers": block["triggers"],
+                    "flags": sorted(refs),
+                    "script": pathlib.Path(src.file).name,
+                    "file": src.file,
+                    "lines": [node.lineno, node.end_lineno],
+                    "calls": call_records,
+                    "reads": [{"path": p, "line": n} for p, n in reads],
+                    "ops": get_hail_ops(node),
+                    "globals_read": get_globals_read(node),
+                    "values_in": [
+                        {"from": k, "names": v} for k, v in values_in.items()
+                    ],
+                    **default_steps[block["step_id"]],
+                    "modes": modes.get(block["step_id"], []),
+                }
             )
-            roots.append(path)
-
-        # Values a block reads that an earlier block set, e.g. the GERP cutoffs.
-        values_in = {}
-        for earlier in structure["blocks"][:i]:
-            shared = sorted(block["loads"] & earlier["stores"])
-            if shared:
-                values_in[earlier["step_id"]] = shared
-
-        refs = get_flag_refs(node, aliases)
-        steps.append(
-            {
-                "id": block["step_id"],
-                "triggers": block["triggers"],
-                "flags": sorted(refs),
-                "file": src.file,
-                "lines": [node.lineno, node.end_lineno],
-                "calls": call_records,
-                "reads": [{"path": p, "line": n} for p, n in reads],
-                "ops": get_hail_ops(node),
-                "globals_read": get_globals_read(node),
-                "values_in": [{"from": k, "names": v} for k, v in values_in.items()],
-                **default_steps[block["step_id"]],
-                "modes": modes.get(block["step_id"], []),
-            }
-        )
 
     missing = set(default_steps) - {s["id"] for s in steps}
     if missing:
-        raise ValueError(f"Resource steps with no block in main(): {sorted(missing)}")
+        raise ValueError(
+            f"Resource steps with no block in any script's main(): {sorted(missing)}"
+        )
 
     functions = collect_functions(list(dict.fromkeys(roots)))
 
@@ -939,7 +969,7 @@ def extract(allow_dirty: bool = False) -> Dict[str, Any]:
             "build": BUILD,
             "repos": repos,
             "resource_flags": sorted(
-                {d for dests in structure["resource_kwargs"].values() for d in dests}
+                {d for dests in resource_kwargs.values() for d in dests}
             ),
         },
         "flags": flags,

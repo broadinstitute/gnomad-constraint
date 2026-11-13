@@ -132,8 +132,8 @@ Run a step with `--test` and check its output before running it at full scale.
 three generated blocks in the page:
 
 - **Code**: steps, flags, input and output resources, and the function calls
-  behind each step, read from `constraint_pipeline.py`, `resource_utils.py`, and
-  the utility modules of this repo and gnomad_methods. Prose the code cannot
+  behind each step, read from the four pipeline scripts, `resource_utils.py`,
+  and the utility modules of this repo and gnomad_methods. Prose the code cannot
   supply (what each step does to the data, pitfalls, Table summaries) lives in
   [notes.py](gnomad_constraint/flowchart/notes.py).
 - **Notes**: `notes.py`, checked against the code so a renamed step, function,

@@ -1224,8 +1224,9 @@ table.grid .trunc { color: var(--c-shuffle); }
       <p class="eyebrow" id="eyebrow">broadinstitute / gnomad-constraint</p>
       <h1>gnomAD constraint pipeline</h1>
       <p class="lede">
-        Every step of <code>constraint_pipeline.py</code>, from the VEP context Table
-        to the release, with the flags that drive it, the functions it calls in
+        Every step of the four pipeline scripts, <code>prepare_data.py</code>,
+        <code>expected_models.py</code>, <code>expected_counts.py</code>, and
+        <code>constraint_metrics.py</code>, from the VEP context Table to the release, with the flags that drive it, the functions it calls in
         gnomad-constraint and gnomad_methods, and the Tables it reads and writes.
         Select a step, Table, function, or flag to inspect it.
       </p>
@@ -2263,6 +2264,7 @@ var TABLES = {"collected":"2026-10-21","hail_version":"0.2.134-952ae203dbbe","ta
     }
     h += field("Pitfalls", notesList(note.notes));
 
+    h += field("Script", "<p class=\"txt\"><code>" + esc(s.script) + "</code></p>");
     h += field("Source", srcLink("gnomad_constraint", s.file, s.lines));
 
     var srcIn = sources.filter(function (src) { return src.steps.some(function (x) { return x.id === id; }); });
@@ -2402,6 +2404,7 @@ var TABLES = {"collected":"2026-10-21","hail_version":"0.2.134-952ae203dbbe","ta
       "<dt>default</dt><dd><code>" + esc(JSON.stringify(f.default)) + "</code></dd>" +
       (f.choices ? "<dt>choices</dt><dd>" + f.choices.map(function (c) { return "<code>" + esc(c) + "</code>"; }).join(", ") + "</dd>" : "") + "</dl>";
     h += field("Definition", kv);
+    h += field("Scripts", '<p class="txt">' + (f.scripts || []).map(function (x) { return "<code>" + esc(x) + "</code>"; }).join(", ") + "</p>");
 
     var trig = CODE.steps.filter(function (s) { return s.triggers.indexOf(dest) > -1; });
     if (trig.length) h += field("Runs", '<div class="linkrow">' + trig.map(function (s) { return stepBtn(s.id); }).join("") + "</div>");

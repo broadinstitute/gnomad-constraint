@@ -1070,8 +1070,10 @@ NOTES = {
                     " route overwrites the other's result."
                 ),
                 (
-                    "Warns when only the other route's apply step runs in the same command,"
-                    " since the step then groups a Table that may be from an earlier run."
+                    "Warns when ``--use-aggregated-expected`` is passed with"
+                    " ``--aggregate-per-variant-expected``, since the step then groups the"
+                    " ``expected_counts.py --apply-models-aggregated`` Table, not the one"
+                    " just written."
                 ),
             ],
         },
