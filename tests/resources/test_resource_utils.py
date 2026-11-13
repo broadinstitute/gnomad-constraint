@@ -43,6 +43,11 @@ from gnomad_constraint.resources.resource_utils import (
     get_release_downsampling_tsv_path,
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
+    get_rr_gene_flags_ht,
+    get_rr_models_ht,
+    get_rr_penalty_tuning_ht,
+    get_rr_site_features_ht,
+    get_rr_training_ht,
     get_sites_resource,
     get_syn_adj_r_ht,
     get_training_dataset,
@@ -357,6 +362,16 @@ class TestPipelineStepPaths:
                 "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
             ),
             (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
+            (
+                get_rr_site_features_ht,
+                "regional_rate/gnomad.v4.1.1.rr_site_features.ht",
+            ),
+            (get_rr_training_ht, "regional_rate/gnomad.v4.1.1.rr_training.ht"),
+            (
+                get_rr_penalty_tuning_ht,
+                "regional_rate/gnomad.v4.1.1.rr_penalty_tuning.ht",
+            ),
+            (get_rr_models_ht, "regional_rate/gnomad.v4.1.1.rr_models.ht"),
         ],
     )
     def test_path(self, func: Callable, path: str) -> None:
@@ -502,8 +517,9 @@ class TestGetConstraintResources:
         the command line, so the key has to be a pipeline flag. Regression test: the
         preprocessing step was named "preprocess data for downstream steps", and
         with ``--skip-pre-rank-metrics`` the pre-rank Table was keyed by
-        "pre-rank constraint metrics". The gnomAD inputs and the published files the
-        rr imports read aren't created by the pipeline, so they are exempt.
+        "pre-rank constraint metrics". The gnomAD inputs, the published files the
+        rr imports read, and the constraint metrics Table the rr site features take
+        gene flags from aren't created by the pipeline, so they are exempt.
         """
         resources = self._get_resources(skip_pre_rank_metrics)
         keys = {
@@ -512,7 +528,12 @@ class TestGetConstraintResources:
             for key in step.input_resources
         }
         assert "--preprocess-data" in keys
-        external = {"gnomAD resources", "published DNMs", "published genomic features"}
+        external = {
+            "gnomAD resources",
+            "published DNMs",
+            "published genomic features",
+            "constraint metrics with gene flags",
+        }
         assert all(key.startswith("--") for key in keys - external)
         if skip_pre_rank_metrics:
             assert list(resources.compute_constraint_metrics.input_resources) == [
@@ -663,4 +684,75 @@ class TestGetConstraintResourcesImportSteps:
         )
         assert resources.import_genomic_features.published_features_path == (
             "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
+        )
+
+
+class TestGetConstraintResourcesRrSteps:
+    """Test the rr steps built by the get_constraint_resources function."""
+
+    def test_inputs(self) -> None:
+        """
+        Test that the rr steps read the imports, each other's outputs, and the flags.
+
+        The gene flags come from the v4.1.2 constraint metrics Table whatever the
+        version. The training set is made from the site features, and the tuning and
+        the fit read it.
+        """
+        resources = get_constraint_resources("4.1.1", overwrite=False, test=True)
+        sites = resources.create_rr_site_features
+        assert sites.dnm_ht.path == resources.import_dnms.dnm_ht.path
+        for step in [sites, resources.compute_rr]:
+            assert (
+                step.genomic_features_ht.path
+                == resources.import_genomic_features.genomic_features_ht.path
+            )
+        assert sites.gene_flags_ht.path == get_rr_gene_flags_ht().path
+        assert "/v4.1.2/" in get_rr_gene_flags_ht().path
+        training = resources.create_rr_training_set
+        assert training.rr_site_features_ht.path == sites.rr_site_features_ht.path
+        for step in [resources.tune_rr_penalty, resources.train_rr_models]:
+            assert step.rr_training_ht.path == training.rr_training_ht.path
+        train = resources.train_rr_models
+        assert (
+            train.rr_penalty_tuning_ht.path
+            == resources.tune_rr_penalty.rr_penalty_tuning_ht.path
+        )
+        assert (
+            resources.compute_rr.rr_models_ht.path
+            == resources.train_rr_models.rr_models_ht.path
+        )
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_inputs_match_the_constraint_steps(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that the rr steps read the Tables of the same constraint pipeline run.
+
+        For the same version, test flag, and post-fixes, the site features come from
+        the annotated context Table that ``--prepare-context-ht`` writes, and rr is
+        normalized on the per-variant expected Table that
+        ``--aggregate-per-variant-expected`` aggregates. ``--compute-rr`` writes the
+        rr Table to its getter's path with the same settings, which
+        ``--apply-regional-rr`` reads.
+        """
+        kwargs = {
+            "test": test,
+            "directory_post_fix": directory_post_fix,
+            "path_post_fix": path_post_fix,
+        }
+        resources = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
+        assert (
+            resources.create_rr_site_features.annotated_context_ht.path
+            == resources.prepare_context.annotated_context_ht.path
+        )
+        assert (
+            resources.compute_rr.per_variant_apply_ht.path
+            == resources.aggregate_per_variant_expected.per_variant_apply_ht.path
+        )
+        assert (
+            resources.compute_rr.regional_rr_ht.path
+            == get_regional_rr_ht(version="4.1.1", **kwargs).path
         )
