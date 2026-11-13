@@ -692,6 +692,23 @@ def get_constraint_resources(
         "directory_post_fix": directory_post_fix,
     }
 
+    # The rr imports take neither post-fix.
+    import_dnms = PipelineStepResourceCollection(
+        "--import-dnms",
+        output_resources={"dnm_ht": get_dnm_ht(version=version, test=test)},
+        input_resources={"published DNMs": get_dnm_paths()},
+    )
+    import_genomic_features = PipelineStepResourceCollection(
+        "--import-genomic-features",
+        output_resources={
+            "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
+        },
+        input_resources={
+            "published genomic features": {
+                "published_features_path": get_published_genomic_features_path()
+            }
+        },
+    )
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
         output_resources={
@@ -773,7 +790,7 @@ def get_constraint_resources(
         ],
         add_input_resources=(
             {
-                "regional_rate_pipeline.py --compute-rr": {
+                "expected_counts.py --compute-rr": {
                     "regional_rr_ht": get_regional_rr_ht(
                         **common_params, path_post_fix=path_post_fix
                     )
@@ -895,6 +912,8 @@ def get_constraint_resources(
     # Add all steps to the constraint pipeline resource collection.
     constraint_pipeline.add_steps(
         {
+            "import_dnms": import_dnms,
+            "import_genomic_features": import_genomic_features,
             "prepare_context": prepare_context,
             "preprocess_data": preprocess_data,
             "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
@@ -915,48 +934,3 @@ def get_constraint_resources(
     )
 
     return constraint_pipeline
-
-
-def get_import_data_resources(
-    version: str,
-    overwrite: bool,
-    test: bool,
-) -> PipelineResourceCollection:
-    """
-    Get PipelineResourceCollection for all resources needed in the import data script.
-
-    :param version: Version of constraint resources to use.
-    :param overwrite: Whether to overwrite existing resources.
-    :param test: Whether to write the outputs to the testing bucket.
-    :return: PipelineResourceCollection containing resources for all steps of the
-        import data script.
-    """
-    import_pipeline = PipelineResourceCollection(
-        pipeline_name="import_data",
-        overwrite=overwrite,
-    )
-    out_params = {"version": version, "test": test}
-
-    import_dnms = PipelineStepResourceCollection(
-        "--import-dnms",
-        output_resources={"dnm_ht": get_dnm_ht(**out_params)},
-        input_resources={"published DNMs": get_dnm_paths()},
-    )
-    import_genomic_features = PipelineStepResourceCollection(
-        "--import-genomic-features",
-        output_resources={"genomic_features_ht": get_genomic_features_ht(**out_params)},
-        input_resources={
-            "published genomic features": {
-                "published_features_path": get_published_genomic_features_path()
-            }
-        },
-    )
-
-    import_pipeline.add_steps(
-        {
-            "import_dnms": import_dnms,
-            "import_genomic_features": import_genomic_features,
-        }
-    )
-
-    return import_pipeline

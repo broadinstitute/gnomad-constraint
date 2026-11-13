@@ -19,8 +19,7 @@ Many of the functions are imported from
 
 | Path | Contents |
 |---|---|
-| `gnomad_constraint/pipeline/constraint_pipeline.py` | The pipeline script; each step is a command-line flag |
-| `gnomad_constraint/pipeline/import_data.py` | Imports the external data used to compute the regional mutation rate: de novo mutations and the regional genomic feature matrix |
+| `gnomad_constraint/pipeline/` | The pipeline scripts, run in order: `prepare_data.py`, `expected_models.py`, `expected_counts.py`, and `constraint_metrics.py`; each step is a command-line flag |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
 | `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
@@ -36,31 +35,32 @@ Many of the functions are imported from
 
 ## Pipeline steps
 
-`constraint_pipeline.py` runs one or more steps per invocation, each enabled by a
-flag, in this order:
+The pipeline is four scripts in `gnomad_constraint/pipeline/`, run in this order.
+Each runs one or more of its steps per invocation, each enabled by a flag:
 
-| Flag | Step |
-|---|---|
-| `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
-| `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so it must run in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
-| `--preprocess-data` | Add per-site observed and possible counts, mutation rate inputs, and model groups |
-| `--compute-gene-quality-metrics` | Per-transcript coverage, mapping quality, segmental duplication, and low-complexity region metrics |
-| `--calculate-mutation-rate` | Compute the mutation rate for each substitution and context |
-| `--create-training-set` | Count observed and possible synonymous variants for model training |
-| `--build-models` | Build the plateau and coverage models |
-| `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
-| `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence. Add `--apply-regional-rr` to first multiply each variant's expected count by the regional mutation rate (rr) of its 1kb window and context (see [Regional mutation rate](#regional-mutation-rate-rr)) |
-| `--apply-models-aggregated` | Alternative to the two steps above: sum observed and possible counts first, then apply the models |
-| `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
-| `--compute-constraint-metrics` | Compute o/e, confidence intervals, z-scores, flags, pLI, ranks, and bins. `--skip-pre-rank-metrics` reruns only the ranking |
-| `--prepare-release` | Format the constraint metrics as the release Table |
-| `--prepare-release-mutation-rate` | Format the mutation rate Table for release |
-| `--export-release-tsv`, `--export-release-downsampling-tsv` | Export the release Table and its per-ancestry downsampling counts to TSV |
+| Script | Flag | Step |
+|---|---|---|
+| `prepare_data.py` | `--import-dnms`, `--import-genomic-features` | Import the de novo mutations and genomic features the regional mutation rate is modeled from; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
+| | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
+| | `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so it must run in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
+| | `--preprocess-data` | Add per-site observed and possible counts, mutation rate inputs, and model groups |
+| | `--compute-gene-quality-metrics` | Per-transcript coverage, mapping quality, segmental duplication, and low-complexity region metrics |
+| `expected_models.py` | `--calculate-mutation-rate` | Compute the mutation rate for each substitution and context |
+| | `--create-training-set` | Count observed and possible synonymous variants for model training |
+| | `--build-models` | Build the plateau and coverage models |
+| `expected_counts.py` | `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
+| | `--apply-models-aggregated` | Alternative to `--apply-models-per-variant` and `--aggregate-per-variant-expected`: sum observed and possible counts first, then apply the models |
+| `constraint_metrics.py` | `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence. Add `--apply-regional-rr` to first multiply each variant's expected count by the regional mutation rate (rr) of its 1kb window and context (see [Regional mutation rate](#regional-mutation-rate-rr)) |
+| | `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
+| | `--compute-constraint-metrics` | Compute o/e, confidence intervals, z-scores, flags, pLI, ranks, and bins. `--skip-pre-rank-metrics` reruns only the ranking |
+| | `--prepare-release` | Format the constraint metrics as the release Table |
+| | `--prepare-release-mutation-rate` | Format the mutation rate Table for release |
+| | `--export-release-tsv`, `--export-release-downsampling-tsv` | Export the release Table and its per-ancestry downsampling counts to TSV |
 
 `--version` selects the gnomAD version (default 4.1.1). Autosomes, chrX, and chrY
 are all computed; each site is labeled with a `genomic_region` of
-`autosome_or_par`, `chrx_nonpar`, or `chry_nonpar`. Run
-`constraint_pipeline.py --help` for every option.
+`autosome_or_par`, `chrx_nonpar`, or `chry_nonpar`. Run a script with `--help`
+for its options.
 
 Outputs are written under `gs://gnomad/v{version}/constraint/`.
 [gnomad_constraint/resources/README.md](gnomad_constraint/resources/README.md)
@@ -78,7 +78,7 @@ The regional mutation rate (rr) is a factor for each 1kb window and trinucleotid
 context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
 regional genomic features of each site's window at four flanking scales.
 
-`--aggregate-per-variant-expected --apply-regional-rr` applies rr after model
+`constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr` applies rr after model
 calibration: it multiplies each variant's expected count by the rr of its window and
 context, or by 1 where there is none (chrX, chrY, and windows without features). It
 reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
@@ -86,12 +86,12 @@ reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` a
 per-variant expected Table with other models, or doesn't record which. The output keeps the unadjusted
 Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
 replace the unadjusted ones unless you set `--path-post-fix` (rerun
-`--create-training-set` onward with it) or `--directory-post-fix`. The release Table
+`expected_models.py --create-training-set` onward with it) or `--directory-post-fix`. The release Table
 records the rr settings in its `regional_rr_params` global.
 
-`import_data.py` imports the DNMs and genomic features rr is modeled from, writing
+`prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
 under `imported_data/` in the constraint output directory (with `--test`, in the
-testing bucket):
+testing bucket, and with neither post-fix):
 
 | Flag | Step |
 |---|---|
@@ -145,7 +145,7 @@ rm -f /tmp/pyfiles.zip
 (cd <gnomad_methods checkout at the pinned commit> && zip -r /tmp/pyfiles.zip gnomad -x '*.pyc' '*__pycache__*')
 
 # From the gnomad-constraint checkout:
-hailctl dataproc submit <cluster> gnomad_constraint/pipeline/constraint_pipeline.py \
+hailctl dataproc submit <cluster> gnomad_constraint/pipeline/constraint_metrics.py \
   --pyfiles /tmp/pyfiles.zip -- --compute-constraint-metrics --test
 ```
 

@@ -5,7 +5,7 @@ canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
 This document is the schema reference for every **pipeline output** of the
-constraint pipeline and of `import_data.py`. The schemas were first captured with
+constraint pipeline. The schemas were first captured with
 `ht.describe()` from the v4.1.1 tables on GCS and have been updated by hand as the
 pipeline changed, so the released v4.1.1 tables differ from them in places. For upstream **input**
 resources (VEP context, sites,
@@ -66,8 +66,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 (`temp=True`). These rules apply to every output, including the release files.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
-apply-models, metrics, and constraint-metrics release outputs. `import_data.py` takes
-neither post-fix.
+apply-models, metrics, and constraint-metrics release outputs. The rr imports
+(§14-15) take neither post-fix.
 
 ---
 
@@ -138,7 +138,7 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
 
 Each section below lists the **canonical path**, the **key**, the **globals**
 and the **row fields** with sub-struct expansion. Producing function is the
-`--<step>` flag from [constraint_pipeline.py](../pipeline/constraint_pipeline.py).
+`--<step>` flag of one of the [pipeline scripts](../pipeline/).
 
 ---
 
@@ -706,7 +706,8 @@ from §3 by selecting/renaming.
 # Regional mutation rate tables
 
 Tables used to compute the regional mutation rate (rr): the outputs of
-[import_data.py](../pipeline/import_data.py) (§14-15). They have no globals.
+the `--import-dnms` and `--import-genomic-features` steps of
+[prepare_data.py](../pipeline/prepare_data.py) (§14-15). They have no globals.
 
 The genomic feature columns are named `{feature}_{scale}` for the 13 features in
 `GENOMIC_FEATURES` (`dist2telo, dist2cent, GC_content, LCR, SINE, LINE,
