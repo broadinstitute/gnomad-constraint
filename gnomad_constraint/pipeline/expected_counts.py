@@ -278,17 +278,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test",
         help=(
-            "Whether to filter the exome Table, genome Table and the context Table to"
-            " only chromosome 20, chromosome X, and chromosome Y for testing."
+            "Whether to read and write the test Tables in the testing bucket, made"
+            " from the subset of the data that prepare_data.py --test or"
+            " --test-gene-list keeps."
         ),
         action="store_true",
     )
     parser.add_argument(
         "--test-gene-list",
         help=(
-            "Whether to filter the exome Table, genome Table and the context Table to"
-            " only six genes for testing: PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1"
-            " and FAAH2 (chrX), and ZFY (chrY)."
+            "Same as --test in this script; prepare_data.py --test-gene-list applies"
+            " the six-gene filter."
         ),
         action="store_true",
     )
@@ -324,7 +324,8 @@ if __name__ == "__main__":
             "Sum the observed and possible counts by transcript, consequence,"
             " context, and coverage first, then apply the plateau and coverage"
             " models, without writing per-variant expected counts. This replaces"
-            " --apply-models-per-variant and --aggregate-per-variant-expected; run"
+            " --apply-models-per-variant and constraint_metrics.py"
+            " --aggregate-per-variant-expected; run constraint_metrics.py"
             " --aggregate-by-constraint-groups --use-aggregated-expected afterward."
         ),
         action="store_true",
