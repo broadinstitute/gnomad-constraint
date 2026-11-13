@@ -95,7 +95,7 @@ and runs these steps in order:
 
 | Flag | Step |
 |---|---|
-| `--create-rr-training-set` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag |
+| `--create-rr-training-set` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
 | `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
 | `--train-rr-models` | Fit the per-context models with the chosen penalty |
 | `--compute-rr` | Compute rr per window and context, divided by its mean, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in each context, so rr moves those sites' expected counts between regions without changing their total per context (other consequences' totals can shift) |

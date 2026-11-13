@@ -764,7 +764,8 @@ synonymous sites of `annotated_context.ht` in `dnm.ht`; the background is a
 synonymous sites absent from gnomAD exomes (`filters.exomes` is missing) at the
 other loci, one per locus, so no locus is both. Sites in the span of an Ensembl MANE
 Select transcript with a `gene_flags` entry in the v4.1.2 constraint metrics Table
-are removed ([`remove_qc_flagged_genes`](../utils/regional_rate.py)). Each DNM
+are removed ([`remove_qc_flagged_genes`](../utils/regional_rate.py)), unless
+`--skip-qc-flagged-gene-filter` is passed. Each DNM
 variant is one row, however many DNMs were reported there.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_training.ht`

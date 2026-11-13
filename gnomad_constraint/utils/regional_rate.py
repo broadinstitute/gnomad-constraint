@@ -6,6 +6,7 @@ The models are fit, and rr is computed and normalized, with
 """
 
 import logging
+from typing import Optional
 
 import hail as hl
 from gnomad.utils.constraint import (
@@ -36,6 +37,7 @@ def create_rr_training_ht(
     features_ht: hl.Table,
     background_fraction: float,
     seed: int,
+    gene_flags_ht: Optional[hl.Table] = None,
 ) -> hl.Table:
     """
     Create the rr training Table of synonymous DNM and non-mutated background sites.
@@ -46,7 +48,8 @@ def create_rr_training_ht(
     loci, with one site kept per locus, so no locus is both a DNM and a background
     site. DNM sites get ``y`` = 1 and background
     sites ``y`` = 0, and every site gets the features of the 1kb window containing it.
-    The Table has no globals.
+    With ``gene_flags_ht``, sites in genes with a QC gene flag are left out
+    (:func:`remove_qc_flagged_genes`). The Table has no globals.
 
     Each DNM variant is one row, however many DNMs were reported there, since the DNM
     Table can't tell a recurrent DNM from one reported by two cohorts.
@@ -57,6 +60,9 @@ def create_rr_training_ht(
     :param features_ht: Genomic feature Table keyed by ``interval``.
     :param background_fraction: Fraction of non-mutated sites to sample.
     :param seed: Random seed used for sampling.
+    :param gene_flags_ht: Constraint metrics Table with gene flags, whose flagged
+        genes' sites are left out (see :func:`remove_qc_flagged_genes`), or None to
+        keep every gene. Default is None.
     :return: Training Table keyed by ``locus`` with ``alleles``, ``context``, ``y``,
         and ``GENOMIC_FEATURE_COLUMNS``.
     """
@@ -80,6 +86,8 @@ def create_rr_training_ht(
     ht = dnm_sites_ht.select("alleles", "context", y=1).union(
         bg_ht.select("alleles", "context", y=0)
     )
+    if gene_flags_ht is not None:
+        ht = remove_qc_flagged_genes(ht, gene_flags_ht)
 
     ht = ht.annotate(**features_ht.select(*GENOMIC_FEATURE_COLUMNS)[ht.locus])
 

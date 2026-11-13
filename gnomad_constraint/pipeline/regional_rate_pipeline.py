@@ -52,7 +52,6 @@ from gnomad_constraint.utils.regional_rate import (
     compute_rr_ht,
     create_rr_training_ht,
     get_rr_fold_expr,
-    remove_qc_flagged_genes,
 )
 
 logging.basicConfig(
@@ -96,8 +95,10 @@ def main(args: argparse.Namespace) -> None:
                 res.genomic_features_ht.ht(),
                 RR_BACKGROUND_FRACTION,
                 RR_BACKGROUND_SEED,
+                gene_flags_ht=(
+                    None if args.skip_qc_flagged_gene_filter else res.gene_flags_ht.ht()
+                ),
             )
-            ht = remove_qc_flagged_genes(ht, res.gene_flags_ht.ht())
             ht = ht.checkpoint(new_temp_file("rr_training", "ht"))
             ht = ht.naive_coalesce(RR_TRAINING_N_PARTITIONS)
             ht.write(res.rr_training_ht.path, overwrite=overwrite)
@@ -214,6 +215,14 @@ if __name__ == "__main__":
             "Create the rr training set of synonymous DNM sites and a sampled"
             " background of non-mutated synonymous sites, leaving out genes with a QC"
             " gene flag."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--skip-qc-flagged-gene-filter",
+        help=(
+            "With --create-rr-training-set, keep the sites in genes with a QC gene"
+            " flag in the v4.1.2 constraint metrics, which are left out by default."
         ),
         action="store_true",
     )

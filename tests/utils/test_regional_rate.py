@@ -1,5 +1,7 @@
 """Tests for the regional mutation rate (rr) functions in ``gnomad_constraint.utils.regional_rate``."""
 
+from typing import Optional
+
 import hail as hl
 import numpy as np
 import pytest
@@ -44,6 +46,44 @@ class TestRrContextFeatures:
         assert RR_CONTEXT_FEATURES["AAA"] == GENOMIC_FEATURE_COLUMNS
         assert "GC_content_1k" not in RR_CONTEXT_FEATURES["TCG"]
         assert "GC_content_1k" in RR_CONTEXT_FEATURES["CCA"]
+
+
+def _metrics_ht(flagged: bool = True, span: tuple = (150, 250)) -> hl.Table:
+    """
+    Return constraint metrics rows with gene flags, all on chr1.
+
+    ENST1 (positions ``span``) is flagged only if ``flagged``. ENST2 isn't flagged,
+    and the flagged NM_1, non-MANE ENST3, and span-less ENST4 don't count.
+    """
+    flags = {"low_exome_coverage"} if flagged else set()
+    metrics = [
+        ("ENST1", True, flags, *span),
+        ("ENST2", True, set(), 50, 120),
+        ("NM_1", True, {"low_exome_coverage"}, 280, 320),
+        ("ENST3", False, {"low_exome_coverage"}, 90, 110),
+        ("ENST4", True, {"low_exome_coverage"}, None, None),
+    ]
+    return hl.Table.parallelize(
+        [
+            {
+                "transcript": transcript,
+                "mane_select": mane_select,
+                "gene_flags": flags,
+                "chromosome": "chr1",
+                "start_position": start,
+                "end_position": end,
+            }
+            for transcript, mane_select, flags, start, end in metrics
+        ],
+        hl.tstruct(
+            transcript=hl.tstr,
+            mane_select=hl.tbool,
+            gene_flags=hl.tset(hl.tstr),
+            chromosome=hl.tstr,
+            start_position=hl.tint32,
+            end_position=hl.tint32,
+        ),
+    )
 
 
 class TestCreateRrTrainingHt:
@@ -129,7 +169,12 @@ class TestCreateRrTrainingHt:
             key="interval",
         )
 
-    def _training_ht(self, background_fraction: float, seed: int = 0) -> hl.Table:
+    def _training_ht(
+        self,
+        background_fraction: float,
+        seed: int = 0,
+        gene_flags_ht: Optional[hl.Table] = None,
+    ) -> hl.Table:
         """Return the training Table of the test rows."""
         return create_rr_training_ht(
             self._context_ht(),
@@ -137,6 +182,7 @@ class TestCreateRrTrainingHt:
             self._features_ht(),
             background_fraction,
             seed,
+            gene_flags_ht=gene_flags_ht,
         )
 
     def test_training_sites(self) -> None:
@@ -159,6 +205,21 @@ class TestCreateRrTrainingHt:
             (20, 1, 1.0),
             (30, 0, 2.0),
             (70, 0, 2.0),
+        ]
+
+    def test_qc_flagged_genes_left_out(self) -> None:
+        """
+        Test that with gene flags, the sites in a flagged gene's span are left out.
+
+        The flagged gene spans 25-35, so the background site at 30 goes.
+        """
+        rows = self._training_ht(
+            1.0, gene_flags_ht=_metrics_ht(span=(25, 35))
+        ).collect()
+        assert sorted((r.locus.position, r.y) for r in rows) == [
+            (10, 1),
+            (20, 1),
+            (70, 0),
         ]
 
     def test_no_background(self) -> None:
@@ -223,35 +284,7 @@ class TestRemoveQcFlaggedGenes:
             hl.tstruct(locus=hl.tlocus("GRCh38")),
             key="locus",
         )
-        flags = {"low_exome_coverage"} if flagged else set()
-        metrics = [
-            ("ENST1", True, flags, 150, 250),
-            ("ENST2", True, set(), 50, 120),
-            ("NM_1", True, {"low_exome_coverage"}, 280, 320),
-            ("ENST3", False, {"low_exome_coverage"}, 90, 110),
-            ("ENST4", True, {"low_exome_coverage"}, None, None),
-        ]
-        metrics_ht = hl.Table.parallelize(
-            [
-                {
-                    "transcript": transcript,
-                    "mane_select": mane_select,
-                    "gene_flags": flags,
-                    "chromosome": "chr1",
-                    "start_position": start,
-                    "end_position": end,
-                }
-                for transcript, mane_select, flags, start, end in metrics
-            ],
-            hl.tstruct(
-                transcript=hl.tstr,
-                mane_select=hl.tbool,
-                gene_flags=hl.tset(hl.tstr),
-                chromosome=hl.tstr,
-                start_position=hl.tint32,
-                end_position=hl.tint32,
-            ),
-        )
+        metrics_ht = _metrics_ht(flagged)
         out = remove_qc_flagged_genes(ht, metrics_ht).collect()
         expected = [100, 149, 251, 300] if flagged else positions
         assert [r.locus.position for r in out] == expected
