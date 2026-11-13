@@ -77,17 +77,20 @@ fi
 
 # Pull at most once a day, and count the day as checked even if the pull fails
 # (offline, or a checkout that can't fast-forward), so it isn't retried every
-# session.
+# session. A pull that brings in commits can change a skill's text without
+# changing any link, so it asks for a reload too.
+changed=""
 if [ -n "$checked" ]; then
     echo "$today" > "$stamp"
+    head=$(git -C "$src" rev-parse HEAD 2>/dev/null)
     git -C "$src" pull -q --ff-only >/dev/null 2>&1
+    [ "$(git -C "$src" rev-parse HEAD 2>/dev/null)" = "$head" ] || changed=1
 fi
 
 # Link on every session start: it is local and fast, picks up added or renamed
 # skills, and links a skill as soon as whatever blocked it is moved aside.
 before=$(links)
 skipped=$(sh "$src/scripts/link-skills.sh" 2>&1 >/dev/null)
-changed=""
 [ "$(links)" = "$before" ] || changed=1
 
 if [ -n "$skipped" ] && [ -n "$checked" ]; then
