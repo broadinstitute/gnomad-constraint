@@ -306,7 +306,7 @@ contexts.
 
 RR_RIDGE_PENALTIES = [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
 """
-Per-site ridge penalties tried by ``regional_rate_pipeline.py --tune-rr-penalty``.
+Per-site ridge penalties tried by ``expected_models.py --tune-rr-penalty``.
 
 The step picks the penalty with the lowest held-out log loss of models fit on odd
 chromosomes and scored on even ones, and vice versa, summed over contexts. In the

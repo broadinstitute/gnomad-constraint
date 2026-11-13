@@ -20,7 +20,6 @@ Many of the functions are imported from
 | Path | Contents |
 |---|---|
 | `gnomad_constraint/pipeline/` | The pipeline scripts, run in order: `prepare_data.py`, `expected_models.py`, `expected_counts.py`, and `constraint_metrics.py`; each step is a command-line flag |
-| `gnomad_constraint/pipeline/regional_rate_pipeline.py` | The regional mutation rate (rr) script: trains the rr models on synonymous de novo mutations and computes rr per 1kb window |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
 | `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
 | `gnomad_constraint/utils/regional_rate.py` | Functions that build the rr site features and compute rr per window; the models come from `gnomad.utils.constraint.regional_mutation_rate` |
@@ -50,7 +49,9 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 | `expected_models.py` | `--calculate-mutation-rate` | Compute the mutation rate for each substitution and context |
 | | `--create-training-set` | Count observed and possible synonymous variants for model training |
 | | `--build-models` | Build the plateau and coverage models |
+| | `--create-rr-site-features`, `--create-rr-training-set`, `--tune-rr-penalty`, `--train-rr-models` | Train the regional mutation rate models; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
 | `expected_counts.py` | `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
+| | `--compute-rr` | Compute the regional mutation rate per 1kb window and context, normalized on the `--apply-models-per-variant` output; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
 | | `--apply-models-aggregated` | Alternative to `--apply-models-per-variant` and `--aggregate-per-variant-expected`: sum observed and possible counts first, then apply the models |
 | `constraint_metrics.py` | `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence |
 | | `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
@@ -89,24 +90,22 @@ testing bucket, and with neither post-fix):
 | `--import-dnms` | Import the Satterstrom 2026 ASD and DDD DNMs as a Table of DNM sites |
 | `--import-genomic-features` | Import the Gnocchi 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
 
-`regional_rate_pipeline.py` then reads those Tables and the constraint pipeline's
-annotated context and per-variant expected Tables, writes under `regional_rate/`,
-and runs these steps in order:
+The rr steps then read those Tables, the annotated context Table, and the
+per-variant expected Table, and write under `regional_rate/`. Run them in this
+order:
 
-| Flag | Step |
-|---|---|
-| `--create-rr-site-features` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
-| `--create-rr-training-set` | Prepare the site features for the models: each site's label, context, chromosome fold, and its context's features |
-| `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
-| `--train-rr-models` | Fit the per-context models with the chosen penalty |
-| `--compute-rr` | Compute rr per window and context, divided by its mean, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in each context, so rr moves those sites' expected counts between regions without changing their total per context (other consequences' totals can shift) |
+| Script | Flag | Step |
+|---|---|---|
+| `expected_models.py` | `--create-rr-site-features` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
+| | `--create-rr-training-set` | Prepare the site features for the models: each site's label, context, chromosome fold, and its context's features |
+| | `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
+| | `--train-rr-models` | Fit the per-context models with the chosen penalty |
+| `expected_counts.py` | `--compute-rr` | Compute rr per window and context, divided by its mean, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in each context, so rr moves those sites' expected counts between regions without changing their total per context (other consequences' totals can shift) |
 
-`--compute-rr` normalizes rr on the per-variant expected Table that
-`--apply-regional-rr` applies it to, so run both scripts with the same `--version`,
-`--test`, `--directory-post-fix` and `--path-post-fix`; the site features come from
-the annotated context Table of the same run. With `--test`,
-`regional_rate_pipeline.py` reads the `--test` outputs of `prepare_data.py` and
-`expected_counts.py`.
+`--compute-rr`, after `--apply-models-per-variant`, normalizes rr on the
+per-variant expected Table that `--apply-regional-rr` applies it to, so run both
+with the same `--version`, `--test`, `--directory-post-fix` and `--path-post-fix`.
+The rr outputs take both post-fixes.
 
 ### Release constraint metrics Table
 

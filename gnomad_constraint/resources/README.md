@@ -5,8 +5,7 @@ canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
 This document is the schema reference for every **pipeline output** of the
-constraint pipeline and of `regional_rate_pipeline.py`. The schemas were first
-captured with
+constraint pipeline. The schemas were first captured with
 `ht.describe()` from the v4.1.1 tables on GCS and have been updated by hand as the
 pipeline changed, so the released v4.1.1 tables differ from them in places. For upstream **input**
 resources (VEP context, sites,
@@ -74,11 +73,7 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
 apply-models, metrics, and constraint-metrics release outputs. The rr imports
-(§14-15) take neither post-fix. `regional_rate_pipeline.py` applies both to its own
-outputs and to the per-variant expected Table it normalizes rr on, and the directory
-post-fix to the annotated context Table it trains on, and
-`constraint_metrics.py --apply-regional-rr` reads the rr Table with both, so run the
-two scripts with the same post-fixes.
+(§14-15) take neither post-fix, and the other rr outputs (§16-20) take both.
 
 ---
 
@@ -706,9 +701,10 @@ from §3 by selecting/renaming.
 
 Tables used to compute the regional mutation rate (rr): the outputs of
 the `--import-dnms` and `--import-genomic-features` steps of
-[prepare_data.py](../pipeline/prepare_data.py) (§14-15) and
-[regional_rate_pipeline.py](../pipeline/regional_rate_pipeline.py) (§16-20). Only
-the training, penalty tuning, model, and rr Tables (§17-20) have globals.
+[prepare_data.py](../pipeline/prepare_data.py) (§14-15), the rr model steps of
+[expected_models.py](../pipeline/expected_models.py) (§16-19), and `--compute-rr`
+in [expected_counts.py](../pipeline/expected_counts.py) (§20). Only the training,
+penalty tuning, model, and rr Tables (§17-20) have globals.
 
 The genomic feature columns are named `{feature}_{scale}` for the 13 features in
 `GENOMIC_FEATURES` (`dist2telo, dist2cent, GC_content, LCR, SINE, LINE,

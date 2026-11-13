@@ -37,7 +37,6 @@ from gnomad_constraint.resources.resource_utils import (
     get_per_variant_expected_dataset,
     get_pre_rank_constraint_metrics_dataset,
     get_preprocessed_ht,
-    get_regional_rate_resources,
     get_regional_rr_ht,
     get_release_constraint_ht,
     get_release_constraint_tsv_path,
@@ -518,8 +517,9 @@ class TestGetConstraintResources:
         the command line, so the key has to be a pipeline flag. Regression test: the
         preprocessing step was named "preprocess data for downstream steps", and
         with ``--skip-pre-rank-metrics`` the pre-rank Table was keyed by
-        "pre-rank constraint metrics". The gnomAD inputs and the published files the
-        rr imports read aren't created by the pipeline, so they are exempt.
+        "pre-rank constraint metrics". The gnomAD inputs, the published files the
+        rr imports read, and the constraint metrics Table the rr site features take
+        gene flags from aren't created by the pipeline, so they are exempt.
         """
         resources = self._get_resources(skip_pre_rank_metrics)
         keys = {
@@ -528,7 +528,12 @@ class TestGetConstraintResources:
             for key in step.input_resources
         }
         assert "--preprocess-data" in keys
-        external = {"gnomAD resources", "published DNMs", "published genomic features"}
+        external = {
+            "gnomAD resources",
+            "published DNMs",
+            "published genomic features",
+            "constraint metrics with gene flags",
+        }
         assert all(key.startswith("--") for key in keys - external)
         if skip_pre_rank_metrics:
             assert list(resources.compute_constraint_metrics.input_resources) == [
@@ -644,42 +649,24 @@ class TestGetConstraintResourcesImportSteps:
         )
 
 
-class TestGetRegionalRateResources:
-    """Test the steps built by the get_regional_rate_resources function."""
+class TestGetConstraintResourcesRrSteps:
+    """Test the rr steps built by the get_constraint_resources function."""
 
-    @pytest.fixture
-    def resources(self) -> PipelineResourceCollection:
-        """Return the regional rate resources for a test run of v4.1.1."""
-        return get_regional_rate_resources("4.1.1", overwrite=False, test=True)
-
-    def test_test_run_writes_only_under_the_test_root(
-        self, resources: PipelineResourceCollection
-    ) -> None:
-        """Test that every step's outputs in a test run are under the test root."""
-        paths = [
-            _path(resource)
-            for step in resources.pipeline_steps.values()
-            for outputs in step.output_resources.values()
-            for resource in outputs
-        ]
-        assert paths
-        assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
-
-    def test_inputs(self, resources: PipelineResourceCollection) -> None:
+    def test_inputs(self) -> None:
         """
-        Test that the steps read the import outputs, each other's outputs, and the flags.
+        Test that the rr steps read the imports, each other's outputs, and the flags.
 
         The gene flags come from the v4.1.2 constraint metrics Table whatever the
         version. The training set is made from the site features, and the tuning and
         the fit read it.
         """
-        imports = get_constraint_resources("4.1.1", overwrite=False, test=True)
+        resources = get_constraint_resources("4.1.1", overwrite=False, test=True)
         sites = resources.create_rr_site_features
-        assert sites.dnm_ht.path == imports.import_dnms.dnm_ht.path
+        assert sites.dnm_ht.path == resources.import_dnms.dnm_ht.path
         for step in [sites, resources.compute_rr]:
             assert (
                 step.genomic_features_ht.path
-                == imports.import_genomic_features.genomic_features_ht.path
+                == resources.import_genomic_features.genomic_features_ht.path
             )
         assert sites.gene_flags_ht.path == get_rr_gene_flags_ht().path
         assert "/v4.1.2/" in get_rr_gene_flags_ht().path
@@ -692,11 +679,15 @@ class TestGetRegionalRateResources:
             train.rr_penalty_tuning_ht.path
             == resources.tune_rr_penalty.rr_penalty_tuning_ht.path
         )
+        assert (
+            resources.compute_rr.rr_models_ht.path
+            == resources.train_rr_models.rr_models_ht.path
+        )
 
     @pytest.mark.parametrize("test", [False, True])
     @pytest.mark.parametrize("directory_post_fix", [None, "d"])
     @pytest.mark.parametrize("path_post_fix", [None, "p"])
-    def test_inputs_match_the_constraint_pipeline(
+    def test_inputs_match_the_constraint_steps(
         self, test: bool, directory_post_fix: str, path_post_fix: str
     ) -> None:
         """
@@ -706,24 +697,24 @@ class TestGetRegionalRateResources:
         the annotated context Table that ``--prepare-context-ht`` writes, and rr is
         normalized on the per-variant expected Table that
         ``--aggregate-per-variant-expected`` aggregates. ``--compute-rr`` writes the
-        rr Table to its getter's path with the same settings.
+        rr Table to its getter's path with the same settings, which
+        ``--apply-regional-rr`` reads.
         """
         kwargs = {
             "test": test,
             "directory_post_fix": directory_post_fix,
             "path_post_fix": path_post_fix,
         }
-        rr = get_regional_rate_resources("4.1.1", overwrite=False, **kwargs)
-        constraint = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
+        resources = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
         assert (
-            rr.create_rr_site_features.annotated_context_ht.path
-            == constraint.prepare_context.annotated_context_ht.path
+            resources.create_rr_site_features.annotated_context_ht.path
+            == resources.prepare_context.annotated_context_ht.path
         )
         assert (
-            rr.compute_rr.per_variant_expected_ht.path
-            == constraint.aggregate_per_variant_expected.per_variant_apply_ht.path
+            resources.compute_rr.per_variant_apply_ht.path
+            == resources.aggregate_per_variant_expected.per_variant_apply_ht.path
         )
         assert (
-            rr.compute_rr.regional_rr_ht.path
+            resources.compute_rr.regional_rr_ht.path
             == get_regional_rr_ht(version="4.1.1", **kwargs).path
         )

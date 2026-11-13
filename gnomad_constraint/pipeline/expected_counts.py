@@ -3,6 +3,11 @@ Apply the models to compute expected variant counts.
 
 The steps, after expected_models.py:
     - --apply-models-per-variant: the expected count of each variant.
+    - --compute-rr: the regional mutation rate (rr) of each 1kb window and context,
+      from the expected_models.py rr models, normalized on the
+      --apply-models-per-variant output that
+      constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr
+      applies it to.
     - --apply-models-aggregated: an alternative to --apply-models-per-variant and
       constraint_metrics.py --aggregate-per-variant-expected: sum the observed and
       possible counts first, then apply the models.
@@ -26,6 +31,7 @@ from gnomad_constraint.utils.constraint import (
     create_aggregated_expected_ht,
     create_per_variant_expected_ht,
 )
+from gnomad_constraint.utils.regional_rate import compute_rr_ht
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -201,6 +207,19 @@ def main(args: argparse.Namespace) -> None:
 
             logger.info("Done computing per-variant expected variant count.")
 
+        if args.compute_rr:
+            logger.info("Computing rr per window and context...")
+            res = resources.compute_rr
+            res.check_resource_existence()
+
+            ht = compute_rr_ht(
+                res.genomic_features_ht.ht(),
+                res.rr_models_ht.ht(),
+                res.per_variant_apply_ht.ht(),
+            )
+            ht.write(res.regional_rr_ht.path, overwrite=overwrite)
+            logger.info("Done computing rr.")
+
         if args.apply_models_aggregated:
             logger.info("Aggregating counts and applying models on aggregated data...")
             res = resources.apply_models_aggregated
@@ -267,10 +286,11 @@ if __name__ == "__main__":
         "--path-post-fix",
         help=(
             "Post-fix to append to output file names. Applies to the outputs from"
-            " --create-training-set onward (training set, models, expected counts,"
-            " constraint groups, constraint metrics, and the release constraint"
-            " metrics Table and TSVs), but not to the annotated context, preprocessed,"
-            " gene quality metrics, mutation rate, or release mutation rate outputs."
+            " --create-training-set onward (training set, models, rr Tables, expected"
+            " counts, constraint groups, constraint metrics, and the release"
+            " constraint metrics Table and TSVs), but not to the annotated context,"
+            " preprocessed, gene quality metrics, mutation rate, or release mutation"
+            " rate outputs."
         ),
         type=str,
         default=None,
@@ -315,6 +335,16 @@ if __name__ == "__main__":
         help=(
             "Apply plateau and coverage models to variants in exome sites Table and"
             " context Table to compute expected variant counts per variant."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--compute-rr",
+        help=(
+            "Compute the regional mutation rate (rr) per 1kb window and context from"
+            " the expected_models.py rr models, normalized by its per-context"
+            " expected-weighted mean over exome synonymous MANE Select sites in the"
+            " --apply-models-per-variant output."
         ),
         action="store_true",
     )
