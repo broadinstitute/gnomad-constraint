@@ -44,6 +44,7 @@ gs://gnomad/v{version}/constraint/
 │   ├── gnomad.v{version}.dnm.ht
 │   └── gnomad.v{version}.genomic_features13_1kb.ht
 ├── regional_rate/
+│   ├── gnomad.v{version}.rr_site_features.ht
 │   ├── gnomad.v{version}.rr_training.ht
 │   ├── gnomad.v{version}.rr_penalty_tuning.ht
 │   ├── gnomad.v{version}.rr_models.ht
@@ -705,8 +706,8 @@ from §3 by selecting/renaming.
 
 Tables used to compute the regional mutation rate (rr): the outputs of
 [import_data.py](../pipeline/import_data.py) (§14-15) and
-[regional_rate_pipeline.py](../pipeline/regional_rate_pipeline.py) (§16-19). Only
-the penalty tuning, model, and rr Tables (§17-19) have globals.
+[regional_rate_pipeline.py](../pipeline/regional_rate_pipeline.py) (§16-20). Only
+the training, penalty tuning, model, and rr Tables (§17-20) have globals.
 
 The genomic feature columns are named `{feature}_{scale}` for the 13 features in
 `GENOMIC_FEATURES` (`dist2telo, dist2cent, GC_content, LCR, SINE, LINE,
@@ -755,10 +756,11 @@ The published Gnocchi 1kb regional genomic feature matrix
 
 ---
 
-## 16. `regional_rate/rr_training.ht`
+## 16. `regional_rate/rr_site_features.ht`
 
-rr training set, produced by `--create-rr-training-set` /
-[`create_rr_training_ht`](../utils/regional_rate.py). The DNM sites are the
+rr site features: the training sites with their labels and window features,
+produced by `--create-rr-site-features` /
+[`create_rr_site_features_ht`](../utils/regional_rate.py). The DNM sites are the
 synonymous sites of `annotated_context.ht` in `dnm.ht`; the background is a
 `RR_BACKGROUND_FRACTION` (5%) sample, with seed `RR_BACKGROUND_SEED`, of the
 synonymous sites absent from gnomAD exomes (`filters.exomes` is missing) at the
@@ -768,8 +770,8 @@ are removed ([`remove_qc_flagged_genes`](../utils/regional_rate.py)), unless
 `--skip-qc-flagged-gene-filter` is passed. Each DNM
 variant is one row, however many DNMs were reported there.
 
-- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_training.ht`
-- **Resource fn:** [`get_rr_training_ht`](resource_utils.py)
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_site_features.ht`
+- **Resource fn:** [`get_rr_site_features_ht`](resource_utils.py)
 - **Key:** `locus`
 
 ### Rows
@@ -782,7 +784,36 @@ variant is one row, however many DNMs were reported there.
 
 ---
 
-## 17. `regional_rate/rr_penalty_tuning.ht`
+---
+
+## 17. `regional_rate/rr_training.ht`
+
+rr training set: the site features (§16) prepared for the models by
+`--create-rr-training-set` with `prepare_regional_mutation_rate_training_ht` from
+`gnomad.utils.constraint.regional_mutation_rate`. `--tune-rr-penalty` and
+`--train-rr-models` read it as is.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_training.ht`
+- **Resource fn:** [`get_rr_training_ht`](resource_utils.py)
+- **Key:** `locus`
+
+### Globals
+- `features: dict<str, array<str>>` — each context's feature columns, in the order
+  of `x` (`RR_CONTEXT_FEATURES`).
+
+### Rows
+- `locus: locus<GRCh38>` — key.
+- `label: float64` — 1 for a DNM site, 0 for a background site.
+- `context: str` — the site's strand-collapsed context.
+- `fold: str` — `odd` or `even`, the chromosome set the site is held out with in
+  `--tune-rr-penalty` (`get_rr_fold_expr`).
+- `x: array<float64>` — the values of the site's context's features, in the order of
+  `features`. Elements are missing outside a window (e.g. on chrX and chrY), and
+  the fits leave those sites out.
+
+---
+
+## 18. `regional_rate/rr_penalty_tuning.ht`
 
 Held-out log loss of the rr models for each ridge penalty tried, produced by
 `--tune-rr-penalty` with `tune_regional_mutation_rate_penalty` from
@@ -808,7 +839,7 @@ chromosomes (odd or even) and scored on the fold's sites.
 
 ---
 
-## 18. `regional_rate/rr_models.ht`
+## 19. `regional_rate/rr_models.ht`
 
 Per-context ridge-penalized logistic rr models, produced by `--train-rr-models` with
 `fit_regional_mutation_rate_models` from
@@ -821,7 +852,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 
 ### Globals
 - `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
-  §17.
+  §18.
 - `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
   converge (also logged as a warning).
 
@@ -848,7 +879,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 
 ---
 
-## 19. `regional_rate/syn_dnm_rr_1kb.ht`
+## 20. `regional_rate/syn_dnm_rr_1kb.ht`
 
 Normalized rr per 1kb window and context, produced by `--compute-rr` with
 `compute_rr_ht` (in `utils/regional_rate.py`), which uses
@@ -862,7 +893,7 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
 
 ### Globals
 - `rr_globals: struct`:
-  - `ridge_penalty: float64` — ridge penalty the models were fit with (§17).
+  - `ridge_penalty: float64` — ridge penalty the models were fit with (§18).
   - `normalization_factors: dict<str, float64>` — per-context expected-weighted
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
     of `per_variant_expected.ht` that fall in an rr window; rr is divided by it.

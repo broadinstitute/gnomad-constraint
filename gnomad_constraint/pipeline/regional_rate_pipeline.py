@@ -17,8 +17,10 @@ the same --path-post-fix: the values ``--apply-regional-rr`` must be run with, s
 is normalized on the Table it is applied to.
 
 The rr pipeline consists of the following steps:
-    - --create-rr-training-set: create the DNM and non-mutated background training
-      set, leaving out genes with a QC gene flag.
+    - --create-rr-site-features: create the DNM and non-mutated background sites
+      with their window's features, leaving out genes with a QC gene flag.
+    - --create-rr-training-set: prepare the sites for the models: each site's
+      label, context, chromosome fold, and its context's features.
     - --tune-rr-penalty: choose the ridge penalty by the held-out log loss of
       chromosome-split models.
     - --train-rr-models: fit the per-context rr models.
@@ -50,7 +52,7 @@ from gnomad_constraint.resources.constants import (
 )
 from gnomad_constraint.utils.regional_rate import (
     compute_rr_ht,
-    create_rr_training_ht,
+    create_rr_site_features_ht,
     get_rr_fold_expr,
 )
 
@@ -84,12 +86,12 @@ def main(args: argparse.Namespace) -> None:
     )
 
     try:
-        if args.create_rr_training_set:
-            logger.info("Creating the rr training set...")
-            res = resources.create_rr_training_set
+        if args.create_rr_site_features:
+            logger.info("Creating the rr site features...")
+            res = resources.create_rr_site_features
             res.check_resource_existence()
 
-            ht = create_rr_training_ht(
+            ht = create_rr_site_features_ht(
                 res.annotated_context_ht.ht(),
                 res.dnm_ht.ht(),
                 res.genomic_features_ht.ht(),
@@ -99,12 +101,24 @@ def main(args: argparse.Namespace) -> None:
                     None if args.skip_qc_flagged_gene_filter else res.gene_flags_ht.ht()
                 ),
             )
-            # The training set is a few hundred thousand sites of the whole context
+            # The sites are a few hundred thousand of the whole context
             # Table. naive_coalesce merges upstream partitions, so coalescing before
             # the checkpoint would run that scan in only RR_TRAINING_N_PARTITIONS
             # tasks; coalescing after it only merges the small, mostly empty result.
-            ht = ht.checkpoint(new_temp_file("rr_training", "ht"))
+            ht = ht.checkpoint(new_temp_file("rr_site_features", "ht"))
             ht = ht.naive_coalesce(RR_TRAINING_N_PARTITIONS)
+            ht.write(res.rr_site_features_ht.path, overwrite=overwrite)
+            logger.info("Done creating the rr site features.")
+
+        if args.create_rr_training_set:
+            logger.info("Creating the rr training set...")
+            res = resources.create_rr_training_set
+            res.check_resource_existence()
+
+            ht = res.rr_site_features_ht.ht()
+            ht = prepare_regional_mutation_rate_training_ht(
+                ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(ht.locus)
+            )
             ht.write(res.rr_training_ht.path, overwrite=overwrite)
             logger.info("Done creating the rr training set.")
 
@@ -113,11 +127,9 @@ def main(args: argparse.Namespace) -> None:
             res = resources.tune_rr_penalty
             res.check_resource_existence()
 
-            ht = res.rr_training_ht.ht()
-            ht = prepare_regional_mutation_rate_training_ht(
-                ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(ht.locus)
+            ht = tune_regional_mutation_rate_penalty(
+                res.rr_training_ht.ht(), args.rr_penalties
             )
-            ht = tune_regional_mutation_rate_penalty(ht, args.rr_penalties)
             penalty = choose_regional_mutation_rate_penalty(ht, RR_RIDGE_PENALTY)
             logger.info("Chosen ridge penalty: %s", penalty)
             ht = ht.annotate_globals(ridge_penalty=penalty)
@@ -130,10 +142,7 @@ def main(args: argparse.Namespace) -> None:
             penalty = hl.eval(res.rr_penalty_tuning_ht.ht().ridge_penalty)
             logger.info("Training the rr models (ridge penalty %s)...", penalty)
 
-            ht = prepare_regional_mutation_rate_training_ht(
-                res.rr_training_ht.ht(), RR_CONTEXT_FEATURES
-            )
-            ht = fit_regional_mutation_rate_models(ht, penalty)
+            ht = fit_regional_mutation_rate_models(res.rr_training_ht.ht(), penalty)
             # The models Table has one small row per context.
             non_converged = ht.aggregate(
                 hl.agg.filter(~ht.converged, hl.agg.collect(ht.context))
@@ -214,18 +223,26 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--create-rr-site-features",
+        help=(
+            "Create the rr site features: synonymous DNM sites and a sampled"
+            " background of non-mutated synonymous sites with their window's"
+            " features, leaving out genes with a QC gene flag."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
         "--create-rr-training-set",
         help=(
-            "Create the rr training set of synonymous DNM sites and a sampled"
-            " background of non-mutated synonymous sites, leaving out genes with a QC"
-            " gene flag."
+            "Prepare the rr site features for the models: each site's label, context,"
+            " chromosome fold, and its context's features in RR_CONTEXT_FEATURES."
         ),
         action="store_true",
     )
     parser.add_argument(
         "--skip-qc-flagged-gene-filter",
         help=(
-            "With --create-rr-training-set, keep the sites in genes with a QC gene"
+            "With --create-rr-site-features, keep the sites in genes with a QC gene"
             " flag in the v4.1.2 constraint metrics, which are left out by default."
         ),
         action="store_true",

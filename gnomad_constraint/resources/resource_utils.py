@@ -636,9 +636,18 @@ def get_rr_gene_flags_ht() -> TableResource:
     return get_constraint_metrics_dataset(version="4.1.2")
 
 
+def get_rr_site_features_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the rr site features (DNM and background sites).
+
+    :return: TableResource of the rr site features Table.
+    """
+    return get_constraint_data("rr_site_features", sub_dir="regional_rate", **kwargs)
+
+
 def get_rr_training_ht(**kwargs) -> TableResource:
     """
-    Return TableResource of the rr training Table (DNM and background sites).
+    Return TableResource of the rr training Table the models are fit and tuned on.
 
     :return: TableResource of the rr training Table.
     """
@@ -1028,9 +1037,9 @@ def get_regional_rate_resources(
         }
     }
 
-    create_rr_training_set = PipelineStepResourceCollection(
-        "--create-rr-training-set",
-        output_resources={"rr_training_ht": get_rr_training_ht(**out_params)},
+    create_rr_site_features = PipelineStepResourceCollection(
+        "--create-rr-site-features",
+        output_resources={"rr_site_features_ht": get_rr_site_features_ht(**out_params)},
         input_resources={
             "import_data.py --import-dnms": {
                 "dnm_ht": get_dnm_ht(version=version, test=test)
@@ -1045,6 +1054,11 @@ def get_regional_rate_resources(
                 "gene_flags_ht": get_rr_gene_flags_ht()
             },
         },
+    )
+    create_rr_training_set = PipelineStepResourceCollection(
+        "--create-rr-training-set",
+        output_resources={"rr_training_ht": get_rr_training_ht(**out_params)},
+        pipeline_input_steps=[create_rr_site_features],
     )
     tune_rr_penalty = PipelineStepResourceCollection(
         "--tune-rr-penalty",
@@ -1074,6 +1088,7 @@ def get_regional_rate_resources(
 
     rr_pipeline.add_steps(
         {
+            "create_rr_site_features": create_rr_site_features,
             "create_rr_training_set": create_rr_training_set,
             "tune_rr_penalty": tune_rr_penalty,
             "train_rr_models": train_rr_models,

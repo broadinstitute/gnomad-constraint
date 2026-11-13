@@ -48,6 +48,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_rr_gene_flags_ht,
     get_rr_models_ht,
     get_rr_penalty_tuning_ht,
+    get_rr_site_features_ht,
     get_rr_training_ht,
     get_sites_resource,
     get_syn_adj_r_ht,
@@ -363,6 +364,10 @@ class TestPipelineStepPaths:
                 "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
             ),
             (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
+            (
+                get_rr_site_features_ht,
+                "regional_rate/gnomad.v4.1.1.rr_site_features.ht",
+            ),
             (get_rr_training_ht, "regional_rate/gnomad.v4.1.1.rr_training.ht"),
             (
                 get_rr_penalty_tuning_ht,
@@ -652,21 +657,26 @@ class TestGetRegionalRateResources:
 
     def test_inputs(self, resources: PipelineResourceCollection) -> None:
         """
-        Test that the steps read the import outputs, the tuned penalty, and the flags.
+        Test that the steps read the import outputs, each other's outputs, and the flags.
 
         The gene flags come from the v4.1.2 constraint metrics Table whatever the
-        version.
+        version. The training set is made from the site features, and the tuning and
+        the fit read it.
         """
         imports = get_import_data_resources("4.1.1", overwrite=False, test=True)
-        training = resources.create_rr_training_set
-        assert training.dnm_ht.path == imports.import_dnms.dnm_ht.path
-        for step in [training, resources.compute_rr]:
+        sites = resources.create_rr_site_features
+        assert sites.dnm_ht.path == imports.import_dnms.dnm_ht.path
+        for step in [sites, resources.compute_rr]:
             assert (
                 step.genomic_features_ht.path
                 == imports.import_genomic_features.genomic_features_ht.path
             )
-        assert training.gene_flags_ht.path == get_rr_gene_flags_ht().path
+        assert sites.gene_flags_ht.path == get_rr_gene_flags_ht().path
         assert "/v4.1.2/" in get_rr_gene_flags_ht().path
+        training = resources.create_rr_training_set
+        assert training.rr_site_features_ht.path == sites.rr_site_features_ht.path
+        for step in [resources.tune_rr_penalty, resources.train_rr_models]:
+            assert step.rr_training_ht.path == training.rr_training_ht.path
         train = resources.train_rr_models
         assert (
             train.rr_penalty_tuning_ht.path
@@ -682,7 +692,7 @@ class TestGetRegionalRateResources:
         """
         Test that the rr steps read the Tables of the same constraint pipeline run.
 
-        For the same version, test flag, and post-fixes, the training set comes from
+        For the same version, test flag, and post-fixes, the site features come from
         the annotated context Table that ``--prepare-context-ht`` writes, and rr is
         normalized on the per-variant expected Table that
         ``--aggregate-per-variant-expected`` aggregates. ``--compute-rr`` writes the
@@ -696,7 +706,7 @@ class TestGetRegionalRateResources:
         rr = get_regional_rate_resources("4.1.1", overwrite=False, **kwargs)
         constraint = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
         assert (
-            rr.create_rr_training_set.annotated_context_ht.path
+            rr.create_rr_site_features.annotated_context_ht.path
             == constraint.prepare_context.annotated_context_ht.path
         )
         assert (

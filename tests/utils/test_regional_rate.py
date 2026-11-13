@@ -14,7 +14,7 @@ from gnomad_constraint.resources.constants import (
 )
 from gnomad_constraint.utils.regional_rate import (
     compute_rr_ht,
-    create_rr_training_ht,
+    create_rr_site_features_ht,
     get_rr_fold_expr,
     get_rr_normalization_sites_ht,
     remove_qc_flagged_genes,
@@ -86,8 +86,8 @@ def _metrics_ht(flagged: bool = True, span: tuple = (150, 250)) -> hl.Table:
     )
 
 
-class TestCreateRrTrainingHt:
-    """Test the create_rr_training_ht function."""
+class TestCreateRrSiteFeaturesHt:
+    """Test the create_rr_site_features_ht function."""
 
     @staticmethod
     def _context_ht() -> hl.Table:
@@ -169,14 +169,14 @@ class TestCreateRrTrainingHt:
             key="interval",
         )
 
-    def _training_ht(
+    def _site_features_ht(
         self,
         background_fraction: float,
         seed: int = 0,
         gene_flags_ht: Optional[hl.Table] = None,
     ) -> hl.Table:
-        """Return the training Table of the test rows."""
-        return create_rr_training_ht(
+        """Return the site features Table of the test rows."""
+        return create_rr_site_features_ht(
             self._context_ht(),
             self._dnm_ht(),
             self._features_ht(),
@@ -185,9 +185,9 @@ class TestCreateRrTrainingHt:
             gene_flags_ht=gene_flags_ht,
         )
 
-    def test_training_sites(self) -> None:
+    def test_sites(self) -> None:
         """
-        Test the DNM and background sites of the training set.
+        Test the DNM and background sites.
 
         DNMs are the synonymous context sites in the DNM Table, even if in exomes
         (20); the missense DNM (60) and the indel (70) aren't. The background (all of
@@ -197,7 +197,7 @@ class TestCreateRrTrainingHt:
         Every site gets its window's features, and the context Table's globals are
         dropped.
         """
-        ht = self._training_ht(1.0)
+        ht = self._site_features_ht(1.0)
         assert len(ht.globals.dtype) == 0
         rows = ht.collect()
         assert sorted((r.locus.position, r.y, r.dist2telo_1k) for r in rows) == [
@@ -213,7 +213,7 @@ class TestCreateRrTrainingHt:
 
         The flagged gene spans 25-35, so the background site at 30 goes.
         """
-        rows = self._training_ht(
+        rows = self._site_features_ht(
             1.0, gene_flags_ht=_metrics_ht(span=(25, 35))
         ).collect()
         assert sorted((r.locus.position, r.y) for r in rows) == [
@@ -224,7 +224,7 @@ class TestCreateRrTrainingHt:
 
     def test_no_background(self) -> None:
         """Test that a background fraction of 0 keeps only the DNM sites."""
-        rows = self._training_ht(0.0).collect()
+        rows = self._site_features_ht(0.0).collect()
         assert sorted((r.locus.position, r.y) for r in rows) == [(10, 1), (20, 1)]
 
     def test_background_sample(self) -> None:
@@ -254,7 +254,7 @@ class TestCreateRrTrainingHt:
         dnm_ht = self._dnm_ht().filter(False)
 
         def _background(fraction: float, seed: int) -> list:
-            ht = create_rr_training_ht(
+            ht = create_rr_site_features_ht(
                 context_ht, dnm_ht, self._features_ht(), fraction, seed
             )
             return sorted(r.locus.position for r in ht.collect())

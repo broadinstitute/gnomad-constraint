@@ -1,5 +1,5 @@
 """
-Functions to build the regional mutation rate (rr) training set and compute rr.
+Functions to build the regional mutation rate (rr) site features and compute rr.
 
 The models are fit, and rr is computed and normalized, with
 :mod:`gnomad.utils.constraint.regional_mutation_rate`.
@@ -31,7 +31,7 @@ logger = logging.getLogger("regional_rate_utils")
 logger.setLevel(logging.INFO)
 
 
-def create_rr_training_ht(
+def create_rr_site_features_ht(
     context_ht: hl.Table,
     dnm_ht: hl.Table,
     features_ht: hl.Table,
@@ -40,7 +40,7 @@ def create_rr_training_ht(
     gene_flags_ht: Optional[hl.Table] = None,
 ) -> hl.Table:
     """
-    Create the rr training Table of synonymous DNM and non-mutated background sites.
+    Create the rr site features: synonymous DNM and non-mutated background sites.
 
     The DNM sites are the synonymous sites of ``context_ht`` that are in ``dnm_ht``.
     The background is a random sample (``background_fraction``) of the synonymous
@@ -63,8 +63,8 @@ def create_rr_training_ht(
     :param gene_flags_ht: Constraint metrics Table with gene flags, whose flagged
         genes' sites are left out (see :func:`remove_qc_flagged_genes`), or None to
         keep every gene. Default is None.
-    :return: Training Table keyed by ``locus`` with ``alleles``, ``context``, ``y``,
-        and ``GENOMIC_FEATURE_COLUMNS``.
+    :return: Site features Table keyed by ``locus`` with ``alleles``, ``context``,
+        ``y``, and ``GENOMIC_FEATURE_COLUMNS``.
     """
     ht = context_ht.filter(
         context_ht.vep.most_severe_consequence == "synonymous_variant"
