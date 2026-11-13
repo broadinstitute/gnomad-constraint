@@ -289,7 +289,8 @@ if __name__ == "__main__":
             " counts, constraint groups, constraint metrics, and the release"
             " constraint metrics Table and TSVs), but not to the annotated context,"
             " preprocessed, gene quality metrics, mutation rate, or release mutation"
-            " rate outputs."
+            " rate outputs. None of this script's outputs take it; here it only names"
+            " the log."
         ),
         type=str,
         default=None,
