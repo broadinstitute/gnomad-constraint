@@ -1,5 +1,5 @@
 """
-Functions to build the training set of the regional mutation rate (rr) models.
+Functions to build the regional mutation rate (rr) training set and compute rr.
 
 The models are fit, and rr is computed and normalized, with
 :mod:`gnomad.utils.constraint.regional_mutation_rate`.
@@ -8,9 +8,18 @@ The models are fit, and rr is computed and normalized, with
 import logging
 
 import hail as hl
+from gnomad.utils.constraint import (
+    normalize_regional_mutation_rate_expr,
+    regional_mutation_rate_expr,
+    regional_mutation_rate_normalization_factors_agg_expr,
+)
 from hail.utils.misc import new_temp_file
 
-from gnomad_constraint.resources.constants import GENOMIC_FEATURE_COLUMNS
+from gnomad_constraint.resources.constants import (
+    ADJ_FREQ_META,
+    GENOMIC_FEATURE_COLUMNS,
+    RR_CONTEXTS,
+)
 from gnomad_constraint.utils.constraint import get_transcript_filter_expr
 
 logging.basicConfig(
@@ -125,3 +134,83 @@ def get_rr_fold_expr(locus_expr: hl.expr.LocusExpression) -> hl.expr.StringExpre
     :return: ``odd`` or ``even``.
     """
     return hl.if_else(locus_expr.contig_idx % 2 == 0, "odd", "even")
+
+
+def get_rr_normalization_sites_ht(per_variant_ht: hl.Table) -> hl.Table:
+    """
+    Get the sites rr is normalized on: the exome synonymous Ensembl MANE Select sites.
+
+    The RefSeq MANE Select transcripts are the same transcripts, so keeping them
+    would count every site twice.
+
+    :param per_variant_ht: Per-variant expected Table with ``annotation``,
+        ``transcript``, ``mane_select``, ``context``, and ``expected_variants``, and
+        an ``exomes_freq_meta`` global.
+    :return: Table keyed as ``per_variant_ht`` with ``context`` and ``exp``, the adj
+        expected count.
+    """
+    adj_idx = hl.eval(per_variant_ht.exomes_freq_meta).index(ADJ_FREQ_META)
+    ht = per_variant_ht.filter(
+        (per_variant_ht.annotation == "synonymous_variant")
+        & get_transcript_filter_expr(per_variant_ht, mane_select_only=True)
+    )
+
+    return ht.select("context", exp=ht.expected_variants[adj_idx])
+
+
+def compute_rr_ht(
+    features_ht: hl.Table, models_ht: hl.Table, per_variant_ht: hl.Table
+) -> hl.Table:
+    """
+    Compute rr per 1kb window and context, normalized on the per-variant Table's sites.
+
+    Each window's rr in each of ``RR_CONTEXTS`` comes from that context's model, and
+    windows no model covers are dropped. rr is then divided, per context, by its mean
+    over the sites of :func:`get_rr_normalization_sites_ht`, weighted by their adj
+    expected count, so it moves those sites' expected counts between windows without
+    changing their total.
+
+    :param features_ht: Genomic feature Table keyed by ``interval``.
+    :param models_ht: rr models Table with a ``ridge_penalty`` global.
+    :param per_variant_ht: Per-variant expected Table to normalize on, with an
+        ``apply_models_globals`` global (see :func:`get_rr_normalization_sites_ht`).
+    :return: Table keyed by ``interval`` with ``adj_r``, a dict of context to rr, and
+        an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
+        and ``per_variant_apply_models_globals``.
+    """
+    # TODO: Windows missing a context's features get 1.0 here, the model's rate for
+    #  the average window. Normalization then divides it by the context's factor, so
+    #  these windows end up at 1 / factor instead of 1, unlike sites without a
+    #  window. Consider missing_feature_rate=None, which leaves them missing, and
+    #  filling 1.0 after normalization.
+    ht = features_ht.select(
+        adj_r=regional_mutation_rate_expr(features_ht.row, models_ht, RR_CONTEXTS)
+    )
+    ht = ht.filter(hl.is_defined(ht.adj_r))
+    ht = ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
+
+    sites_ht = get_rr_normalization_sites_ht(per_variant_ht)
+    sites_ht = sites_ht.checkpoint(new_temp_file("rr_normalization_sites", "ht"))
+    sites_ht = sites_ht.naive_coalesce(200)
+    factors = sites_ht.aggregate(
+        regional_mutation_rate_normalization_factors_agg_expr(
+            sites_ht.context,
+            ht[sites_ht.locus].adj_r.get(sites_ht.context),
+            sites_ht.exp,
+        )
+    )
+    logger.info("rr normalization factors: %s", factors)
+
+    ht = ht.annotate(adj_r=normalize_regional_mutation_rate_expr(ht.adj_r, factors))
+
+    return ht.annotate_globals(
+        rr_globals=hl.struct(
+            ridge_penalty=models_ht.index_globals().ridge_penalty,
+            normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
+            # --apply-regional-rr checks that the per-variant Table it aggregates
+            # still has these models.
+            per_variant_apply_models_globals=(
+                per_variant_ht.index_globals().apply_models_globals
+            ),
+        )
+    )

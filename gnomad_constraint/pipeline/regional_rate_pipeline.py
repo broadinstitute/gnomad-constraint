@@ -32,29 +32,24 @@ import hail as hl
 from gnomad.utils.constraint import (
     choose_regional_mutation_rate_penalty,
     fit_regional_mutation_rate_models,
-    normalize_regional_mutation_rate_expr,
     prepare_regional_mutation_rate_training_ht,
-    regional_mutation_rate_expr,
-    regional_mutation_rate_normalization_factors_agg_expr,
     tune_regional_mutation_rate_penalty,
 )
 from hail.utils.misc import new_temp_file
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
-    ADJ_FREQ_META,
     CURRENT_VERSION,
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
     RR_CONTEXT_FEATURES,
-    RR_CONTEXTS,
     RR_RIDGE_PENALTIES,
     RR_RIDGE_PENALTY,
     RR_TRAINING_N_PARTITIONS,
     VERSIONS,
 )
-from gnomad_constraint.utils.constraint import get_transcript_filter_expr
 from gnomad_constraint.utils.regional_rate import (
+    compute_rr_ht,
     create_rr_training_ht,
     get_rr_fold_expr,
     remove_qc_flagged_genes,
@@ -150,58 +145,12 @@ def main(args: argparse.Namespace) -> None:
             res = resources.compute_rr
             res.check_resource_existence()
 
-            models_ht = res.rr_models_ht.ht()
-            rr_ht = res.genomic_features_ht.ht()
-            # TODO: Windows missing a context's features get 1.0 here, the model's
-            #  rate for the average window. Normalization then divides it by the
-            #  context's factor, so these windows end up at 1 / factor instead of 1,
-            #  unlike sites without a window. Consider missing_feature_rate=None,
-            #  which leaves them missing, and filling 1.0 after normalization.
-            rr_ht = rr_ht.select(
-                adj_r=regional_mutation_rate_expr(rr_ht.row, models_ht, RR_CONTEXTS)
+            ht = compute_rr_ht(
+                res.genomic_features_ht.ht(),
+                res.rr_models_ht.ht(),
+                res.per_variant_expected_ht.ht(),
             )
-            # Keep the windows the models cover.
-            rr_ht = rr_ht.filter(hl.is_defined(rr_ht.adj_r))
-            rr_ht = rr_ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
-
-            # Normalize rr on the synonymous Ensembl MANE Select sites, weighted by
-            # their adj expected count. The RefSeq MANE Select transcripts are the
-            # same transcripts, so keeping them would count every site twice.
-            per_variant_ht = res.per_variant_expected_ht.ht()
-            adj_idx = hl.eval(per_variant_ht.exomes_freq_meta).index(ADJ_FREQ_META)
-            syn_ht = per_variant_ht.filter(
-                (per_variant_ht.annotation == "synonymous_variant")
-                & get_transcript_filter_expr(per_variant_ht, mane_select_only=True)
-            )
-            syn_ht = syn_ht.select("context", exp=syn_ht.expected_variants[adj_idx])
-            syn_ht = syn_ht.checkpoint(new_temp_file("rr_syn_mane_select", "ht"))
-            syn_ht = syn_ht.naive_coalesce(200)
-            factors = syn_ht.aggregate(
-                regional_mutation_rate_normalization_factors_agg_expr(
-                    syn_ht.context,
-                    rr_ht[syn_ht.locus].adj_r.get(syn_ht.context),
-                    syn_ht.exp,
-                )
-            )
-            logger.info("rr normalization factors: %s", factors)
-
-            rr_ht = rr_ht.annotate(
-                adj_r=normalize_regional_mutation_rate_expr(rr_ht.adj_r, factors)
-            )
-            rr_ht = rr_ht.annotate_globals(
-                rr_globals=hl.struct(
-                    ridge_penalty=models_ht.index_globals().ridge_penalty,
-                    normalization_factors=hl.literal(
-                        factors, hl.tdict(hl.tstr, hl.tfloat64)
-                    ),
-                    # --apply-regional-rr checks that the per-variant Table it
-                    # aggregates still has these models.
-                    per_variant_apply_models_globals=(
-                        per_variant_ht.index_globals().apply_models_globals
-                    ),
-                )
-            )
-            rr_ht.write(res.regional_rr_ht.path, overwrite=overwrite)
+            ht.write(res.regional_rr_ht.path, overwrite=overwrite)
             logger.info("Done computing rr.")
 
     finally:

@@ -1,15 +1,20 @@
 """Tests for the regional mutation rate (rr) functions in ``gnomad_constraint.utils.regional_rate``."""
 
 import hail as hl
+import numpy as np
 import pytest
+from gnomad.utils.constraint import MODELS_HT_SCHEMA
 
 from gnomad_constraint.resources.constants import (
     GENOMIC_FEATURE_COLUMNS,
     RR_CONTEXT_FEATURES,
+    RR_CONTEXTS,
 )
 from gnomad_constraint.utils.regional_rate import (
+    compute_rr_ht,
     create_rr_training_ht,
     get_rr_fold_expr,
+    get_rr_normalization_sites_ht,
     remove_qc_flagged_genes,
 )
 
@@ -274,3 +279,144 @@ class TestGetRrFoldExpr:
             "chr20": "even",
             "chrX": "odd",
         }
+
+
+def _per_variant_ht(rows: list) -> hl.Table:
+    """
+    Return a per-variant expected Table, one row per site and transcript.
+
+    Each row is (position, transcript, mane_select, annotation, context, adj
+    expected count); the adj counts are at index 1 of ``expected_variants``.
+    """
+    ht = hl.Table.parallelize(
+        [
+            {
+                "locus": _locus(pos),
+                "alleles": ["A", "G"],
+                "transcript": transcript,
+                "mane_select": mane_select,
+                "annotation": annotation,
+                "context": context,
+                "expected_variants": [100.0, exp],
+            }
+            for pos, transcript, mane_select, annotation, context, exp in rows
+        ],
+        hl.tstruct(
+            locus=hl.tlocus("GRCh38"),
+            alleles=hl.tarray(hl.tstr),
+            transcript=hl.tstr,
+            mane_select=hl.tbool,
+            annotation=hl.tstr,
+            context=hl.tstr,
+            expected_variants=hl.tarray(hl.tfloat64),
+        ),
+        key=["locus", "alleles"],
+    )
+    return ht.annotate_globals(
+        exomes_freq_meta=[{"group": "raw"}, {"group": "adj"}],
+        apply_models_globals=hl.struct(version="test"),
+    )
+
+
+class TestGetRrNormalizationSitesHt:
+    """Test the get_rr_normalization_sites_ht function."""
+
+    def test_synonymous_ensembl_mane_select_sites(self) -> None:
+        """
+        Test that only synonymous sites in Ensembl MANE Select transcripts are kept.
+
+        The RefSeq MANE Select row of a site would count it twice. Each site keeps
+        its adj expected count, found through ``exomes_freq_meta``.
+        """
+        ht = get_rr_normalization_sites_ht(
+            _per_variant_ht(
+                [
+                    (10, "ENST1", True, "synonymous_variant", "AAA", 2.0),
+                    (10, "NM_1", True, "synonymous_variant", "AAA", 2.0),
+                    (20, "ENST2", False, "synonymous_variant", "ACG", 1.0),
+                    (30, "ENST3", True, "missense_variant", "AAA", 5.0),
+                    (40, "ENST4", True, "synonymous_variant", "ACG", 3.0),
+                ]
+            )
+        )
+        assert list(ht.row) == ["locus", "alleles", "context", "exp"]
+        assert [(r.locus.position, r.context, r.exp) for r in ht.collect()] == [
+            (10, "AAA", 2.0),
+            (40, "ACG", 3.0),
+        ]
+
+
+class TestComputeRrHt:
+    """Test the compute_rr_ht function."""
+
+    @staticmethod
+    def _features_ht() -> hl.Table:
+        """Return three windows; the third has no feature value."""
+        return hl.Table.parallelize(
+            [
+                {"interval": hl.Interval(_locus(s), _locus(e)), "a": a}
+                for s, e, a in [(1, 1001, 0.5), (1001, 2001, 1.5), (2001, 3001, None)]
+            ],
+            hl.tstruct(interval=INTERVAL_TYPE, a=hl.tfloat64),
+            key="interval",
+        )
+
+    @staticmethod
+    def _models_ht() -> hl.Table:
+        """Return one AAA model with rate ``expit(a - 1) / 0.5``, penalty 0.3."""
+        ht = hl.Table.parallelize(
+            [
+                {
+                    "context": "AAA",
+                    "features": ["a"],
+                    "mean": [1.0],
+                    "sd": [1.0],
+                    "coefs": [1.0],
+                    "intercept": 0.0,
+                    "ave": 0.5,
+                    "n_mutated": 10,
+                    "n_background": 10,
+                    "converged": True,
+                }
+            ],
+            MODELS_HT_SCHEMA,
+            key="context",
+        )
+        return ht.annotate_globals(ridge_penalty=0.3)
+
+    def test_rr(self) -> None:
+        """
+        Test rr per window and context, its normalization, and its globals.
+
+        The window without a feature value has no rr and is dropped, so the site in
+        it is left out of the normalization. AAA's rr, weighted by the sites' adj
+        expected counts, averages 1 after normalization, and the unmodeled contexts
+        stay 1.0.
+        """
+        ht = compute_rr_ht(
+            self._features_ht(),
+            self._models_ht(),
+            _per_variant_ht(
+                [
+                    (10, "ENST1", True, "synonymous_variant", "AAA", 1.0),
+                    (20, "ENST2", True, "synonymous_variant", "ACG", 2.0),
+                    (1500, "ENST3", True, "synonymous_variant", "AAA", 3.0),
+                    (2500, "ENST4", True, "synonymous_variant", "AAA", 5.0),
+                ]
+            ),
+        )
+        rr = {r.interval.start.position: r.adj_r for r in ht.collect()}
+        assert sorted(rr) == [1, 1001]
+        assert set(rr[1]) == set(RR_CONTEXTS)
+        raw = {1: 2 / (1 + np.exp(0.5)), 1001: 2 / (1 + np.exp(-0.5))}
+        factor = (1 * raw[1] + 3 * raw[1001]) / 4
+        assert rr[1]["AAA"] == pytest.approx(raw[1] / factor)
+        assert rr[1001]["AAA"] == pytest.approx(raw[1001] / factor)
+        assert (1 * rr[1]["AAA"] + 3 * rr[1001]["AAA"]) / 4 == pytest.approx(1.0)
+        assert rr[1]["ACG"] == 1.0
+        rr_globals = hl.eval(ht.rr_globals)
+        assert rr_globals.ridge_penalty == 0.3
+        assert rr_globals.normalization_factors == pytest.approx(
+            {"AAA": factor, "ACG": 1.0}
+        )
+        assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")

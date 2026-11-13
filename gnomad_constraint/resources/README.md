@@ -850,6 +850,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 ## 19. `regional_rate/syn_dnm_rr_1kb.ht`
 
 Normalized rr per 1kb window and context, produced by `--compute-rr` with
+`compute_rr_ht` (in `utils/regional_rate.py`), which uses
 `regional_mutation_rate_expr` and `normalize_regional_mutation_rate_expr` from
 `gnomad.utils.constraint.regional_mutation_rate`. Read by
 `constraint_pipeline.py --aggregate-per-variant-expected --apply-regional-rr`.
