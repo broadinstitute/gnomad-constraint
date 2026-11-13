@@ -231,3 +231,40 @@ RELEASE_CG_SELECT = [
     "gen_anc_exp",
 ]
 """Fields selected from the release constraint-group struct, in display order."""
+
+# ---------------------------------------------------------------------------
+# Regional mutation rate (rr)
+# ---------------------------------------------------------------------------
+
+GENOMIC_FEATURES = [
+    "dist2telo",
+    "dist2cent",
+    "GC_content",
+    "LCR",
+    "SINE",
+    "LINE",
+    "recomb_male",
+    "recomb_female",
+    "met_sperm",
+    "Nucleosome",
+    "cDNM_maternal_05M",
+    "cDNM_paternal_05M",
+    "CpG_island",
+]
+"""
+Regional genomic features used to model the regional mutation rate (rr).
+
+Order matches the columns of the published Gnocchi feature matrix
+(``genomic_features13_genome_1kb.txt``).
+"""
+
+GENOMIC_FEATURE_SCALES = ["1k", "10k", "100k", "1M"]
+"""Flanking window scales at which each regional genomic feature is computed."""
+
+GENOMIC_FEATURE_COLUMNS = [
+    f"{f}_{s}" for s in GENOMIC_FEATURE_SCALES for f in GENOMIC_FEATURES
+]
+"""Feature matrix columns (``{feature}_{scale}``), in published column order."""
+
+GENOMIC_FEATURE_MISSING = ["NA", "nan", "NaN", ""]
+"""Spellings of a missing value in the published genomic feature matrix."""

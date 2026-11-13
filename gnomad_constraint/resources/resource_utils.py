@@ -1,7 +1,7 @@
 """Resource utility functions and resource definitions for the constraint pipeline."""
 
 import logging
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
@@ -575,6 +575,67 @@ def get_syn_adj_r_ht() -> TableResource:
     )
 
 
+def get_dnm_paths() -> Dict[str, str]:
+    """
+    Return the paths of the de novo mutation (DNM) files used to train the rr models.
+
+    These are the Satterstrom 2026 SNV and indel DNMs of an autism (ASD) and a
+    developmental disorder (DDD) cohort, on GRCh38, with a "chrom:pos:ref:alt"
+    ``Variant`` column.
+
+    :return: Dictionary with the ``asd_dnm_path`` and ``ddd_dnm_path`` paths.
+    """
+    path = (
+        "gs://regional_missense_constraint/resources/GRCh38/reference_data/"
+        "Satterstrom_2026_{}_dnv_SNV_indel.txt.gz"
+    )
+    return {f"{c.lower()}_dnm_path": path.format(c) for c in ["ASD", "DDD"]}
+
+
+def get_published_genomic_features_path() -> str:
+    """
+    Return the path to the published Gnocchi 1kb regional genomic feature matrix.
+
+    The matrix covers chr1-22 and has an ``element_id`` column ("chr-start-end",
+    BED coordinates) followed by ``GENOMIC_FEATURE_COLUMNS``.
+
+    :return: Path to the published feature matrix.
+    """
+    return "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
+
+
+def get_dnm_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the de novo mutation (DNM) site Table.
+
+    :return: TableResource of the DNM Table.
+    """
+    return get_constraint_data("dnm", sub_dir="imported_data", **kwargs)
+
+
+def get_genomic_features_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the 1kb regional genomic feature Table keyed by interval.
+
+    :return: TableResource of the genomic feature Table.
+    """
+    return get_constraint_data(
+        "genomic_features13_1kb", sub_dir="imported_data", **kwargs
+    )
+
+
+def get_regional_rr_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the per-window, per-context regional rr Table.
+
+    The Table is keyed by ``interval`` (1kb windows) and has an ``adj_r`` dict
+    mapping each strand-collapsed trinucleotide context to its rr.
+
+    :return: TableResource of the rr Table.
+    """
+    return get_constraint_data("syn_dnm_rr_1kb", sub_dir="regional_rate", **kwargs)
+
+
 def get_constraint_resources(
     version: str,
     overwrite: bool,
@@ -627,6 +688,23 @@ def get_constraint_resources(
         "directory_post_fix": directory_post_fix,
     }
 
+    # The rr imports take neither post-fix.
+    import_dnms = PipelineStepResourceCollection(
+        "--import-dnms",
+        output_resources={"dnm_ht": get_dnm_ht(version=version, test=test)},
+        input_resources={"published DNMs": get_dnm_paths()},
+    )
+    import_genomic_features = PipelineStepResourceCollection(
+        "--import-genomic-features",
+        output_resources={
+            "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
+        },
+        input_resources={
+            "published genomic features": {
+                "published_features_path": get_published_genomic_features_path()
+            }
+        },
+    )
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
         output_resources={
@@ -819,6 +897,8 @@ def get_constraint_resources(
     # Add all steps to the constraint pipeline resource collection.
     constraint_pipeline.add_steps(
         {
+            "import_dnms": import_dnms,
+            "import_genomic_features": import_genomic_features,
             "prepare_context": prepare_context,
             "preprocess_data": preprocess_data,
             "compute_gene_quality_metrics": compute_gene_quality_metrics_step,

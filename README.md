@@ -21,6 +21,7 @@ Many of the functions are imported from
 |---|---|
 | `gnomad_constraint/pipeline/` | The pipeline scripts, run in order: `prepare_data.py`, `expected_models.py`, `expected_counts.py`, and `constraint_metrics.py`; each step is a command-line flag |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
+| `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
 | `gnomad_constraint/resources/README.md` | Schema reference for every pipeline output |
@@ -39,7 +40,8 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 
 | Script | Flag | Step |
 |---|---|---|
-| `prepare_data.py` | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
+| `prepare_data.py` | `--import-dnms`, `--import-genomic-features` | Import the de novo mutations and genomic features the regional mutation rate is modeled from; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
+| | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
 | | `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so it must run in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
 | | `--preprocess-data` | Add per-site observed and possible counts, mutation rate inputs, and model groups |
 | | `--compute-gene-quality-metrics` | Per-transcript coverage, mapping quality, segmental duplication, and low-complexity region metrics |
@@ -67,8 +69,24 @@ and chrY only) or `--test-gene-list` (six genes), every output, including the
 release files, goes to `gs://gnomad-tmp/gnomad_v{version}_testing/constraint/`
 instead, so a test run never touches production outputs. `--directory-post-fix`
 and `--path-post-fix` keep separate runs of the same version apart. The directory
-post-fix applies to every output; the path post-fix only to the outputs from
-`--create-training-set` onward, except the release mutation rate files.
+post-fix applies to every output except the rr imports; the path post-fix only to
+the outputs from `--create-training-set` onward, except the release mutation rate
+files.
+
+### Regional mutation rate (rr)
+
+The regional mutation rate (rr) is a factor for each 1kb window and trinucleotide
+context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
+regional genomic features of each site's window at four flanking scales.
+
+`prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
+under `imported_data/` in the constraint output directory (with `--test`, in the
+testing bucket, and with neither post-fix):
+
+| Flag | Step |
+|---|---|
+| `--import-dnms` | Import the Satterstrom 2026 ASD and DDD DNMs as a Table of DNM sites |
+| `--import-genomic-features` | Import the Gnocchi 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
 
 ### Release constraint metrics Table
 

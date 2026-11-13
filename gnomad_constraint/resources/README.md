@@ -5,9 +5,9 @@ canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
 This document is the schema reference for every **pipeline output** of the
-constraint pipeline. The schemas were first captured with `ht.describe()` from
-the v4.1.1 tables on GCS and have been updated by hand as the pipeline changed,
-so the released v4.1.1 tables differ from them in places. For upstream **input**
+constraint pipeline. The schemas were first captured with
+`ht.describe()` from the v4.1.1 tables on GCS and have been updated by hand as the
+pipeline changed, so the released v4.1.1 tables differ from them in places. For upstream **input**
 resources (VEP context, sites,
 coverage, methylation, GERP, GENCODE, `all_sites_an`) see
 [`gnomad.resources.grch38`](https://github.com/broadinstitute/gnomad_methods/tree/main/gnomad/resources/grch38).
@@ -39,6 +39,9 @@ gs://gnomad/v{version}/constraint/
 ├── models/
 │   ├── gnomad.v{version}.plateau.he
 │   └── gnomad.v{version}.coverage.he
+├── imported_data/
+│   ├── gnomad.v{version}.dnm.ht
+│   └── gnomad.v{version}.genomic_features13_1kb.ht
 ├── apply_models/transcript_consequences/
 │   ├── gnomad.v{version}.per_variant_expected.ht
 │   ├── gnomad.v{version}.per_variant_expected.aggregated.ht
@@ -63,7 +66,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 (`temp=True`). These rules apply to every output, including the release files.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
-apply-models, metrics, and constraint-metrics release outputs.
+apply-models, metrics, and constraint-metrics release outputs. The rr imports
+(§14-15) take neither post-fix.
 
 ---
 
@@ -684,6 +688,59 @@ from §3 by selecting/renaming.
 - `mu: float64` — scalar mu at the canonical downsampling index (renamed from
   `mu_snp`).
 - `cpg: bool`, `transition: bool`, `mutation_type: str` — mutation-type tags.
+
+---
+
+# Regional mutation rate tables
+
+Tables used to compute the regional mutation rate (rr): the outputs of
+the `--import-dnms` and `--import-genomic-features` steps of
+[prepare_data.py](../pipeline/prepare_data.py) (§14-15). They have no globals.
+
+The genomic feature columns are named `{feature}_{scale}` for the 13 features in
+`GENOMIC_FEATURES` (`dist2telo, dist2cent, GC_content, LCR, SINE, LINE,
+recomb_male, recomb_female, met_sperm, Nucleosome, cDNM_maternal_05M,
+cDNM_paternal_05M, CpG_island`) at the 4 flanking scales in
+`GENOMIC_FEATURE_SCALES` (`1k, 10k, 100k, 1M`); see [constants.py](constants.py).
+
+---
+
+## 14. `imported_data/dnm.ht`
+
+De novo mutation (DNM) sites from the Satterstrom 2026 ASD and DDD files
+([`get_dnm_paths`](resource_utils.py)), produced by `--import-dnms` /
+[`format_dnm_ht`](../utils/import_data.py). Each variant has one row, however many
+files or individuals report it. Indels and alleles that don't match the reference
+are kept; they are removed when the DNMs are joined to `annotated_context.ht`.
+
+- **Path:** `gs://gnomad/v{version}/constraint/imported_data/gnomad.v{version}.dnm.ht`
+- **Resource fn:** [`get_dnm_ht`](resource_utils.py)
+- **Key:** `locus`, `alleles`
+
+### Rows
+- `locus: locus<GRCh38>`, `alleles: array<str>` — key; no other fields.
+
+---
+
+## 15. `imported_data/genomic_features13_1kb.ht`
+
+The published Gnocchi 1kb regional genomic feature matrix
+([`get_published_genomic_features_path`](resource_utils.py)), produced by
+`--import-genomic-features` /
+[`format_genomic_features`](../utils/import_data.py). It covers chr1-22 only.
+
+- **Path:** `gs://gnomad/v{version}/constraint/imported_data/gnomad.v{version}.genomic_features13_1kb.ht`
+- **Resource fn:** [`get_genomic_features_ht`](resource_utils.py)
+- **Key:** `interval`
+
+### Rows
+- `interval: interval<locus<GRCh38>>` — the BED window in `element_id` in 1-based
+  positions, `[start + 1, end]`. (The Gnocchi rr Tables used `[start, end)`, 1bp
+  left of the BED window.)
+- `element_id: str` — window ID from the matrix (`chr-start-end`, BED coordinates).
+- `{feature}_{scale}: float64` — the 52 feature columns. Values written as one of
+  `GENOMIC_FEATURE_MISSING` (`NA`, `nan`, `NaN`, or empty) in the matrix are
+  missing.
 
 ---
 
