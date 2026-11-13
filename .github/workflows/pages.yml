@@ -1,0 +1,34 @@
+name: Pages
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - gnomad_constraint/flowchart/constraint_pipeline.html
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    name: Deploy pipeline flowchart
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir _site
+          cp gnomad_constraint/flowchart/constraint_pipeline.html _site/index.html
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

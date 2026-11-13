@@ -261,7 +261,8 @@ def main(args: argparse.Namespace) -> None:
         )
 
 
-if __name__ == "__main__":
+def get_script_argument_parser() -> argparse.ArgumentParser:
+    """Get script argument parser."""
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -370,5 +371,10 @@ if __name__ == "__main__":
         default=100,
     )
 
+    return parser
+
+
+if __name__ == "__main__":
+    parser = get_script_argument_parser()
     args = parser.parse_args()
     main(args)
