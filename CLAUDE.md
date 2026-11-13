@@ -135,14 +135,44 @@ inspecting the output. A passing `--test` run is necessary but not sufficient:
 out-of-memory and shuffle failures only appear at full scale. Say what you ran
 and at what scale rather than calling a change verified.
 
+## Pull Requests
+
+Use the shared skills from
+[gnomad-skills](https://github.com/broadinstitute/gnomad-skills). A SessionStart
+hook in `.claude/settings.json` installs them the first time you open this repo:
+it clones gnomad-skills into `~/.claude/gnomad-skills` (set `GNOMAD_SKILLS_DIR`
+to put it elsewhere) and links each skill into `~/.claude/skills`. If
+`gnomad-pr-review` is already linked from your own checkout of gnomad-skills, it
+uses that checkout instead. After that it relinks the skills at every session
+start and pulls the checkout at most once a day. Set `GNOMAD_SKIP_SKILLS_HOOK=1`
+to turn the hook off.
+
+- **Run `/gnomad-pr-review` on every pull request before requesting review from
+  a team member.** Only a person can start it; Claude can't invoke it. When the
+  review is due, Claude should ask the user to run it, not run a different
+  review in its place. It replaces `/review`, which this repo no longer uses. Its
+  setup questions size the review to the PR: for a small one, review the source
+  only, use Sonnet reviewers, and skip the second opinion. Work through what it
+  reports, and note in the PR description that it ran and what you did or did
+  not act on. Human review time is the scarce resource here; don't spend it on
+  things the skill would have caught.
+- Commit with `gnomad-commit`, draft PR descriptions with
+  `gnomad-pr-description`, and rewrite a branch's history with
+  `gnomad-clean-git-history`.
+
+**If a change alters the structure of the repo, update the repo layout table in
+the README in the same pull request.** If a change alters a release Table's
+fields or globals, update its description in `release_readme/` too.
+
 ## Attribution
 
-- When Claude Code or another agent helped with a commit, add exactly one
-  `Assisted-by: AGENT:MODEL` trailer, e.g.
-  `Assisted-by: ClaudeCode:claude-opus-5-5`.
-- `Co-authored-by:` is for people, not agents. Never add a
-  `Co-Authored-By: Claude ...` or similar agent trailer, even if the harness
-  adds one by default.
+- Agent assistance is recorded in the pull request, not in commits: end the
+  PR description with `Assisted by Claude Code.` (`.claude/settings.json` sets
+  `attribution.pr` to that line and `attribution.commit` to nothing, so Claude
+  Code does this by itself.)
+- Never add an agent trailer or co-author line to a commit: no
+  `Assisted-by:`, no `Co-Authored-By: Claude ...`, even if the harness injects
+  one by default — remove it. `Co-authored-by:` is for people.
 
 ## Never Do This
 

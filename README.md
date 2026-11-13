@@ -23,6 +23,7 @@ Many of the functions are imported from
 | `release_readme/` | Field descriptions for the released constraint and mutation rate Tables |
 | `requirements.txt` | What the pipeline needs to run: gnomad_methods, gnomad_qc, and Hail |
 | `requirements-dev.in`, `requirements-dev.txt` | Development tools; the `.txt` is generated from the `.in` |
+| `.claude/` | Shared Claude Code configuration (`settings.json`): a hook that clones [gnomad-skills](https://github.com/broadinstitute/gnomad-skills) into `~/.claude/gnomad-skills` (or `$GNOMAD_SKILLS_DIR`), links its skills into `~/.claude/skills/`, and pulls it at most once a day (set `GNOMAD_SKIP_SKILLS_HOOK=1` to turn it off), and `attribution` settings that put `Assisted by Claude Code.` in PR descriptions and nothing on commits. |
 
 ## Pipeline steps
 
