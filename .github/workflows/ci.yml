@@ -7,11 +7,14 @@ on:
 jobs:
   checks:
     name: Checks
-    # ubuntu-latest moved to Ubuntu 26.04, where setup-r-dependencies installs
-    # pak as root through the repo's renv project (activated by .Rprofile). pak
-    # then lands in root's renv cache, and the next step, run as the runner
-    # user, fails with "there is no package called 'pak'".
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    env:
+      # .Rprofile activates the repo's renv project, so without this,
+      # setup-r-dependencies installs pak into the renv library it caches. The
+      # cache key doesn't include the pak version, so after a pak release a
+      # restored cache links to a pak that isn't installed, and the step fails
+      # with "there is no package called 'pak'".
+      RENV_CONFIG_AUTOLOADER_ENABLED: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,12 +47,10 @@ jobs:
       - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          cache-version: 2
+          cache-version: 3
           packages: |
             any::lintr
             any::styler
-      - name: Source renv activate
-        run: Rscript -e 'source("gnomad_constraint/renv/activate.R")'
       - name: Check formatting
         run: black --check --preview gnomad_constraint tests
       - name: Check imports
