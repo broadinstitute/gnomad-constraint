@@ -99,6 +99,10 @@ def main(args: argparse.Namespace) -> None:
                     None if args.skip_qc_flagged_gene_filter else res.gene_flags_ht.ht()
                 ),
             )
+            # The training set is a few hundred thousand sites of the whole context
+            # Table. naive_coalesce merges upstream partitions, so coalescing before
+            # the checkpoint would run that scan in only RR_TRAINING_N_PARTITIONS
+            # tasks; coalescing after it only merges the small, mostly empty result.
             ht = ht.checkpoint(new_temp_file("rr_training", "ht"))
             ht = ht.naive_coalesce(RR_TRAINING_N_PARTITIONS)
             ht.write(res.rr_training_ht.path, overwrite=overwrite)
