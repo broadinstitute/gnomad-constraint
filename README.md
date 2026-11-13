@@ -20,7 +20,6 @@ Many of the functions are imported from
 | Path | Contents |
 |---|---|
 | `gnomad_constraint/pipeline/` | The pipeline scripts, run in order: `prepare_data.py`, `expected_models.py`, `expected_counts.py`, and `constraint_metrics.py`; each step is a command-line flag |
-| `gnomad_constraint/pipeline/import_data.py` | Imports the external data used to compute the regional mutation rate: de novo mutations and the regional genomic feature matrix |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
 | `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
@@ -41,7 +40,8 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 
 | Script | Flag | Step |
 |---|---|---|
-| `prepare_data.py` | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
+| `prepare_data.py` | `--import-dnms`, `--import-genomic-features` | Import the de novo mutations and genomic features the regional mutation rate is modeled from; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
+| | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
 | | `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so it must run in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
 | | `--preprocess-data` | Add per-site observed and possible counts, mutation rate inputs, and model groups |
 | | `--compute-gene-quality-metrics` | Per-transcript coverage, mapping quality, segmental duplication, and low-complexity region metrics |
@@ -78,9 +78,9 @@ The regional mutation rate (rr) is a factor for each 1kb window and trinucleotid
 context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
 regional genomic features of each site's window at four flanking scales.
 
-`import_data.py` imports the DNMs and genomic features rr is modeled from, writing
+`prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
 under `imported_data/` in the constraint output directory (with `--test`, in the
-testing bucket):
+testing bucket, and with neither post-fix):
 
 | Flag | Step |
 |---|---|
