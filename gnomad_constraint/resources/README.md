@@ -138,7 +138,7 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
 
 Each section below lists the **canonical path**, the **key**, the **globals**
 and the **row fields** with sub-struct expansion. Producing function is the
-`--<step>` flag from [constraint_pipeline.py](../pipeline/constraint_pipeline.py).
+`--<step>` flag of one of the [pipeline scripts](../pipeline/).
 
 ---
 
