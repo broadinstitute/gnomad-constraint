@@ -9,7 +9,7 @@ gnomad-constraint computes the gnomAD gene and transcript constraint metrics
 (observed and expected variant counts, o/e and its confidence interval, pLI, and
 z-scores) and the mutation rate table they are built on. Expected counts are
 computed per variant and aggregated by transcript and constraint group. The
-pipeline is one `argparse` script whose steps read and write Hail Tables on GCS
+pipeline is four `argparse` scripts whose steps read and write Hail Tables on GCS
 and run on Dataproc.
 
 **This is a pipeline repo, not a library.** Nothing outside this repo imports it.
@@ -48,9 +48,11 @@ this file:
   gnomad_methods checkout is often on an unrelated branch, so confirm which copy
   your imports resolve to, and that it matches the pinned commit, before
   debugging it.
-- **Pipeline steps**: each step is a flag in
-  `gnomad_constraint/pipeline/constraint_pipeline.py`, handled by its own block
-  in `main()`. Read that block before changing the step.
+- **Pipeline steps**: each step is a flag in one of the scripts in
+  `gnomad_constraint/pipeline/` (`prepare_data.py`, `expected_models.py`,
+  `expected_counts.py`, and `constraint_metrics.py`, run in that order), handled
+  by its own block in that script's `main()`. Read that block before changing the
+  step.
 
 ## Commands
 
@@ -111,7 +113,7 @@ def my_function(ht: hl.Table, max_af: Optional[float] = None) -> hl.Table:
 ```
 
 - Write new functions in `utils/` as transformations (Tables in, Tables out), and
-  keep reads, writes, and checkpoints to resource paths in the pipeline script.
+  keep reads, writes, and checkpoints to resource paths in the pipeline scripts.
   Checkpointing to a temporary file (`new_temp_file`) inside a function is fine.
 
 ## Hail Notes
@@ -207,8 +209,9 @@ fields or globals, update its description in `release_readme/` too.
   downsamplings.
 - `--exome-coverage-metric` (`AN_percent` by default, or `median` or `AN`) and
   `--skip-coverage-model` are applied at `--preprocess-data` and change both model
-  building and model application. Later steps raise an error if
-  `--skip-coverage-model` doesn't match the preprocessed Table.
+  building and model application. Pass the same `--skip-coverage-model` to every
+  script that takes it; later steps raise an error if it doesn't match the
+  preprocessed Table.
 - `--compute-constraint-metrics` needs Hail 0.2.137 or later (`hl.qgamma`, used
   for the gamma confidence interval).
 
