@@ -5,8 +5,8 @@ canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
 This document is the schema reference for every **pipeline output** of the
-constraint pipeline and of `import_data.py` and `regional_rate_pipeline.py`. The
-schemas were first captured with
+constraint pipeline and of `regional_rate_pipeline.py`. The schemas were first
+captured with
 `ht.describe()` from the v4.1.1 tables on GCS and have been updated by hand as the
 pipeline changed, so the released v4.1.1 tables differ from them in places. For upstream **input**
 resources (VEP context, sites,
@@ -73,11 +73,11 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 (`temp=True`). These rules apply to every output, including the release files.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
-apply-models, metrics, and constraint-metrics release outputs. `import_data.py` takes
-neither post-fix. `regional_rate_pipeline.py` applies both to its own outputs and to
-the per-variant expected Table it normalizes rr on, and the directory post-fix to
-the annotated context Table it trains on, and
-`constraint_pipeline.py --apply-regional-rr` reads the rr Table with both, so run the
+apply-models, metrics, and constraint-metrics release outputs. The rr imports
+(§14-15) take neither post-fix. `regional_rate_pipeline.py` applies both to its own
+outputs and to the per-variant expected Table it normalizes rr on, and the directory
+post-fix to the annotated context Table it trains on, and
+`constraint_metrics.py --apply-regional-rr` reads the rr Table with both, so run the
 two scripts with the same post-fixes.
 
 ---
@@ -149,7 +149,7 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
 
 Each section below lists the **canonical path**, the **key**, the **globals**
 and the **row fields** with sub-struct expansion. Producing function is the
-`--<step>` flag from [constraint_pipeline.py](../pipeline/constraint_pipeline.py).
+`--<step>` flag of one of the [pipeline scripts](../pipeline/).
 
 ---
 
@@ -705,7 +705,8 @@ from §3 by selecting/renaming.
 # Regional mutation rate tables
 
 Tables used to compute the regional mutation rate (rr): the outputs of
-[import_data.py](../pipeline/import_data.py) (§14-15) and
+the `--import-dnms` and `--import-genomic-features` steps of
+[prepare_data.py](../pipeline/prepare_data.py) (§14-15) and
 [regional_rate_pipeline.py](../pipeline/regional_rate_pipeline.py) (§16-20). Only
 the training, penalty tuning, model, and rr Tables (§17-20) have globals.
 
@@ -885,7 +886,7 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
 `compute_rr_ht` (in `utils/regional_rate.py`), which uses
 `regional_mutation_rate_expr` and `normalize_regional_mutation_rate_expr` from
 `gnomad.utils.constraint.regional_mutation_rate`. Read by
-`constraint_pipeline.py --aggregate-per-variant-expected --apply-regional-rr`.
+`constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr`.
 
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.syn_dnm_rr_1kb.ht`
 - **Resource fn:** [`get_regional_rr_ht`](resource_utils.py)

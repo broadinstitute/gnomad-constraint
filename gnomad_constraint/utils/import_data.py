@@ -1,7 +1,8 @@
 """
 Functions to format the external data imported for the regional mutation rate (rr).
 
-The data are imported by ``import_data.py``:
+The data are imported by ``prepare_data.py --import-dnms`` and
+``--import-genomic-features``:
 
     - De novo mutations (DNMs) from published trio cohorts.
     - The 1kb regional genomic feature matrix from Gnocchi

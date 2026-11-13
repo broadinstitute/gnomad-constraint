@@ -736,6 +736,23 @@ def get_constraint_resources(
         "directory_post_fix": directory_post_fix,
     }
 
+    # The rr imports take neither post-fix.
+    import_dnms = PipelineStepResourceCollection(
+        "--import-dnms",
+        output_resources={"dnm_ht": get_dnm_ht(version=version, test=test)},
+        input_resources={"published DNMs": get_dnm_paths()},
+    )
+    import_genomic_features = PipelineStepResourceCollection(
+        "--import-genomic-features",
+        output_resources={
+            "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
+        },
+        input_resources={
+            "published genomic features": {
+                "published_features_path": get_published_genomic_features_path()
+            }
+        },
+    )
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
         output_resources={
@@ -928,6 +945,8 @@ def get_constraint_resources(
     # Add all steps to the constraint pipeline resource collection.
     constraint_pipeline.add_steps(
         {
+            "import_dnms": import_dnms,
+            "import_genomic_features": import_genomic_features,
             "prepare_context": prepare_context,
             "preprocess_data": preprocess_data,
             "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
@@ -950,51 +969,6 @@ def get_constraint_resources(
     return constraint_pipeline
 
 
-def get_import_data_resources(
-    version: str,
-    overwrite: bool,
-    test: bool,
-) -> PipelineResourceCollection:
-    """
-    Get PipelineResourceCollection for all resources needed in the import data script.
-
-    :param version: Version of constraint resources to use.
-    :param overwrite: Whether to overwrite existing resources.
-    :param test: Whether to write the outputs to the testing bucket.
-    :return: PipelineResourceCollection containing resources for all steps of the
-        import data script.
-    """
-    import_pipeline = PipelineResourceCollection(
-        pipeline_name="import_data",
-        overwrite=overwrite,
-    )
-    out_params = {"version": version, "test": test}
-
-    import_dnms = PipelineStepResourceCollection(
-        "--import-dnms",
-        output_resources={"dnm_ht": get_dnm_ht(**out_params)},
-        input_resources={"published DNMs": get_dnm_paths()},
-    )
-    import_genomic_features = PipelineStepResourceCollection(
-        "--import-genomic-features",
-        output_resources={"genomic_features_ht": get_genomic_features_ht(**out_params)},
-        input_resources={
-            "published genomic features": {
-                "published_features_path": get_published_genomic_features_path()
-            }
-        },
-    )
-
-    import_pipeline.add_steps(
-        {
-            "import_dnms": import_dnms,
-            "import_genomic_features": import_genomic_features,
-        }
-    )
-
-    return import_pipeline
-
-
 def get_regional_rate_resources(
     version: str,
     overwrite: bool,
@@ -1007,9 +981,9 @@ def get_regional_rate_resources(
 
     The annotated context Table is read with the same ``test`` and directory post-fix
     as the rr outputs, and the per-variant expected Table also with the same path
-    post-fix, since ``constraint_pipeline.py --apply-regional-rr`` with those values
+    post-fix, since ``constraint_metrics.py --apply-regional-rr`` with those values
     applies rr to it, so rr is normalized on it. The DNM and genomic feature Tables
-    are the ``import_data.py`` outputs for ``version`` and ``test``.
+    are the ``prepare_data.py`` import outputs for ``version`` and ``test``.
 
     :param version: Version of constraint resources to use.
     :param overwrite: Whether to overwrite existing resources.
@@ -1032,7 +1006,7 @@ def get_regional_rate_resources(
         "path_post_fix": path_post_fix,
     }
     features_input = {
-        "import_data.py --import-genomic-features": {
+        "prepare_data.py --import-genomic-features": {
             "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
         }
     }
@@ -1041,11 +1015,11 @@ def get_regional_rate_resources(
         "--create-rr-site-features",
         output_resources={"rr_site_features_ht": get_rr_site_features_ht(**out_params)},
         input_resources={
-            "import_data.py --import-dnms": {
+            "prepare_data.py --import-dnms": {
                 "dnm_ht": get_dnm_ht(version=version, test=test)
             },
             **features_input,
-            "constraint_pipeline.py --prepare-context-ht": {
+            "prepare_data.py --prepare-context-ht": {
                 "annotated_context_ht": get_annotated_context_ht(
                     version=version, test=test, directory_post_fix=directory_post_fix
                 )
@@ -1078,7 +1052,7 @@ def get_regional_rate_resources(
         pipeline_input_steps=[train_rr_models],
         add_input_resources={
             **features_input,
-            "constraint_pipeline.py --apply-models-per-variant": {
+            "expected_counts.py --apply-models-per-variant": {
                 "per_variant_expected_ht": get_per_variant_expected_dataset(
                     **out_params
                 )

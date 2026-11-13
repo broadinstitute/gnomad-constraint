@@ -30,7 +30,6 @@ from gnomad_constraint.resources.resource_utils import (
     get_dnm_ht,
     get_gene_quality_metrics_ht,
     get_genomic_features_ht,
-    get_import_data_resources,
     get_lof_threshold_tsv_path,
     get_logging_path,
     get_models,
@@ -519,8 +518,8 @@ class TestGetConstraintResources:
         the command line, so the key has to be a pipeline flag. Regression test: the
         preprocessing step was named "preprocess data for downstream steps", and
         with ``--skip-pre-rank-metrics`` the pre-rank Table was keyed by
-        "pre-rank constraint metrics". The gnomAD inputs aren't created by the
-        pipeline, so they are exempt.
+        "pre-rank constraint metrics". The gnomAD inputs and the published files the
+        rr imports read aren't created by the pipeline, so they are exempt.
         """
         resources = self._get_resources(skip_pre_rank_metrics)
         keys = {
@@ -529,7 +528,8 @@ class TestGetConstraintResources:
             for key in step.input_resources
         }
         assert "--preprocess-data" in keys
-        assert all(key.startswith("--") for key in keys - {"gnomAD resources"})
+        external = {"gnomAD resources", "published DNMs", "published genomic features"}
+        assert all(key.startswith("--") for key in keys - external)
         if skip_pre_rank_metrics:
             assert list(resources.compute_constraint_metrics.input_resources) == [
                 "--compute-constraint-metrics"
@@ -604,13 +604,23 @@ class TestGetConstraintResources:
         } <= _input_paths(resources.compute_gene_quality_metrics)
 
 
-class TestGetImportDataResources:
-    """Test the steps built by the get_import_data_resources function."""
+class TestGetConstraintResourcesImportSteps:
+    """Test the rr import steps built by the get_constraint_resources function."""
 
     @pytest.mark.parametrize("test", [False, True])
     def test_outputs(self, test: bool) -> None:
-        """Test that each step writes its Table, under the test root in a test run."""
-        resources = get_import_data_resources("4.1.1", overwrite=False, test=test)
+        """
+        Test that each step writes its Table, under the test root in a test run.
+
+        The import outputs take neither post-fix.
+        """
+        resources = get_constraint_resources(
+            "4.1.1",
+            overwrite=False,
+            test=test,
+            directory_post_fix="d",
+            path_post_fix="p",
+        )
         assert (
             resources.import_dnms.dnm_ht.path
             == get_dnm_ht(version="4.1.1", test=test).path
@@ -621,7 +631,7 @@ class TestGetImportDataResources:
 
     def test_inputs(self) -> None:
         """Test that the inputs the import steps read are the published files."""
-        resources = get_import_data_resources("4.1.1", overwrite=False, test=True)
+        resources = get_constraint_resources("4.1.1", overwrite=False, test=True)
         dnm_dir = "gs://regional_missense_constraint/resources/GRCh38/reference_data"
         assert resources.import_dnms.asd_dnm_path == (
             f"{dnm_dir}/Satterstrom_2026_ASD_dnv_SNV_indel.txt.gz"
@@ -663,7 +673,7 @@ class TestGetRegionalRateResources:
         version. The training set is made from the site features, and the tuning and
         the fit read it.
         """
-        imports = get_import_data_resources("4.1.1", overwrite=False, test=True)
+        imports = get_constraint_resources("4.1.1", overwrite=False, test=True)
         sites = resources.create_rr_site_features
         assert sites.dnm_ht.path == imports.import_dnms.dnm_ht.path
         for step in [sites, resources.compute_rr]:

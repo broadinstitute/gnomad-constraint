@@ -88,7 +88,7 @@ class TestGenomicFeatureMissing:
         """
         Test that each missing-value spelling is imported as missing, not NaN.
 
-        ``import_data.py --import-genomic-features`` imports the matrix with float
+        ``prepare_data.py --import-genomic-features`` imports the matrix with float
         types and ``missing=GENOMIC_FEATURE_MISSING``, so NaN never reaches the rr
         models.
         """

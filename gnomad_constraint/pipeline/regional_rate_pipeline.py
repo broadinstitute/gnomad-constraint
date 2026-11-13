@@ -7,10 +7,10 @@ using regional genomic features. A window's rr is the model's prediction for the
 window relative to the average window, normalized so that each context's mean rr,
 weighted by the adj expected count, over exome synonymous Ensembl MANE Select sites
 is 1.
-``constraint_pipeline.py --aggregate-per-variant-expected --apply-regional-rr``
+``constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr``
 applies it.
 
-The DNM and genomic feature Tables are written by ``import_data.py``. The
+The DNM and genomic feature Tables are written by ``prepare_data.py``. The
 annotated context Table is read with the same --version, --test, and
 --directory-post-fix as the rr outputs, and the per-variant expected Table also with
 the same --path-post-fix: the values ``--apply-regional-rr`` must be run with, so rr
@@ -198,7 +198,7 @@ if __name__ == "__main__":
         "--directory-post-fix",
         help=(
             "Post-fix to append to the output directory path. Also applies to the"
-            " per-variant expected input, as in constraint_pipeline.py."
+            " per-variant expected input, as in the constraint pipeline scripts."
         ),
         type=str,
         default=None,
@@ -207,7 +207,7 @@ if __name__ == "__main__":
         "--path-post-fix",
         help=(
             "Post-fix to append to output file names. Also applies to the"
-            " per-variant expected input, as in constraint_pipeline.py."
+            " per-variant expected input, as in the constraint pipeline scripts."
         ),
         type=str,
         default=None,
@@ -215,10 +215,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test",
         help=(
-            "Whether to run on the test data: reads the import_data.py --test outputs"
-            " and the constraint_pipeline.py --test annotated context and"
-            " per-variant expected Tables, and writes the outputs to the testing"
-            " bucket."
+            "Whether to run on the test data: reads the --test outputs of"
+            " prepare_data.py and expected_counts.py, and writes the outputs to the"
+            " testing bucket."
         ),
         action="store_true",
     )
