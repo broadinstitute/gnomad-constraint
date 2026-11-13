@@ -36,13 +36,13 @@ implementations against each other is named for the comparison.
 | Module | Covers |
 |---|---|
 | `utils/test_constraint_preprocess.py` | `prepare_context_ht`, frequency filtering, mutation rate site selection, exome coverage metrics, exome observed/possible counts, build-model groups, `prepare_ht_for_constraint_calculations`, the training set, and the mutation rate |
-| `utils/test_constraint_apply.py` | Applying the models with and without a coverage model, the per-variant and aggregated expected paths (checked against each other), and `aggregate_by_constraint_groups` |
+| `utils/test_constraint_apply.py` | Applying the models with and without a coverage model, the per-variant and aggregated expected paths (checked against each other), the regional mutation rate (rr) in `aggregate_per_variant_expected_ht`, and `aggregate_by_constraint_groups` |
 | `utils/test_constraint_metrics.py` | o/e, both CIs, z-scores and flags, transcript selection, ranks and percentile bins, pLI per LoF group, `compute_constraint_metrics`, and the release Tables (values, globals, and the published TSV columns) |
 | `utils/test_constraint_gene_quality.py` | Coverage, mapping quality, segdup/LCR, and flag thresholds in `compute_gene_quality_metrics` |
 | `utils/test_import_data.py` | Formatting the imported de novo mutations and the genomic feature windows |
 | `utils/test_regional_rate.py` | The rr model features per context, the rr training set, removing QC-flagged genes, and the tuning folds |
 | `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
-| `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, and the models each script's resources expect with `--skip-coverage-model` |
+| `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, the models each script's resources expect with `--skip-coverage-model`, and the `--apply-regional-rr` input check |
 
 ## How these tests are written
 

@@ -693,6 +693,7 @@ def get_constraint_resources(
     path_post_fix: Optional[str] = None,
     skip_pre_rank_metrics: bool = False,
     use_aggregated_expected: bool = False,
+    apply_regional_rr: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -709,6 +710,9 @@ def get_constraint_resources(
     :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
         reads the ``--apply-models-aggregated`` output instead of the
         ``--aggregate-per-variant-expected`` output. Default is False.
+    :param apply_regional_rr: Whether ``--aggregate-per-variant-expected`` applies
+        the regional rr Table, which then becomes one of its inputs. Default is
+        False.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -872,6 +876,17 @@ def get_constraint_resources(
             calculate_mutation_rate,
             build_models,
         ],
+        add_input_resources=(
+            {
+                "expected_counts.py --compute-rr": {
+                    "regional_rr_ht": get_regional_rr_ht(
+                        **common_params, path_post_fix=path_post_fix
+                    )
+                }
+            }
+            if apply_regional_rr
+            else None
+        ),
     )
     apply_models_aggregated = PipelineStepResourceCollection(
         "--apply-models-aggregated",

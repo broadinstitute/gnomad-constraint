@@ -585,6 +585,44 @@ class TestGetConstraintResources:
         assert list(inputs) == [step]
         assert [_path(r) for r in inputs[step]] == [path]
 
+    @pytest.mark.parametrize("apply_regional_rr", [False, True])
+    def test_apply_regional_rr_input(self, apply_regional_rr: bool) -> None:
+        """Test that the rr Table is an input only with --apply-regional-rr."""
+        step = get_constraint_resources(
+            version="4.1.1",
+            overwrite=False,
+            test=True,
+            apply_regional_rr=apply_regional_rr,
+        ).aggregate_per_variant_expected
+        key = "expected_counts.py --compute-rr"
+        assert (key in step.input_resources) == apply_regional_rr
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_regional_rr_input_path(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that --apply-regional-rr reads the rr Table with the run's settings.
+
+        ``expected_counts.py --compute-rr`` writes the rr Table with the same
+        version, test flag, and post-fixes as the per-variant Table it normalizes rr
+        on, so both scripts must use the same ones.
+        """
+        kwargs = {
+            "test": test,
+            "directory_post_fix": directory_post_fix,
+            "path_post_fix": path_post_fix,
+        }
+        step = get_constraint_resources(
+            version="4.1.1", overwrite=False, apply_regional_rr=True, **kwargs
+        ).aggregate_per_variant_expected
+        assert (
+            step.regional_rr_ht.path
+            == get_regional_rr_ht(version="4.1.1", **kwargs).path
+        )
+
     def test_inputs_read_by_steps_are_declared(
         self, resources: PipelineResourceCollection
     ) -> None:

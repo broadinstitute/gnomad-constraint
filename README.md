@@ -53,7 +53,7 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 | `expected_counts.py` | `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
 | | `--compute-rr` | Compute the regional mutation rate per 1kb window and context, normalized on the `--apply-models-per-variant` output; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
 | | `--apply-models-aggregated` | Alternative to `--apply-models-per-variant` and `--aggregate-per-variant-expected`: sum observed and possible counts first, then apply the models |
-| `constraint_metrics.py` | `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence |
+| `constraint_metrics.py` | `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence. Add `--apply-regional-rr` to first multiply each variant's expected count by the regional mutation rate (rr) of its 1kb window and context (see [Regional mutation rate](#regional-mutation-rate-rr)) |
 | | `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
 | | `--compute-constraint-metrics` | Compute o/e, confidence intervals, z-scores, flags, pLI, ranks, and bins. `--skip-pre-rank-metrics` reruns only the ranking |
 | | `--prepare-release` | Format the constraint metrics as the release Table |
@@ -81,6 +81,17 @@ files.
 The regional mutation rate (rr) is a factor for each 1kb window and trinucleotide
 context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
 regional genomic features of each site's window at four flanking scales.
+
+`constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr` applies rr after model
+calibration: it multiplies each variant's expected count by the rr of its window and
+context, or by 1 where there is none (chrX, chrY, and windows without features). It
+reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
+`--path-post-fix`, and stops with an error if that Table was normalized on a
+per-variant expected Table with other models, or doesn't record which. The output keeps the unadjusted
+Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
+replace the unadjusted ones unless you set `--path-post-fix` (rerun
+`expected_models.py --create-training-set` onward with it) or `--directory-post-fix`. The release Table
+records the rr settings in its `regional_rr_params` global.
 
 `prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
 under `imported_data/` in the constraint output directory (with `--test`, in the
