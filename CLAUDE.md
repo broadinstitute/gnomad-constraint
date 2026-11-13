@@ -148,7 +148,9 @@ start and pulls the checkout at most once a day. Set `GNOMAD_SKIP_SKILLS_HOOK=1`
 to turn the hook off.
 
 - **Run `/gnomad-pr-review` on every pull request before requesting review from
-  a team member.** It replaces `/review`, which this repo no longer uses. Its
+  a team member.** Only a person can start it; Claude can't invoke it. When the
+  review is due, Claude should ask the user to run it, not run a different
+  review in its place. It replaces `/review`, which this repo no longer uses. Its
   setup questions size the review to the PR: for a small one, review the source
   only, use Sonnet reviewers, and skip the second opinion. Work through what it
   reports, and note in the PR description that it ran and what you did or did
