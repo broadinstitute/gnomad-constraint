@@ -48,9 +48,11 @@ this file:
   gnomad_methods checkout is often on an unrelated branch, so confirm which copy
   your imports resolve to, and that it matches the pinned commit, before
   debugging it.
-- **Pipeline steps**: each step is a flag in
-  `gnomad_constraint/pipeline/constraint_pipeline.py`, handled by its own block
-  in `main()`. Read that block before changing the step.
+- **Pipeline steps**: each step is a flag in one of the scripts in
+  `gnomad_constraint/pipeline/` (`prepare_data.py`, `expected_models.py`,
+  `expected_counts.py`, and `constraint_metrics.py`, run in that order), handled
+  by its own block in that script's `main()`. Read that block before changing the
+  step.
 
 ## Commands
 
