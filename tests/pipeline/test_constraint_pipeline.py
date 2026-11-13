@@ -16,6 +16,7 @@ import gnomad_constraint.pipeline as pipeline
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.pipeline.constraint_metrics import (
     check_constraint_group_input,
+    check_regional_rr_input,
     get_release_downsamplings,
 )
 from gnomad_constraint.pipeline.expected_counts import (
@@ -159,6 +160,73 @@ class TestCheckConstraintGroupInput:
                 use_aggregated_expected=use_aggregated_expected,
             )
         assert bool(caplog.records) == warned
+
+
+class TestCheckRegionalRrInput:
+    """Test the check_regional_rr_input function."""
+
+    MODELS = hl.Struct(coverage_model=[1.0, 0.5], log10_coverage=False)
+
+    @classmethod
+    def _per_variant_ht(cls, coverage_model: List[float]) -> hl.Table:
+        """Return an empty per-variant Table with the given apply_models_globals."""
+        ht = hl.utils.range_table(0)
+        return ht.annotate_globals(
+            apply_models_globals=cls.MODELS.annotate(coverage_model=coverage_model)
+        )
+
+    @classmethod
+    def _rr_ht(cls, record: bool) -> hl.Table:
+        """Return an empty rr Table, recording the models it was normalized on."""
+        rr_globals = hl.struct(ridge_penalty=0.3)
+        if record:
+            rr_globals = rr_globals.annotate(
+                per_variant_apply_models_globals=hl.literal(cls.MODELS)
+            )
+        return hl.utils.range_table(0).annotate_globals(rr_globals=rr_globals)
+
+    @staticmethod
+    def _no_rr_globals_ht() -> hl.Table:
+        """Return an empty rr Table with no ``rr_globals``, like Gnocchi's."""
+        return hl.utils.range_table(0)
+
+    def test_matching_models(self) -> None:
+        """Test that an rr Table normalized on the same models passes."""
+        check_regional_rr_input(
+            self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(True)
+        )
+
+    def test_changed_models(self) -> None:
+        """
+        Test that rr normalized on a per-variant Table with other models is rejected.
+
+        This happens when ``--apply-models-per-variant --overwrite`` is rerun after
+        ``--compute-rr``, which leaves the rr normalization factors stale.
+        """
+        with pytest.raises(ValueError, match="Rerun expected_counts.py"):
+            check_regional_rr_input(self._per_variant_ht([1.0, 0.6]), self._rr_ht(True))
+
+    def test_no_rr_globals(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that an rr Table with no ``rr_globals`` is only warned about."""
+        with caplog.at_level(logging.WARNING, logger="constraint_metrics"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model),
+                self._no_rr_globals_ht(),
+            )
+        assert caplog.records
+
+    def test_rr_globals_without_the_record(self) -> None:
+        """
+        Test that ``rr_globals`` without the recorded models is rejected.
+
+        Regression test: such a Table, from rr code older than the record, passed
+        with a warning, and then ``--prepare-release`` raised a KeyError when it
+        dropped ``per_variant_apply_models_globals`` from the release globals.
+        """
+        with pytest.raises(ValueError, match="don't record"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(False)
+            )
 
 
 class TestGetReleaseDownsamplings:

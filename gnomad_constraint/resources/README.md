@@ -397,7 +397,13 @@ tuple. Produced by `--aggregate-per-variant-expected`.
 - **Key:** `annotation, modifier, gene, gene_id, transcript, canonical, mane_select`
 
 ### Globals
-Identical pipeline-parameter globals as `per_variant_expected.ht`.
+Identical pipeline-parameter globals as `per_variant_expected.ht`. With
+`--apply-regional-rr`, also `regional_rr_globals`, a copy of the rr Table's
+`rr_globals`: `ridge_penalty: float64` (ridge penalty of the rr models),
+`normalization_factors: dict<str, float64>` (per-context factor rr was divided by),
+and `per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
+per-variant expected Table rr was normalized on; `--apply-regional-rr` stops with an
+error if they differ from this Table's).
 
 ### Rows
 - `annotation, modifier, gene, gene_id, transcript, canonical, mane_select` — key.
@@ -412,6 +418,9 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`.
   recover the bucket-mean fraction).
 - `coverage_correction: float64` — `Σ coverage_correction · possible`.
 - `expected_variants: array<float64>` — summed expected counts per freq entry.
+  With `--apply-regional-rr`, each variant's expected counts are first multiplied
+  by the rr of its window and context (`adj_r[context]` of the rr Table, keyed by
+  `interval`), or by 1 where there is none.
 
 ---
 
@@ -611,6 +620,9 @@ Public-release flattened constraint table. One row per
 - `loeuf_percentile_thresholds: struct{percentile, decile, sextile}` — LOEUF
   upper-bound thresholds at each granularity (copied from
   `percentile_thresholds.lof` in §10).
+- `regional_rr_params: struct{ridge_penalty, normalization_factors}` — only when the
+  expected counts were adjusted with `--apply-regional-rr`; `regional_rr_globals`
+  (§7) without `per_variant_apply_models_globals`.
 
 ### Rows
 Key + GENCODE annotations + per-group structs:
