@@ -7,9 +7,10 @@ pipeline steps, and how to install and run things are in [README.md](README.md).
 
 gnomad-constraint computes the gnomAD gene and transcript constraint metrics
 (observed and expected variant counts, o/e and its confidence interval, pLI, and
-z-scores) and the mutation rate table they are built on. The pipeline is one
-`argparse` script whose steps read and write Hail Tables on GCS and run on
-Dataproc.
+z-scores) and the mutation rate table they are built on. Expected counts are
+computed per variant and aggregated by transcript and constraint group. The
+pipeline is one `argparse` script whose steps read and write Hail Tables on GCS
+and run on Dataproc.
 
 **This is a pipeline repo, not a library.** Nothing outside this repo imports it.
 A transformation that is Table or expression in, Table or expression out, with no
@@ -35,11 +36,14 @@ this file:
 
 - **Dataset paths** come from `get_*` functions in
   `gnomad_constraint/resources/resource_utils.py`. They take `version` and
-  `test`; `test` sends output to `gs://gnomad-tmp/gnomad_v{version}_testing/`.
+  `test`, and most also take the directory and path post-fixes; `test` sends
+  output to `gs://gnomad-tmp/gnomad_v{version}_testing/`. Constants live in
+  `gnomad_constraint/resources/constants.py`, and
+  `gnomad_constraint/resources/README.md` has the schema of every output.
   Public gnomAD releases and reference data (VEP context, methylation, GENCODE)
-  come from `gnomad.resources.grch38` and `grch37`; check there before adding a
-  resource. GERP is the exception: `get_gerp_ht` loads it from Hail's datasets
-  API with `hl.experimental.load_dataset`.
+  come from `gnomad.resources.grch38`; check there before adding a resource.
+  GERP is the exception: `get_gerp_ht` loads it from Hail's datasets API with
+  `hl.experimental.load_dataset`.
 - **Shared utilities**: check gnomad_methods before writing a helper. A local
   gnomad_methods checkout is often on an unrelated branch, so confirm which copy
   your imports resolve to, and that it matches the pinned commit, before
@@ -58,6 +62,8 @@ Setup, formatting, and the exact CI checks are in README.md and
   pip-tools 7.4 or later; never edit the `.txt` by hand.
 - Run the pre-commit hooks on the files you changed before committing:
   `pre-commit run --files <files>`.
+- Run the unit tests with `python -m pytest`. The gamma confidence interval
+  tests need Hail 0.2.137 or later and are skipped on older versions.
 
 ## How Code Is Executed
 
@@ -71,9 +77,8 @@ submission command. When submitting:
 - Zip gnomad_methods **at the commit pinned in `requirements.txt`**. Without it,
   the cluster runs whatever gnomad_methods it has installed.
 - `--calculate-gerp-cutoffs` saves nothing: its cutoffs are only used by
-  `--calculate-mutation-rate` in the same command. Submitted on its own, the
-  mutation rate step silently uses the default cutoffs.
-- Run a step with `--test` (chr20, chrX, and chrY) or `--test-gene-list` (five
+  `--preprocess-data` in the same command, so it raises an error without it.
+- Run a step with `--test` (chr20, chrX, and chrY) or `--test-gene-list` (six
   genes) and check the output before running it at full scale.
 
 Machine-specific notes (environment paths, cluster names) belong in the
@@ -129,11 +134,17 @@ def my_function(ht: hl.Table, max_af: Optional[float] = None) -> hl.Table:
 
 ## Testing and Validation
 
-There is no unit test suite yet; CI runs formatting, docstring, and lint checks
-only. Validate a change by running the affected step with `--test` and
-inspecting the output. A passing `--test` run is necessary but not sufficient:
-out-of-memory and shuffle failures only appear at full scale. Say what you ran
-and at what scale rather than calling a change verified.
+Unit tests in `tests/` run in CI; `tests/README.md` describes their layout and
+conventions. Add or update a test with every bug fix and say in its docstring
+what it guards against; a known, unfixed bug gets an `xfail(strict=True)` test
+that asserts the correct behavior. Fixtures are built with
+`hl.Table.parallelize`, and tests never read from GCS.
+
+Unit tests don't replace running the pipeline. Validate a change to a step by
+running it with `--test` and inspecting the output. A passing `--test` run is
+necessary but not sufficient: out-of-memory and shuffle failures only appear at
+full scale. Say what you ran and at what scale rather than calling a change
+verified.
 
 ## Pull Requests
 
@@ -186,16 +197,20 @@ fields or globals, update its description in `release_readme/` too.
 
 ## Repo Gotchas
 
-- For v4, only autosomes are computed. `main()` removes `chrx_nonpar` and
-  `chry_nonpar` from the genomic regions, and despite its name, the
-  `autosome_par` region is built with `in_autosome()`, which leaves out the
-  pseudoautosomal regions (a TODO adds them back once there is X/Y methylation
-  data).
+- Genomic regions are labels, not separate Tables: `prepare_context_ht` labels
+  each site `autosome_or_par`, `chrx_nonpar`, or `chry_nonpar`, and all three stay
+  in the same Tables. Filter on `autosome_or_par`, not `autosome_par`.
+- `adj_r` and `syn_adj_r` are annotated on the context Table but never applied by
+  the pipeline, and they are only defined on autosomes. Expected counts and o/e
+  in the metrics and release Tables are not adj_r-corrected.
 - For v4, the genomes sites resource is still v3.1.2, because v4 genomes have no
   downsamplings.
-- `--coverage-metric` selects the exome coverage measure (`exome_coverage` or
-  `exomes_AN_percent`), and it changes both model building and model
-  application.
+- `--exome-coverage-metric` (`AN_percent` by default, or `median` or `AN`) and
+  `--skip-coverage-model` are applied at `--preprocess-data` and change both model
+  building and model application. Later steps raise an error if
+  `--skip-coverage-model` doesn't match the preprocessed Table.
+- `--compute-constraint-metrics` needs Hail 0.2.137 or later (`hl.qgamma`, used
+  for the gamma confidence interval).
 
 ## Maintaining CLAUDE.md
 
