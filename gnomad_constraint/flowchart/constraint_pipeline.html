@@ -31,6 +31,7 @@
   --s-src:  #63748D;
   --s-ctx:  #0B57D0;
   --s-mod:  #0F86B4;
+  --s-rr:   #1E8E3E;
   --s-app:  #9C6E06;
   --s-met:  #D0512A;
   --s-rel:  #2A3547;
@@ -75,6 +76,7 @@
     --s-src:  #8B9BB2;
     --s-ctx:  #5C9CFF;
     --s-mod:  #45C4EC;
+    --s-rr:   #5BC77A;
     --s-app:  #EFC348;
     --s-met:  #FF8A5C;
     --s-rel:  #C6D1E1;
@@ -119,6 +121,7 @@
   --s-src:  #8B9BB2;
   --s-ctx:  #5C9CFF;
   --s-mod:  #45C4EC;
+  --s-rr:   #5BC77A;
   --s-app:  #EFC348;
   --s-met:  #FF8A5C;
   --s-rel:  #C6D1E1;
@@ -1328,10 +1331,10 @@ var TABLES = {"collected":"2026-10-21","hail_version":"0.2.134-952ae203dbbe","ta
   var T = (TABLES && TABLES.tables) || {};
 
   var AGG_FLAG = "--use-aggregated-expected";
-  var PER_VARIANT_ONLY = ["apply_models_per_variant", "aggregate_per_variant_expected"];
+  var PER_VARIANT_ONLY = ["apply_models_per_variant", "compute_rr", "aggregate_per_variant_expected"];
   var AGGREGATED_ONLY = ["apply_models_aggregated"];
   var RES_UTILS = "gnomad_constraint.resources.resource_utils.";
-  var STAGE_COLORS = ["--s-ctx", "--s-mod", "--s-app", "--s-met", "--s-rel"];
+  var STAGE_COLORS = ["--s-ctx", "--s-mod", "--s-rr", "--s-app", "--s-met", "--s-rel"];
   var OP_LABELS = {
     write: "write", checkpoint: "checkpoint", export: "export",
     repartition: "repartition", naive_coalesce: "naive_coalesce", shuffle_flag: "new shuffle"

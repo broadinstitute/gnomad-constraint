@@ -69,10 +69,20 @@ NOTES = {
             "id": "regional",
             "name": "Regional mutability",
             "note": (
-                "Per-context ``adj_r`` and ``syn_adj_r`` on autosomes. Carried"
-                " through to the per-variant Table but not applied."
+                "Per-context ``adj_r`` and ``syn_adj_r`` on autosomes, carried"
+                " through to the per-variant Table but not applied. And the inputs of"
+                " the regional mutation rate (rr): the Satterstrom 2026 ASD and DDD de"
+                " novo mutations, the Gnocchi 1kb genomic features, and the gene flags"
+                " of the v4.1.2 constraint metrics."
             ),
-            "members": ["adj_r_ht", "syn_adj_r_ht"],
+            "members": [
+                "adj_r_ht",
+                "syn_adj_r_ht",
+                "asd_dnm_path",
+                "ddd_dnm_path",
+                "published_features_path",
+                "gene_flags_ht",
+            ],
         },
     ],
     "stages": [
@@ -105,6 +115,25 @@ NOTES = {
             ],
         },
         {
+            "id": "rr",
+            "name": "Regional mutation rate models",
+            "note": (
+                "Import the de novo mutations (DNMs) and genomic features, and fit one"
+                " ridge-penalized logistic model per trinucleotide context that tells"
+                " synonymous DNM sites from a sample of other synonymous sites by their"
+                " 1kb window's features. ``--compute-rr`` turns the models into a rate"
+                " per window, and ``--apply-regional-rr`` scales expected counts by it."
+            ),
+            "steps": [
+                "import_dnms",
+                "import_genomic_features",
+                "create_rr_site_features",
+                "create_rr_training_set",
+                "tune_rr_penalty",
+                "train_rr_models",
+            ],
+        },
+        {
             "id": "apply",
             "name": "Expected counts",
             "note": (
@@ -112,10 +141,14 @@ NOTES = {
                 " expected counts per transcript and constraint group. Two routes reach"
                 " the same constraint group Table: per variant (keeps the per-SNV"
                 " expected counts) or aggregated (sums first, never writes per-variant"
-                " rows)."
+                " rows). Only the per-variant route can apply the regional mutation"
+                " rate: ``--compute-rr`` normalizes it on the per-variant expected"
+                " counts, and ``--aggregate-per-variant-expected --apply-regional-rr``"
+                " applies it."
             ),
             "steps": [
                 "apply_models_per_variant",
+                "compute_rr",
                 "aggregate_per_variant_expected",
                 "apply_models_aggregated",
                 "aggregate_by_constraint_groups",
@@ -455,6 +488,8 @@ NOTES = {
                     " per-variant output, but no pipeline step applies them, so expected"
                     " counts are not adj_r-corrected. Both adj_r Tables are autosome builds"
                     " (``*_autosome.agg.ht``), so expect missing values on chrX and chrY."
+                    " ``--apply-regional-rr`` applies a different rr Table, computed by"
+                    " ``--compute-rr``."
                 ),
             ],
         },
@@ -850,7 +885,10 @@ NOTES = {
                 ),
                 (
                     "``adj_r`` and ``syn_adj_r`` are carried on each row, but no step applies"
-                    " or sums them. Expected counts have no regional correction."
+                    " or sums them. The per-variant expected counts have no regional"
+                    " correction; ``--aggregate-per-variant-expected --apply-regional-rr``"
+                    " applies the rr Table from ``--compute-rr`` (its ``adj_r`` field is a"
+                    " different quantity)."
                 ),
                 (
                     "With ``--skip-coverage-model``, sites below"
@@ -858,6 +896,43 @@ NOTES = {
                     " They are dropped from both observed and expected counts."
                 ),
             ],
+        },
+        "import_dnms": {
+            "summary": (
+                "Import the Satterstrom 2026 ASD and DDD de novo mutations as a Table of"
+                " DNM sites"
+            ),
+        },
+        "import_genomic_features": {
+            "summary": (
+                "Import the Gnocchi 1kb genomic feature matrix, keyed by window interval"
+            ),
+        },
+        "create_rr_site_features": {
+            "summary": (
+                "Synonymous DNM sites and a 5% sample of other synonymous sites, with"
+                " their window's features"
+            ),
+        },
+        "create_rr_training_set": {
+            "summary": (
+                "Each site's label, context, chromosome fold, and its context's features"
+            ),
+        },
+        "tune_rr_penalty": {
+            "summary": (
+                "Held-out log loss of each ridge penalty, fit on one chromosome fold and"
+                " scored on the other"
+            ),
+        },
+        "train_rr_models": {
+            "summary": "One ridge-penalized logistic model per context",
+        },
+        "compute_rr": {
+            "summary": (
+                "rr per 1kb window and context, normalized on the per-variant expected"
+                " counts"
+            ),
         },
         "aggregate_per_variant_expected": {
             "summary": "Sum per-variant counts per transcript, consequence and modifier",

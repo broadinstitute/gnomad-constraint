@@ -184,7 +184,9 @@ def get_repo_info(repo: str) -> Dict[str, Any]:
     """
     module = REPO_ANCHORS[repo]
     origin = pathlib.Path(importlib.util.find_spec(module).origin).resolve()
-    root = str(origin.parents[len(module.split(".")) - 1])
+    # A package's origin is its __init__.py, one directory deeper than a module's.
+    depth = len(module.split(".")) - (0 if origin.name == "__init__.py" else 1)
+    root = str(origin.parents[depth])
     info = {"root": root, "slug": REPO_SLUGS[repo], "branch": None, "sha": None}
     try:
         toplevel = _git(root, "rev-parse", "--show-toplevel")
@@ -319,13 +321,21 @@ def find_function(path: str) -> Tuple[Optional[ModuleSource], Optional[ast.AST]]
 
     :param path: Dotted path, e.g. ``gnomad.utils.constraint.apply_models``.
     :return: Tuple of the parsed module and the ``FunctionDef``, or (None, None)
-        when the path is not a function defined at module level.
+        when the path is not a function defined at module level, directly or
+        through a re-export.
     """
     module, _, name = path.rpartition(".")
     src = get_source(module)
-    if src is None or name not in src.functions:
+    if src is None:
         return None, None
-    return src, src.functions[name]
+    if name in src.functions:
+        return src, src.functions[name]
+    # A package can re-export a function from a submodule, as
+    # ``gnomad.utils.constraint`` does: follow the import to its definition.
+    target = src.symbols.get(name)
+    if target and target != path:
+        return find_function(target)
+    return None, None
 
 
 def parse_docstring(doc: Optional[str]) -> Dict[str, Any]:
