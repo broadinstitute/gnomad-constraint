@@ -1,4 +1,4 @@
-"""Tests for the constraint pipeline script."""
+"""Tests for the helpers of the constraint pipeline scripts."""
 
 import logging
 import os
@@ -10,14 +10,16 @@ import hail as hl
 import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
-from gnomad_constraint.pipeline.constraint_pipeline import (
-    check_apply_models_resources,
+from gnomad_constraint.pipeline.constraint_metrics import (
     check_constraint_group_input,
-    check_gerp_cutoffs_step,
-    check_skip_coverage_model,
-    get_coverage_model,
     get_release_downsamplings,
 )
+from gnomad_constraint.pipeline.expected_counts import (
+    check_apply_models_resources,
+    get_coverage_model,
+)
+from gnomad_constraint.pipeline.expected_models import check_skip_coverage_model
+from gnomad_constraint.pipeline.prepare_data import check_gerp_cutoffs_step
 
 
 class TestCheckSkipCoverageModel:
@@ -146,7 +148,7 @@ class TestCheckConstraintGroupInput:
         ``--aggregate-per-variant-expected`` output, maybe from an older run,
         rather than the Table just written.
         """
-        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+        with caplog.at_level(logging.WARNING, logger="constraint_metrics"):
             check_constraint_group_input(
                 aggregate_per_variant_expected=aggregate_per_variant_expected,
                 apply_models_aggregated=apply_models_aggregated,
@@ -229,7 +231,7 @@ class TestGetCoverageModel:
                 coefficients=self.COEFFICIENTS, log10_coverage=saved_log10_coverage
             ),
         )
-        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+        with caplog.at_level(logging.WARNING, logger="expected_counts"):
             coefficients, log10 = get_coverage_model(res, False, log10_coverage, 90)
         assert hl.eval(coefficients) == self.COEFFICIENTS
         assert log10 == saved_log10_coverage
@@ -248,7 +250,7 @@ class TestGetCoverageModel:
     ) -> None:
         """Test that a model saved as only its coefficients uses the flag, and warns."""
         res = self._res(tmp_path, hl.literal(coefficients))
-        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+        with caplog.at_level(logging.WARNING, logger="expected_counts"):
             result, log10 = get_coverage_model(
                 res, False, log10_coverage, high_cov_cutoff
             )
