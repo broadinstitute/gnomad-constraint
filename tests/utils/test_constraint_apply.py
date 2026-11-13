@@ -606,6 +606,103 @@ class TestAggregatePerVariantExpectedHt:
         assert list(ht.key) == [*MU_GROUPING, *GROUPINGS]
         assert ht.count() == 6
 
+    def test_regional_rr(self) -> None:
+        """
+        Test that expected counts are multiplied by the rr of the window and context.
+
+        The windows include both ends, as the pipeline's feature windows do. The first
+        covers positions 1-4 of chr1 (rr 2 for the non-CpG context and 0.5 for the CpG
+        one); position 5 is just past its end, so its rr is 1. The second window covers
+        positions 10 and 11 but has no rr for their context, and the chrX site has no
+        window, so their rr is 1 too. Only the expected counts change.
+        """
+        ht = create_per_variant_expected_ht(
+            _preprocessed_ht(),
+            _mutation_ht(),
+            hl.literal(PLATEAU_MODELS),
+            _coverage_model_expr(COVERAGE_MODEL),
+            use_mane_select=True,
+        )
+
+        def _window(start: int, end: int) -> hl.Interval:
+            return hl.Interval(
+                hl.Locus("chr1", start, "GRCh38"),
+                hl.Locus("chr1", end, "GRCh38"),
+                includes_end=True,
+            )
+
+        rr_ht = hl.Table.parallelize(
+            [
+                {
+                    "interval": _window(1, 4),
+                    "adj_r": {NON_CPG["context"]: 2.0, CPG["context"]: 0.5},
+                },
+                {"interval": _window(10, 11), "adj_r": {CPG["context"]: 3.0}},
+            ],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                adj_r=hl.tdict(hl.tstr, hl.tfloat64),
+            ),
+            key="interval",
+        ).annotate_globals(rr_globals=hl.struct(ridge_penalty=0.3))
+        rows = _rows_by_group(
+            aggregate_per_variant_expected_ht(ht, regional_rr_ht=rr_ht)
+        )
+        unadjusted = _path_sums("per_variant", COVERAGE_MODEL)["rows"]
+        assert set(rows) == set(unadjusted)
+
+        # Positions 1 (high coverage) and 2 (low coverage) get rr 2; 10 and 11 get 1.
+        syn = rows[("T1", "synonymous_variant", "None")]
+        assert syn.expected_variants == pytest.approx(
+            [0.3 * (4 + 2 * LOW_COV_CORRECTION), 0.15 * (4 + 2 * LOW_COV_CORRECTION)]
+        )
+        for group, rr in [
+            (("T1", "missense_variant", "None"), 0.5),
+            (("T1", "stop_gained", "HC"), 0.5),
+            (("T1", "stop_gained", "LC"), 1.0),
+            (("T2", "missense_variant", "None"), 2.0),
+            (("TX", "synonymous_variant", "None"), 1.0),
+        ]:
+            assert rows[group].expected_variants == pytest.approx(
+                [rr * e for e in unadjusted[group].expected_variants]
+            )
+        for group, row in rows.items():
+            for field in [
+                "observed_variants",
+                "possible_variants",
+                "mu_snp",
+                "coverage_correction",
+            ]:
+                assert row[field] == pytest.approx(unadjusted[group][field])
+
+    def test_regional_rr_globals(self) -> None:
+        """Test that the rr Table's ``rr_globals`` are kept only when rr is applied."""
+        ht = create_per_variant_expected_ht(
+            _preprocessed_ht(),
+            _mutation_ht(),
+            hl.literal(PLATEAU_MODELS),
+            _coverage_model_expr(COVERAGE_MODEL),
+            use_mane_select=True,
+        )
+        rr_ht = hl.Table.parallelize(
+            [],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                adj_r=hl.tdict(hl.tstr, hl.tfloat64),
+            ),
+            key="interval",
+        )
+        assert (
+            "regional_rr_globals" not in aggregate_per_variant_expected_ht(ht).globals
+        )
+        assert (
+            "regional_rr_globals"
+            not in aggregate_per_variant_expected_ht(ht, regional_rr_ht=rr_ht).globals
+        )
+        rr_ht = rr_ht.annotate_globals(rr_globals=hl.struct(ridge_penalty=0.3))
+        ht = aggregate_per_variant_expected_ht(ht, regional_rr_ht=rr_ht)
+        assert hl.eval(ht.regional_rr_globals.ridge_penalty) == 0.3
+
 
 class TestCreateAggregatedExpectedHt:
     """Test the create_aggregated_expected_ht function."""

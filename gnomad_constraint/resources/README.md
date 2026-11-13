@@ -5,9 +5,9 @@ canonical GCS path. The functions live in [resource_utils.py](resource_utils.py)
 and the constants they consume live in [constants.py](constants.py).
 
 This document is the schema reference for every **pipeline output** of the
-constraint pipeline. The schemas were first captured with `ht.describe()` from
-the v4.1.1 tables on GCS and have been updated by hand as the pipeline changed,
-so the released v4.1.1 tables differ from them in places. For upstream **input**
+constraint pipeline. The schemas were first captured with
+`ht.describe()` from the v4.1.1 tables on GCS and have been updated by hand as the
+pipeline changed, so the released v4.1.1 tables differ from them in places. For upstream **input**
 resources (VEP context, sites,
 coverage, methylation, GERP, GENCODE, `all_sites_an`) see
 [`gnomad.resources.grch38`](https://github.com/broadinstitute/gnomad_methods/tree/main/gnomad/resources/grch38).
@@ -39,6 +39,15 @@ gs://gnomad/v{version}/constraint/
 ├── models/
 │   ├── gnomad.v{version}.plateau.he
 │   └── gnomad.v{version}.coverage.he
+├── imported_data/
+│   ├── gnomad.v{version}.dnm.ht
+│   └── gnomad.v{version}.genomic_features13_1kb.ht
+├── regional_rate/
+│   ├── gnomad.v{version}.rr_site_features.ht
+│   ├── gnomad.v{version}.rr_training.ht
+│   ├── gnomad.v{version}.rr_penalty_tuning.ht
+│   ├── gnomad.v{version}.rr_models.ht
+│   └── gnomad.v{version}.syn_dnm_rr_1kb.ht
 ├── apply_models/transcript_consequences/
 │   ├── gnomad.v{version}.per_variant_expected.ht
 │   ├── gnomad.v{version}.per_variant_expected.aggregated.ht
@@ -63,7 +72,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 (`temp=True`). These rules apply to every output, including the release files.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
-apply-models, metrics, and constraint-metrics release outputs.
+apply-models, metrics, and constraint-metrics release outputs. The rr imports
+(§14-15) take neither post-fix, and the other rr outputs (§16-20) take both.
 
 ---
 
@@ -393,7 +403,13 @@ tuple. Produced by `--aggregate-per-variant-expected`.
 - **Key:** `annotation, modifier, gene, gene_id, transcript, canonical, mane_select`
 
 ### Globals
-Identical pipeline-parameter globals as `per_variant_expected.ht`.
+Identical pipeline-parameter globals as `per_variant_expected.ht`. With
+`--apply-regional-rr`, also `regional_rr_globals`, a copy of the rr Table's
+`rr_globals`: `ridge_penalty: float64` (ridge penalty of the rr models),
+`normalization_factors: dict<str, float64>` (per-context factor rr was divided by),
+and `per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
+per-variant expected Table rr was normalized on; `--apply-regional-rr` stops with an
+error if they differ from this Table's).
 
 ### Rows
 - `annotation, modifier, gene, gene_id, transcript, canonical, mane_select` — key.
@@ -408,6 +424,9 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`.
   recover the bucket-mean fraction).
 - `coverage_correction: float64` — `Σ coverage_correction · possible`.
 - `expected_variants: array<float64>` — summed expected counts per freq entry.
+  With `--apply-regional-rr`, each variant's expected counts are first multiplied
+  by the rr of its window and context (`adj_r[context]` of the rr Table, keyed by
+  `interval`), or by 1 where there is none.
 
 ---
 
@@ -607,6 +626,9 @@ Public-release flattened constraint table. One row per
 - `loeuf_percentile_thresholds: struct{percentile, decile, sextile}` — LOEUF
   upper-bound thresholds at each granularity (copied from
   `percentile_thresholds.lof` in §10).
+- `regional_rr_params: struct{ridge_penalty, normalization_factors}` — only when the
+  expected counts were adjusted with `--apply-regional-rr`; `regional_rr_globals`
+  (§7) without `per_variant_apply_models_globals`.
 
 ### Rows
 Key + GENCODE annotations + per-group structs:
@@ -684,6 +706,217 @@ from §3 by selecting/renaming.
 - `mu: float64` — scalar mu at the canonical downsampling index (renamed from
   `mu_snp`).
 - `cpg: bool`, `transition: bool`, `mutation_type: str` — mutation-type tags.
+
+---
+
+# Regional mutation rate tables
+
+Tables used to compute the regional mutation rate (rr): the outputs of
+the `--import-dnms` and `--import-genomic-features` steps of
+[prepare_data.py](../pipeline/prepare_data.py) (§14-15), the rr model steps of
+[expected_models.py](../pipeline/expected_models.py) (§16-19), and `--compute-rr`
+in [expected_counts.py](../pipeline/expected_counts.py) (§20). Only the training,
+penalty tuning, model, and rr Tables (§17-20) have globals.
+
+The genomic feature columns are named `{feature}_{scale}` for the 13 features in
+`GENOMIC_FEATURES` (`dist2telo, dist2cent, GC_content, LCR, SINE, LINE,
+recomb_male, recomb_female, met_sperm, Nucleosome, cDNM_maternal_05M,
+cDNM_paternal_05M, CpG_island`) at the 4 flanking scales in
+`GENOMIC_FEATURE_SCALES` (`1k, 10k, 100k, 1M`); see [constants.py](constants.py).
+
+---
+
+## 14. `imported_data/dnm.ht`
+
+De novo mutation (DNM) sites from the Satterstrom 2026 ASD and DDD files
+([`get_dnm_paths`](resource_utils.py)), produced by `--import-dnms` /
+[`format_dnm_ht`](../utils/import_data.py). Each variant has one row, however many
+files or individuals report it. Indels and alleles that don't match the reference
+are kept; they are removed when the DNMs are joined to `annotated_context.ht`.
+
+- **Path:** `gs://gnomad/v{version}/constraint/imported_data/gnomad.v{version}.dnm.ht`
+- **Resource fn:** [`get_dnm_ht`](resource_utils.py)
+- **Key:** `locus`, `alleles`
+
+### Rows
+- `locus: locus<GRCh38>`, `alleles: array<str>` — key; no other fields.
+
+---
+
+## 15. `imported_data/genomic_features13_1kb.ht`
+
+The published Gnocchi 1kb regional genomic feature matrix
+([`get_published_genomic_features_path`](resource_utils.py)), produced by
+`--import-genomic-features` /
+[`format_genomic_features`](../utils/import_data.py). It covers chr1-22 only.
+
+- **Path:** `gs://gnomad/v{version}/constraint/imported_data/gnomad.v{version}.genomic_features13_1kb.ht`
+- **Resource fn:** [`get_genomic_features_ht`](resource_utils.py)
+- **Key:** `interval`
+
+### Rows
+- `interval: interval<locus<GRCh38>>` — the BED window in `element_id` in 1-based
+  positions, `[start + 1, end]`. (The Gnocchi rr Tables used `[start, end)`, 1bp
+  left of the BED window.)
+- `element_id: str` — window ID from the matrix (`chr-start-end`, BED coordinates).
+- `{feature}_{scale}: float64` — the 52 feature columns. Values written as one of
+  `GENOMIC_FEATURE_MISSING` (`NA`, `nan`, `NaN`, or empty) in the matrix are
+  missing.
+
+---
+
+## 16. `regional_rate/rr_site_features.ht`
+
+rr site features: the training sites with their labels and window features,
+produced by `--create-rr-site-features` /
+[`create_rr_site_features_ht`](../utils/regional_rate.py). The DNM sites are the
+synonymous sites of `annotated_context.ht` in `dnm.ht`; the background is a
+`RR_BACKGROUND_FRACTION` (5%) sample, with seed `RR_BACKGROUND_SEED`, of the
+synonymous sites absent from gnomAD exomes (`filters.exomes` is missing) at the
+other loci, one per locus, so no locus is both. Sites in the span of an Ensembl MANE
+Select transcript with a `gene_flags` entry in the v4.1.2 constraint metrics Table
+are removed ([`remove_qc_flagged_genes`](../utils/regional_rate.py)), unless
+`--skip-qc-flagged-gene-filter` is passed. Each DNM
+variant is one row, however many DNMs were reported there.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_site_features.ht`
+- **Resource fn:** [`get_rr_site_features_ht`](resource_utils.py)
+- **Key:** `locus`
+
+### Rows
+- `locus: locus<GRCh38>` — key.
+- `alleles: array<str>`, `context: str` — the site's alleles and strand-collapsed
+  context.
+- `y: int32` — 1 for a DNM site, 0 for a background site.
+- `{feature}_{scale}: float64` — the 52 feature columns of the site's 1kb window
+  (missing outside a window).
+
+---
+
+---
+
+## 17. `regional_rate/rr_training.ht`
+
+rr training set: the site features (§16) prepared for the models by
+`--create-rr-training-set` with `prepare_regional_mutation_rate_training_ht` from
+`gnomad.utils.constraint.regional_mutation_rate`. `--tune-rr-penalty` and
+`--train-rr-models` read it as is.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_training.ht`
+- **Resource fn:** [`get_rr_training_ht`](resource_utils.py)
+- **Key:** `locus`
+
+### Globals
+- `features: dict<str, array<str>>` — each context's feature columns, in the order
+  of `x` (`RR_CONTEXT_FEATURES`).
+
+### Rows
+- `locus: locus<GRCh38>` — key.
+- `label: float64` — 1 for a DNM site, 0 for a background site.
+- `context: str` — the site's strand-collapsed context.
+- `fold: str` — `odd` or `even`, the chromosome set the site is held out with in
+  `--tune-rr-penalty` (`get_rr_fold_expr`).
+- `x: array<float64>` — the values of the site's context's features, in the order of
+  `features`. Elements are missing outside a window (e.g. on chrX and chrY), and
+  the fits leave those sites out.
+
+---
+
+## 18. `regional_rate/rr_penalty_tuning.ht`
+
+Held-out log loss of the rr models for each ridge penalty tried, produced by
+`--tune-rr-penalty` with `tune_regional_mutation_rate_penalty` from
+`gnomad.utils.constraint.regional_mutation_rate`. For each penalty, context, and
+fold, the context's model is fit on the training sites of the other fold's
+chromosomes (odd or even) and scored on the fold's sites.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_penalty_tuning.ht`
+- **Resource fn:** [`get_rr_penalty_tuning_ht`](resource_utils.py)
+- **Key:** `penalty`, `context`, `fold`
+
+### Globals
+- `ridge_penalty: float64` — the penalty with the lowest held-out log loss summed
+  over contexts and folds, or `RR_RIDGE_PENALTY` (0.3) if no held-out sites could be
+  scored (a `--test` run covers chr20 only); `--train-rr-models` uses it for every
+  context.
+
+### Rows
+- `penalty: float64`, `context: str`, `fold: str` — key (`fold` is the held-out
+  chromosome set, `odd` or `even`).
+- `n_test: int64` — held-out training sites with no missing label or feature.
+- `log_loss: float64` — log loss summed over those sites.
+
+---
+
+## 19. `regional_rate/rr_models.ht`
+
+Per-context ridge-penalized logistic rr models, produced by `--train-rr-models` with
+`fit_regional_mutation_rate_models` from
+`gnomad.utils.constraint.regional_mutation_rate`. The models are fit on z-scored
+features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) / sd)`.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_models.ht`
+- **Resource fn:** [`get_rr_models_ht`](resource_utils.py)
+- **Key:** `context`
+
+### Globals
+- `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
+  §18.
+- `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
+  converge (also logged as a warning).
+
+### Rows
+- `context: str` — strand-collapsed trinucleotide context (one of `RR_CONTEXTS`).
+  Contexts without DNM or background training sites, or where no feature varies,
+  have no row.
+- `features: array<str>` — model features in coefficient order: the context's
+  `RR_CONTEXT_FEATURES`, without any feature that has a single value in the
+  context's training sites.
+- `mean: array<float64>`, `sd: array<float64>` — training mean and standard
+  deviation (ddof=0) of each feature.
+- `coefs: array<float64>` — coefficient of each standardized feature.
+- `intercept: float64` — intercept of the linear predictor.
+- `ave: float64` — predicted probability for the average window (all features at
+  their mean); rr divides by it. As in Gnocchi, rr is this ratio of probabilities
+  rather than the odds ratio, which compresses the regional effect toward 1 by
+  about `1 - ave` on the log scale and caps rr at `1 / ave`. `ave` is about the DNM
+  share of the training sites, a few percent for non-CpG contexts but 20-50% for
+  CpG contexts, so CpG rr is damped.
+- `n_mutated: int32`, `n_background: int32` — DNM and background training sites
+  with no missing label or feature.
+- `converged: bool` — whether the logistic fit converged.
+
+---
+
+## 20. `regional_rate/syn_dnm_rr_1kb.ht`
+
+Normalized rr per 1kb window and context, produced by `--compute-rr` with
+`compute_rr_ht` (in `utils/regional_rate.py`), which uses
+`regional_mutation_rate_expr` and `normalize_regional_mutation_rate_expr` from
+`gnomad.utils.constraint.regional_mutation_rate`. Read by
+`constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr`.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.syn_dnm_rr_1kb.ht`
+- **Resource fn:** [`get_regional_rr_ht`](resource_utils.py)
+- **Key:** `interval`
+
+### Globals
+- `rr_globals: struct`:
+  - `ridge_penalty: float64` — ridge penalty the models were fit with (§18).
+  - `normalization_factors: dict<str, float64>` — per-context expected-weighted
+    mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
+    of `per_variant_expected.ht` that fall in an rr window; rr is divided by it.
+  - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
+    per-variant expected Table rr was normalized on (see §7).
+
+### Rows
+- `interval: interval<locus<GRCh38>>` — 1kb window, as in
+  `genomic_features13_1kb.ht`. Windows where no modeled context has an rr are
+  removed.
+- `adj_r: dict<str, float64>` — rr for each of the 32 `RR_CONTEXTS`:
+  `sigmoid(linear predictor) / ave / normalization factor`. Before normalization,
+  rr is set to 1.0 in windows missing one of the context's model features, so those
+  windows get `1 / normalization factor`; contexts without a model are 1.0.
 
 ---
 

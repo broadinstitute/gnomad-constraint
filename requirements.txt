@@ -1,8 +1,9 @@
 # gnomad_methods and gnomad_qc are installed from GitHub rather than PyPI, since they
 # are developed in tandem with this repo. gnomad_methods is pinned to a commit the
-# code here is tested with (gnomad_methods main on 2026-10-26, after the per-base
-# constraint changes in #824). Move the pin when the code is updated to a newer API.
-git+https://github.com/broadinstitute/gnomad_methods@b4770d8b824f2f417c053c38e5960a6ec40e3cee
+# code here is tested with (the jg/constraint_regional_mutation_rate branch, which
+# adds gnomad.utils.constraint.regional_mutation_rate; move this to its merge commit
+# before merging). Move the pin when the code is updated to a newer API.
+git+https://github.com/broadinstitute/gnomad_methods@a9a8fe330804d8e52011e7fea65ada0127b746a1
 git+https://github.com/broadinstitute/gnomad_qc@main
 # Hail 0.2.137 or later is needed for hl.qgamma, which newer gnomad_methods uses for
 # the gamma oe confidence interval. gnomad_methods excludes 0.2.139 for a memory

@@ -1,7 +1,7 @@
 """Resource utility functions and resource definitions for the constraint pipeline."""
 
 import logging
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import gnomad.resources.grch38.gnomad as gnomad_grch38
 import gnomad.resources.grch38.reference_data as ref_grch38
@@ -575,6 +575,115 @@ def get_syn_adj_r_ht() -> TableResource:
     )
 
 
+def get_dnm_paths() -> Dict[str, str]:
+    """
+    Return the paths of the de novo mutation (DNM) files used to train the rr models.
+
+    These are the Satterstrom 2026 SNV and indel DNMs of an autism (ASD) and a
+    developmental disorder (DDD) cohort, on GRCh38, with a "chrom:pos:ref:alt"
+    ``Variant`` column.
+
+    :return: Dictionary with the ``asd_dnm_path`` and ``ddd_dnm_path`` paths.
+    """
+    path = (
+        "gs://regional_missense_constraint/resources/GRCh38/reference_data/"
+        "Satterstrom_2026_{}_dnv_SNV_indel.txt.gz"
+    )
+    return {f"{c.lower()}_dnm_path": path.format(c) for c in ["ASD", "DDD"]}
+
+
+def get_published_genomic_features_path() -> str:
+    """
+    Return the path to the published Gnocchi 1kb regional genomic feature matrix.
+
+    The matrix covers chr1-22 and has an ``element_id`` column ("chr-start-end",
+    BED coordinates) followed by ``GENOMIC_FEATURE_COLUMNS``.
+
+    :return: Path to the published feature matrix.
+    """
+    return "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
+
+
+def get_dnm_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the de novo mutation (DNM) site Table.
+
+    :return: TableResource of the DNM Table.
+    """
+    return get_constraint_data("dnm", sub_dir="imported_data", **kwargs)
+
+
+def get_genomic_features_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the 1kb regional genomic feature Table keyed by interval.
+
+    :return: TableResource of the genomic feature Table.
+    """
+    return get_constraint_data(
+        "genomic_features13_1kb", sub_dir="imported_data", **kwargs
+    )
+
+
+def get_rr_gene_flags_ht() -> TableResource:
+    """
+    Return the constraint metrics Table whose gene flags pick the genes left out of rr training.
+
+    This is pinned to the v4.1.2 constraint metrics Table, whatever version rr is
+    computed for.
+
+    :return: Constraint metrics TableResource.
+    """
+    return get_constraint_metrics_dataset(version="4.1.2")
+
+
+def get_rr_site_features_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the rr site features (DNM and background sites).
+
+    :return: TableResource of the rr site features Table.
+    """
+    return get_constraint_data("rr_site_features", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_training_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the rr training Table the models are fit and tuned on.
+
+    :return: TableResource of the rr training Table.
+    """
+    return get_constraint_data("rr_training", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_penalty_tuning_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the held-out log loss of the rr models per ridge penalty.
+
+    :return: TableResource of the rr penalty tuning Table.
+    """
+    return get_constraint_data("rr_penalty_tuning", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_models_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the per-context rr model parameters.
+
+    :return: TableResource of the rr model Table.
+    """
+    return get_constraint_data("rr_models", sub_dir="regional_rate", **kwargs)
+
+
+def get_regional_rr_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the per-window, per-context regional rr Table.
+
+    The Table is keyed by ``interval`` (1kb windows) and has an ``adj_r`` dict
+    mapping each strand-collapsed trinucleotide context to its rr.
+
+    :return: TableResource of the rr Table.
+    """
+    return get_constraint_data("syn_dnm_rr_1kb", sub_dir="regional_rate", **kwargs)
+
+
 def get_constraint_resources(
     version: str,
     overwrite: bool,
@@ -584,6 +693,7 @@ def get_constraint_resources(
     path_post_fix: Optional[str] = None,
     skip_pre_rank_metrics: bool = False,
     use_aggregated_expected: bool = False,
+    apply_regional_rr: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -600,6 +710,9 @@ def get_constraint_resources(
     :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
         reads the ``--apply-models-aggregated`` output instead of the
         ``--aggregate-per-variant-expected`` output. Default is False.
+    :param apply_regional_rr: Whether ``--aggregate-per-variant-expected`` applies
+        the regional rr Table, which then becomes one of its inputs. Default is
+        False.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -627,6 +740,23 @@ def get_constraint_resources(
         "directory_post_fix": directory_post_fix,
     }
 
+    # The rr imports take neither post-fix.
+    import_dnms = PipelineStepResourceCollection(
+        "--import-dnms",
+        output_resources={"dnm_ht": get_dnm_ht(version=version, test=test)},
+        input_resources={"published DNMs": get_dnm_paths()},
+    )
+    import_genomic_features = PipelineStepResourceCollection(
+        "--import-genomic-features",
+        output_resources={
+            "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
+        },
+        input_resources={
+            "published genomic features": {
+                "published_features_path": get_published_genomic_features_path()
+            }
+        },
+    )
     prepare_context = PipelineStepResourceCollection(
         "--prepare-context-ht",
         output_resources={
@@ -694,6 +824,46 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
+    # The rr outputs take both post-fixes. The site features come from the annotated
+    # context Table, and rr is normalized on the per-variant expected Table, of the
+    # same run.
+    rr_params = {**common_params, "path_post_fix": path_post_fix}
+    create_rr_site_features = PipelineStepResourceCollection(
+        "--create-rr-site-features",
+        output_resources={"rr_site_features_ht": get_rr_site_features_ht(**rr_params)},
+        pipeline_input_steps=[import_dnms, import_genomic_features, prepare_context],
+        add_input_resources={
+            "constraint metrics with gene flags": {
+                "gene_flags_ht": get_rr_gene_flags_ht()
+            }
+        },
+    )
+    create_rr_training_set = PipelineStepResourceCollection(
+        "--create-rr-training-set",
+        output_resources={"rr_training_ht": get_rr_training_ht(**rr_params)},
+        pipeline_input_steps=[create_rr_site_features],
+    )
+    tune_rr_penalty = PipelineStepResourceCollection(
+        "--tune-rr-penalty",
+        output_resources={
+            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**rr_params)
+        },
+        pipeline_input_steps=[create_rr_training_set],
+    )
+    train_rr_models = PipelineStepResourceCollection(
+        "--train-rr-models",
+        output_resources={"rr_models_ht": get_rr_models_ht(**rr_params)},
+        pipeline_input_steps=[create_rr_training_set, tune_rr_penalty],
+    )
+    compute_rr = PipelineStepResourceCollection(
+        "--compute-rr",
+        output_resources={"regional_rr_ht": get_regional_rr_ht(**rr_params)},
+        pipeline_input_steps=[
+            import_genomic_features,
+            train_rr_models,
+            apply_models_per_variant,
+        ],
+    )
     aggregate_per_variant_expected = PipelineStepResourceCollection(
         "--aggregate-per-variant-expected",
         output_resources={
@@ -706,6 +876,17 @@ def get_constraint_resources(
             calculate_mutation_rate,
             build_models,
         ],
+        add_input_resources=(
+            {
+                "expected_counts.py --compute-rr": {
+                    "regional_rr_ht": get_regional_rr_ht(
+                        **common_params, path_post_fix=path_post_fix
+                    )
+                }
+            }
+            if apply_regional_rr
+            else None
+        ),
     )
     apply_models_aggregated = PipelineStepResourceCollection(
         "--apply-models-aggregated",
@@ -819,6 +1000,8 @@ def get_constraint_resources(
     # Add all steps to the constraint pipeline resource collection.
     constraint_pipeline.add_steps(
         {
+            "import_dnms": import_dnms,
+            "import_genomic_features": import_genomic_features,
             "prepare_context": prepare_context,
             "preprocess_data": preprocess_data,
             "compute_gene_quality_metrics": compute_gene_quality_metrics_step,
@@ -826,7 +1009,12 @@ def get_constraint_resources(
             "calculate_mutation_rate": calculate_mutation_rate,
             "create_training_set": create_training_set,
             "build_models": build_models,
+            "create_rr_site_features": create_rr_site_features,
+            "create_rr_training_set": create_rr_training_set,
+            "tune_rr_penalty": tune_rr_penalty,
+            "train_rr_models": train_rr_models,
             "apply_models_per_variant": apply_models_per_variant,
+            "compute_rr": compute_rr,
             "aggregate_per_variant_expected": aggregate_per_variant_expected,
             "aggregate_by_constraint_groups": aggregate_by_constraint_groups,
             "apply_models_aggregated": apply_models_aggregated,

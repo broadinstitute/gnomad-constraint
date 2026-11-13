@@ -24,6 +24,8 @@ see [Updating the flowchart](#updating-the-flowchart).
 |---|---|
 | `gnomad_constraint/pipeline/` | The pipeline scripts, run in order: `prepare_data.py`, `expected_models.py`, `expected_counts.py`, and `constraint_metrics.py`; each step is a command-line flag |
 | `gnomad_constraint/utils/constraint.py` | Functions used by the pipeline steps |
+| `gnomad_constraint/utils/import_data.py` | Functions used by the import steps |
+| `gnomad_constraint/utils/regional_rate.py` | Functions that build the rr site features and compute rr per window; the models come from `gnomad.utils.constraint.regional_mutation_rate` |
 | `gnomad_constraint/resources/resource_utils.py` | Input and output resources (GCS paths) |
 | `gnomad_constraint/resources/constants.py` | Pipeline and release constants |
 | `gnomad_constraint/resources/README.md` | Schema reference for every pipeline output |
@@ -42,16 +44,19 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 
 | Script | Flag | Step |
 |---|---|---|
-| `prepare_data.py` | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
+| `prepare_data.py` | `--import-dnms`, `--import-genomic-features` | Import the de novo mutations and genomic features the regional mutation rate is modeled from; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
+| | `--prepare-context-ht` | Annotate the VEP context Table with methylation, coverage, allele number, frequency, filters, GERP, and genomic region |
 | | `--calculate-gerp-cutoffs` | Optional: compute GERP percentile cutoffs. Nothing is saved, so it must run in the same command as `--preprocess-data`, which uses them in place of `--calculate-mutation-rate-gerp-{lower,upper}-cutoff` |
 | | `--preprocess-data` | Add per-site observed and possible counts, mutation rate inputs, and model groups |
 | | `--compute-gene-quality-metrics` | Per-transcript coverage, mapping quality, segmental duplication, and low-complexity region metrics |
 | `expected_models.py` | `--calculate-mutation-rate` | Compute the mutation rate for each substitution and context |
 | | `--create-training-set` | Count observed and possible synonymous variants for model training |
 | | `--build-models` | Build the plateau and coverage models |
+| | `--create-rr-site-features`, `--create-rr-training-set`, `--tune-rr-penalty`, `--train-rr-models` | Train the regional mutation rate models; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
 | `expected_counts.py` | `--apply-models-per-variant` | Apply the models to compute expected counts per variant |
+| | `--compute-rr` | Compute the regional mutation rate per 1kb window and context, normalized on the `--apply-models-per-variant` output; see [Regional mutation rate (rr)](#regional-mutation-rate-rr) |
 | | `--apply-models-aggregated` | Alternative to `--apply-models-per-variant` and `--aggregate-per-variant-expected`: sum observed and possible counts first, then apply the models |
-| `constraint_metrics.py` | `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence |
+| `constraint_metrics.py` | `--aggregate-per-variant-expected` | Sum the per-variant counts by transcript and consequence. Add `--apply-regional-rr` to first multiply each variant's expected count by the regional mutation rate (rr) of its 1kb window and context (see [Regional mutation rate](#regional-mutation-rate-rr)) |
 | | `--aggregate-by-constraint-groups` | Sum by constraint group (synonymous, missense, pLoF). Add `--use-aggregated-expected` to read the `--apply-models-aggregated` output |
 | | `--compute-constraint-metrics` | Compute o/e, confidence intervals, z-scores, flags, pLI, ranks, and bins. `--skip-pre-rank-metrics` reruns only the ranking |
 | | `--prepare-release` | Format the constraint metrics as the release Table |
@@ -70,8 +75,52 @@ and chrY only) or `--test-gene-list` (six genes), every output, including the
 release files, goes to `gs://gnomad-tmp/gnomad_v{version}_testing/constraint/`
 instead, so a test run never touches production outputs. `--directory-post-fix`
 and `--path-post-fix` keep separate runs of the same version apart. The directory
-post-fix applies to every output; the path post-fix only to the outputs from
-`--create-training-set` onward, except the release mutation rate files.
+post-fix applies to every output except the rr imports; the path post-fix only to
+the outputs from `--create-training-set` onward, except the release mutation rate
+files.
+
+### Regional mutation rate (rr)
+
+The regional mutation rate (rr) is a factor for each 1kb window and trinucleotide
+context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
+regional genomic features of each site's window at four flanking scales.
+
+`constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr` applies rr after model
+calibration: it multiplies each variant's expected count by the rr of its window and
+context, or by 1 where there is none (chrX, chrY, and windows without features). It
+reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
+`--path-post-fix`, and stops with an error if that Table was normalized on a
+per-variant expected Table with other models, or doesn't record which. The output keeps the unadjusted
+Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
+replace the unadjusted ones unless you set `--path-post-fix` (rerun
+`expected_models.py --create-training-set` onward with it) or `--directory-post-fix`. The release Table
+records the rr settings in its `regional_rr_params` global.
+
+`prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
+under `imported_data/` in the constraint output directory (with `--test`, in the
+testing bucket, and with neither post-fix):
+
+| Flag | Step |
+|---|---|
+| `--import-dnms` | Import the Satterstrom 2026 ASD and DDD DNMs as a Table of DNM sites |
+| `--import-genomic-features` | Import the Gnocchi 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
+
+The rr steps then read those Tables, the annotated context Table, and the
+per-variant expected Table, and write under `regional_rate/`. Run them in this
+order:
+
+| Script | Flag | Step |
+|---|---|---|
+| `expected_models.py` | `--create-rr-site-features` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
+| | `--create-rr-training-set` | Prepare the site features for the models: each site's label, context, chromosome fold, and its context's features |
+| | `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
+| | `--train-rr-models` | Fit the per-context models with the chosen penalty |
+| `expected_counts.py` | `--compute-rr` | Compute rr per window and context, divided by its mean, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in each context, so rr moves those sites' expected counts between regions without changing their total per context (other consequences' totals can shift) |
+
+`--compute-rr`, after `--apply-models-per-variant`, normalizes rr on the
+per-variant expected Table that `--apply-regional-rr` applies it to, so run both
+with the same `--version`, `--test`, `--directory-post-fix` and `--path-post-fix`.
+The rr outputs take both post-fixes.
 
 ### Release constraint metrics Table
 

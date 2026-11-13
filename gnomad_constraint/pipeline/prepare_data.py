@@ -1,7 +1,11 @@
 """
-Prepare the context Table and the per-site data every constraint step reads.
+Import the external data and prepare the per-site data every constraint step reads.
 
 The steps, in order:
+    - --import-dnms: import the published de novo mutations (DNMs) the regional
+      mutation rate (rr) is modeled from, as a Table of DNM sites.
+    - --import-genomic-features: import the Gnocchi 1kb regional genomic feature
+      matrix rr is modeled from.
     - --prepare-context-ht: annotate the VEP context Table with methylation,
       coverage, allele number, frequency, filters, GERP, and genomic region.
     - --calculate-gerp-cutoffs: compute GERP percentile cutoffs for
@@ -20,15 +24,22 @@ import logging
 import hail as hl
 from gnomad.utils.constraint import calculate_gerp_cutoffs
 from gnomad.utils.reference_genome import get_reference_genome
+from hail.utils.misc import new_temp_file
 
 import gnomad_constraint.resources.resource_utils as constraint_res
-from gnomad_constraint.resources.constants import CURRENT_VERSION, VERSIONS
+from gnomad_constraint.resources.constants import (
+    CURRENT_VERSION,
+    GENOMIC_FEATURE_COLUMNS,
+    GENOMIC_FEATURE_MISSING,
+    VERSIONS,
+)
 from gnomad_constraint.resources.resource_utils import filter_for_test
 from gnomad_constraint.utils.constraint import (
     compute_gene_quality_metrics,
     prepare_context_ht,
     prepare_ht_for_constraint_calculations,
 )
+from gnomad_constraint.utils.import_data import format_dnm_ht, format_genomic_features
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -89,6 +100,46 @@ def main(args: argparse.Namespace) -> None:
     )
 
     try:
+        if args.import_dnms:
+            logger.info("Importing the DNMs...")
+            res = resources.import_dnms
+            res.check_resource_existence()
+
+            # The files are gzip (not bgzip) compressed and quote fields with commas.
+            # TODO: The calls aren't QC-filtered. The ASD file has Confidence and Role
+            #  columns and the DDD file has LCR and gnomad_non_neuro_AF columns that a
+            #  filter could use.
+            ht = hl.Table.union(
+                *[
+                    hl.import_table(path, delimiter=",", quote='"', force=True).select(
+                        "Variant"
+                    )
+                    for path in [res.asd_dnm_path, res.ddd_dnm_path]
+                ]
+            )
+            format_dnm_ht(ht).write(res.dnm_ht.path, overwrite=overwrite)
+            logger.info("Done importing the DNMs.")
+
+        if args.import_genomic_features:
+            logger.info("Importing the regional genomic feature matrix...")
+            res = resources.import_genomic_features
+            res.check_resource_existence()
+
+            ht = hl.import_table(
+                res.published_features_path,
+                types={c: hl.tfloat64 for c in GENOMIC_FEATURE_COLUMNS},
+                missing=GENOMIC_FEATURE_MISSING,
+                min_partitions=100,
+            )
+            ht = format_genomic_features(ht)
+            ht = ht.checkpoint(new_temp_file("genomic_features", "ht"))
+            # Check before writing, so a bad matrix never replaces a good Table.
+            n_duplicated = ht.count() - ht.distinct().count()
+            if n_duplicated:
+                raise ValueError(f"{n_duplicated} windows are duplicated!")
+            ht.write(res.genomic_features_ht.path, overwrite=overwrite)
+            logger.info("Done importing the regional genomic feature matrix.")
+
         if args.prepare_context_ht:
             logger.info(
                 "Annotating methylation, coverage, and GERP on the VEP context Table..."
@@ -224,7 +275,10 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--directory-post-fix",
-        help="Post-fix to append to the output directory path, for every output.",
+        help=(
+            "Post-fix to append to the output directory path, for every output but"
+            " those of --import-dnms and --import-genomic-features."
+        ),
         type=str,
         default=None,
     )
@@ -232,11 +286,12 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--path-post-fix",
         help=(
             "Post-fix to append to output file names. Applies to the outputs from"
-            " --create-training-set onward (training set, models, expected counts,"
-            " constraint groups, constraint metrics, and the release constraint"
-            " metrics Table and TSVs), but not to the annotated context, preprocessed,"
-            " gene quality metrics, mutation rate, or release mutation rate outputs."
-            " None of this script's outputs take it; here it only names the log."
+            " --create-training-set onward (training set, models, rr Tables, expected"
+            " counts, constraint groups, constraint metrics, and the release"
+            " constraint metrics Table and TSVs), but not to the annotated context,"
+            " preprocessed, gene quality metrics, mutation rate, or release mutation"
+            " rate outputs. None of this script's outputs take it; here it only names"
+            " the log."
         ),
         type=str,
         default=None,
@@ -258,6 +313,17 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         ),
         action="store_true",
     )
+    parser.add_argument(
+        "--import-dnms",
+        help="Import the published DNMs as a Table of DNM sites.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--import-genomic-features",
+        help="Import the Gnocchi 1kb regional genomic feature matrix.",
+        action="store_true",
+    )
+
     parser.add_argument(
         "--prepare-context-ht",
         help=(
