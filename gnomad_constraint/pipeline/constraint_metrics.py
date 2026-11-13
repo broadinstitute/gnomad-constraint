@@ -118,17 +118,23 @@ def main(args: argparse.Namespace) -> None:
     directory_post_fix = args.directory_post_fix
     path_post_fix = args.path_post_fix
     overwrite = args.overwrite
+    skip_coverage_model = args.skip_coverage_model
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+
+    # Generate both "plateau" and "coverage" models unless specified to skip the
+    # coverage model.
+    models = ["plateau", "coverage"] if not skip_coverage_model else ["plateau"]
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = constraint_res.get_constraint_resources(
         version,
         overwrite,
         test,
-        directory_post_fix=directory_post_fix,
-        path_post_fix=path_post_fix,
+        models,
+        directory_post_fix,
+        path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
         use_aggregated_expected=args.use_aggregated_expected,
     )
@@ -329,18 +335,23 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--test",
         help=(
-            "Whether to filter the exome Table, genome Table and the context Table to"
-            " only chromosome 20, chromosome X, and chromosome Y for testing."
+            "Whether to read and write the test Tables in the testing bucket, made"
+            " from the subset of the data that prepare_data.py --test or"
+            " --test-gene-list keeps."
         ),
         action="store_true",
     )
     parser.add_argument(
         "--test-gene-list",
         help=(
-            "Whether to filter the exome Table, genome Table and the context Table to"
-            " only six genes for testing: PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1"
-            " and FAAH2 (chrX), and ZFY (chrY)."
+            "Same as --test in this script; prepare_data.py --test-gene-list applies"
+            " the six-gene filter."
         ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--skip-coverage-model",
+        help="Omit computing and applying the coverage model.",
         action="store_true",
     )
     aggregate_per_variant_expected_args = parser.add_argument_group(
@@ -372,8 +383,8 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     aggregate_by_constraint_groups_args.add_argument(
         "--use-aggregated-expected",
         help=(
-            "Read from the --apply-models-aggregated output instead of the"
-            " --aggregate-per-variant-expected output as input for"
+            "Read from the expected_counts.py --apply-models-aggregated output instead"
+            " of the --aggregate-per-variant-expected output as input for"
             " --aggregate-by-constraint-groups."
         ),
         action="store_true",

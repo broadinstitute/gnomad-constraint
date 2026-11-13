@@ -2,14 +2,18 @@
 
 import logging
 import os
+import runpy
+import sys
 from types import SimpleNamespace
-from typing import List
+from typing import Any, List
 from unittest import mock
 
 import hail as hl
 import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
+import gnomad_constraint.pipeline as pipeline
+import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.pipeline.constraint_metrics import (
     check_constraint_group_input,
     get_release_downsamplings,
@@ -279,3 +283,47 @@ class TestGetCoverageModel:
         res = self._res(tmp_path, hl.literal(coefficients))
         with pytest.raises(ValueError, match="look like it was built on"):
             get_coverage_model(res, False, not log10_coverage, high_cov_cutoff)
+
+
+class _StopRun(Exception):
+    """Raised by the stand-in for ``get_constraint_resources`` to end a script run."""
+
+
+class TestSkipCoverageModelResources:
+    """Test which models each script's resources expect."""
+
+    @pytest.mark.parametrize(
+        "script", ["expected_models", "expected_counts", "constraint_metrics"]
+    )
+    @pytest.mark.parametrize("skip_coverage_model", [False, True])
+    def test_models(
+        self, monkeypatch: pytest.MonkeyPatch, script: str, skip_coverage_model: bool
+    ) -> None:
+        """
+        Test that each script's resources expect only the models that are built.
+
+        Every script whose steps read the models passes ``models`` to
+        ``get_constraint_resources``, so with ``--skip-coverage-model`` no step
+        requires a coverage model. Regression test: ``constraint_metrics.py`` had
+        no ``--skip-coverage-model``, so ``--aggregate-per-variant-expected``
+        always required a coverage model, which a ``--skip-coverage-model`` run
+        never writes.
+        """
+        calls = []
+
+        def get_resources(*args: Any, **kwargs: Any) -> None:
+            calls.append((args, kwargs))
+            raise _StopRun
+
+        monkeypatch.setattr(constraint_res, "get_constraint_resources", get_resources)
+        monkeypatch.setattr(hl, "init", lambda *args, **kwargs: None)
+        flags = ["--skip-coverage-model"] if skip_coverage_model else []
+        monkeypatch.setattr(sys, "argv", [f"{script}.py"] + flags)
+        path = os.path.join(os.path.dirname(pipeline.__file__), f"{script}.py")
+        with pytest.raises(_StopRun):
+            runpy.run_path(path, run_name="__main__")
+
+        args, kwargs = calls[0]
+        models = kwargs["models"] if "models" in kwargs else args[3]
+        expected = ["plateau"] if skip_coverage_model else ["plateau", "coverage"]
+        assert list(models) == expected

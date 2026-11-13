@@ -206,17 +206,17 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--test",
         help=(
-            "Whether to filter the exome Table, genome Table and the context Table to"
-            " only chromosome 20, chromosome X, and chromosome Y for testing."
+            "Whether to read and write the test Tables in the testing bucket, made"
+            " from the subset of the data that prepare_data.py --test or"
+            " --test-gene-list keeps."
         ),
         action="store_true",
     )
     parser.add_argument(
         "--test-gene-list",
         help=(
-            "Whether to filter the exome Table, genome Table and the context Table to"
-            " only six genes for testing: PCSK9 (chr1), ADNP and ANGPT4 (chr20), OFD1"
-            " and FAAH2 (chrX), and ZFY (chrY)."
+            "Same as --test in this script; prepare_data.py --test-gene-list applies"
+            " the six-gene filter."
         ),
         action="store_true",
     )
