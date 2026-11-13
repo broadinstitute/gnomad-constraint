@@ -41,7 +41,7 @@ implementations against each other is named for the comparison.
 | `utils/test_constraint_gene_quality.py` | Coverage, mapping quality, segdup/LCR, and flag thresholds in `compute_gene_quality_metrics` |
 | `utils/test_import_data.py` | Formatting the imported de novo mutations and the genomic feature windows |
 | `utils/test_regional_rate.py` | The rr model features per context, the rr training set, removing QC-flagged genes, and the tuning folds |
-| `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring of each script's resource collection, and `filter_for_test` |
+| `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
 | `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, and the release downsamplings |
 
 ## How these tests are written

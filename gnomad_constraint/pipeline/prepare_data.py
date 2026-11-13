@@ -274,7 +274,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--directory-post-fix",
-        help="Post-fix to append to the output directory path, for every output.",
+        help=(
+            "Post-fix to append to the output directory path, for every output but"
+            " those of --import-dnms and --import-genomic-features."
+        ),
         type=str,
         default=None,
     )
