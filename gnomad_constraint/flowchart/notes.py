@@ -1167,9 +1167,9 @@ NOTES = {
                 {
                     "tag": "ordered",
                     "text": (
-                        "Coverage: reduce the preprocessed context to one row per locus, join"
-                        " ``exomes_coverage`` onto CDS bases by locus, and keep bases with"
-                        " defined coverage."
+                        "Coverage: reduce the preprocessed context to one row per locus and join"
+                        " ``exomes_coverage`` onto CDS bases by locus; a base with no coverage"
+                        " counts as not covered."
                     ),
                 },
                 {
@@ -1217,17 +1217,18 @@ NOTES = {
             ],
             "notes": [
                 (
-                    "``prop_bp_AN90`` compares ``exomes_coverage`` with 90. That is an AN"
-                    " percent only with the default ``--exome-coverage-metric AN_percent``."
+                    "``prop_bp_AN90`` compares ``exomes_coverage`` with 90, so it needs"
+                    " ``--exome-coverage-metric AN_percent``: the step raises an error if the"
+                    " preprocessed Table recorded another metric."
                 ),
                 (
-                    "``gene_flags`` is missing, not empty, when either input metric is"
-                    " missing. For example, a transcript with no exome SNV sites has no"
-                    " ``mean_AS_MQ``."
+                    "A missing metric skips its flag rather than making ``gene_flags``"
+                    " missing: a transcript with no exome SNV sites has no ``mean_AS_MQ`` and"
+                    " can still get ``low_exome_coverage``."
                 ),
                 (
-                    "Transcripts with no CDS base of defined coverage are absent: the"
-                    " coverage Table is the left side of the join."
+                    "Every transcript with a CDS base has a row: one with no covered base gets"
+                    " ``prop_bp_AN90`` 0 and keeps its other metrics."
                 ),
                 (
                     "The GENCODE CDS Table is built from the GENCODE GTF and read directly,"
@@ -2047,7 +2048,9 @@ NOTES = {
                 (
                     "Sets the units of every coverage cutoff: high-coverage definitions,"
                     " upper cutoff, and low-coverage filter. With ``AN_percent`` they are"
-                    " percent of possible alleles called."
+                    " percent of possible alleles called. Recorded in"
+                    " ``apply_models_globals``; ``--compute-gene-quality-metrics`` requires"
+                    " ``AN_percent``."
                 ),
             ],
         },
