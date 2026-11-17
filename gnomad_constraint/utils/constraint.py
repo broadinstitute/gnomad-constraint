@@ -691,13 +691,15 @@ def prepare_ht_for_constraint_calculations(
     :param max_af: Maximum allele frequency to consider a variant as observed. Default
         is 0.001.
     :param build_model_low_cov_cutoff: Low coverage cutoff for the build models step.
-        Default is None.
+        Sites at or below it are left out of the low coverage model. Default is None,
+        which leaves out sites with coverage 0.
     :param build_model_high_cov_cutoff: High coverage cutoff for the build models step.
         Default is COVERAGE_CUTOFF.
     :param build_model_upper_cov_cutoff: Upper coverage cutoff for the build models
         step. Default is None.
     :param apply_model_low_cov_cutoff: Low coverage cutoff for the apply models step.
-        Default is None.
+        Sites at or below it are left out of the low coverage model. Default is None,
+        which leaves out sites with coverage 0.
     :param apply_model_high_cov_cutoff: High coverage cutoff for the apply models step.
         Default is COVERAGE_CUTOFF.
     :param skip_coverage_model: Whether the coverage model should be skipped during the
@@ -726,6 +728,13 @@ def prepare_ht_for_constraint_calculations(
 
     # Get an observed and possible variant annotation for the exomes dataset.
     exomes_coverage_expr = get_exome_coverage_expr(ht, exome_coverage_metric)
+
+    # With no low coverage cutoff, leave out sites with coverage 0, whose coverage
+    # correction is 0, when building and applying alike.
+    if build_model_low_cov_cutoff is None:
+        build_model_low_cov_cutoff = 0
+    if apply_model_low_cov_cutoff is None:
+        apply_model_low_cov_cutoff = 0
     exomes_obs_pos_expr, exomes_obs_pos_globals = get_exomes_observed_and_possible(
         ht.filters.exomes,
         ht.freq.exomes,
@@ -778,13 +787,13 @@ def prepare_ht_for_constraint_calculations(
         calculate_mu_globals=compute_mu_globals,
         build_models_globals=hl.struct(
             synonymous_transcript_filter_field=synonymous_transcript_filter_field,
-            low_cov_cutoff=handle_none(build_model_low_cov_cutoff),
+            low_cov_cutoff=build_model_low_cov_cutoff,
             high_cov_cutoff=build_model_high_cov_cutoff,
             upper_cov_cutoff=handle_none(build_model_upper_cov_cutoff),
             skip_coverage_model=skip_coverage_model,
         ),
         apply_models_globals=hl.struct(
-            low_cov_cutoff=handle_none(apply_model_low_cov_cutoff),
+            low_cov_cutoff=apply_model_low_cov_cutoff,
             high_cov_cutoff=apply_model_high_cov_cutoff,
             skip_coverage_model=skip_coverage_model,
             exome_coverage_metric=exome_coverage_metric,
