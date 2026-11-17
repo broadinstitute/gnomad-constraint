@@ -164,7 +164,13 @@ class TestAnnotateOeCiZ:
     @requires_qgamma
     @pytest.mark.parametrize("transcript", ["T_ok", "T_depleted", "T_excess"])
     def test_oe_ci_and_z(self, rows: Dict[str, hl.Struct], transcript: str) -> None:
-        """Test oe, both CIs, and z_raw against independent computations."""
+        """
+        Test oe, both CIs, and z_raw against independent computations.
+
+        With obs = 0 (``T_depleted``), the gamma lower bound is 0, as in the
+        discretized Poisson CI. It used to be above 0, so an oe of 0 fell below its
+        own confidence interval.
+        """
         obs, exp = self.COUNTS[transcript]
         for cg in rows[transcript].constraint_groups:
             x = cg.oe_info[0]
@@ -172,9 +178,8 @@ class TestAnnotateOeCiZ:
             assert x.z_raw == pytest.approx(
                 np.sqrt((obs - exp) ** 2 / exp) * (-1 if obs > exp else 1)
             )
-            assert x.oe_ci_gamma.lower == pytest.approx(
-                gamma.ppf(0.05, obs + 1, scale=1 / exp)
-            )
+            lower = gamma.ppf(0.05, obs + 1, scale=1 / exp) if obs > 0 else 0.0
+            assert x.oe_ci_gamma.lower == pytest.approx(lower)
             assert x.oe_ci_gamma.upper == pytest.approx(
                 gamma.ppf(0.95, obs + 1, scale=1 / exp)
             )

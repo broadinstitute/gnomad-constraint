@@ -511,7 +511,8 @@ Pipeline-parameter globals (as §9) plus:
     - `oe_ci_discretized_poisson: struct{lower: float64, upper: float64}` — OE
       CI using a discretized-Poisson estimator.
     - `oe_ci_gamma: struct{lower: float64, upper: float64}` — OE CI using a
-      Gamma estimator (the LOEUF estimator).
+      Gamma estimator (the LOEUF estimator). For both CIs, `lower` is 0 when
+      `observed_variants` is 0 and `expected_variants` is above 0.
     - `z_raw: float64` — `(expected - observed) / sqrt(expected)`, so it is
       positive when there are fewer variants than expected.
   - `flags: set<str>` — per-group QC flags: `no_exp_{syn,mis,lof}` when the

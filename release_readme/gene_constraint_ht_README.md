@@ -102,7 +102,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `syn.obs`: Number of observed synonymous variants in transcript
 - `syn.exp`: Number of expected synonymous variants in transcript
 - `syn.oe`: Observed to expected ratio for synonymous variants in transcript (`syn.obs` divided by `syn.exp`)
-- `syn.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for synonymous variants
+- `syn.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for synonymous variants (0 when `syn.obs` is 0)
 - `syn.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for synonymous variants
 - `syn.z_raw`: Raw (unnormalized) Z-score for synonymous variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts. Extreme values indicate likely data quality issues.
 - `syn.z_score`: Normalized Z-score for synonymous variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values indicate likely data quality issues.
@@ -126,7 +126,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `mis.obs`: Number of observed missense variants in transcript
 - `mis.exp`: Number of expected missense variants in transcript
 - `mis.oe`: Observed to expected ratio for missense variants in transcript (`mis.obs` divided by `mis.exp`)
-- `mis.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for missense variants
+- `mis.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for missense variants (0 when `mis.obs` is 0)
 - `mis.oe_ci.upper`: Upper bound of 90% confidence interval for `oe` ratio for missense variants
 - `mis.z_raw`: Raw (unnormalized) Z-score for missense variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts. Extreme values indicate likely data quality issues.
 - `mis.z_score`: Normalized Z-score for missense variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained). Extreme values indicate likely data quality issues.
@@ -150,7 +150,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `lof_hc_lc.obs`: Number of observed high and low confidence predicted loss-of-function (pLoF) variants in transcript
 - `lof_hc_lc.exp`: Number of expected high and low confidence pLoF variants in transcript
 - `lof_hc_lc.oe`: Observed to expected (`oe`) ratio for high and low confidence pLoF variants (`lof_hc_lc.obs` divided by `lof_hc_lc.exp`)
-- `lof_hc_lc.oe_ci.lower`: Lower bound of 90% confidence interval (CI) for observed to expected (`oe`) ratio for high and low confidence pLoF variants
+- `lof_hc_lc.oe_ci.lower`: Lower bound of 90% confidence interval (CI) for observed to expected (`oe`) ratio for high and low confidence pLoF variants (0 when `lof_hc_lc.obs` is 0)
 - `lof_hc_lc.oe_ci.upper`: LOEUF: Upper bound of 90% confidence interval for `oe` ratio for high and low confidence pLoF variants (lower values indicate more constrained)
 - `lof_hc_lc.z_raw`: Raw (unnormalized) Z-score for high and low confidence pLoF variants in transcript. Computed as the signed square root of the chi-squared deviation of observed from expected counts.
 - `lof_hc_lc.z_score`: Normalized Z-score for high and low confidence pLoF variants in transcript. Higher (more positive) Z-scores indicate that the transcript is more intolerant of variation (more constrained).
@@ -177,7 +177,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `lof.obs`: Number of observed high confidence predicted loss-of-function (pLoF) variants in transcript
 - `lof.exp`: Number of expected high confidence pLoF variants in transcript
 - `lof.oe`: Observed to expected ratio for high confidence pLoF variants in transcript (`lof.obs` divided by `lof.exp`)
-- `lof.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants
+- `lof.oe_ci.lower`: Lower bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants (0 when `lof.obs` is 0)
 - `lof.oe_ci.upper`: LOEUF: upper bound of 90% confidence interval for `oe` ratio for high confidence pLoF variants (lower values indicate more constrained)
 - `lof.oe_ci.upper_rank`: Transcript's rank of LOEUF value compared to other transcripts (lower values indicate more constrained). This annotation is only applied to MANE Select transcripts unless a gene does not have a MANE Select transcript, in which case the canonical transcript will be used instead if available.
 - `lof.oe_ci.upper_bin_percentile`: Transcript percentile associated with LOEUF score for transcript. For example, if the gene percentile is 85, then the transcript is more highly constrained against predicted loss-of-function variation than 85% of transcripts.
