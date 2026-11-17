@@ -387,6 +387,8 @@ class TestGetExomesObservedAndPossible:
             ("absent2", "g2", None, None, 30),
             ("common", "g3", set(), _freq(500, 0.2), 30),
             ("no_coverage", "g4", None, None, None),
+            ("filtered_rare", "g5", {"AS_VQSR"}, _freq(3, 1e-5), 30),
+            ("filtered_common", "g5", {"InbreedingCoeff"}, _freq(500, 0.2), 30),
         ]
         ht = hl.Table.parallelize(
             [
@@ -415,12 +417,20 @@ class TestGetExomesObservedAndPossible:
             ("filtered", [0, 0], 1),
             ("common", [0, 0], 0),
             ("no_coverage", None, None),
+            ("filtered_rare", [0, 0], 1),
+            ("filtered_common", [0, 0], 0),
         ],
     )
     def test_per_variant_counts(
         self, name: str, observed: Optional[List[int]], possible: Optional[int]
     ) -> None:
-        """Test observed and possible counts for each kind of site."""
+        """
+        Test observed and possible counts for each kind of site.
+
+        A filtered variant is never observed, and counts as possible only if it is
+        rare, like a PASS variant. Regression test: a filtered variant above
+        ``max_af`` counted as possible, while a PASS variant at the same AF didn't.
+        """
         row = {r.name: r for r in self._ht().collect()}[name]
         assert row.observed_variants == observed
         assert row.possible_variants == possible
@@ -441,6 +451,7 @@ class TestGetExomesObservedAndPossible:
         assert sums["g1"] == ([1, 1], 2)
         assert sums["g2"] == ([0, 0], 2)
         assert sums["g3"] == ([0, 0], 0)
+        assert sums["g5"] == ([0, 0], 1)
 
     DS_FREQ_META = [
         {"group": "adj"},
