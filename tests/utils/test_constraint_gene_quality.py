@@ -355,3 +355,23 @@ class TestComputeGeneQualityMetrics:
         assert t4.gene_quality_metrics.exome_mean_AS_MQ is None
         assert t4.gene_flags == {"low_exome_coverage"}
 
+    @pytest.mark.parametrize("metric", ["median", "AN"])
+    def test_coverage_metric_must_be_an_percent(self, metric: str) -> None:
+        """
+        Test that a table preprocessed with another coverage metric raises an error.
+
+        Regression test: ``prop_bp_AN90`` and ``low_exome_coverage`` read
+        ``exomes_coverage`` as AN%, whatever ``--exome-coverage-metric`` was.
+        """
+        ht = _context_ht().annotate_globals(
+            apply_models_globals=hl.struct(exome_coverage_metric=metric)
+        )
+        with pytest.raises(ValueError, match="AN_percent"):
+            _run_gene_quality_metrics(context_ht=ht)
+
+    def test_an_percent_metric_is_accepted(self) -> None:
+        """Test that a table preprocessed with AN_percent is accepted."""
+        ht = _context_ht().annotate_globals(
+            apply_models_globals=hl.struct(exome_coverage_metric="AN_percent")
+        )
+        assert _run_gene_quality_metrics(context_ht=ht).count() == 4

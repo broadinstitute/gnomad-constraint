@@ -109,6 +109,9 @@ Parameters passed to the plateau/coverage model fit.
 ### `apply_models_globals` — `struct`
 Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `low_cov_cutoff`, `high_cov_cutoff`, `skip_coverage_model` — as above.
+- `exome_coverage_metric: str` — the `--exome-coverage-metric` used for
+  `exomes_coverage` (`AN_percent`, `median`, or `AN`). The cutoffs are in its
+  units, and `--compute-gene-quality-metrics` requires `AN_percent`.
 - `plateau_models: dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
   — fitted plateau slope/intercept per (cpg, genomic_region). Each value is
   an array parallel to `mutation_rate.mu` (one fit per downsampling).
