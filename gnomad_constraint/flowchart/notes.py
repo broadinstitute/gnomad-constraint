@@ -1299,9 +1299,10 @@ NOTES = {
                 {
                     "tag": "collect",
                     "text": (
-                        "Compute percentile, decile and sextile thresholds of the gamma upper CI"
-                        " for syn, mis and lof_hc with ``approx_quantiles`` (k=1000), on ENST"
-                        " MANE Select transcripts without constraint flags. Stored in the"
+                        "Compute exact percentile, decile and sextile thresholds of the gamma"
+                        " upper CI for syn, mis and lof_hc, on ENST MANE Select transcripts"
+                        " without constraint flags: with n values and K bins, threshold k is the"
+                        " value at 0-based rank ``ceil(k * n / K)``. Stored in the"
                         " ``percentile_thresholds`` global. Every transcript gets threshold-based"
                         " ``constraint_bins``."
                     ),
