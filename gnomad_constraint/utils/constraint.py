@@ -18,7 +18,6 @@ from gnomad.utils.constraint import (
     calculate_raw_z_score,
     calculate_raw_z_score_sd,
     calibration_model_group_expr,
-    compute_percentile_thresholds,
     compute_pli,
     count_observed_and_possible_by_group,
     get_constraint_flags,
@@ -1794,6 +1793,58 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     return ht
 
 
+def compute_exact_percentile_thresholds(
+    ht: hl.Table,
+    metric_expr: hl.expr.Float64Expression,
+    granularities: Dict[str, List[int]],
+    outlier_expr: Optional[hl.expr.BooleanExpression] = None,
+    transcript_filter_expr: Optional[hl.expr.BooleanExpression] = None,
+) -> Dict[str, List[float]]:
+    """
+    Compute exact bin thresholds for a metric.
+
+    For a granularity with ``K`` bins and ``n`` values in ascending order, the
+    threshold for bin ``k`` is the value at 0-based rank ``ceil(k * n / K)``: the
+    smallest value that rank-based binning (``int(rank * K / n)``) puts in bin ``k``.
+    Binning the same values by threshold (the number of thresholds a value meets or
+    exceeds) therefore gives their rank-based bins, apart from ties. With fewer
+    values than bins, thresholds past the largest value repeat it.
+
+    The values are collected to the driver, which is small for one value per
+    transcript. Unlike ``approx_quantiles``, the result is the same on every run.
+
+    :param ht: Input Table.
+    :param metric_expr: Metric to compute thresholds for.
+    :param granularities: Mapping of granularity name to its bin boundary labels
+        (1-based, as in ``CONSTRAINT_GRANULARITIES``); ``K`` is one more than the
+        number of labels.
+    :param outlier_expr: Optional expression that is True for rows to leave out.
+        Default is None.
+    :param transcript_filter_expr: Optional expression that is True for rows to
+        include. Default is None.
+    :return: Mapping of granularity name to its thresholds in ascending order.
+    """
+    filter_expr = hl.is_defined(metric_expr)
+    if outlier_expr is not None:
+        filter_expr &= ~outlier_expr
+    if transcript_filter_expr is not None:
+        filter_expr &= transcript_filter_expr
+    values = sorted(
+        ht.aggregate(hl.agg.filter(filter_expr, hl.agg.collect(metric_expr)))
+    )
+    n = len(values)
+    if n == 0:
+        raise ValueError("No values left to compute percentile thresholds from.")
+    logger.info("Computing exact percentile thresholds on %d values.", n)
+
+    thresholds = {}
+    for name, bins in granularities.items():
+        n_bins = len(bins) + 1
+        # -(-a // b) is ceil(a / b) in integer arithmetic.
+        thresholds[name] = [values[min(-(-k * n // n_bins), n - 1)] for k in bins]
+    return thresholds
+
+
 def compute_constraint_percentile_bins(
     ht: hl.Table,
     use_mane_select_over_canonical: bool = True,
@@ -1826,41 +1877,29 @@ def compute_constraint_percentile_bins(
         "mis": next(i for i, m in enumerate(meta) if m == {"csq_set": "mis"}),
         "lof": next(i for i, m in enumerate(meta) if m == {"lof": "hc"}),
     }
-    # Transcripts with any constraint flag are excluded from threshold
-    # computation (but still assigned bins afterward).
+    # Thresholds come from MANE Select transcripts with no constraint flags, a
+    # narrower set than the ranked one above (which falls back to canonical and
+    # keeps flagged transcripts). This is deliberate and described on the gnomAD
+    # browser help page. Because the sets differ, some transcripts' threshold bins
+    # differ from their rank-based bins. Every transcript is still assigned
+    # threshold bins afterward.
     outlier_expr = ht.constraint_flags.length() > 0
 
-    # Convert CONSTRAINT_GRANULARITIES bin boundaries into quantile
-    # probabilities. E.g. decile bins [1..9] with 10 total bins become
-    # quantile probs [10, 20, ..., 90]. Collect all unique probs into
-    # all_qs so we can compute them in a single aggregation pass per metric.
-    gran_percentiles: Dict[str, List[float]] = {}
-    all_qs = []
-    for gran_name, bins in CONSTRAINT_GRANULARITIES.items():
-        n_bins = len(bins) + 1
-        pcts = [b / n_bins * 100 for b in bins]
-        gran_percentiles[gran_name] = pcts
-        all_qs.extend(pcts)
-
-    # For each metric (syn, mis, lof), compute approximate quantile
-    # thresholds on the gamma OE upper CI across MANE Select transcripts
-    # (excluding outliers). Then slice the result by granularity to get
-    # the bin-edge values for percentile, decile, and sextile bins.
+    # For each metric (syn, mis, lof), compute exact thresholds on the gamma OE
+    # upper CI for every granularity in CONSTRAINT_GRANULARITIES.
     thresholds = {}
     for metric, idx in metric_group_idx.items():
-        vals = compute_percentile_thresholds(
+        vals = compute_exact_percentile_thresholds(
             ht,
-            percentiles=all_qs,
-            metric_expr=ht.constraint_groups[idx]
-            .oe_info[all_freq_idx]
-            .oe_ci_gamma.upper,
+            ht.constraint_groups[idx].oe_info[all_freq_idx].oe_ci_gamma.upper,
+            CONSTRAINT_GRANULARITIES,
             outlier_expr=outlier_expr,
             transcript_filter_expr=get_transcript_filter_expr(
                 ht, mane_select_only=True
             ),
         )
-        for gran_name, pcts in gran_percentiles.items():
-            thresholds[(gran_name, metric)] = [vals[p] for p in pcts]
+        for gran_name, gran_thresholds in vals.items():
+            thresholds[(gran_name, metric)] = gran_thresholds
 
     # Store thresholds as a global so they survive through to release.
     # Structure: percentile_thresholds.{metric}.{granularity} = array<float64>
@@ -1870,7 +1909,7 @@ def compute_constraint_percentile_bins(
                 metric: hl.struct(
                     **{
                         gran_name: thresholds[(gran_name, metric)]
-                        for gran_name in gran_percentiles
+                        for gran_name in CONSTRAINT_GRANULARITIES
                     }
                 )
                 for metric in metric_group_idx
@@ -2443,7 +2482,7 @@ def annotate_constraint_percentile_bins(
 
     :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
     :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list
-        of threshold values, built from :func:`compute_percentile_thresholds`
+        of threshold values, built from :func:`compute_exact_percentile_thresholds`
         output (see :func:`annotate_bins_by_threshold`).
     :param metric_group_idx: Mapping of metric name to its index in
         ``constraint_groups`` (e.g. ``{"lof": 4, "mis": 1, "syn": 0}``).

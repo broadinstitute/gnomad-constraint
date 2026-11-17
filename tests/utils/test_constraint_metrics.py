@@ -23,6 +23,7 @@ from gnomad_constraint.utils.constraint import (
     annotate_constraint_percentile_bins,
     compute_constraint_metrics,
     compute_constraint_percentile_bins,
+    compute_exact_percentile_thresholds,
     flatten_release_ht,
     get_transcript_filter_expr,
     lof_bin_thresholds_to_ht,
@@ -557,6 +558,67 @@ class TestComputeConstraintPercentileBins:
                 assert max(t) <= 1.5 * factor
                 # Each metric's thresholds come from its own group.
                 assert t == pytest.approx([x * factor for x in thresholds.syn[gran]])
+
+    def test_thresholds_are_exact(
+        self, result: Tuple[hl.Struct, List[hl.Struct]]
+    ) -> None:
+        """
+        Test that each threshold is the value at 0-based rank ceil(k * n / K).
+
+        Regression test: the thresholds came from ``approx_quantiles`` (k = 1000), so
+        they fell off the exact boundaries and could differ between runs on the
+        same data. The 30 syn values are 0.05 * (rank + 1), so the decile
+        thresholds are at ranks 3, 6, ..., 27 and the sextile ones at 5, 10, ..., 25.
+        """
+        thresholds, _ = result
+        for metric, (_, factor) in self.METRICS.items():
+            decile = [0.05 * (3 * k + 1) * factor for k in range(1, 10)]
+            sextile = [0.05 * (5 * k + 1) * factor for k in range(1, 6)]
+            assert thresholds[metric].decile == pytest.approx(decile)
+            assert thresholds[metric].sextile == pytest.approx(sextile)
+
+    def test_thresholds_are_exact_at_scale(self) -> None:
+        """
+        Test that the thresholds are exact on 3,000 transcripts.
+
+        Regression test: ``approx_quantiles`` (k = 1000) is exact on small inputs
+        like the 30 above, but not at this size: on 3,000 values its decile
+        thresholds landed up to a rank away from the exact ones, and on 17,000 (about
+        the number of MANE Select transcripts) up to 9 ranks.
+        """
+        n = 3000
+        values = [((i * 7919) % 100003) / 100003 for i in range(n)]
+        ci = lambda v: hl.Struct(lower=0.0, upper=v)  # noqa: E731
+        rows = [
+            dict(
+                transcript=f"ENST{i}",
+                gene_id=f"G{i}",
+                mane_select=True,
+                canonical=True,
+                constraint_flags=set(),
+                constraint_groups=[
+                    hl.Struct(
+                        oe_info=[
+                            hl.Struct(
+                                oe_ci_discretized_poisson=ci(v), oe_ci_gamma=ci(v)
+                            )
+                        ]
+                    )
+                ]
+                * 3,
+            )
+            for i, v in enumerate(values)
+        ]
+        oe_info_type = hl.tstruct(
+            oe_ci_discretized_poisson=CI_TYPE, oe_ci_gamma=CI_TYPE
+        )
+        meta = [{"csq_set": "syn"}, {"csq_set": "mis"}, {"lof": "hc"}]
+        ht = compute_constraint_percentile_bins(
+            _constraint_groups_ht(rows, oe_info_type, meta=meta)
+        )
+        exact = sorted(values)
+        decile = hl.eval(ht.percentile_thresholds.lof.decile)
+        assert decile == [exact[300 * k] for k in range(1, 10)]
 
     def test_bins(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
         """Test that every transcript, including excluded ones, is binned."""
@@ -1350,3 +1412,63 @@ class TestLofBinThresholdsToHt:
             for gran, ts in thresholds.items()
             for i, t in enumerate(ts)
         ]
+
+
+class TestComputeExactPercentileThresholds:
+    """Test the compute_exact_percentile_thresholds function."""
+
+    @staticmethod
+    def _ht(values: List[Optional[float]]) -> hl.Table:
+        """Return a Table with one value per row, plus an outlier and a missing value."""
+        rows = [dict(idx=i, value=v, outlier=False) for i, v in enumerate(values)]
+        rows += [
+            dict(idx=len(values), value=1000.0, outlier=True),
+            dict(idx=len(values) + 1, value=None, outlier=False),
+        ]
+        return hl.Table.parallelize(
+            rows,
+            hl.tstruct(idx=hl.tint32, value=hl.tfloat64, outlier=hl.tbool),
+            key="idx",
+        )
+
+    @pytest.mark.parametrize("n", [100, 137, 1000])
+    def test_reproduces_rank_bins(self, n: int) -> None:
+        """
+        Test that binning by the thresholds gives the rank-based bins.
+
+        With distinct values and at least as many values as bins, a value's threshold
+        bin (the number of thresholds it meets or exceeds) equals
+        ``int(rank * K / n)``, the rank-based bin, for every granularity. The outlier
+        and the missing value are left out.
+        """
+        values = [((i * 7919) % 1009) / 1009 for i in range(n)]
+        ht = self._ht(values)
+        thresholds = compute_exact_percentile_thresholds(
+            ht, ht.value, CONSTRAINT_GRANULARITIES, outlier_expr=ht.outlier
+        )
+        ranks = {v: r for r, v in enumerate(sorted(values))}
+        for gran, bins in CONSTRAINT_GRANULARITIES.items():
+            n_bins = len(bins) + 1
+            for v in values:
+                assert _bin(v, thresholds[gran]) == ranks[v] * n_bins // n, (gran, v)
+
+    def test_fewer_values_than_bins(self) -> None:
+        """
+        Test that thresholds past the largest value repeat it.
+
+        With 3 values and 10 bins, decile k's rank is ceil(3 * k / 10): 1 for
+        k = 1-3, 2 for k = 4-6, and 3 (past the last value) for k = 7-9.
+        """
+        ht = self._ht([0.3, 0.1, 0.2])
+        thresholds = compute_exact_percentile_thresholds(
+            ht, ht.value, {"decile": list(range(1, 10))}, outlier_expr=ht.outlier
+        )
+        assert thresholds["decile"] == [0.2] * 3 + [0.3] * 6
+
+    def test_no_values(self) -> None:
+        """Test that a Table with nothing to threshold raises an error."""
+        ht = self._ht([])
+        with pytest.raises(ValueError, match="No values"):
+            compute_exact_percentile_thresholds(
+                ht, ht.value, {"decile": list(range(1, 10))}, outlier_expr=ht.outlier
+            )
