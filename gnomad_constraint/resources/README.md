@@ -109,8 +109,9 @@ Parameters passed to `calculate_mu_by_downsampling`.
 Parameters passed to the plateau/coverage model fit.
 - `synonymous_transcript_filter_field: str` — transcript filter used when
   selecting synonymous training variants (e.g. `canonical`).
-- `low_cov_cutoff: int32` — coverage below this is treated as the low-coverage
-  regime (19).
+- `low_cov_cutoff: int32` — sites at or below this coverage are left out of the
+  low-coverage model (19 for v4.1.x; 0 when `--pipeline-low-coverage-filter` is
+  not set).
 - `high_cov_cutoff: int32` — coverage at or above this is the high-coverage
   regime that the plateau model is fit to (90).
 - `upper_cov_cutoff: int32` — upper bound for the coverage model fit (nullable).
@@ -615,7 +616,7 @@ Public-release flattened constraint table. One row per
 - `build_models_params: struct{low_cov_cutoff, high_cov_cutoff, upper_cov_cutoff}`
   — release-cleaned `build_models_globals` (drops
   `synonymous_transcript_filter_field`, `skip_coverage_model`).
-- `apply_models_params: struct{low_cov_cutoff, high_cov_cutoff, plateau_models, coverage_model, log10_coverage}`
+- `apply_models_params: struct{low_cov_cutoff, high_cov_cutoff, exome_coverage_metric, plateau_models, coverage_model, log10_coverage}`
   — release-cleaned `apply_models_globals` (drops `skip_coverage_model`,
   `groupings`).
 - `downsamplings: struct{global, afr, amr, eas, nfe, sas}` — each is

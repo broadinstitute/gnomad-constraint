@@ -408,12 +408,13 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--pipeline-low-coverage-filter",
         help=(
             "Lower exome coverage cutoff to use throughout the pipeline. Sites with"
-            " coverage below this cutoff will be excluded when creating the training"
+            " coverage at or below this cutoff are excluded when creating the training"
             " set, building and applying models, and computing constraint metrics."
-            "  Default is None."
+            " Default is 19, as used for v4.1.x, which keeps sites with AN% of 20 or"
+            " more."
         ),
         type=int,
-        default=None,
+        default=19,
     )
     preprocess_args.add_argument(
         "--max-af",
