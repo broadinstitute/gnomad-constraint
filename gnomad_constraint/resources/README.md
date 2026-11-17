@@ -490,8 +490,11 @@ Pipeline-parameter globals (as §9) plus:
 - `sd_raw_z: array<float64>` — per-constraint-group standard deviation of the
   raw z-statistic across all transcripts (parallel to `constraint_group_meta`).
   Used to scale `z_raw → z_score`.
-- `percentile_thresholds: struct` — observed quantile cutoffs of the
-  `oe_ci.upper` distribution. One sub-struct per metric:
+- `percentile_thresholds: struct` — exact cutoffs of the adj
+  `oe_ci_gamma.upper` distribution over MANE Select transcripts with no
+  `constraint_flags`. With n values and K bins, cutoff k is the value at
+  0-based rank ⌈k·n/K⌉, so on that set the threshold bins match rank-based
+  bins apart from ties. One sub-struct per metric:
   - `syn`, `mis`, `lof: struct{percentile: array<float64>, decile: array<float64>, sextile: array<float64>}`
     — each granularity's boundary values (e.g.
     `percentile_thresholds.lof.decile[0]` = 10th-percentile of LOEUF upper).
