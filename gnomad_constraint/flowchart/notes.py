@@ -567,8 +567,8 @@ NOTES = {
                     "tag": "rowexpr",
                     "text": (
                         "``calibrate_mu``: exome observed/possible per frequency entry. Filtered"
-                        " variants count as possible but not observed; PASS variants above"
-                        " ``--max-af`` count as neither."
+                        " variants are never observed, and count as possible only if their adj"
+                        " AF is at most ``--max-af``; variants above it count as neither."
                     ),
                 },
                 {
@@ -1588,8 +1588,9 @@ NOTES = {
             "notes": [
                 (
                     "With ``max_af``, ``observed_variants`` checks each entry's own AF, but"
-                    " ``possible_variants`` checks only the full adj entry. A PASS variant"
-                    " above ``max_af`` overall drops out of both counts."
+                    " ``possible_variants`` checks only the full adj entry. A variant above"
+                    " ``max_af`` overall drops out of both counts, filtered or not (v4.1.1"
+                    " counted filtered ones as possible)."
                 ),
             ],
         },
