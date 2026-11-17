@@ -610,9 +610,9 @@ NOTES = {
                     " coverage get missing counts and drop out of every sum."
                 ),
                 (
-                    "``build_model`` falls back to a low cutoff of 0 (strict ``>``), so"
-                    " zero-coverage sites never train. ``apply_model`` has no lower bound"
-                    " unless ``--pipeline-low-coverage-filter`` is set."
+                    "With no low cutoff, ``build_model`` and ``apply_model`` both use 0"
+                    " (strict ``>``), so zero-coverage sites are in neither model; the"
+                    " globals record the cutoff used."
                 ),
                 (
                     "``build_model`` keeps ``cpg`` only in the high-coverage bucket, so the"
@@ -2083,8 +2083,8 @@ NOTES = {
                 (
                     "Works only through the ``build_model`` and ``apply_model`` buckets set"
                     " in ``--preprocess-data``. The bound is strict (``>``), so sites at the"
-                    " cutoff are excluded too. When unset, training still excludes zero"
-                    " coverage."
+                    " cutoff are excluded too: the default of 19 keeps AN% 20 and above, as"
+                    " for v4.1.x. Set to nothing in code, it becomes 0."
                 ),
             ],
         },
