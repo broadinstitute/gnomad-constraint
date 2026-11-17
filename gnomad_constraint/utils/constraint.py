@@ -638,7 +638,7 @@ def get_build_calibration_model_annotation(
 
 def prepare_ht_for_constraint_calculations(
     ht: hl.Table,
-    exome_coverage_metric: str = "median",
+    exome_coverage_metric: str = "AN_percent",
     gen_ancs: Optional[List[str]] = None,
     include_downsamplings: bool = False,
     mu_downsampling_level: int = 1000,
@@ -670,7 +670,8 @@ def prepare_ht_for_constraint_calculations(
 
     :param ht: Annotated context Table.
     :param exome_coverage_metric: Metric to use for exome coverage. One of ["median",
-        "AN", "AN_percent"]. Default is "median".
+        "AN", "AN_percent"]. Recorded in ``apply_models_globals``. Default is
+        "AN_percent".
     :param gen_ancs: List of genetic ancestries to filter the frequency arrays to.
         Default is None, which includes only the full dataset.
     :param include_downsamplings: Whether to include downsamplings in the observed and
@@ -786,6 +787,7 @@ def prepare_ht_for_constraint_calculations(
             low_cov_cutoff=handle_none(apply_model_low_cov_cutoff),
             high_cov_cutoff=apply_model_high_cov_cutoff,
             skip_coverage_model=skip_coverage_model,
+            exome_coverage_metric=exome_coverage_metric,
         ),
         **exomes_obs_pos_globals,
     )
@@ -1432,7 +1434,9 @@ def _compute_coverage_metrics(
 
     Uses the ``exomes_coverage`` field from the preprocessed context table
     (AN as a percentage of total alleles) to determine what fraction of CDS
-    bases per transcript meet the coverage threshold.
+    bases per transcript meet the coverage threshold. A CDS base with no
+    ``exomes_coverage`` (no exome AN, or no context row) counts as not covered, so
+    every transcript in ``gencode_cds_ht`` gets a row.
 
     :param ht: Preprocessed context Hail Table with ``exomes_coverage`` (AN percent,
         0-100) per position.
@@ -1449,13 +1453,14 @@ def _compute_coverage_metrics(
     ht = gencode_cds_ht.annotate(
         exomes_coverage=ht[gencode_cds_ht.locus].exomes_coverage
     )
-    ht = ht.filter(hl.is_defined(ht.exomes_coverage))
 
     # Explode by transcript and aggregate.
     ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
-        prop_bp_AN90=hl.agg.fraction(ht.exomes_coverage >= an_coverage_threshold),
+        prop_bp_AN90=hl.agg.fraction(
+            hl.or_else(ht.exomes_coverage >= an_coverage_threshold, False)
+        ),
     )
 
 
@@ -1546,6 +1551,10 @@ def compute_gene_quality_metrics(
         when mean AS_MQ < 50, ``low_exome_coverage`` when
         prop_bp_AN90 < 0.1).
 
+    ``exomes_coverage`` must be AN percent: the function raises an error if the
+    preprocessed Table records another ``exome_coverage_metric`` in
+    ``apply_models_globals``, and logs a warning if it records none.
+
     :param ht: Preprocessed constraint Hail Table with ``exomes_coverage``
         field (output of :func:`prepare_ht_for_constraint_calculations`).
     :param exomes_ht: gnomAD exomes sites Hail Table.
@@ -1559,6 +1568,26 @@ def compute_gene_quality_metrics(
     :return: Table keyed by ``transcript`` with ``gene_quality_metrics``
         and ``gene_flags``.
     """
+    # prop_bp_AN90 and low_exome_coverage read exomes_coverage as AN percent.
+    metric = None
+    if (
+        "apply_models_globals" in ht.globals
+        and "exome_coverage_metric" in ht.apply_models_globals
+    ):
+        metric = hl.eval(ht.apply_models_globals.exome_coverage_metric)
+    if metric is None:
+        logger.warning(
+            "The preprocessed Table doesn't record its exome coverage metric;"
+            " prop_bp_AN90 assumes exomes_coverage is AN_percent."
+        )
+    elif metric != "AN_percent":
+        raise ValueError(
+            "prop_bp_AN90 and low_exome_coverage need exomes_coverage as"
+            " AN_percent, but the preprocessed Table used"
+            f" exome_coverage_metric={metric!r}. Rerun --preprocess-data with"
+            " --exome-coverage-metric AN_percent."
+        )
+
     # Compute three independent per-transcript metric tables, each keyed by
     # transcript. These use different source data (preprocessed context HT
     # for coverage, exomes sites HT for mapping quality, GENCODE CDS +

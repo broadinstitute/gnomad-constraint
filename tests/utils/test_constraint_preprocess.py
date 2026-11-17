@@ -1,5 +1,6 @@
 """Tests for the preprocessing functions in ``gnomad_constraint.utils.constraint``."""
 
+import inspect
 from typing import Any, Dict, List, Optional, Tuple
 
 import hail as hl
@@ -1179,6 +1180,16 @@ class TestPrepareHtForConstraintCalculations:
         assert (build is None) if skip else (build.high_or_low_coverage == "low")
         assert site.calibrate_mu.apply_model.high_or_low_coverage == "high"
 
+    def test_default_coverage_metric(self) -> None:
+        """
+        Test that the default exome coverage metric matches the pipeline's.
+
+        Regression test: this function defaulted to ``median`` while
+        ``--exome-coverage-metric`` defaults to ``AN_percent``.
+        """
+        params = inspect.signature(prepare_ht_for_constraint_calculations).parameters
+        assert params["exome_coverage_metric"].default == "AN_percent"
+
     def test_globals(
         self, preprocessed: Tuple[bool, Dict[str, hl.Struct], hl.Struct]
     ) -> None:
@@ -1192,7 +1203,10 @@ class TestPrepareHtForConstraintCalculations:
             skip_coverage_model=skip,
         )
         assert g.apply_models_globals == hl.Struct(
-            low_cov_cutoff=None, high_cov_cutoff=50, skip_coverage_model=skip
+            low_cov_cutoff=None,
+            high_cov_cutoff=50,
+            skip_coverage_model=skip,
+            exome_coverage_metric="AN_percent",
         )
         mu = g.calculate_mu_globals
         assert (mu.min_cov, mu.max_cov, mu.ac_cutoff) == (20, 40, 3)

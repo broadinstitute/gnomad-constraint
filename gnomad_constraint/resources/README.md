@@ -119,6 +119,9 @@ Parameters passed to the plateau/coverage model fit.
 ### `apply_models_globals` — `struct`
 Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `low_cov_cutoff`, `high_cov_cutoff`, `skip_coverage_model` — as above.
+- `exome_coverage_metric: str` — the `--exome-coverage-metric` used for
+  `exomes_coverage` (`AN_percent`, `median`, or `AN`). The cutoffs are in its
+  units, and `--compute-gene-quality-metrics` requires `AN_percent`.
 - `plateau_models: dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
   — fitted plateau slope/intercept per (cpg, genomic_region). Each value is
   an array parallel to `mutation_rate.mu` (one fit per downsampling).
@@ -552,7 +555,7 @@ Pipeline-parameter globals (as §9) plus:
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:
   - `exome_prop_bp_AN90: float64` — fraction of transcript CDS bp with
-    exome AN ≥ 90% of max.
+    exome AN ≥ 90% of max. CDS bp with no exome AN count as not covered.
   - `exome_mean_AS_MQ: float64` — mean AS_MQ over the transcript.
   - `exome_prop_segdup: float64` — fraction of transcript CDS in segmental
     duplications.
