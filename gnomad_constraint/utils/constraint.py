@@ -1826,7 +1826,7 @@ def compute_exact_percentile_thresholds(
     """
     filter_expr = hl.is_defined(metric_expr)
     if outlier_expr is not None:
-        filter_expr &= ~outlier_expr
+        filter_expr &= ~outlier_expr  # pylint: disable=invalid-unary-operand-type
     if transcript_filter_expr is not None:
         filter_expr &= transcript_filter_expr
     values = sorted(
