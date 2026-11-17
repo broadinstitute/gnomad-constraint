@@ -1413,7 +1413,9 @@ def _compute_coverage_metrics(
 
     Uses the ``exomes_coverage`` field from the preprocessed context table
     (AN as a percentage of total alleles) to determine what fraction of CDS
-    bases per transcript meet the coverage threshold.
+    bases per transcript meet the coverage threshold. A CDS base with no
+    ``exomes_coverage`` (no exome AN, or no context row) counts as not covered, so
+    every transcript in ``gencode_cds_ht`` gets a row.
 
     :param ht: Preprocessed context Hail Table with ``exomes_coverage`` (AN percent,
         0-100) per position.
@@ -1430,13 +1432,13 @@ def _compute_coverage_metrics(
     ht = gencode_cds_ht.annotate(
         exomes_coverage=ht[gencode_cds_ht.locus].exomes_coverage
     )
-    ht = ht.filter(hl.is_defined(ht.exomes_coverage))
-
     # Explode by transcript and aggregate.
     ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
-        prop_bp_AN90=hl.agg.fraction(ht.exomes_coverage >= an_coverage_threshold),
+        prop_bp_AN90=hl.agg.fraction(
+            hl.or_else(ht.exomes_coverage >= an_coverage_threshold, False)
+        ),
     )
 
 

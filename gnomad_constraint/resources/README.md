@@ -533,7 +533,7 @@ Pipeline-parameter globals (as §9) plus:
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:
   - `exome_prop_bp_AN90: float64` — fraction of transcript CDS bp with
-    exome AN ≥ 90% of max.
+    exome AN ≥ 90% of max. CDS bp with no exome AN count as not covered.
   - `exome_mean_AS_MQ: float64` — mean AS_MQ over the transcript.
   - `exome_prop_segdup: float64` — fraction of transcript CDS in segmental
     duplications.

@@ -76,7 +76,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 - `end_position`: End position of the transcript
 - `cds_length`: Length of the coding sequences (CDS) in the transcript
 - `num_coding_exons`: Number of coding exons in the transcript
-- `gene_quality_metrics.exome_prop_bp_AN90`:  Proportion of coding bases in gene with allele number percent (AN%) (percent of total possible AN observed at site) greater than 90%
+- `gene_quality_metrics.exome_prop_bp_AN90`:  Proportion of coding bases in gene with allele number percent (AN%) (percent of total possible AN observed at site) of at least 90%. Coding bases with no exome AN count as below 90%
 - `gene_quality_metrics.exome_mean_AS_MQ`: Mean AS_MQ (allele-specific root mean square of the mapping quality of reads) across SNV sites in the coding sequence of the gene
 - `gene_quality_metrics.exome_prop_segdup`: Proportion of coding bases in gene that overlap a segmental duplication
 - `gene_quality_metrics.exome_prop_LCR`: Proportion of coding bases in gene that overlap a low-complexity region
