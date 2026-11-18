@@ -48,6 +48,9 @@ implementations against each other is named for the comparison.
   data, so tests run in seconds with no GCS access.
 - **Cases include missing and boundary inputs**: sites absent from the exomes,
   filtered sites, sites with no coverage, groups with no expected variants.
+- **Every frequency entry and group gets its own values**, so reading the wrong
+  one fails. Where the code looks up adj in the frequency metadata, the fixture
+  puts another entry before it.
 - **Where two implementations compute the same thing, they are tested against
   each other**: the per-variant and aggregated expected paths must give the same
   sums, and the gamma CI is checked against `scipy.stats.gamma`.

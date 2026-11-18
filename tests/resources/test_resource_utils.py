@@ -313,6 +313,16 @@ class TestGetSitesResource:
                 gnomad_grch38.public_release("exomes").versions["4.1"],
             ),
             (
+                "exomes",
+                "4.1.3",
+                gnomad_grch38.public_release("exomes").versions["4.1"],
+            ),
+            (
+                "genomes",
+                "4.1.3",
+                gnomad_grch38.public_release("genomes").versions["3.1.2"],
+            ),
+            (
                 "genomes",
                 "4.1.1",
                 gnomad_grch38.public_release("genomes").versions["3.1.2"],
@@ -329,8 +339,8 @@ class TestGetSitesResource:
     ) -> None:
         """Test the sites release used for each pipeline version.
 
-        v4.1.1 and v4.1.2 use the v4.1 exomes, and every v4 version uses the v3.1.2
-        genomes because the v4 genomes have no downsamplings.
+        v4.1.1, v4.1.2, and the default 4.1.3 use the v4.1 exomes, and every v4
+        version uses the v3.1.2 genomes because the v4 genomes have no downsamplings.
         """
         assert get_sites_resource(data_type, version).path == expected.path
 
@@ -348,6 +358,8 @@ class TestGetCoverageHt:
         [
             ("exomes", "4.1.1", gnomad_grch38.coverage("exomes")),
             ("genomes", "4.1.1", gnomad_grch38.coverage("genomes")),
+            ("exomes", "4.1.3", gnomad_grch38.coverage("exomes")),
+            ("genomes", "4.1.3", gnomad_grch38.coverage("genomes")),
         ],
     )
     def test_build_mapping(self, data_type: str, version: str, expected: Any) -> None:
@@ -593,6 +605,22 @@ class TestGetConstraintResources:
         ]
         assert paths
         assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
+
+    def test_production_run_writes_under_the_version_root(self) -> None:
+        """Test that every step's outputs in a production run are under its version."""
+        resources = get_constraint_resources(
+            version="4.1.3", overwrite=False, test=False
+        )
+        paths = [
+            _path(resource)
+            for step in resources.pipeline_steps.values()
+            for outputs in step.output_resources.values()
+            for resource in outputs
+        ]
+        assert paths
+        assert [
+            p for p in paths if not p.startswith("gs://gnomad/v4.1.3/constraint/")
+        ] == []
 
     @pytest.mark.parametrize("use_aggregated_expected", [False, True])
     def test_constraint_group_input(self, use_aggregated_expected: bool) -> None:
