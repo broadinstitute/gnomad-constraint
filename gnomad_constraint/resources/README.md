@@ -100,8 +100,8 @@ Parameters passed to the plateau/coverage model fit.
 - `synonymous_transcript_filter_field: str` — transcript filter used when
   selecting synonymous training variants (e.g. `canonical`).
 - `low_cov_cutoff: int32` — sites at or below this coverage are left out of the
-  low-coverage model (19 for v4.1.x; 0 when `--pipeline-low-coverage-filter` is
-  not set).
+  low-coverage model (19 for v4.1.x and the pipeline default; 0 when
+  `prepare_ht_for_constraint_calculations` is called with no low cutoff).
 - `high_cov_cutoff: int32` — coverage at or above this is the high-coverage
   regime that the plateau model is fit to (90).
 - `upper_cov_cutoff: int32` — upper bound for the coverage model fit (nullable).
@@ -115,7 +115,7 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
   units, and `--compute-gene-quality-metrics` requires `AN_percent`.
 - `plateau_models: dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
   — fitted plateau slope/intercept per (cpg, genomic_region). Each value is
-  an array parallel to `mutation_rate.mu` (one fit per downsampling).
+  an array parallel to `exomes_freq_meta` (one fit per frequency entry).
 - `coverage_model: array<float64>` — `[intercept, slope]` of the coverage
   correction regression.
 - `log10_coverage: bool` — whether the coverage model is in log10 space.
@@ -147,7 +147,7 @@ and the **row fields** with sub-struct expansion. Producing function is the
 
 The fully annotated universe of all possible single-nucleotide substitutions
 in the genome, produced by `--prepare-context-ht` /
-[`prepare_ht_for_constraint_calculations`](../utils/constraint.py).
+[`prepare_context_ht`](../utils/constraint.py).
 
 - **Path:** `gs://gnomad/v{version}/constraint/preprocessed_data/gnomad.v{version}.annotated_context.ht`
 - **Resource fn:** [`get_annotated_context_ht`](resource_utils.py)
@@ -172,7 +172,7 @@ in the genome, produced by `--prepare-context-ht` /
 - `locus: locus<GRCh38>`
 - `alleles: array<str>` — `[ref, alt]` of one SNV.
 - `context: str` — trinucleotide context (ref-strand-collapsed via
-  [`collapse_strand`](../utils/constraint.py): rows with G/T ref are reverse-complemented and
+  gnomad_methods' `collapse_strand`: rows with G/T ref are reverse-complemented and
   `was_flipped` is set true).
 - `vep: struct` — minimal VEP output kept for constraint:
   - `most_severe_consequence: str`
@@ -204,8 +204,8 @@ in the genome, produced by `--prepare-context-ht` /
 - `adj_r: float64` — per-context regional depletion correction (see
   `adj_r.ht`).
 - `syn_adj_r: float64` — synonymous-DNM variant of `adj_r` (see `syn_adj_r.ht`).
-- `sfs_bin: int32` — site-frequency-spectrum bin assigned via
-  [`annotate_sfs_bin`](../utils/constraint.py) from `SFS_BIN_CUTOFFS` (0 if AF
+- `sfs_bin: int32` — site-frequency-spectrum bin assigned in
+  [`prepare_context_ht`](../utils/constraint.py) from `SFS_BIN_CUTOFFS` (0 if AF
   is missing; otherwise index of first cutoff `af_expr <= cutoff` is true).
 
 ---
@@ -214,8 +214,9 @@ in the genome, produced by `--prepare-context-ht` /
 
 Context joined with exomes/genomes frequency, coverage, AN, and the
 pre-computed mu inputs (`compute_mu`, `calibrate_mu` structs). Produced by the
-`preprocess_data` step / [`preprocess_data`](../utils/constraint.py) — the
-shared upstream input for nearly every downstream step.
+`--preprocess-data` step /
+[`prepare_ht_for_constraint_calculations`](../utils/constraint.py) — the shared
+upstream input for nearly every downstream step.
 
 - **Path:** `gs://gnomad/v{version}/constraint/preprocessed_data/gnomad.v{version}.context.preprocessed.ht`
 - **Resource fn:** [`get_preprocessed_ht`](resource_utils.py)
@@ -318,8 +319,8 @@ A `tsv.bgz` mirror of this table is written to the same directory.
 
 ## 5. `plateau.he` and `coverage.he`
 
-Fitted Hail Expressions produced by `--build-models` /
-[`build_models`](gnomad.utils.constraint:build_models). These are *not* tables — they are
+Fitted Hail Expressions produced by `--build-models` / gnomad_methods'
+`build_models`. These are *not* tables — they are
 pickled Hail expressions reread by `apply_models_globals`.
 
 - **Paths:**
@@ -703,8 +704,7 @@ from §3 by selecting/renaming.
 # Constraint-specific input tables
 
 These are constraint-pipeline-owned input tables (not part of `gnomad_methods`)
-that are read by `prepare_ht_for_constraint_calculations` to annotate
-`annotated_context.ht`.
+that are read by `prepare_context_ht` to annotate `annotated_context.ht`.
 
 ## `adj_r_per_context_methyl_genome_1kb_autosome.agg.ht`
 
@@ -752,9 +752,7 @@ import hail as hl
 
 from gnomad_constraint.resources.resource_utils import get_constraint_metrics_dataset
 
-ht = get_constraint_metrics_dataset(
-    "transcript_consequences", version="4.1.1", test=True
-).ht()
+ht = get_constraint_metrics_dataset(version="4.1.3", test=True).ht()
 ht.describe()
 print(hl.eval(ht.globals))
 ```
