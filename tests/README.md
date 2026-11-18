@@ -39,7 +39,7 @@ implementations against each other is named for the comparison.
 | `utils/test_constraint_apply.py` | Applying the models with and without a coverage model, the per-variant and aggregated expected paths (checked against each other), the regional mutation rate (rr) in `aggregate_per_variant_expected_ht`, and `aggregate_by_constraint_groups` |
 | `utils/test_constraint_metrics.py` | o/e, both CIs, z-scores and flags, transcript selection, ranks and percentile bins, pLI per LoF group, `compute_constraint_metrics`, and the release Tables (values, globals, and the published TSV columns) |
 | `utils/test_constraint_gene_quality.py` | Coverage, mapping quality, segdup/LCR, and flag thresholds in `compute_gene_quality_metrics` |
-| `utils/test_import_data.py` | Formatting the imported de novo mutations and the genomic feature windows |
+| `utils/test_import_data.py` | Reading the published DNM and genomic feature files (on files in `tmp_path`), combining and formatting the DNMs, the genomic feature windows, and the duplicate-window check |
 | `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
 | `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, the whole `get_constraint_resources` call each script makes, `--skip-coverage-model` reaching preprocessing, each script reading only its own options, and the `--apply-regional-rr` input check |
 

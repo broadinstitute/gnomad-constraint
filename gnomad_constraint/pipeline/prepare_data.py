@@ -30,8 +30,6 @@ import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
     COVERAGE_CUTOFF,
     CURRENT_VERSION,
-    GENOMIC_FEATURE_COLUMNS,
-    GENOMIC_FEATURE_MISSING,
     VERSIONS,
 )
 from gnomad_constraint.resources.resource_utils import filter_for_test
@@ -40,7 +38,14 @@ from gnomad_constraint.utils.constraint import (
     prepare_context_ht,
     prepare_ht_for_constraint_calculations,
 )
-from gnomad_constraint.utils.import_data import format_dnm_ht, format_genomic_features
+from gnomad_constraint.utils.import_data import (
+    check_unique_windows,
+    format_dnm_ht,
+    format_genomic_features,
+    get_dnm_import_args,
+    get_genomic_feature_import_args,
+    union_dnm_hts,
+)
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -106,15 +111,12 @@ def main(args: argparse.Namespace) -> None:
             res = resources.import_dnms
             res.check_resource_existence()
 
-            # The files are gzip (not bgzip) compressed and quote fields with commas.
             # TODO: The calls aren't QC-filtered. The ASD file has Confidence and Role
             #  columns and the DDD file has LCR and gnomad_non_neuro_AF columns that a
             #  filter could use.
-            ht = hl.Table.union(
-                *[
-                    hl.import_table(path, delimiter=",", quote='"', force=True).select(
-                        "Variant"
-                    )
+            ht = union_dnm_hts(
+                [
+                    hl.import_table(path, **get_dnm_import_args())
                     for path in [res.asd_dnm_path, res.ddd_dnm_path]
                 ]
             )
@@ -128,16 +130,13 @@ def main(args: argparse.Namespace) -> None:
 
             ht = hl.import_table(
                 res.published_features_path,
-                types={c: hl.tfloat64 for c in GENOMIC_FEATURE_COLUMNS},
-                missing=GENOMIC_FEATURE_MISSING,
                 min_partitions=100,
+                **get_genomic_feature_import_args(),
             )
             ht = format_genomic_features(ht)
             ht = ht.checkpoint(new_temp_file("genomic_features", "ht"))
             # Check before writing, so a bad matrix never replaces a good Table.
-            n_duplicated = ht.count() - ht.distinct().count()
-            if n_duplicated:
-                raise ValueError(f"{n_duplicated} windows are duplicated!")
+            check_unique_windows(ht)
             ht.write(res.genomic_features_ht.path, overwrite=overwrite)
             logger.info("Done importing the regional genomic feature matrix.")
 

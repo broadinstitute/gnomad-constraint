@@ -9,9 +9,50 @@ The data are imported by ``prepare_data.py --import-dnms`` and
       (https://github.com/atgu/gnomad_nc_constraint).
 """
 
+from typing import Any, Dict, List
+
 import hail as hl
 
-from gnomad_constraint.resources.constants import GENOMIC_FEATURE_COLUMNS
+from gnomad_constraint.resources.constants import (
+    GENOMIC_FEATURE_COLUMNS,
+    GENOMIC_FEATURE_MISSING,
+)
+
+
+def get_dnm_import_args() -> Dict[str, Any]:
+    """
+    Return the ``hl.import_table`` arguments for the published DNM files.
+
+    The files are gzip (not bgzip) compressed CSVs that quote fields with commas.
+
+    :return: Keyword arguments for ``hl.import_table``.
+    """
+    return {"delimiter": ",", "quote": '"', "force": True}
+
+
+def get_genomic_feature_import_args() -> Dict[str, Any]:
+    """
+    Return the ``hl.import_table`` arguments for the published genomic feature matrix.
+
+    The feature columns are read as floats, and every spelling of a missing value in
+    ``GENOMIC_FEATURE_MISSING`` as missing, so NaN never reaches the rr models.
+
+    :return: Keyword arguments for ``hl.import_table``.
+    """
+    return {
+        "types": {c: hl.tfloat64 for c in GENOMIC_FEATURE_COLUMNS},
+        "missing": GENOMIC_FEATURE_MISSING,
+    }
+
+
+def union_dnm_hts(hts: List[hl.Table]) -> hl.Table:
+    """
+    Combine the imported DNM files into one Table of their ``Variant`` fields.
+
+    :param hts: Imported DNM Tables, each with a ``Variant`` field.
+    :return: Unkeyed Table with the ``Variant`` field of every row of ``hts``.
+    """
+    return hl.Table.union(*[ht.select("Variant") for ht in hts])
 
 
 def format_dnm_ht(ht: hl.Table) -> hl.Table:
@@ -51,3 +92,18 @@ def format_genomic_features(ht: hl.Table) -> hl.Table:
     )
 
     return ht.select("element_id", *GENOMIC_FEATURE_COLUMNS)
+
+
+def check_unique_windows(ht: hl.Table) -> None:
+    """
+    Raise an error if a window appears more than once in the feature matrix.
+
+    Counting runs the Table's whole plan, so checkpoint it first.
+
+    :param ht: Feature Table keyed by ``interval``, as returned by
+        ``format_genomic_features``.
+    :return: None.
+    """
+    n_duplicated = ht.count() - ht.distinct().count()
+    if n_duplicated:
+        raise ValueError(f"{n_duplicated} windows are duplicated!")
