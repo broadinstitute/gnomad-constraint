@@ -77,6 +77,16 @@ class TestGetConstraintRoot:
         """Test the root for each combination of test, temp, post-fix, and sub_dir."""
         assert get_constraint_root(version="4.1.1", **kwargs) == expected
 
+    def test_default_version(self) -> None:
+        """
+        Test that the default version is the unreleased 4.1.3.
+
+        Regression test: the default was the released 4.1.1, so a run without
+        ``--version`` or ``--test`` wrote to the paths of the published tables, and
+        with ``--overwrite`` would replace them.
+        """
+        assert get_constraint_root() == "gs://gnomad/v4.1.3/constraint"
+
 
 class TestGetConstraintData:
     """Test the get_constraint_data function."""
