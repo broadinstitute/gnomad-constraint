@@ -1161,7 +1161,7 @@ NOTES = {
                         "Build or read the per-locus GENCODE CDS Table (``get_gencode_cds_ht``):"
                         " CDS features without chrY PAR copies, one row per base, grouped by"
                         " locus. It is checkpointed under ``gs://gnomad-tmp`` and reused if it"
-                        " already exists."
+                        " already exists, unless ``--overwrite`` is passed."
                     ),
                 },
                 {
@@ -1198,8 +1198,8 @@ NOTES = {
                 {
                     "tag": "ckpt",
                     "text": (
-                        "Each of the three Tables is ``.cache()``d (written to the Hail tmp dir)"
-                        " and joined on transcript."
+                        "The three Tables are joined on transcript. Each is read once, so none"
+                        " is cached."
                     ),
                 },
                 {
@@ -1223,8 +1223,9 @@ NOTES = {
                 ),
                 (
                     "A missing metric skips its flag rather than making ``gene_flags``"
-                    " missing: a transcript with no exome SNV sites has no ``mean_AS_MQ`` and"
-                    " can still get ``low_exome_coverage``."
+                    " missing: a transcript with no exome SNV sites, or none with an AS_MQ,"
+                    " has a missing (not NaN) ``mean_AS_MQ`` and can still get"
+                    " ``low_exome_coverage``."
                 ),
                 (
                     "Every transcript with a CDS base has a row: one with no covered base gets"
@@ -1243,7 +1244,8 @@ NOTES = {
                     "tag": "rowexpr",
                     "text": (
                         "For every group and freq entry, compute ``oe = obs / exp``, gamma and"
-                        " discretized-Poisson 90% CIs, and ``z_raw``."
+                        " discretized-Poisson 90% CIs (both with a lower bound of 0 when obs is"
+                        " 0), and ``z_raw``."
                     ),
                 },
                 {
@@ -1336,7 +1338,8 @@ NOTES = {
                 (
                     "``get_gencode_ht`` re-imports the GTF and checkpoints it to"
                     " ``gs://gnomad-tmp/gencode_{version}_with_versions.ht`` (v39 for VEP"
-                    " 105), which is read if present. It is not a declared input."
+                    " 105), which is read if present unless ``--overwrite`` is passed. It is"
+                    " not a declared input."
                 ),
             ],
         },
@@ -1589,10 +1592,12 @@ NOTES = {
         "get_exomes_observed_and_possible": {
             "notes": [
                 (
-                    "With ``max_af``, ``observed_variants`` checks each entry's own AF, but"
-                    " ``possible_variants`` checks only the full adj entry. A variant above"
-                    " ``max_af`` overall drops out of both counts, filtered or not (v4.1.1"
-                    " counted filtered ones as possible)."
+                    "With ``max_af``, whether a variant is rare comes from the full adj AF,"
+                    " for every frequency entry: a rare variant counts as observed in each"
+                    " entry where its AC is above 0, as in v2. v4.1.x checked each entry's own"
+                    " AF, so the 10- and 100-person downsamplings could never observe a"
+                    " variant. A variant above ``max_af`` overall drops out of both counts,"
+                    " filtered or not (v4.1.1 counted filtered ones as possible)."
                 ),
             ],
         },
@@ -1838,7 +1843,7 @@ NOTES = {
                     "Imports the GENCODE version that the context Table's VEP version"
                     " annotates with (``GENCODE_VERSION_MAP``, v39 for VEP 105) and"
                     " checkpoints it to ``gencode_{version}_with_versions.ht``, read if"
-                    " present."
+                    " present unless ``overwrite`` is set."
                 ),
             ],
         },
@@ -2092,9 +2097,9 @@ NOTES = {
         "max_af": {
             "notes": [
                 (
-                    "Applied in ``--preprocess-data`` to the exome counts only. Observed"
-                    " checks each frequency entry's AF; possible checks the full adj AF. The"
-                    " mutation rate uses AC <= 5 in the downsampling of 1,000 instead."
+                    "Applied in ``--preprocess-data`` to the exome counts only, using the"
+                    " full adj AF for every frequency entry. The mutation rate uses AC <= 5 in"
+                    " the downsampling of 1,000 instead."
                 ),
             ],
         },
