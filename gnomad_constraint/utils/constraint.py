@@ -565,7 +565,7 @@ def get_exomes_observed_and_possible(
         exomes_freq_meta=exomes_freq_meta,
         genetic_ancestry_groups=gen_ancs or hl.missing(hl.tarray(hl.tstr)),
         downsamplings=downsamplings or hl.missing(hl.tarray(hl.tstr)),
-        max_af=max_af,
+        max_af=hl.missing(hl.tfloat64) if max_af is None else max_af,
     )
 
     return obs_pos_expr, obs_pos_globals
@@ -1519,9 +1519,13 @@ def _compute_site_quality_metrics(
     ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id")
 
     # Average AS_MQ across all SNV sites in each transcript's CDS.
-    # Used downstream to flag transcripts with low mapping quality.
+    # Used downstream to flag transcripts with low mapping quality. With no defined
+    # AS_MQ the mean would be NaN, which the low mapping quality check can't flag, so
+    # it is missing instead.
     return ht.group_by(transcript=ht.transcript_id).aggregate(
-        mean_AS_MQ=hl.agg.mean(ht.AS_MQ),
+        mean_AS_MQ=hl.or_missing(
+            hl.agg.count_where(hl.is_defined(ht.AS_MQ)) > 0, hl.agg.mean(ht.AS_MQ)
+        ),
     )
 
 
