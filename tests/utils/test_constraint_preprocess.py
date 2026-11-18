@@ -535,16 +535,17 @@ class TestGetBuildCalibrationModelAnnotation:
     )
 
     # name, (transcript ID, most severe consequence, canonical, MANE Select),
-    # exome coverage, CpG.
+    # exome coverage (AN percent; the default high coverage cutoff is 90), CpG.
     ROWS = [
-        ("mane_syn_high", ("ENST1", "synonymous_variant", 1, "NM_1"), 50, False),
-        ("mane_syn_low_cpg", ("ENST1", "synonymous_variant", 1, "NM_1"), 20, True),
-        ("canonical_syn", ("ENST2", "synonymous_variant", 1, None), 50, False),
-        ("mane_missense", ("ENST1", "missense_variant", 1, "NM_1"), 50, False),
-        ("refseq_syn", ("NM_1", "synonymous_variant", 1, "NM_1"), 50, False),
+        ("mane_syn_high", ("ENST1", "synonymous_variant", 1, "NM_1"), 95, False),
+        ("mane_syn_high_cpg", ("ENST1", "synonymous_variant", 1, "NM_1"), 95, True),
+        ("mane_syn_low_cpg", ("ENST1", "synonymous_variant", 1, "NM_1"), 50, True),
+        ("canonical_syn", ("ENST2", "synonymous_variant", 1, None), 95, False),
+        ("mane_missense", ("ENST1", "missense_variant", 1, "NM_1"), 95, False),
+        ("refseq_syn", ("NM_1", "synonymous_variant", 1, "NM_1"), 95, False),
         ("mane_syn_zero_cov", ("ENST1", "synonymous_variant", 1, "NM_1"), 0, False),
-        ("mane_syn_cov_70", ("ENST1", "synonymous_variant", 1, "NM_1"), 70, False),
-        ("no_csqs", None, 50, False),
+        ("mane_syn_cov_100", ("ENST1", "synonymous_variant", 1, "NM_1"), 100, False),
+        ("no_csqs", None, 95, False),
     ]
 
     def _build_models(self, **kwargs: Any) -> Dict[str, Optional[hl.Struct]]:
@@ -590,18 +591,23 @@ class TestGetBuildCalibrationModelAnnotation:
         """Test model groups when filtering to MANE Select synonymous variants.
 
         Only Ensembl MANE Select synonymous variants get a group. CpG is kept only
-        in the high coverage model, and coverage 0 is in neither model.
+        in the high coverage model, where a CpG site keeps ``cpg=True``, and
+        coverage 0 is in neither model.
         """
         bm = self._build_models()
         assert bm["mane_syn_high"] == hl.Struct(
             high_or_low_coverage="high",
             model_group=hl.Struct(cpg=False, genomic_region="autosome_or_par"),
         )
+        assert bm["mane_syn_high_cpg"] == hl.Struct(
+            high_or_low_coverage="high",
+            model_group=hl.Struct(cpg=True, genomic_region="autosome_or_par"),
+        )
         assert bm["mane_syn_low_cpg"] == hl.Struct(
             high_or_low_coverage="low",
             model_group=hl.Struct(cpg=None, genomic_region="autosome_or_par"),
         )
-        assert bm["mane_syn_cov_70"].high_or_low_coverage == "high"
+        assert bm["mane_syn_cov_100"].high_or_low_coverage == "high"
         for name in [
             "canonical_syn",
             "mane_missense",
@@ -626,9 +632,9 @@ class TestGetBuildCalibrationModelAnnotation:
 
     def test_coverage_cutoffs(self) -> None:
         """Test the low and upper coverage cutoffs."""
-        bm = self._build_models(low_cov_cutoff=20, upper_cov_cutoff=60)
+        bm = self._build_models(low_cov_cutoff=50, upper_cov_cutoff=97)
         assert bm["mane_syn_low_cpg"] is None
-        assert bm["mane_syn_cov_70"] is None
+        assert bm["mane_syn_cov_100"] is None
         assert bm["mane_syn_high"].high_or_low_coverage == "high"
 
     def test_invalid_filter_field(self) -> None:

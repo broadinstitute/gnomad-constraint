@@ -38,6 +38,7 @@ from gnomad_qc.resource_utils import PipelineStepResourceCollection
 
 import gnomad_constraint.resources.resource_utils as constraint_res
 from gnomad_constraint.resources.constants import (
+    COVERAGE_CUTOFF,
     CURRENT_VERSION,
     RELEASE_KEY_ORDER,
     VERSIONS,
@@ -1003,20 +1004,22 @@ if __name__ == "__main__":
         help=(
             "Lower exome coverage cutoff to use to define high coverage sites when "
             "building models. Sites with coverage below this cutoff are excluded from "
-            "the high coverage Table when building models. Default is 90."
+            "the high coverage Table when building models. Default is"
+            f" {COVERAGE_CUTOFF}. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=int,
-        default=90,
+        default=COVERAGE_CUTOFF,
     )
     preprocess_args.add_argument(
         "--apply-model-high-cov-definition",
         help=(
             "Lower exome coverage cutoff to use to define high coverage sites when "
             "applying models. Sites with coverage below this cutoff are excluded from "
-            "the high coverage Table when applying models. Default is 90."
+            "the high coverage Table when applying models. Default is"
+            f" {COVERAGE_CUTOFF}. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=int,
-        default=90,
+        default=COVERAGE_CUTOFF,
     )
 
     mutation_rate_args = parser.add_argument_group(

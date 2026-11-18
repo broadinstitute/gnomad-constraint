@@ -60,11 +60,12 @@ Variants with missing frequency are assigned bin 0. Otherwise, each variant is
 assigned the index of the first cutoff its AF falls at or below.
 """
 
-COVERAGE_CUTOFF = 40
+COVERAGE_CUTOFF = 90
 """
-Minimum median exome coverage differentiating high coverage sites from low coverage sites.
+Exome AN percent at or above which a site counts as high coverage.
 
-Low coverage sites require an extra calibration when computing the proportion of expected variation.
+Low coverage sites require an extra calibration when computing the proportion of expected
+variation. The value is on the default ``AN_percent`` coverage metric.
 """
 
 CLASSIC_LOF_ANNOTATIONS = (
