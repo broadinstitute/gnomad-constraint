@@ -11,6 +11,7 @@ from gnomad_constraint.utils.constraint import (
     _compute_region_flag_metrics,
     _compute_site_quality_metrics,
     compute_gene_quality_metrics,
+    get_cds_transcripts_per_locus,
 )
 
 # CDS positions per transcript. T1 and T2 share chr1:109 and chr1:110. T3 has no
@@ -131,18 +132,86 @@ def _by_transcript(ht: hl.Table) -> Dict[str, hl.Struct]:
     return {r.transcript: r for r in ht.collect()}
 
 
+class TestGetCdsTranscriptsPerLocus:
+    """Test the get_cds_transcripts_per_locus function."""
+
+    @staticmethod
+    def _gencode_ht(par_y_suffix: str) -> hl.Table:
+        """
+        Return GENCODE features for two chr1 transcripts and a chrX PAR transcript.
+
+        T1 and T2 share chr1:1101-1102. T3 is in chrX PAR1, and its chrY PAR copy has
+        the same ``transcript_id`` with ``par_y_suffix`` on its version.
+        """
+        rows = [
+            # transcript_id, version suffix, contig, start, end, feature
+            ("T1", "", "chr1", 1000, 1300, "exon"),
+            ("T1", "", "chr1", 1100, 1102, "CDS"),
+            ("T1", "", "chr1", 1200, 1201, "CDS"),
+            ("T2", "", "chr1", 1101, 1103, "CDS"),
+            ("T3", "", "chrX", 10100, 10102, "CDS"),
+            ("T3", par_y_suffix, "chrY", 10100, 10102, "CDS"),
+        ]
+        return hl.Table.parallelize(
+            [
+                dict(
+                    interval=hl.Interval(
+                        hl.Locus(contig, start, "GRCh38"),
+                        hl.Locus(contig, end, "GRCh38"),
+                        includes_end=True,
+                    ),
+                    feature=feature,
+                    transcript_id=t,
+                    transcript_id_version=f"{t}.1{suffix}",
+                )
+                for t, suffix, contig, start, end, feature in rows
+            ],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                feature=hl.tstr,
+                transcript_id=hl.tstr,
+                transcript_id_version=hl.tstr,
+            ),
+            key="interval",
+        )
+
+    @pytest.mark.parametrize("par_y_suffix", ["_PAR_Y", "_Y_PAR"])
+    def test_cds_loci(self, par_y_suffix: str) -> None:
+        """
+        Test that each CDS locus lists its transcripts, without chrY PAR copies.
+
+        The chrY PAR copy shares the chrX transcript's ID, so keeping it would add
+        chrY loci to T3. Non-CDS features add no loci.
+        """
+        ht = get_cds_transcripts_per_locus(self._gencode_ht(par_y_suffix))
+        result = {str(r.locus): sorted(r.transcript_id) for r in ht.collect()}
+
+        assert result == {
+            "chr1:1100": ["T1"],
+            "chr1:1101": ["T1", "T2"],
+            "chr1:1102": ["T1", "T2"],
+            "chr1:1103": ["T2"],
+            "chr1:1200": ["T1"],
+            "chr1:1201": ["T1"],
+            "chrX:10100": ["T3"],
+            "chrX:10101": ["T3"],
+            "chrX:10102": ["T3"],
+        }
+
+
 class TestComputeCoverageMetrics:
     """Test the _compute_coverage_metrics function."""
 
     @pytest.mark.parametrize(
         "threshold, expected",
         [
-            # T1 has 9 covered positions (chr1:109 is missing); 6 are >= 90,
-            # including the two at exactly 90. T2 has chr1:110 (100) and chr1:111
-            # (85).
-            (90, {"T1": 6 / 9, "T2": 1 / 2, "T4": 0.0}),
-            (91, {"T1": 4 / 9, "T2": 1 / 2, "T4": 0.0}),
-            (0, {"T1": 1.0, "T2": 1.0, "T4": 1.0}),
+            # Positions with no coverage value count as not covered. T1 has 10
+            # positions (chr1:109 has none); 6 are >= 90, including the two at
+            # exactly 90. T2 has chr1:109 (none), chr1:110 (100) and chr1:111 (85).
+            # T3's only position has no context row.
+            (90, {"T1": 6 / 10, "T2": 1 / 3, "T3": 0.0, "T4": 0.0}),
+            (91, {"T1": 4 / 10, "T2": 1 / 3, "T3": 0.0, "T4": 0.0}),
+            (0, {"T1": 9 / 10, "T2": 2 / 3, "T3": 0.0, "T4": 1.0}),
         ],
     )
     def test_prop_bp_an90(self, threshold: int, expected: Dict[str, float]) -> None:
@@ -162,16 +231,18 @@ class TestComputeCoverageMetrics:
         )
         assert _by_transcript(ht)["T1"].prop_bp_AN90 == pytest.approx(0.5)
 
-    def test_positions_without_coverage_are_excluded(self) -> None:
-        """Test that CDS positions with no coverage value leave the denominator.
+    def test_positions_without_coverage_count_as_not_covered(self) -> None:
+        """
+        Test that CDS positions with no coverage value count as not covered.
 
-        This pins current behavior: a position with missing ``exomes_coverage``, or
-        no row in the context Table, is dropped rather than counted as not
-        covered, and a transcript with no covered positions (T3) gets no row.
+        Regression test: a position with missing ``exomes_coverage``, or no row in
+        the context Table, was dropped from the denominator, so a transcript with
+        half its CDS uncovered could score 1.0, and a transcript with no covered
+        positions (T3) got no row.
         """
         out = _by_transcript(_compute_coverage_metrics(_context_ht(), _cds_ht()))
-        assert "T3" not in out
-        assert out["T1"].prop_bp_AN90 == pytest.approx(6 / 9)
+        assert out["T3"].prop_bp_AN90 == 0.0
+        assert out["T1"].prop_bp_AN90 == pytest.approx(6 / 10)
 
 
 class TestComputeSiteQualityMetrics:
@@ -296,23 +367,30 @@ class TestComputeGeneQualityMetrics:
         ]
 
     def test_metrics(self, gene_quality_ht: hl.Table) -> None:
-        """Test the combined metrics and flags.
+        """
+        Test the combined metrics and flags.
 
         T1's mean AS_MQ is exactly 50, which is not low. T3 has no covered CDS
-        positions, so it gets no row.
+        positions. Regression test: it got no row, so it also lost its region
+        metrics and never got ``low_exome_coverage``.
         """
         out = _by_transcript(gene_quality_ht)
-        assert "T3" not in out
+        t3 = out["T3"]
+        assert t3.gene_quality_metrics.exome_prop_bp_AN90 == 0.0
+        assert t3.gene_quality_metrics.exome_mean_AS_MQ is None
+        assert t3.gene_quality_metrics.exome_prop_segdup == 0.0
+        assert t3.gene_quality_metrics.exome_prop_LCR == 0.0
+        assert t3.gene_flags == {"low_exome_coverage"}
 
         t1 = out["T1"].gene_quality_metrics
-        assert t1.exome_prop_bp_AN90 == pytest.approx(6 / 9)
+        assert t1.exome_prop_bp_AN90 == pytest.approx(6 / 10)
         assert t1.exome_mean_AS_MQ == pytest.approx(50.0)
         assert t1.exome_prop_segdup == pytest.approx(0.3)
         assert t1.exome_prop_LCR == pytest.approx(0.1)
         assert out["T1"].gene_flags == set()
 
         t2 = out["T2"].gene_quality_metrics
-        assert t2.exome_prop_bp_AN90 == pytest.approx(0.5)
+        assert t2.exome_prop_bp_AN90 == pytest.approx(1 / 3)
         assert t2.exome_mean_AS_MQ == pytest.approx(30.0)
         assert t2.exome_prop_LCR == pytest.approx(2 / 3)
         assert out["T2"].gene_flags == {"low_exome_mapping_quality"}
@@ -344,3 +422,24 @@ class TestComputeGeneQualityMetrics:
         t4 = _by_transcript(gene_quality_ht)["T4"]
         assert t4.gene_quality_metrics.exome_mean_AS_MQ is None
         assert t4.gene_flags == {"low_exome_coverage"}
+
+    @pytest.mark.parametrize("metric", ["median", "AN"])
+    def test_coverage_metric_must_be_an_percent(self, metric: str) -> None:
+        """
+        Test that a table preprocessed with another coverage metric raises an error.
+
+        Regression test: ``prop_bp_AN90`` and ``low_exome_coverage`` read
+        ``exomes_coverage`` as AN%, whatever ``--exome-coverage-metric`` was.
+        """
+        ht = _context_ht().annotate_globals(
+            apply_models_globals=hl.struct(exome_coverage_metric=metric)
+        )
+        with pytest.raises(ValueError, match="AN_percent"):
+            _run_gene_quality_metrics(context_ht=ht)
+
+    def test_an_percent_metric_is_accepted(self) -> None:
+        """Test that a table preprocessed with AN_percent is accepted."""
+        ht = _context_ht().annotate_globals(
+            apply_models_globals=hl.struct(exome_coverage_metric="AN_percent")
+        )
+        assert _run_gene_quality_metrics(context_ht=ht).count() == 4

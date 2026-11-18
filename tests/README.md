@@ -72,5 +72,6 @@ implementations against each other is named for the comparison.
 ## Not covered yet
 
 Anything that reads real inputs or outputs on GCS: `get_gencode_ht`,
-`get_gencode_cds_ht`, `get_gerp_ht`, and the pipeline `main()`, whose argument
-parser is only built under `if __name__ == "__main__"`.
+`get_gencode_cds_ht` (its CDS logic is tested through
+`get_cds_transcripts_per_locus`), `get_gerp_ht`, and the pipeline `main()`, whose
+argument parser is only built under `if __name__ == "__main__"`.

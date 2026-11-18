@@ -99,8 +99,9 @@ Parameters passed to `calculate_mu_by_downsampling`.
 Parameters passed to the plateau/coverage model fit.
 - `synonymous_transcript_filter_field: str` — transcript filter used when
   selecting synonymous training variants (e.g. `canonical`).
-- `low_cov_cutoff: int32` — coverage below this is treated as the low-coverage
-  regime (19).
+- `low_cov_cutoff: int32` — sites at or below this coverage are left out of the
+  low-coverage model (19 for v4.1.x; 0 when `--pipeline-low-coverage-filter` is
+  not set).
 - `high_cov_cutoff: int32` — coverage at or above this is the high-coverage
   regime that the plateau model is fit to (90).
 - `upper_cov_cutoff: int32` — upper bound for the coverage model fit (nullable).
@@ -109,6 +110,9 @@ Parameters passed to the plateau/coverage model fit.
 ### `apply_models_globals` — `struct`
 Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `low_cov_cutoff`, `high_cov_cutoff`, `skip_coverage_model` — as above.
+- `exome_coverage_metric: str` — the `--exome-coverage-metric` used for
+  `exomes_coverage` (`AN_percent`, `median`, or `AN`). The cutoffs are in its
+  units, and `--compute-gene-quality-metrics` requires `AN_percent`.
 - `plateau_models: dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
   — fitted plateau slope/intercept per (cpg, genomic_region). Each value is
   an array parallel to `mutation_rate.mu` (one fit per downsampling).
@@ -126,7 +130,8 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `genetic_ancestry_groups: array<str>` — copy of the gen-anc groups list.
 - `downsamplings: array<int32>` — ordered list of downsampling sizes the freq
   array covers (e.g. `[10, 20, ..., 1000, ...]`).
-- `max_af: float64` — AF cap for the "observed" variant filter.
+- `max_af: float64` — full-dataset adj AF cap for observed and possible
+  variants, applied to every freq entry.
 
 ---
 
@@ -243,7 +248,10 @@ into `compute_mu.genomes_freq` / `calibrate_mu.exomes_freq`), plus:
     array (parallel to `exomes_freq_meta`), missing for variants that fail the
     exome filters. No later step reads it; it is kept for analyses that start
     from this Table.
-  - `observed_variants: array<int32>`
+  - `observed_variants: array<int32>` — 1 for each freq entry where the
+    variant has AC > 0, if its full-dataset adj AF is at most `max_af` (the
+    same rarity test for every entry, so small downsamplings can observe
+    variants).
   - `possible_variants: int32`
   - `build_model: struct{high_or_low_coverage: str, model_group: struct{cpg: bool, genomic_region: str}}`
     — which plateau model bucket this row was fit into.
@@ -486,8 +494,11 @@ Pipeline-parameter globals (as §9) plus:
 - `sd_raw_z: array<float64>` — per-constraint-group standard deviation of the
   raw z-statistic across all transcripts (parallel to `constraint_group_meta`).
   Used to scale `z_raw → z_score`.
-- `percentile_thresholds: struct` — observed quantile cutoffs of the
-  `oe_ci.upper` distribution. One sub-struct per metric:
+- `percentile_thresholds: struct` — exact cutoffs of the adj
+  `oe_ci_gamma.upper` distribution over MANE Select transcripts with no
+  `constraint_flags`. With n values and K bins, cutoff k is the value at
+  0-based rank ⌈k·n/K⌉, so on that set the threshold bins match rank-based
+  bins apart from ties. One sub-struct per metric:
   - `syn`, `mis`, `lof: struct{percentile: array<float64>, decile: array<float64>, sextile: array<float64>}`
     — each granularity's boundary values (e.g.
     `percentile_thresholds.lof.decile[0]` = 10th-percentile of LOEUF upper).
@@ -504,7 +515,8 @@ Pipeline-parameter globals (as §9) plus:
     - `oe_ci_discretized_poisson: struct{lower: float64, upper: float64}` — OE
       CI using a discretized-Poisson estimator.
     - `oe_ci_gamma: struct{lower: float64, upper: float64}` — OE CI using a
-      Gamma estimator (the LOEUF estimator).
+      Gamma estimator (the LOEUF estimator). For both CIs, `lower` is 0 when
+      `observed_variants` is 0 and `expected_variants` is above 0.
     - `z_raw: float64` — `(expected - observed) / sqrt(expected)`, so it is
       positive when there are fewer variants than expected.
   - `flags: set<str>` — per-group QC flags: `no_exp_{syn,mis,lof}` when the
@@ -533,7 +545,7 @@ Pipeline-parameter globals (as §9) plus:
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:
   - `exome_prop_bp_AN90: float64` — fraction of transcript CDS bp with
-    exome AN ≥ 90% of max.
+    exome AN ≥ 90% of max. CDS bp with no exome AN count as not covered.
   - `exome_mean_AS_MQ: float64` — mean AS_MQ over the transcript.
   - `exome_prop_segdup: float64` — fraction of transcript CDS in segmental
     duplications.
@@ -593,14 +605,15 @@ Public-release flattened constraint table. One row per
 - `build_models_params: struct{low_cov_cutoff, high_cov_cutoff, upper_cov_cutoff}`
   — release-cleaned `build_models_globals` (drops
   `synonymous_transcript_filter_field`, `skip_coverage_model`).
-- `apply_models_params: struct{low_cov_cutoff, high_cov_cutoff, plateau_models, coverage_model, log10_coverage}`
+- `apply_models_params: struct{low_cov_cutoff, high_cov_cutoff, exome_coverage_metric, plateau_models, coverage_model, log10_coverage}`
   — release-cleaned `apply_models_globals` (drops `skip_coverage_model`,
   `groupings`).
 - `downsamplings: struct{global, afr, amr, eas, nfe, sas}` — each is
   `array<int32>` of downsampling sizes present for that gen-anc group
   (parallel to the per-row `gen_anc_obs.<group>` / `gen_anc_exp.<group>`
   arrays).
-- `max_af: float64` — AF cap for observed.
+- `max_af: float64` — full-dataset adj AF cap for observed and possible
+  variants, applied to every freq entry.
 - `sd_raw_z: struct{syn, mis, lof_hc_lc, lof}` — per-release-group `sd_raw_z`
   (re-keyed from positional array to named struct via `RELEASE_GROUP_RENAMES`,
   which maps internal `lof_hc → lof` for release).

@@ -341,18 +341,20 @@ if __name__ == "__main__":
         "--pipeline-low-coverage-filter",
         help=(
             "Lower exome coverage cutoff to use throughout the pipeline. Sites with"
-            " coverage below this cutoff will be excluded when creating the training"
+            " coverage at or below this cutoff are excluded when creating the training"
             " set, building and applying models, and computing constraint metrics."
-            "  Default is None."
+            " Default is 19, as used for v4.1.x, which keeps sites with AN% of 20 or"
+            " more."
         ),
         type=int,
-        default=None,
+        default=19,
     )
     preprocess_args.add_argument(
         "--max-af",
         help=(
-            "Maximum variant allele frequency to use when filtering variants for "
-            "training and applying models."
+            "Maximum full-dataset adj allele frequency for a variant to count as "
+            "observed or possible, in every frequency group, when training and "
+            "applying models."
         ),
         type=float,
         default=0.001,

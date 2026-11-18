@@ -7,17 +7,23 @@
 EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 """Valid file extensions for constraint pipeline resources."""
 
-VERSIONS = ["4.0", "4.1", "4.1.1", "4.1.2"]
+VERSIONS = ["4.0", "4.1", "4.1.1", "4.1.2", "4.1.3"]
 """Supported gnomAD constraint pipeline versions."""
 
-CURRENT_VERSION = "4.1.1"
-"""Current default gnomAD constraint pipeline version."""
+CURRENT_VERSION = "4.1.3"
+"""
+Default gnomAD constraint pipeline version: the next, unreleased version.
+
+Keep it ahead of the latest release, so a run that doesn't pass ``--version`` never
+writes to the paths of published tables.
+"""
 
 SITES_VERSION_MAP = {
     "4.0": "4.0",
     "4.1": "4.1",
     "4.1.1": "4.1",
     "4.1.2": "4.1",
+    "4.1.3": "4.1",
 }
 """Map from constraint pipeline version to gnomAD sites release version."""
 
@@ -26,6 +32,7 @@ VEP_VERSION_MAP = {
     "4.1": "105",
     "4.1.1": "105",
     "4.1.2": "105",
+    "4.1.3": "105",
 }
 """Map from constraint pipeline version to the VEP version of its context Table."""
 

@@ -55,10 +55,11 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 | | `--prepare-release-mutation-rate` | Format the mutation rate Table for release |
 | | `--export-release-tsv`, `--export-release-downsampling-tsv` | Export the release Table and its per-ancestry downsampling counts to TSV |
 
-`--version` selects the gnomAD version (default 4.1.1). Autosomes, chrX, and chrY
-are all computed; each site is labeled with a `genomic_region` of
-`autosome_or_par`, `chrx_nonpar`, or `chry_nonpar`. Run a script with `--help`
-for its options.
+`--version` selects the gnomAD version. The default, 4.1.3, is the next release, so a
+run that doesn't pass `--version` never writes to the paths of released tables
+(v4.1.1 and v4.1.2). Autosomes, chrX, and chrY are all computed; each site is
+labeled with a `genomic_region` of `autosome_or_par`, `chrx_nonpar`, or
+`chry_nonpar`. Run a script with `--help` for its options.
 
 Outputs are written under `gs://gnomad/v{version}/constraint/`.
 [gnomad_constraint/resources/README.md](gnomad_constraint/resources/README.md)

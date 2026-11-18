@@ -1,5 +1,6 @@
 """Tests for the preprocessing functions in ``gnomad_constraint.utils.constraint``."""
 
+import inspect
 from typing import Any, Dict, List, Optional, Tuple
 
 import hail as hl
@@ -387,6 +388,17 @@ class TestGetExomesObservedAndPossible:
             ("absent2", "g2", None, None, 30),
             ("common", "g3", set(), _freq(500, 0.2), 30),
             ("no_coverage", "g4", None, None, None),
+            ("filtered_rare", "g5", {"AS_VQSR"}, _freq(3, 1e-5), 30),
+            ("filtered_common", "g5", {"InbreedingCoeff"}, _freq(500, 0.2), 30),
+            # Rare overall but above max_af in the afr group, and the reverse.
+            ("rare_overall", "g6", set(), [_freq(1, 1e-5)[0], _freq(1, 0.002)[0]], 30),
+            (
+                "common_overall",
+                "g7",
+                set(),
+                [_freq(500, 0.2)[0], _freq(1, 5e-4)[0]],
+                30,
+            ),
         ]
         ht = hl.Table.parallelize(
             [
@@ -415,12 +427,28 @@ class TestGetExomesObservedAndPossible:
             ("filtered", [0, 0], 1),
             ("common", [0, 0], 0),
             ("no_coverage", None, None),
+            ("filtered_rare", [0, 0], 1),
+            ("filtered_common", [0, 0], 0),
+            ("rare_overall", [1, 1], 1),
+            ("common_overall", [0, 0], 0),
         ],
     )
     def test_per_variant_counts(
         self, name: str, observed: Optional[List[int]], possible: Optional[int]
     ) -> None:
-        """Test observed and possible counts for each kind of site."""
+        """
+        Test observed and possible counts for each kind of site.
+
+        A filtered variant is never observed, and counts as possible only if it is
+        rare, like a PASS variant. Regression test: a filtered variant above
+        ``max_af`` counted as possible, while a PASS variant at the same AF didn't.
+
+        Whether a variant is rare comes from the full dataset's adj AF, for every
+        frequency group. Regression test: each group's own AF was compared with
+        ``max_af``, so a small group could never observe a variant (one allele in a
+        10-person downsampling is an AF of 0.05), and a variant common overall
+        counted as observed in a group where it looked rare.
+        """
         row = {r.name: r for r in self._ht().collect()}[name]
         assert row.observed_variants == observed
         assert row.possible_variants == possible
@@ -441,6 +469,7 @@ class TestGetExomesObservedAndPossible:
         assert sums["g1"] == ([1, 1], 2)
         assert sums["g2"] == ([0, 0], 2)
         assert sums["g3"] == ([0, 0], 0)
+        assert sums["g5"] == ([0, 0], 1)
 
     DS_FREQ_META = [
         {"group": "adj"},
@@ -856,6 +885,9 @@ CONTEXT_SITES = [
     # Exome AN 120, so 60% of samples: between the build and apply model cutoffs
     # used by TestPrepareHtForConstraintCalculations.
     ("syn_mid_cov", ("chr1", 5000), "AAACGAA", "synonymous_variant", None, 5e-3, set()),
+    # Exome AN 0, so 0% of samples: below every coverage model. Absent from the
+    # exomes.
+    ("syn_no_cov", ("chr1", 7000), "AAACAAA", "synonymous_variant", None, None, None),
     # Reaches the mutation rate sites: autosomal intron variant absent from genomes.
     ("intron_mu", ("chr1", 6000), "AAACAAA", "intron_variant", None, None, None),
     ("chrx_nonpar", ("chrX", 10000000), "AAACAAA", "intron_variant", None, 0.3, set()),
@@ -864,7 +896,7 @@ CONTEXT_SITES = [
     ("chry_par", ("chrY", 100000), "AAACAAA", "intron_variant", None, None, None),
 ]
 
-EXOMES_AN = {"syn_mid_cov": 120}
+EXOMES_AN = {"syn_mid_cov": 120, "syn_no_cov": 0}
 """Exome AN of sites that don't have the default of 150."""
 
 
@@ -1036,6 +1068,7 @@ class TestPrepareContextHt:
             "lof_hc": "autosome_or_par",
             "lof_lc_end_trunc": "autosome_or_par",
             "syn_mid_cov": "autosome_or_par",
+            "syn_no_cov": "autosome_or_par",
             "intron_mu": "autosome_or_par",
             "chrx_nonpar": "chrx_nonpar",
             "chrx_par": "autosome_or_par",
@@ -1056,6 +1089,7 @@ class TestPrepareContextHt:
             "lof_hc": 0,
             "lof_lc_end_trunc": 0,
             "syn_mid_cov": 7,
+            "syn_no_cov": 0,
             "intron_mu": 0,
             "chrx_nonpar": 8,
             "chrx_par": None,
@@ -1168,20 +1202,52 @@ class TestPrepareHtForConstraintCalculations:
         assert (build is None) if skip else (build.high_or_low_coverage == "low")
         assert site.calibrate_mu.apply_model.high_or_low_coverage == "high"
 
+    def test_zero_coverage_site(
+        self, preprocessed: Tuple[bool, Dict[str, hl.Struct], hl.Struct]
+    ) -> None:
+        """
+        Test that a site with exome coverage 0 is in neither coverage model.
+
+        Regression test: with no low coverage cutoff, building left sites at 0 out of
+        the low coverage model but applying put them in it, where the coverage
+        correction is 0, so their expected count was 0 while their possible (and any
+        observed) count still counted.
+        """
+        _, rows, _ = preprocessed
+        site = rows["syn_no_cov"]
+        assert site.exomes_coverage == 0
+        assert site.calibrate_mu.build_model is None
+        assert site.calibrate_mu.apply_model is None
+
+    def test_default_coverage_metric(self) -> None:
+        """
+        Test that the default exome coverage metric matches the pipeline's.
+
+        Regression test: this function defaulted to ``median`` while
+        ``--exome-coverage-metric`` defaults to ``AN_percent``.
+        """
+        params = inspect.signature(prepare_ht_for_constraint_calculations).parameters
+        assert params["exome_coverage_metric"].default == "AN_percent"
+
     def test_globals(
         self, preprocessed: Tuple[bool, Dict[str, hl.Struct], hl.Struct]
     ) -> None:
         """Test that the globals record the settings used."""
         skip, _, g = preprocessed
+        # With no low coverage cutoff given, sites at 0 are left out, and the globals
+        # record that cutoff.
         assert g.build_models_globals == hl.Struct(
             synonymous_transcript_filter_field="mane_select",
-            low_cov_cutoff=None,
+            low_cov_cutoff=0,
             high_cov_cutoff=70,
             upper_cov_cutoff=None,
             skip_coverage_model=skip,
         )
         assert g.apply_models_globals == hl.Struct(
-            low_cov_cutoff=None, high_cov_cutoff=50, skip_coverage_model=skip
+            low_cov_cutoff=0,
+            high_cov_cutoff=50,
+            skip_coverage_model=skip,
+            exome_coverage_metric="AN_percent",
         )
         mu = g.calculate_mu_globals
         assert (mu.min_cov, mu.max_cov, mu.ac_cutoff) == (20, 40, 3)

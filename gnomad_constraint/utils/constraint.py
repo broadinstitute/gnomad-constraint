@@ -18,7 +18,6 @@ from gnomad.utils.constraint import (
     calculate_raw_z_score,
     calculate_raw_z_score_sd,
     calibration_model_group_expr,
-    compute_percentile_thresholds,
     compute_pli,
     count_observed_and_possible_by_group,
     get_constraint_flags,
@@ -456,27 +455,33 @@ def get_exomes_observed_and_possible(
           for analyses that start from the preprocessed or per-variant Table.
         - observed_variants: This annotation is an array, where each element corresponds
           to whether the variant is observed in the exomes dataset for the frequency
-          group at the corresponding index in the ``exomes_freq`` array and has an
-          AF <= ``max_af``. The boolean value is stored as an integer (0 or 1).
+          group at the corresponding index in the ``exomes_freq`` array and has a
+          full-dataset adj AF <= ``max_af``. Every group uses the full-dataset AF, as
+          in v2, so a small downsampling can still observe a variant. The boolean
+          value is stored as an integer (0 or 1).
         - possible_variants: Whether the variant is considered a possible variant in the
           exomes dataset. This includes variants not in the exomes dataset, variants
           that fail the exome filters, and variants in the observed variant set. The
           boolean value is stored as an integer (0 or 1).
 
     Both annotations are missing if the exome coverage is undefined. For variants that
-    are not in the exomes dataset or that fail the exome filters (including AC0),
-    ``observed_variants`` is 0 and ``possible_variants`` is 1.
+    are not in the exomes dataset, ``observed_variants`` is 0 and
+    ``possible_variants`` is 1. Variants that fail the exome filters (including AC0)
+    are never observed, and are possible only if their adj AF is at most ``max_af``,
+    like a PASS variant.
 
     .. note::
 
-        Counting variants that fail the exome filters as possible is intentional. A
-        variant was called at the site, so the site could have been observed and
-        belongs in the denominator, but the calls were low quality, so the variant is
-        not counted as observed. This differs from v2 and from the earlier v4
-        pipeline, which removed filtered variants from both counts. It was adopted for
-        the v4.1.1 metrics after comparing the metrics with and without it. Because
-        ``observed_variants`` is based on adj frequencies, AC0 variants are possible
-        but can never be observed.
+        Counting rare variants that fail the exome filters as possible is
+        intentional. A variant was called at the site, so the site could have been
+        observed and belongs in the denominator, but the calls were low quality, so
+        the variant is not counted as observed. This differs from v2 and from the
+        earlier v4 pipeline, which removed filtered variants from both counts. It was
+        adopted for the v4.1.1 metrics after comparing the metrics with and without
+        it. Because ``observed_variants`` is based on adj frequencies, AC0 variants
+        are possible but can never be observed. A filtered variant above ``max_af``
+        is left out of both counts, as a PASS variant at the same AF is; the v4.1.1
+        metrics counted it as possible.
 
     The function also returns a struct with the global parameters for the observed and
     possible variant annotations:
@@ -495,8 +500,8 @@ def get_exomes_observed_and_possible(
         Default is None, which includes only the full exomes dataset.
     :param include_downsamplings: Whether to include downsamplings in the observed and
         possible variant annotations. Default is False.
-    :param max_af: Maximum allele frequency to consider a variant as observed. Default
-        is 0.001.
+    :param max_af: Maximum full-dataset adj allele frequency for a variant to count
+        as observed or possible, in every frequency group. Default is 0.001.
     :return: Tuple containing the observed and possible variant annotations and the
         globals.
     """
@@ -518,12 +523,31 @@ def get_exomes_observed_and_possible(
         downsampling_gen_ancs=gen_ancs if downsamplings is not None else None,
     )
 
+    # Whether the variant is rare, from its full-dataset adj frequency, before filtered
+    # variants lose theirs below, so a filtered variant above max_af is left out of
+    # both counts like a PASS variant at the same AF. A variant absent from the exomes
+    # has no frequency and counts as rare. The same rarity applies to every frequency
+    # group, as in v2: comparing each group's own AF with max_af would mean a small
+    # downsampling could never observe a variant.
+    adj_idx = exomes_freq_meta.index(ADJ_FREQ_META)
+    is_rare_expr = hl.int(
+        hl.or_else(exomes_freq_expr[adj_idx].AF <= max_af, True)
+        if max_af is not None
+        else hl.bool(True)
+    )
+
     # Set the frequency of variants that fail the exome filters to missing, so they are
     # counted as possible but not observed (intentional; see the docstring note). If the
     # exome coverage is undefined, set the observed and possible variant annotations to
     # missing.
     exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
-    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af)
+    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr)
+    obs_pos_expr = obs_pos_expr.annotate(
+        observed_variants=obs_pos_expr.observed_variants.map(
+            lambda x: x * is_rare_expr
+        ),
+        possible_variants=obs_pos_expr.possible_variants * is_rare_expr,
+    )
 
     # A missing frequency array gives a missing observed array, which aggregations
     # skip, so a group in which no variant is observed would sum to missing instead
@@ -620,7 +644,7 @@ def get_build_calibration_model_annotation(
 
 def prepare_ht_for_constraint_calculations(
     ht: hl.Table,
-    exome_coverage_metric: str = "median",
+    exome_coverage_metric: str = "AN_percent",
     gen_ancs: Optional[List[str]] = None,
     include_downsamplings: bool = False,
     mu_downsampling_level: int = 1000,
@@ -652,7 +676,8 @@ def prepare_ht_for_constraint_calculations(
 
     :param ht: Annotated context Table.
     :param exome_coverage_metric: Metric to use for exome coverage. One of ["median",
-        "AN", "AN_percent"]. Default is "median".
+        "AN", "AN_percent"]. Recorded in ``apply_models_globals``. Default is
+        "AN_percent".
     :param gen_ancs: List of genetic ancestries to filter the frequency arrays to.
         Default is None, which includes only the full dataset.
     :param include_downsamplings: Whether to include downsamplings in the observed and
@@ -669,16 +694,18 @@ def prepare_ht_for_constraint_calculations(
         be included in the mutation rate calculation. Default is 2.6607.
     :param calculate_mutation_rate_ac_cutoff: Allele count cutoff for variant to be
         included in the mutation rate calculation. Default is 5.
-    :param max_af: Maximum allele frequency to consider a variant as observed. Default
-        is 0.001.
+    :param max_af: Maximum full-dataset adj allele frequency for a variant to count
+        as observed or possible, in every frequency group. Default is 0.001.
     :param build_model_low_cov_cutoff: Low coverage cutoff for the build models step.
-        Default is None.
+        Sites at or below it are left out of the low coverage model. Default is None,
+        which leaves out sites with coverage 0.
     :param build_model_high_cov_cutoff: High coverage cutoff for the build models step.
         Default is COVERAGE_CUTOFF.
     :param build_model_upper_cov_cutoff: Upper coverage cutoff for the build models
         step. Default is None.
     :param apply_model_low_cov_cutoff: Low coverage cutoff for the apply models step.
-        Default is None.
+        Sites at or below it are left out of the low coverage model. Default is None,
+        which leaves out sites with coverage 0.
     :param apply_model_high_cov_cutoff: High coverage cutoff for the apply models step.
         Default is COVERAGE_CUTOFF.
     :param skip_coverage_model: Whether the coverage model should be skipped during the
@@ -707,6 +734,13 @@ def prepare_ht_for_constraint_calculations(
 
     # Get an observed and possible variant annotation for the exomes dataset.
     exomes_coverage_expr = get_exome_coverage_expr(ht, exome_coverage_metric)
+
+    # With no low coverage cutoff, leave out sites with coverage 0, whose coverage
+    # correction is 0, when building and applying alike.
+    if build_model_low_cov_cutoff is None:
+        build_model_low_cov_cutoff = 0
+    if apply_model_low_cov_cutoff is None:
+        apply_model_low_cov_cutoff = 0
     exomes_obs_pos_expr, exomes_obs_pos_globals = get_exomes_observed_and_possible(
         ht.filters.exomes,
         ht.freq.exomes,
@@ -759,15 +793,16 @@ def prepare_ht_for_constraint_calculations(
         calculate_mu_globals=compute_mu_globals,
         build_models_globals=hl.struct(
             synonymous_transcript_filter_field=synonymous_transcript_filter_field,
-            low_cov_cutoff=handle_none(build_model_low_cov_cutoff),
+            low_cov_cutoff=build_model_low_cov_cutoff,
             high_cov_cutoff=build_model_high_cov_cutoff,
             upper_cov_cutoff=handle_none(build_model_upper_cov_cutoff),
             skip_coverage_model=skip_coverage_model,
         ),
         apply_models_globals=hl.struct(
-            low_cov_cutoff=handle_none(apply_model_low_cov_cutoff),
+            low_cov_cutoff=apply_model_low_cov_cutoff,
             high_cov_cutoff=apply_model_high_cov_cutoff,
             skip_coverage_model=skip_coverage_model,
+            exome_coverage_metric=exome_coverage_metric,
         ),
         **exomes_obs_pos_globals,
     )
@@ -1386,6 +1421,41 @@ def aggregate_by_constraint_groups(
     return ht
 
 
+def get_cds_transcripts_per_locus(ht: hl.Table) -> hl.Table:
+    """
+    Get the transcripts whose CDS covers each locus.
+
+    Filters a GENCODE Table to CDS features, drops the chrY PAR copies of chrX PAR
+    transcripts, explodes each CDS interval into its loci, and groups by locus. A
+    chrY PAR copy has the same ``transcript_id`` as its chrX copy (only
+    ``transcript_id_version`` ends in ``PAR_Y`` or ``Y_PAR``), so keeping it would
+    add its chrY loci, which have no exome allele number, to the chrX transcript.
+
+    :param ht: GENCODE Table keyed by ``interval`` with ``feature``,
+        ``transcript_id``, and ``transcript_id_version`` fields (output of
+        :func:`~gnomad_constraint.resources.resource_utils.get_gencode_ht`).
+    :return: Table keyed by ``locus`` with ``transcript_id``, an array of the IDs of
+        the transcripts whose CDS covers that locus.
+    """
+    ht = ht.filter(
+        (ht.feature == "CDS")
+        & ~ht.transcript_id_version.endswith("Y_PAR")
+        & ~ht.transcript_id_version.endswith("PAR_Y")
+    ).select("transcript_id")
+    ht = ht.annotate(
+        positions=hl.range(ht.interval.start.position, ht.interval.end.position + 1)
+    ).explode("positions")
+    ht = ht.key_by(
+        locus=hl.locus(
+            ht.interval.start.contig, ht.positions, reference_genome="GRCh38"
+        )
+    ).select("transcript_id")
+
+    return ht.group_by("locus").aggregate(
+        transcript_id=hl.agg.collect(ht.transcript_id)
+    )
+
+
 def _compute_coverage_metrics(
     ht: hl.Table,
     gencode_cds_ht: hl.Table,
@@ -1395,7 +1465,9 @@ def _compute_coverage_metrics(
 
     Uses the ``exomes_coverage`` field from the preprocessed context table
     (AN as a percentage of total alleles) to determine what fraction of CDS
-    bases per transcript meet the coverage threshold.
+    bases per transcript meet the coverage threshold. A CDS base with no
+    ``exomes_coverage`` (no exome AN, or no context row) counts as not covered, so
+    every transcript in ``gencode_cds_ht`` gets a row.
 
     :param ht: Preprocessed context Hail Table with ``exomes_coverage`` (AN percent,
         0-100) per position.
@@ -1412,13 +1484,14 @@ def _compute_coverage_metrics(
     ht = gencode_cds_ht.annotate(
         exomes_coverage=ht[gencode_cds_ht.locus].exomes_coverage
     )
-    ht = ht.filter(hl.is_defined(ht.exomes_coverage))
 
     # Explode by transcript and aggregate.
     ht = ht.explode("transcript_id")
 
     return ht.group_by(transcript=ht.transcript_id).aggregate(
-        prop_bp_AN90=hl.agg.fraction(ht.exomes_coverage >= an_coverage_threshold),
+        prop_bp_AN90=hl.agg.fraction(
+            hl.or_else(ht.exomes_coverage >= an_coverage_threshold, False)
+        ),
     )
 
 
@@ -1509,6 +1582,10 @@ def compute_gene_quality_metrics(
         when mean AS_MQ < 50, ``low_exome_coverage`` when
         prop_bp_AN90 < 0.1).
 
+    ``exomes_coverage`` must be AN percent: the function raises an error if the
+    preprocessed Table records another ``exome_coverage_metric`` in
+    ``apply_models_globals``, and logs a warning if it records none.
+
     :param ht: Preprocessed constraint Hail Table with ``exomes_coverage``
         field (output of :func:`prepare_ht_for_constraint_calculations`).
     :param exomes_ht: gnomAD exomes sites Hail Table.
@@ -1522,6 +1599,26 @@ def compute_gene_quality_metrics(
     :return: Table keyed by ``transcript`` with ``gene_quality_metrics``
         and ``gene_flags``.
     """
+    # prop_bp_AN90 and low_exome_coverage read exomes_coverage as AN percent.
+    metric = None
+    if (
+        "apply_models_globals" in ht.globals
+        and "exome_coverage_metric" in ht.apply_models_globals
+    ):
+        metric = hl.eval(ht.apply_models_globals.exome_coverage_metric)
+    if metric is None:
+        logger.warning(
+            "The preprocessed Table doesn't record its exome coverage metric;"
+            " prop_bp_AN90 assumes exomes_coverage is AN_percent."
+        )
+    elif metric != "AN_percent":
+        raise ValueError(
+            "prop_bp_AN90 and low_exome_coverage need exomes_coverage as"
+            " AN_percent, but the preprocessed Table used"
+            f" exome_coverage_metric={metric!r}. Rerun --preprocess-data with"
+            " --exome-coverage-metric AN_percent."
+        )
+
     # Compute three independent per-transcript metric tables, each keyed by
     # transcript. These use different source data (preprocessed context HT
     # for coverage, exomes sites HT for mapping quality, GENCODE CDS +
@@ -1719,6 +1816,58 @@ def _compute_z_scores(ht: hl.Table) -> hl.Table:
     return ht
 
 
+def compute_exact_percentile_thresholds(
+    ht: hl.Table,
+    metric_expr: hl.expr.Float64Expression,
+    granularities: Dict[str, List[int]],
+    outlier_expr: Optional[hl.expr.BooleanExpression] = None,
+    transcript_filter_expr: Optional[hl.expr.BooleanExpression] = None,
+) -> Dict[str, List[float]]:
+    """
+    Compute exact bin thresholds for a metric.
+
+    For a granularity with ``K`` bins and ``n`` values in ascending order, the
+    threshold for bin ``k`` is the value at 0-based rank ``ceil(k * n / K)``: the
+    smallest value that rank-based binning (``int(rank * K / n)``) puts in bin ``k``.
+    Binning the same values by threshold (the number of thresholds a value meets or
+    exceeds) therefore gives their rank-based bins, apart from ties. With fewer
+    values than bins, thresholds past the largest value repeat it.
+
+    The values are collected to the driver, which is small for one value per
+    transcript. Unlike ``approx_quantiles``, the result is the same on every run.
+
+    :param ht: Input Table.
+    :param metric_expr: Metric to compute thresholds for.
+    :param granularities: Mapping of granularity name to its bin boundary labels
+        (1-based, as in ``CONSTRAINT_GRANULARITIES``); ``K`` is one more than the
+        number of labels.
+    :param outlier_expr: Optional expression that is True for rows to leave out.
+        Default is None.
+    :param transcript_filter_expr: Optional expression that is True for rows to
+        include. Default is None.
+    :return: Mapping of granularity name to its thresholds in ascending order.
+    """
+    filter_expr = hl.is_defined(metric_expr)
+    if outlier_expr is not None:
+        filter_expr &= ~outlier_expr  # pylint: disable=invalid-unary-operand-type
+    if transcript_filter_expr is not None:
+        filter_expr &= transcript_filter_expr
+    values = sorted(
+        ht.aggregate(hl.agg.filter(filter_expr, hl.agg.collect(metric_expr)))
+    )
+    n = len(values)
+    if n == 0:
+        raise ValueError("No values left to compute percentile thresholds from.")
+    logger.info("Computing exact percentile thresholds on %d values.", n)
+
+    thresholds = {}
+    for name, bins in granularities.items():
+        n_bins = len(bins) + 1
+        # -(-a // b) is ceil(a / b) in integer arithmetic.
+        thresholds[name] = [values[min(-(-k * n // n_bins), n - 1)] for k in bins]
+    return thresholds
+
+
 def compute_constraint_percentile_bins(
     ht: hl.Table,
     use_mane_select_over_canonical: bool = True,
@@ -1751,41 +1900,29 @@ def compute_constraint_percentile_bins(
         "mis": next(i for i, m in enumerate(meta) if m == {"csq_set": "mis"}),
         "lof": next(i for i, m in enumerate(meta) if m == {"lof": "hc"}),
     }
-    # Transcripts with any constraint flag are excluded from threshold
-    # computation (but still assigned bins afterward).
+    # Thresholds come from MANE Select transcripts with no constraint flags, a
+    # narrower set than the ranked one above (which falls back to canonical and
+    # keeps flagged transcripts). This is deliberate and described on the gnomAD
+    # browser help page. Because the sets differ, some transcripts' threshold bins
+    # differ from their rank-based bins. Every transcript is still assigned
+    # threshold bins afterward.
     outlier_expr = ht.constraint_flags.length() > 0
 
-    # Convert CONSTRAINT_GRANULARITIES bin boundaries into quantile
-    # probabilities. E.g. decile bins [1..9] with 10 total bins become
-    # quantile probs [10, 20, ..., 90]. Collect all unique probs into
-    # all_qs so we can compute them in a single aggregation pass per metric.
-    gran_percentiles: Dict[str, List[float]] = {}
-    all_qs = []
-    for gran_name, bins in CONSTRAINT_GRANULARITIES.items():
-        n_bins = len(bins) + 1
-        pcts = [b / n_bins * 100 for b in bins]
-        gran_percentiles[gran_name] = pcts
-        all_qs.extend(pcts)
-
-    # For each metric (syn, mis, lof), compute approximate quantile
-    # thresholds on the gamma OE upper CI across MANE Select transcripts
-    # (excluding outliers). Then slice the result by granularity to get
-    # the bin-edge values for percentile, decile, and sextile bins.
+    # For each metric (syn, mis, lof), compute exact thresholds on the gamma OE
+    # upper CI for every granularity in CONSTRAINT_GRANULARITIES.
     thresholds = {}
     for metric, idx in metric_group_idx.items():
-        vals = compute_percentile_thresholds(
+        vals = compute_exact_percentile_thresholds(
             ht,
-            percentiles=all_qs,
-            metric_expr=ht.constraint_groups[idx]
-            .oe_info[all_freq_idx]
-            .oe_ci_gamma.upper,
+            ht.constraint_groups[idx].oe_info[all_freq_idx].oe_ci_gamma.upper,
+            CONSTRAINT_GRANULARITIES,
             outlier_expr=outlier_expr,
             transcript_filter_expr=get_transcript_filter_expr(
                 ht, mane_select_only=True
             ),
         )
-        for gran_name, pcts in gran_percentiles.items():
-            thresholds[(gran_name, metric)] = [vals[p] for p in pcts]
+        for gran_name, gran_thresholds in vals.items():
+            thresholds[(gran_name, metric)] = gran_thresholds
 
     # Store thresholds as a global so they survive through to release.
     # Structure: percentile_thresholds.{metric}.{granularity} = array<float64>
@@ -1795,7 +1932,7 @@ def compute_constraint_percentile_bins(
                 metric: hl.struct(
                     **{
                         gran_name: thresholds[(gran_name, metric)]
-                        for gran_name in gran_percentiles
+                        for gran_name in CONSTRAINT_GRANULARITIES
                     }
                 )
                 for metric in metric_group_idx
@@ -2368,7 +2505,7 @@ def annotate_constraint_percentile_bins(
 
     :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
     :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list
-        of threshold values, built from :func:`compute_percentile_thresholds`
+        of threshold values, built from :func:`compute_exact_percentile_thresholds`
         output (see :func:`annotate_bins_by_threshold`).
     :param metric_group_idx: Mapping of metric name to its index in
         ``constraint_groups`` (e.g. ``{"lof": 4, "mis": 1, "syn": 0}``).
