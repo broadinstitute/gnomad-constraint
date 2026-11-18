@@ -74,6 +74,8 @@ def main(args: argparse.Namespace) -> None:
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+    if args.calculate_mutation_rate or args.create_training_set or args.build_models:
+        constraint_res.check_stage_version("expected_models", version)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.

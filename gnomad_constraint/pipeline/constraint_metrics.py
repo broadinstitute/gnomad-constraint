@@ -122,6 +122,10 @@ def main(args: argparse.Namespace) -> None:
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+    if args.aggregate_per_variant_expected or args.aggregate_by_constraint_groups:
+        constraint_res.check_stage_version("expected_counts", version)
+    if args.compute_constraint_metrics and not args.skip_pre_rank_metrics:
+        constraint_res.check_stage_version("pre_rank_metrics", version)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.

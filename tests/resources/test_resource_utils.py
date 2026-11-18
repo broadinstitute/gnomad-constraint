@@ -11,11 +11,13 @@ from gnomad_qc.resource_utils import PipelineResourceCollection
 
 from gnomad_constraint.resources.constants import (
     GENCODE_VERSION_MAP,
+    STAGE_VERSIONS,
     VEP_VERSION_MAP,
     VERSIONS,
 )
 from gnomad_constraint.resources.resource_utils import (
     check_param_scope,
+    check_stage_version,
     filter_for_test,
     get_adj_r_ht,
     get_aggregated_expected,
@@ -41,6 +43,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
     get_sites_resource,
+    get_stage_version,
     get_syn_adj_r_ht,
     get_training_dataset,
     get_training_tsv_path,
@@ -86,6 +89,83 @@ class TestGetConstraintRoot:
         with ``--overwrite`` would replace them.
         """
         assert get_constraint_root() == "gs://gnomad/v4.1.3/constraint"
+
+
+class TestStageVersions:
+    """Test the STAGE_VERSIONS constant."""
+
+    def test_later_stages_list_every_earlier_version(self) -> None:
+        """
+        Test that each stage's versions are also listed for every later stage.
+
+        A later stage reads the earlier stage's outputs, so a release that reruns a
+        stage has to rerun every stage after it.
+        """
+        stages = list(STAGE_VERSIONS.values())
+        for earlier, later in zip(stages, stages[1:]):
+            assert set(earlier) <= set(later)
+        assert set(stages[-1]) <= set(VERSIONS)
+
+
+class TestGetStageVersion:
+    """Test the get_stage_version function."""
+
+    @pytest.mark.parametrize(
+        "stage, version, expected",
+        [
+            ("prepare_data", "4.1.3", "4.1.3"),
+            ("prepare_data", "4.1.2", "4.1.1"),
+            ("pre_rank_metrics", "4.1.2", "4.1.1"),
+            ("expected_models", "4.0", "4.0"),
+            ("release", "4.1.2", "4.1.2"),
+        ],
+    )
+    def test_stage_version(self, stage: str, version: str, expected: str) -> None:
+        """
+        Test that a release uses the newest version of a stage at or before it.
+
+        v4.1.2 only reran the ranking, so it uses v4.1.1 for every earlier stage.
+        """
+        assert get_stage_version(stage, version) == expected
+
+    def test_unknown_stage(self) -> None:
+        """Test that a stage that isn't in STAGE_VERSIONS raises an error."""
+        with pytest.raises(ValueError, match="stage must be"):
+            get_stage_version("models", "4.1.3")
+
+    def test_path_defaults_use_the_stage_version(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        Test that a path function without a version uses its stage's version.
+
+        With the preprocessing last run for 4.1.1, the current release reads the
+        preprocessed Table from v4.1.1 but writes its release Table under its own
+        version.
+        """
+        monkeypatch.setitem(STAGE_VERSIONS, "prepare_data", ["4.0", "4.1", "4.1.1"])
+        assert "/v4.1.1/" in get_preprocessed_ht().path
+        assert "/v4.1.3/" in get_release_constraint_ht().path
+
+
+class TestCheckStageVersion:
+    """Test the check_stage_version function."""
+
+    def test_reused_stage_raises(self) -> None:
+        """
+        Test that running a stage for a release that reuses it raises an error.
+
+        4.1.2 reuses v4.1.1's preprocessed data, so running ``--preprocess-data``
+        with ``--version 4.1.2`` would write to the v4.1.1 paths.
+        """
+        with pytest.raises(
+            ValueError, match="reuses the prepare_data outputs of 4.1.1"
+        ):
+            check_stage_version("prepare_data", "4.1.2")
+
+    def test_rerun_stage(self) -> None:
+        """Test that a release that reruns the stage passes."""
+        check_stage_version("prepare_data", "4.1.3")
 
 
 class TestGetConstraintData:
@@ -563,6 +643,30 @@ class TestGetConstraintResources:
         inputs = resources.aggregate_by_constraint_groups.input_resources
         assert list(inputs) == [step]
         assert [_path(r) for r in inputs[step]] == [path]
+
+    def test_reused_stages_are_read_from_their_version(self) -> None:
+        """
+        Test that a release reads the stages it reuses from the version that ran them.
+
+        v4.1.2 only reran the ranking, so it reads v4.1.1's pre-rank metrics and
+        preprocessed data, and writes the ranked metrics under its own version,
+        without copying v4.1.1's Tables first.
+        """
+        resources = get_constraint_resources(
+            version="4.1.2", overwrite=False, test=True, skip_pre_rank_metrics=True
+        )
+        step = resources.compute_constraint_metrics
+        assert [
+            _path(r) for r in step.input_resources["--compute-constraint-metrics"]
+        ] == [get_pre_rank_constraint_metrics_dataset(version="4.1.1", test=True).path]
+        assert [_path(r) for rs in step.output_resources.values() for r in rs] == [
+            get_constraint_metrics_dataset(version="4.1.2", test=True).path
+        ]
+        assert [
+            _path(r)
+            for rs in resources.preprocess_data.output_resources.values()
+            for r in rs
+        ] == [get_preprocessed_ht(version="4.1.1", test=True).path]
 
     def test_inputs_read_by_steps_are_declared(
         self, resources: PipelineResourceCollection

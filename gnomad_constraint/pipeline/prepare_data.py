@@ -78,6 +78,12 @@ def main(args: argparse.Namespace) -> None:
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
     check_gerp_cutoffs_step(args.calculate_gerp_cutoffs, args.preprocess_data)
+    if (
+        args.prepare_context_ht
+        or args.preprocess_data
+        or args.compute_gene_quality_metrics
+    ):
+        constraint_res.check_stage_version("prepare_data", version)
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     resources = constraint_res.get_constraint_resources(

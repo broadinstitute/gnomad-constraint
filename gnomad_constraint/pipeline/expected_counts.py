@@ -153,6 +153,8 @@ def main(args: argparse.Namespace) -> None:
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
+    if args.apply_models_per_variant or args.apply_models_aggregated:
+        constraint_res.check_stage_version("expected_counts", version)
 
     # Generate both "plateau" and "coverage" models unless specified to skip the
     # coverage model.
