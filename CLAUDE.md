@@ -210,8 +210,8 @@ fields or globals, update its description in `release_readme/` too.
 - `--exome-coverage-metric` (`AN_percent` by default, or `median` or `AN`) and
   `--skip-coverage-model` are applied at `--preprocess-data` and change both model
   building and model application. Pass the same `--skip-coverage-model` to every
-  script that takes it; later steps raise an error if it doesn't match the
-  preprocessed Table.
+  script that takes it; `--build-models` and the two apply-models steps raise an
+  error if it doesn't match the preprocessed Table.
 - `--compute-constraint-metrics` needs Hail 0.2.137 or later (`hl.qgamma`, used
   for the gamma confidence interval).
 - `gnomad_constraint/flowchart/constraint_pipeline.html` is generated from the
