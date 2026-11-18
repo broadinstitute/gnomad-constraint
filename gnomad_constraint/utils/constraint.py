@@ -390,8 +390,10 @@ def get_exome_coverage_expr(
         - "AN": the expression returned is the exomes allele number (``ht.AN.exomes``).
         - "AN_percent": the expression returned is the percent of samples with a
           non-missing genotype, which is the exomes allele number (``ht.AN.exomes``)
-          divided by the total number of alleles in the exomes dataset (pulled from
-          ``ht.an_globals.exomes.strata_sample_count`` * 2) multiplied by 100.
+          divided by the number of alleles possible at the site, multiplied by 100
+          and truncated to an integer. The possible alleles come from
+          ``ht.an_globals.exomes.strata_sample_count``: 2 * XX + XY samples on chrX
+          non-PAR, XY samples on chrY non-PAR, and 2 * all samples elsewhere.
 
     :param ht: Input Table with exome coverage information.
     :param exome_coverage_metric: Metric to use for exome coverage. One of ["median",
@@ -455,8 +457,10 @@ def get_exomes_observed_and_possible(
           for analyses that start from the preprocessed or per-variant Table.
         - observed_variants: This annotation is an array, where each element corresponds
           to whether the variant is observed in the exomes dataset for the frequency
-          group at the corresponding index in the ``exomes_freq`` array and has an
-          AF <= ``max_af``. The boolean value is stored as an integer (0 or 1).
+          group at the corresponding index in the ``exomes_freq`` array and has a
+          full-dataset adj AF <= ``max_af``. Every group uses the full-dataset AF, as
+          in v2, so a small downsampling can still observe a variant. The boolean
+          value is stored as an integer (0 or 1).
         - possible_variants: Whether the variant is considered a possible variant in the
           exomes dataset. This includes variants not in the exomes dataset, variants
           that fail the exome filters, and variants in the observed variant set. The
@@ -498,8 +502,8 @@ def get_exomes_observed_and_possible(
         Default is None, which includes only the full exomes dataset.
     :param include_downsamplings: Whether to include downsamplings in the observed and
         possible variant annotations. Default is False.
-    :param max_af: Maximum allele frequency to consider a variant as observed. Default
-        is 0.001.
+    :param max_af: Maximum full-dataset adj allele frequency for a variant to count
+        as observed or possible, in every frequency group. Default is 0.001.
     :return: Tuple containing the observed and possible variant annotations and the
         globals.
     """
@@ -521,12 +525,14 @@ def get_exomes_observed_and_possible(
         downsampling_gen_ancs=gen_ancs if downsamplings is not None else None,
     )
 
-    # Whether the variant is rare enough to be possible, from its adj frequency before
-    # filtered variants lose theirs below, so a filtered variant above max_af is left
-    # out of both counts like a PASS variant at the same AF. A variant absent from the
-    # exomes has no frequency and counts as rare.
+    # Whether the variant is rare, from its full-dataset adj frequency, before filtered
+    # variants lose theirs below, so a filtered variant above max_af is left out of
+    # both counts like a PASS variant at the same AF. A variant absent from the exomes
+    # has no frequency and counts as rare. The same rarity applies to every frequency
+    # group, as in v2: comparing each group's own AF with max_af would mean a small
+    # downsampling could never observe a variant.
     adj_idx = exomes_freq_meta.index(ADJ_FREQ_META)
-    is_rare_expr = (
+    is_rare_expr = hl.int(
         hl.or_else(exomes_freq_expr[adj_idx].AF <= max_af, True)
         if max_af is not None
         else hl.bool(True)
@@ -537,9 +543,12 @@ def get_exomes_observed_and_possible(
     # exome coverage is undefined, set the observed and possible variant annotations to
     # missing.
     exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
-    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af)
+    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr)
     obs_pos_expr = obs_pos_expr.annotate(
-        possible_variants=obs_pos_expr.possible_variants * hl.int(is_rare_expr)
+        observed_variants=obs_pos_expr.observed_variants.map(
+            lambda x: x * is_rare_expr
+        ),
+        possible_variants=obs_pos_expr.possible_variants * is_rare_expr,
     )
 
     # A missing frequency array gives a missing observed array, which aggregations
@@ -558,7 +567,7 @@ def get_exomes_observed_and_possible(
         exomes_freq_meta=exomes_freq_meta,
         genetic_ancestry_groups=gen_ancs or hl.missing(hl.tarray(hl.tstr)),
         downsamplings=downsamplings or hl.missing(hl.tarray(hl.tstr)),
-        max_af=max_af,
+        max_af=hl.missing(hl.tfloat64) if max_af is None else max_af,
     )
 
     return obs_pos_expr, obs_pos_globals
@@ -687,8 +696,8 @@ def prepare_ht_for_constraint_calculations(
         be included in the mutation rate calculation. Default is 2.6607.
     :param calculate_mutation_rate_ac_cutoff: Allele count cutoff for variant to be
         included in the mutation rate calculation. Default is 5.
-    :param max_af: Maximum allele frequency to consider a variant as observed. Default
-        is 0.001.
+    :param max_af: Maximum full-dataset adj allele frequency for a variant to count
+        as observed or possible, in every frequency group. Default is 0.001.
     :param build_model_low_cov_cutoff: Low coverage cutoff for the build models step.
         Sites at or below it are left out of the low coverage model. Default is None,
         which leaves out sites with coverage 0.
@@ -998,9 +1007,12 @@ def create_per_variant_expected_ht(
     expected number of variants using ``apply_models``. See the function
     ``apply_models`` for more information on the expected annotations.
 
-    The Table keeps every field of the input Table and every consequence, including
-    the non-coding ones that ``aggregate_per_variant_expected_ht`` drops, because
-    downstream analyses read the per-variant Table directly.
+    The Table keeps every field of the input Table except ``vep``, and every
+    consequence, including the non-coding ones that
+    ``aggregate_per_variant_expected_ht`` drops, because downstream analyses read the
+    per-variant Table directly. Of each transcript consequence, only the grouping
+    fields (``annotation``, ``modifier``, ``gene``, ``gene_id``, ``transcript``,
+    ``canonical``, and ``mane_select``) are kept.
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
@@ -1433,6 +1445,41 @@ def aggregate_by_constraint_groups(
     return ht
 
 
+def get_cds_transcripts_per_locus(ht: hl.Table) -> hl.Table:
+    """
+    Get the transcripts whose CDS covers each locus.
+
+    Filters a GENCODE Table to CDS features, drops the chrY PAR copies of chrX PAR
+    transcripts, explodes each CDS interval into its loci, and groups by locus. A
+    chrY PAR copy has the same ``transcript_id`` as its chrX copy (only
+    ``transcript_id_version`` ends in ``PAR_Y`` or ``Y_PAR``), so keeping it would
+    add its chrY loci, which have no exome allele number, to the chrX transcript.
+
+    :param ht: GENCODE Table keyed by ``interval`` with ``feature``,
+        ``transcript_id``, and ``transcript_id_version`` fields (output of
+        :func:`~gnomad_constraint.resources.resource_utils.get_gencode_ht`).
+    :return: Table keyed by ``locus`` with ``transcript_id``, an array of the IDs of
+        the transcripts whose CDS covers that locus.
+    """
+    ht = ht.filter(
+        (ht.feature == "CDS")
+        & ~ht.transcript_id_version.endswith("Y_PAR")
+        & ~ht.transcript_id_version.endswith("PAR_Y")
+    ).select("transcript_id")
+    ht = ht.annotate(
+        positions=hl.range(ht.interval.start.position, ht.interval.end.position + 1)
+    ).explode("positions")
+    ht = ht.key_by(
+        locus=hl.locus(
+            ht.interval.start.contig, ht.positions, reference_genome="GRCh38"
+        )
+    ).select("transcript_id")
+
+    return ht.group_by("locus").aggregate(
+        transcript_id=hl.agg.collect(ht.transcript_id)
+    )
+
+
 def _compute_coverage_metrics(
     ht: hl.Table,
     gencode_cds_ht: hl.Table,
@@ -1496,9 +1543,13 @@ def _compute_site_quality_metrics(
     ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id")
 
     # Average AS_MQ across all SNV sites in each transcript's CDS.
-    # Used downstream to flag transcripts with low mapping quality.
+    # Used downstream to flag transcripts with low mapping quality. With no defined
+    # AS_MQ the mean would be NaN, which the low mapping quality check can't flag, so
+    # it is missing instead.
     return ht.group_by(transcript=ht.transcript_id).aggregate(
-        mean_AS_MQ=hl.agg.mean(ht.AS_MQ),
+        mean_AS_MQ=hl.or_missing(
+            hl.agg.count_where(hl.is_defined(ht.AS_MQ)) > 0, hl.agg.mean(ht.AS_MQ)
+        ),
     )
 
 
@@ -1596,16 +1647,15 @@ def compute_gene_quality_metrics(
             " --exome-coverage-metric AN_percent."
         )
 
-    # Compute three independent per-transcript metric tables, each keyed by
-    # transcript. These use different source data (preprocessed context HT
-    # for coverage, exomes sites HT for mapping quality, GENCODE CDS +
-    # interval tables for region overlap) so they can run in parallel.
+    # Compute three per-transcript metric tables, each keyed by transcript, from
+    # different source data: the preprocessed context HT for coverage, the exomes
+    # sites HT for mapping quality, and the GENCODE CDS and interval tables for
+    # region overlap. Each is read once, by the join below, so none is cached.
     an90_ht = _compute_coverage_metrics(ht, gencode_cds_ht, an_coverage_threshold)
-    an90_ht = an90_ht.cache()
-    sites_ht = _compute_site_quality_metrics(exomes_ht, gencode_cds_ht).cache()
+    sites_ht = _compute_site_quality_metrics(exomes_ht, gencode_cds_ht)
     region_ht = _compute_region_flag_metrics(
         gencode_cds_ht, seg_dup_intervals_ht, lcr_intervals_ht
-    ).cache()
+    )
 
     # Join the three metric tables on transcript into a single row per
     # transcript with all four metrics.
@@ -1617,8 +1667,8 @@ def compute_gene_quality_metrics(
     # Package all metrics into a single `gene_quality_metrics` struct,
     # prefixing each field with "exome_" for the release schema. Then
     # derive `gene_flags` — a set of string flags for transcripts that
-    # fail quality thresholds (mean AS_MQ < 50 or < 10% of CDS bases
-    # passing allele number 90th percentile).
+    # fail quality thresholds (mean AS_MQ < 50, or fewer than 10% of CDS bases
+    # with an exome AN percent of at least 90).
     ht = ht.select(
         gene_quality_metrics=hl.struct(**{f"exome_{f}": ht[f] for f in ht.row_value}),
         gene_flags=add_filters_expr(
@@ -2478,7 +2528,7 @@ def annotate_constraint_percentile_bins(
 
     Annotates ``constraint_bins.{granularity}.{metric}`` for each combination.
     Bin 0 is the most constrained (value below all thresholds); bin N equals
-    the number of boundaries the value exceeds.
+    the number of boundaries the value meets or exceeds.
 
     :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
     :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list

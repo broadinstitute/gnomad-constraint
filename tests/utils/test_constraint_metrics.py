@@ -47,6 +47,17 @@ GEN_ANCS = ["global", "afr", "amr", "eas", "nfe", "sas"]
 GROUP_NAMES = ["syn", "mis", "lof_classic", "lof_hc_lc", "lof_hc"]
 """Internal names of ``CONSTRAINT_GROUP_META``, in the same order."""
 
+DECOY_FREQ_META = {"group": "adj", "gen_anc": "afr"}
+"""
+Frequency metadata of the missing decoy entry before adj in ``oe_info``.
+
+``_constraint_groups_ht`` adds the decoy, so a function that reads ``oe_info[0]``
+instead of looking up adj in ``exomes_freq_meta`` gets missing values.
+"""
+
+ADJ_IDX = 1
+"""Index of adj in the ``oe_info`` arrays of ``_constraint_groups_ht`` Tables."""
+
 CI_TYPE = hl.tstruct(lower=hl.tfloat64, upper=hl.tfloat64)
 
 RANK_TYPE = hl.tstruct(
@@ -86,8 +97,12 @@ def _constraint_groups_ht(
 ) -> hl.Table:
     """Return a Table with a ``constraint_groups`` array.
 
+    Each ``oe_info`` list gets a missing decoy entry before adj, so adj is at
+    ``ADJ_IDX``.
+
     :param rows: Dicts with ``transcript``, ``constraint_groups`` (one struct per
-        group, each with an ``oe_info`` list) and any fields in the row type.
+        group, each with an ``oe_info`` list of the adj entry) and any fields in the
+        row type.
     :param oe_info_type: Type of each ``oe_info`` element.
     :param extra_cg_fields: Extra constraint group fields and their types.
     :param meta: Constraint group metadata. Default is ``CONSTRAINT_GROUP_META``.
@@ -114,8 +129,16 @@ def _constraint_groups_ht(
         ),
         key=list(key),
     )
+    ht = ht.annotate(
+        constraint_groups=ht.constraint_groups.map(
+            lambda cg: cg.annotate(
+                oe_info=hl.array([hl.missing(oe_info_type)]).extend(cg.oe_info)
+            )
+        )
+    )
     return ht.annotate_globals(
-        constraint_group_meta=meta, exomes_freq_meta=[{"group": "adj"}]
+        constraint_group_meta=meta,
+        exomes_freq_meta=[DECOY_FREQ_META, {"group": "adj"}],
     )
 
 
@@ -164,17 +187,22 @@ class TestAnnotateOeCiZ:
     @requires_qgamma
     @pytest.mark.parametrize("transcript", ["T_ok", "T_depleted", "T_excess"])
     def test_oe_ci_and_z(self, rows: Dict[str, hl.Struct], transcript: str) -> None:
-        """Test oe, both CIs, and z_raw against independent computations."""
+        """
+        Test oe, both CIs, and z_raw against independent computations.
+
+        With obs = 0 (``T_depleted``), the gamma lower bound is 0, as in the
+        discretized Poisson CI. It used to be above 0, so an oe of 0 fell below its
+        own confidence interval.
+        """
         obs, exp = self.COUNTS[transcript]
         for cg in rows[transcript].constraint_groups:
-            x = cg.oe_info[0]
+            x = cg.oe_info[ADJ_IDX]
             assert x.oe == pytest.approx(obs / exp)
             assert x.z_raw == pytest.approx(
                 np.sqrt((obs - exp) ** 2 / exp) * (-1 if obs > exp else 1)
             )
-            assert x.oe_ci_gamma.lower == pytest.approx(
-                gamma.ppf(0.05, obs + 1, scale=1 / exp)
-            )
+            lower = gamma.ppf(0.05, obs + 1, scale=1 / exp) if obs > 0 else 0.0
+            assert x.oe_ci_gamma.lower == pytest.approx(lower)
             assert x.oe_ci_gamma.upper == pytest.approx(
                 gamma.ppf(0.95, obs + 1, scale=1 / exp)
             )
@@ -190,7 +218,7 @@ class TestAnnotateOeCiZ:
     def test_no_expected(self, rows: Dict[str, hl.Struct], transcript: str) -> None:
         """Test that a group with zero or missing expected has missing metrics."""
         for cg in rows[transcript].constraint_groups:
-            x = cg.oe_info[0]
+            x = cg.oe_info[ADJ_IDX]
             assert x.oe is None
             assert x.z_raw is None
             assert x.oe_ci_gamma.lower is None and x.oe_ci_gamma.upper is None
@@ -229,16 +257,17 @@ class TestAnnotateOeCiZ:
 class TestComputeZScores:
     """Test the _compute_z_scores function."""
 
-    # Raw z per transcript for (syn, mis, lof_classic, lof_hc_lc, lof_hc).
+    # Raw z per transcript for (syn, mis, lof_classic, lof_hc_lc, lof_hc). Each
+    # group has its own values, and so its own SD, so using the wrong group shows.
     Z = {
-        "T1": [1.0, -1.0, -1.0, -1.0, -1.0],
-        "T2": [-1.0, -3.0, -3.0, -3.0, -3.0],
-        "T3": [3.0, 2.0, 2.0, 2.0, 2.0],
-        "T4": [-2.0, 5.0, 5.0, 5.0, 5.0],
+        "T1": [1.0, -1.0, -2.0, -0.5, -1.5],
+        "T2": [-1.0, -3.0, -1.0, -2.5, -4.0],
+        "T3": [3.0, 2.0, 1.0, 0.5, 3.0],
+        "T4": [-2.0, 5.0, -0.5, 4.0, -1.0],
         "T5": [None, None, None, None, None],
         # Excluded from the SD: no variants, or flagged.
-        "T_no_variants": [100.0, -100.0, -100.0, -100.0, -100.0],
-        "T_flagged": [50.0, -50.0, -50.0, -50.0, -50.0],
+        "T_no_variants": [100.0, -100.0, -90.0, -80.0, -70.0],
+        "T_flagged": [50.0, -50.0, -40.0, -30.0, -20.0],
     }
 
     FLAGS = {
@@ -502,15 +531,18 @@ class TestComputeConstraintPercentileBins:
 
         The 30 MANE Select transcripts have syn values from 0.05 to 1.5, and their
         mis and LoF values are two and three times as large, so using the wrong
-        group for a metric would show. The outliers (flagged) and unselected
+        group for a metric would show. The outliers (flagged), the canonical
+        transcripts of genes with no MANE Select transcript, and the unselected
         transcripts (neither MANE Select nor canonical) have a value of 100 in every
-        group, so including either in the thresholds would show. Only the syn, mis,
-        and HC LoF groups are included, since each group is ranked separately.
+        group, so including any of them in the thresholds would show. Only the syn,
+        mis, and HC LoF groups are included, since each group is ranked separately.
         """
+        # transcript, value, MANE Select, canonical, constraint flags.
         transcripts = (
-            [(f"ENSTM{i}", 0.05 * (i + 1), True, set()) for i in range(30)]
-            + [(f"ENSTO{i}", 100.0, True, {"outlier_lof"}) for i in range(5)]
-            + [(f"ENSTU{i}", 100.0, False, set()) for i in range(5)]
+            [(f"ENSTM{i}", 0.05 * (i + 1), True, True, set()) for i in range(30)]
+            + [(f"ENSTO{i}", 100.0, True, True, {"outlier_lof"}) for i in range(5)]
+            + [(f"ENSTC{i}", 100.0, False, True, set()) for i in range(5)]
+            + [(f"ENSTU{i}", 100.0, False, False, set()) for i in range(5)]
         )
         oe_info_type = hl.tstruct(
             oe_ci_discretized_poisson=CI_TYPE, oe_ci_gamma=CI_TYPE
@@ -520,7 +552,7 @@ class TestComputeConstraintPercentileBins:
                 transcript=t,
                 gene_id=f"G_{t}",
                 mane_select=mane,
-                canonical=mane,
+                canonical=canonical,
                 constraint_flags=flags,
                 constraint_groups=[
                     hl.Struct(
@@ -538,7 +570,7 @@ class TestComputeConstraintPercentileBins:
                     for _, f in cls.METRICS.values()
                 ],
             )
-            for t, v, mane, flags in transcripts
+            for t, v, mane, canonical, flags in transcripts
         ]
         meta = [{"csq_set": "syn"}, {"csq_set": "mis"}, {"lof": "hc"}]
         ht = compute_constraint_percentile_bins(
@@ -547,14 +579,22 @@ class TestComputeConstraintPercentileBins:
         return hl.eval(ht.percentile_thresholds), ht.collect()
 
     def test_thresholds(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
-        """Test the thresholds global: shape, order, and excluded transcripts."""
+        """
+        Test the thresholds global: shape, order, and excluded transcripts.
+
+        The thresholds come from MANE Select transcripts only, while ranking falls
+        back to canonical for genes with no MANE Select transcript, so the
+        canonical-only transcripts are ranked (see ``test_ranks``) but must not
+        move the thresholds.
+        """
         thresholds, _ = result
         for metric, (_, factor) in self.METRICS.items():
             for gran, bins in CONSTRAINT_GRANULARITIES.items():
                 t = thresholds[metric][gran]
                 assert len(t) == len(bins)
                 assert t == sorted(t)
-                # Outliers and unselected transcripts (value 100) are excluded.
+                # Outliers, canonical-only, and unselected transcripts (value 100)
+                # are excluded.
                 assert max(t) <= 1.5 * factor
                 # Each metric's thresholds come from its own group.
                 assert t == pytest.approx([x * factor for x in thresholds.syn[gran]])
@@ -626,24 +666,93 @@ class TestComputeConstraintPercentileBins:
         for row in rows:
             for gran in CONSTRAINT_GRANULARITIES:
                 for metric, (idx, _) in self.METRICS.items():
-                    value = row.constraint_groups[idx].oe_info[0].oe_ci_gamma.upper
+                    value = (
+                        row.constraint_groups[idx].oe_info[ADJ_IDX].oe_ci_gamma.upper
+                    )
                     assert row.constraint_bins[gran][metric] == _bin(
                         value, thresholds[metric][gran]
                     )
-            if row.constraint_groups[0].oe_info[0].oe_ci_gamma.upper == 100:
+            if row.constraint_groups[0].oe_info[ADJ_IDX].oe_ci_gamma.upper == 100:
                 assert row.constraint_bins.decile.lof == 9
 
     def test_ranks(self, result: Tuple[hl.Struct, List[hl.Struct]]) -> None:
-        """Test that only selected transcripts are ranked."""
+        """
+        Test that only selected transcripts are ranked.
+
+        MANE Select transcripts are ranked, flagged or not, and so are the
+        canonical transcripts of genes with no MANE Select transcript.
+        """
         _, rows = result
         ranked = {
             r.transcript: r.constraint_groups[2].oe_ci_gamma_rank.upper_rank
             for r in rows
             if r.constraint_groups[2].oe_ci_gamma_rank is not None
         }
-        assert not any(t.startswith("ENSTU") for t in ranked)
-        assert sorted(ranked.values()) == list(range(35))
+        assert {t[:5] for t in ranked} == {"ENSTM", "ENSTO", "ENSTC"}
+        assert sorted(ranked.values()) == list(range(40))
         assert ranked["ENSTM0"] == 0
+
+    def test_canonical_ranking(self) -> None:
+        """
+        Test ranking canonical transcripts with ``use_mane_select_over_canonical=False``.
+
+        Gene GA's MANE Select transcript (ENSTA_MANE) is not canonical, and its
+        canonical transcript (ENSTA_CAN) is not MANE Select. Only the canonical one
+        is ranked, but the thresholds still come from MANE Select transcripts:
+        they include ENSTA_MANE's value (1.05) and not ENSTA_CAN's (100).
+        """
+        # transcript, gene, value, MANE Select, canonical.
+        transcripts = [
+            (f"ENSTM{i}", f"G{i}", 0.1 * (i + 1), True, True) for i in range(10)
+        ] + [
+            ("ENSTA_MANE", "GA", 1.05, True, False),
+            ("ENSTA_CAN", "GA", 100.0, False, True),
+        ]
+        ci = lambda v: hl.Struct(lower=0.0, upper=v)  # noqa: E731
+        rows = [
+            dict(
+                transcript=t,
+                gene_id=g,
+                mane_select=mane,
+                canonical=canonical,
+                constraint_flags=set(),
+                constraint_groups=[
+                    hl.Struct(
+                        oe_info=[
+                            hl.Struct(
+                                oe_ci_discretized_poisson=ci(v), oe_ci_gamma=ci(v)
+                            )
+                        ]
+                    )
+                ]
+                * 3,
+            )
+            for t, g, v, mane, canonical in transcripts
+        ]
+        oe_info_type = hl.tstruct(
+            oe_ci_discretized_poisson=CI_TYPE, oe_ci_gamma=CI_TYPE
+        )
+        meta = [{"csq_set": "syn"}, {"csq_set": "mis"}, {"lof": "hc"}]
+        ht = compute_constraint_percentile_bins(
+            _constraint_groups_ht(rows, oe_info_type, meta=meta),
+            use_mane_select_over_canonical=False,
+        )
+        ranks = {
+            r.transcript: (
+                None
+                if r.constraint_groups[2].oe_ci_gamma_rank is None
+                else r.constraint_groups[2].oe_ci_gamma_rank.upper_rank
+            )
+            for r in ht.collect()
+        }
+        assert ranks["ENSTA_MANE"] is None
+        assert ranks["ENSTA_CAN"] == 10
+        assert sorted(ranks[f"ENSTM{i}"] for i in range(10)) == list(range(10))
+
+        # 11 MANE Select values, 0.1 to 1.0 and 1.05: decile k is at 0-based rank
+        # ceil(11 * k / 10), which is k + 1.
+        decile = hl.eval(ht.percentile_thresholds.lof.decile)
+        assert decile == pytest.approx([0.1 * (k + 2) for k in range(1, 9)] + [1.05])
 
 
 class TestGetConstraintGroupName:
@@ -669,12 +778,6 @@ class TestComputePliScores:
 
     def _ht(self) -> hl.Table:
         """Return transcripts whose HC and HC+LC LoF counts differ."""
-        cg_type = hl.tstruct(
-            oe_info=hl.tarray(
-                hl.tstruct(observed_variants=hl.tint64, expected_variants=hl.tfloat64)
-            ),
-            z_score=hl.tfloat64,
-        )
 
         def _cg(obs: int, exp: float) -> hl.Struct:
             return hl.Struct(
@@ -705,15 +808,10 @@ class TestComputePliScores:
             )
             for i, (hc_obs, hc_exp, hc_lc_obs, hc_lc_exp) in enumerate(counts)
         ]
-        ht = hl.Table.parallelize(
-            rows,
-            hl.tstruct(transcript=hl.tstr, constraint_groups=hl.tarray(cg_type)),
-            key="transcript",
+        oe_info_type = hl.tstruct(
+            observed_variants=hl.tint64, expected_variants=hl.tfloat64
         )
-        ht = ht.annotate_globals(
-            constraint_group_meta=CONSTRAINT_GROUP_META,
-            exomes_freq_meta=[{"group": "adj"}],
-        )
+        ht = _constraint_groups_ht(rows, oe_info_type, {"z_score": hl.tfloat64})
         return _compute_pli_scores(ht)
 
     def test_scores_per_group(self) -> None:
@@ -734,7 +832,7 @@ class TestComputePliScores:
 
             for name in ["lof_hc", "lof_hc_lc"]:
                 g = groups[name]
-                if g.oe_info[0].expected_variants == 0:
+                if g.oe_info[ADJ_IDX].expected_variants == 0:
                     assert g.pLI is None
                 else:
                     assert g.pLI + g.pNull + g.pRec == pytest.approx(1.0)
@@ -922,7 +1020,7 @@ class TestComputeConstraintMetrics:
         assert set(rows) == set(self.LOF)
         for row in rows.values():
             for i, cg in enumerate(row.constraint_groups):
-                x = cg.oe_info[0]
+                x = cg.oe_info[ADJ_IDX]
                 assert x.oe == pytest.approx(x.observed_variants / x.expected_variants)
                 assert x.oe_ci_gamma.lower < x.oe_ci_gamma.upper
                 assert x.oe <= x.oe_ci_gamma.upper
@@ -996,7 +1094,7 @@ class TestComputeConstraintMetrics:
         n_flagged = 0
         for row in ht.collect():
             for name, cg in zip(GROUP_NAMES, row.constraint_groups):
-                z = cg.oe_info[0].z_raw
+                z = cg.oe_info[ADJ_IDX].z_raw
                 group_flag = "outlier_" + ("lof" if name.startswith("lof") else name)
                 flagged = group_flag == flag and (z < 0 if below else z > 0)
                 assert cg.flags == ({flag} if flagged else set())
@@ -1008,18 +1106,45 @@ class TestPrepareReleaseHt:
     """Test the values in the release Table built by prepare_release_ht."""
 
     # Downsamplings deliberately out of order, to check the arrays follow the
-    # downsamplings global.
+    # downsamplings global, and adj not first, to check it is looked up.
     FREQ_META = [
-        {"group": "adj"},
         {"group": "adj", "gen_anc": "global", "downsampling": "100"},
+        {"group": "adj"},
         {"group": "adj", "gen_anc": "global", "downsampling": "10"},
         {"group": "adj", "gen_anc": "afr", "downsampling": "10"},
     ]
+    DOWNSAMPLINGS = [10, 100]
+    """The ``downsamplings`` global, as written by preprocessing."""
+
+    RELEASE_GLOBALS = {
+        "version",
+        "calculate_mu_params",
+        "build_models_params",
+        "apply_models_params",
+        "downsamplings",
+        "max_af",
+        "sd_raw_z",
+        "loeuf_percentile_thresholds",
+    }
+
+    RELEASE_GROUP_IDX = {"syn": 0, "mis": 1, "lof_hc_lc": 3, "lof": 4}
+    """Index in ``CONSTRAINT_GROUP_META`` of each release group."""
+
+    @staticmethod
+    def _non_adj_obs(i: int, j: int) -> int:
+        """Return the observed count of group ``i`` in non-adj frequency entry ``j``."""
+        return 1000 * (i + 1) + j
 
     @pytest.fixture(scope="class")
     @classmethod
     def internal_ht(cls) -> hl.Table:
-        """Return an internal metrics Table with distinct values for every group."""
+        """
+        Return an internal metrics Table with distinct values for every group.
+
+        The adj entry of ``oe_info`` has the values the tests check. Every other
+        entry's values depend on the group and the entry's index, so reading the
+        wrong group or entry shows.
+        """
         oe_info_type = hl.tstruct(
             observed_variants=hl.tint64,
             expected_variants=hl.tfloat64,
@@ -1040,26 +1165,39 @@ class TestPrepareReleaseHt:
             pLI=hl.tfloat64,
         )
 
-        def _oe_info(i: int, obs: int, exp: float) -> hl.Struct:
+        def _oe_info(
+            obs: int, exp: float, gamma_ci: Tuple[float, float], z_raw: float
+        ) -> hl.Struct:
             return hl.Struct(
                 observed_variants=obs,
                 expected_variants=exp,
                 oe=obs / exp,
                 oe_ci_discretized_poisson=hl.Struct(lower=9.0, upper=9.0),
-                oe_ci_gamma=hl.Struct(lower=0.1 * (i + 1), upper=0.2 * (i + 1)),
-                z_raw=float(i),
+                oe_ci_gamma=hl.Struct(lower=gamma_ci[0], upper=gamma_ci[1]),
+                z_raw=z_raw,
             )
 
         def _cg(i: int, possible: int) -> hl.Struct:
-            # oe_info: adj, then the downsamplings, where obs is the downsampling.
-            ds = [int(m["downsampling"]) for m in cls.FREQ_META[1:]]
+            # One oe_info entry per FREQ_META entry.
+            oe_info = []
+            for j, m in enumerate(cls.FREQ_META):
+                if m == {"group": "adj"}:
+                    x = _oe_info(
+                        10 * (i + 1),
+                        20.0 * (i + 1),
+                        (0.1 * (i + 1), 0.2 * (i + 1)),
+                        float(i),
+                    )
+                else:
+                    obs = cls._non_adj_obs(i, j)
+                    x = _oe_info(obs, obs + 0.5, (10.0 + j, 20.0 + j), 100.0 * j + i)
+                oe_info.append(x)
             has_pli = GROUP_NAMES[i] in ("lof_hc", "lof_hc_lc")
             return hl.Struct(
                 mu_snp=float(i + 1),
                 mu=99.0,
                 possible_variants=possible,
-                oe_info=[_oe_info(i, 10 * (i + 1), 20.0 * (i + 1))]
-                + [_oe_info(i, d, 1.5 * d) for d in ds],
+                oe_info=oe_info,
                 z_score=float(i) / 2,
                 oe_ci_gamma_rank=hl.Struct(
                     upper_rank=i,
@@ -1083,7 +1221,7 @@ class TestPrepareReleaseHt:
                 no_variants=False,
                 transcript_id_version=f"{t}.2",
                 gene_id_version="ENSG1.1",
-                level=2,
+                level="2",
                 transcript_type="protein_coding",
                 chromosome="chr1",
                 start_position=100,
@@ -1114,7 +1252,7 @@ class TestPrepareReleaseHt:
                 no_variants=hl.tbool,
                 transcript_id_version=hl.tstr,
                 gene_id_version=hl.tstr,
-                level=hl.tint32,
+                level=hl.tstr,
                 transcript_type=hl.tstr,
                 chromosome=hl.tstr,
                 start_position=hl.tint32,
@@ -1148,7 +1286,7 @@ class TestPrepareReleaseHt:
                 log10_coverage=True,
             ),
             exomes_freq_meta=cls.FREQ_META,
-            downsamplings=[10, 100],
+            downsamplings=cls.DOWNSAMPLINGS,
             max_af=0.001,
             constraint_group_meta=CONSTRAINT_GROUP_META,
             sd_raw_z=[1.0, 2.0, 3.0, 4.0, 5.0],
@@ -1177,7 +1315,7 @@ class TestPrepareReleaseHt:
         )
         assert set(rows) == {"ENST1", "ENST3"}
         assert rows["ENST1"].transcript_version == "ENST1.2"
-        assert rows["ENST1"].transcript_level == 2
+        assert rows["ENST1"].transcript_level == "2"
         assert rows["ENST1"].constraint_flags == {"outlier_mis"}
 
     @pytest.mark.parametrize("name, idx", [("syn", 0), ("mis", 1), ("lof_hc_lc", 3)])
@@ -1216,15 +1354,29 @@ class TestPrepareReleaseHt:
     def test_downsampling_arrays(
         self, release: Tuple[hl.Table, Dict[str, hl.Struct]]
     ) -> None:
-        """Test that gen_anc arrays are parallel to the downsamplings global."""
+        """
+        Test that gen_anc arrays are parallel to the downsamplings global.
+
+        Each value comes from the group's own frequency entry for that genetic
+        ancestry group and downsampling.
+        """
         ht, rows = release
         downsamplings = dict(hl.eval(ht.downsamplings))
         assert downsamplings == {"global": [100, 10], "afr": [10]}
         row = rows["ENST1"]
-        for name in RELEASE_GROUP_NAMES:
+        for name, i in self.RELEASE_GROUP_IDX.items():
             for gen_anc, levels in downsamplings.items():
-                assert row[name].gen_anc_obs[gen_anc] == levels
-                assert row[name].gen_anc_exp[gen_anc] == [1.5 * d for d in levels]
+                obs = [
+                    self._non_adj_obs(
+                        i,
+                        self.FREQ_META.index(
+                            {"group": "adj", "gen_anc": gen_anc, "downsampling": str(d)}
+                        ),
+                    )
+                    for d in levels
+                ]
+                assert row[name].gen_anc_obs[gen_anc] == obs
+                assert row[name].gen_anc_exp[gen_anc] == [o + 0.5 for o in obs]
 
     def test_globals(self, internal_ht: hl.Table) -> None:
         """Test the release globals.
@@ -1233,16 +1385,7 @@ class TestPrepareReleaseHt:
         so ``version`` comes only from ``release_version``.
         """
         g = hl.eval(prepare_release_ht(internal_ht, "4.1.2").globals)
-        assert set(g) == {
-            "version",
-            "calculate_mu_params",
-            "build_models_params",
-            "apply_models_params",
-            "downsamplings",
-            "max_af",
-            "sd_raw_z",
-            "loeuf_percentile_thresholds",
-        }
+        assert set(g) == self.RELEASE_GLOBALS
         assert g.version == "4.1.2"
         assert dict(g.calculate_mu_params) == {"ac_cutoff": 5}
         assert dict(g.build_models_params) == {"high_cov_cutoff": 40}
@@ -1270,6 +1413,30 @@ class TestPrepareReleaseHt:
             "ridge_penalty": 0.3,
             "normalization_factors": {"ACG": 1.1},
         }
+
+
+class TestPrepareReleaseHtWithoutDownsamplings(TestPrepareReleaseHt):
+    """
+    Test prepare_release_ht on a metrics Table with only the adj frequency entry.
+
+    This is a default pipeline run: ``exomes_freq_meta`` is only adj, and
+    preprocessing writes a missing ``downsamplings`` global. The other tests are
+    inherited: the rows and adj values are the same as with downsamplings.
+    """
+
+    FREQ_META = [{"group": "adj"}]
+    DOWNSAMPLINGS = hl.missing(hl.tarray(hl.tstr))
+    RELEASE_GLOBALS = TestPrepareReleaseHt.RELEASE_GLOBALS - {"downsamplings"}
+
+    def test_downsampling_arrays(
+        self, release: Tuple[hl.Table, Dict[str, hl.Struct]]
+    ) -> None:
+        """Test that no group has gen_anc arrays, and every row is still released."""
+        ht, rows = release
+        for name in RELEASE_GROUP_NAMES:
+            assert "gen_anc_obs" not in ht[name].dtype
+            assert "gen_anc_exp" not in ht[name].dtype
+        assert set(rows) == {"ENST1", "ENST3"}
 
 
 class TestFlattenReleaseHt:
