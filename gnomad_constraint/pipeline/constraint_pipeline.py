@@ -503,7 +503,7 @@ def main(args: argparse.Namespace) -> None:
             res = resources.compute_gene_quality_metrics
             res.check_resource_existence()
 
-            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
+            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version, overwrite).ht()
             exomes_sites_ht = res.exomes_sites_ht.ht()
             if test:
                 gencode_cds_ht = filter_for_test(
@@ -715,7 +715,7 @@ def main(args: argparse.Namespace) -> None:
                 ht = res.constraint_group_ht.ht()
                 compute_constraint_metrics(
                     ht=ht,
-                    gencode_ht=constraint_res.get_gencode_ht(version),
+                    gencode_ht=constraint_res.get_gencode_ht(version, overwrite),
                     gene_quality_metrics_ht=res.gene_quality_metrics_ht.ht(),
                     expected_values={
                         "Null": args.expectation_null,

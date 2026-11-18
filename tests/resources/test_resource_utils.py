@@ -9,6 +9,7 @@ import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 from gnomad_qc.resource_utils import PipelineResourceCollection
 
+import gnomad_constraint.resources.resource_utils as resource_utils
 from gnomad_constraint.resources.constants import (
     GENCODE_VERSION_MAP,
     VEP_VERSION_MAP,
@@ -27,6 +28,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_constraint_resources,
     get_constraint_root,
     get_coverage_ht,
+    get_gencode_cds_ht,
     get_gene_quality_metrics_ht,
     get_lof_threshold_tsv_path,
     get_logging_path,
@@ -237,6 +239,59 @@ class TestGencodeVersion:
             == ref_grch38.vep_context.versions[vep_version].path
         )
         assert GENCODE_VERSION_MAP[vep_version] in ref_grch38.gencode.versions
+
+
+class TestGetGencodeCdsHt:
+    """Test the get_gencode_cds_ht function."""
+
+    @staticmethod
+    def _gencode_ht(transcript: str) -> hl.Table:
+        """Return a GENCODE Table with one single-base CDS for ``transcript``."""
+        locus = hl.Locus("chr1", 100, "GRCh38")
+        return hl.Table.parallelize(
+            [
+                dict(
+                    interval=hl.Interval(locus, locus, includes_end=True),
+                    feature="CDS",
+                    transcript_id=transcript,
+                    transcript_id_version=f"{transcript}.1",
+                )
+            ],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                feature=hl.tstr,
+                transcript_id=hl.tstr,
+                transcript_id_version=hl.tstr,
+            ),
+            key="interval",
+        )
+
+    def test_overwrite_rebuilds_the_cache(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        Test that the cached CDS Table is reused, unless overwrite is set.
+
+        Regression test: the cache was always read if it existed, and the pipeline's
+        ``--overwrite`` didn't reach it, so a change to the code that builds it was
+        ignored without a warning.
+        """
+        gencode = {"ht": self._gencode_ht("T1")}
+        monkeypatch.setattr(
+            resource_utils, "get_constraint_root", lambda **kwargs: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            resource_utils, "get_gencode_ht", lambda *args, **kwargs: gencode["ht"]
+        )
+
+        def _transcripts(**kwargs: Any) -> List[str]:
+            ht = get_gencode_cds_ht("4.1.3", **kwargs).ht()
+            return ht.aggregate(hl.agg.explode(hl.agg.collect, ht.transcript_id))
+
+        assert _transcripts() == ["T1"]
+        gencode["ht"] = self._gencode_ht("T2")
+        assert _transcripts() == ["T1"]
+        assert _transcripts(overwrite=True) == ["T2"]
 
 
 class TestGetSitesResource:
