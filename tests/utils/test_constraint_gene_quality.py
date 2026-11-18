@@ -11,6 +11,7 @@ from gnomad_constraint.utils.constraint import (
     _compute_region_flag_metrics,
     _compute_site_quality_metrics,
     compute_gene_quality_metrics,
+    get_cds_transcripts_per_locus,
 )
 
 # CDS positions per transcript. T1 and T2 share chr1:109 and chr1:110. T3 has no
@@ -129,6 +130,73 @@ def _intervals_ht(intervals: List[Tuple[str, int, int]]) -> hl.Table:
 def _by_transcript(ht: hl.Table) -> Dict[str, hl.Struct]:
     """Collect a transcript-keyed Table into a dict."""
     return {r.transcript: r for r in ht.collect()}
+
+
+class TestGetCdsTranscriptsPerLocus:
+    """Test the get_cds_transcripts_per_locus function."""
+
+    @staticmethod
+    def _gencode_ht(par_y_suffix: str) -> hl.Table:
+        """
+        Return GENCODE features for two chr1 transcripts and a chrX PAR transcript.
+
+        T1 and T2 share chr1:1101-1102. T3 is in chrX PAR1, and its chrY PAR copy has
+        the same ``transcript_id`` with ``par_y_suffix`` on its version.
+        """
+        rows = [
+            # transcript_id, version suffix, contig, start, end, feature
+            ("T1", "", "chr1", 1000, 1300, "exon"),
+            ("T1", "", "chr1", 1100, 1102, "CDS"),
+            ("T1", "", "chr1", 1200, 1201, "CDS"),
+            ("T2", "", "chr1", 1101, 1103, "CDS"),
+            ("T3", "", "chrX", 10100, 10102, "CDS"),
+            ("T3", par_y_suffix, "chrY", 10100, 10102, "CDS"),
+        ]
+        return hl.Table.parallelize(
+            [
+                dict(
+                    interval=hl.Interval(
+                        hl.Locus(contig, start, "GRCh38"),
+                        hl.Locus(contig, end, "GRCh38"),
+                        includes_end=True,
+                    ),
+                    feature=feature,
+                    transcript_id=t,
+                    transcript_id_version=f"{t}.1{suffix}",
+                )
+                for t, suffix, contig, start, end, feature in rows
+            ],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                feature=hl.tstr,
+                transcript_id=hl.tstr,
+                transcript_id_version=hl.tstr,
+            ),
+            key="interval",
+        )
+
+    @pytest.mark.parametrize("par_y_suffix", ["_PAR_Y", "_Y_PAR"])
+    def test_cds_loci(self, par_y_suffix: str) -> None:
+        """
+        Test that each CDS locus lists its transcripts, without chrY PAR copies.
+
+        The chrY PAR copy shares the chrX transcript's ID, so keeping it would add
+        chrY loci to T3. Non-CDS features add no loci.
+        """
+        ht = get_cds_transcripts_per_locus(self._gencode_ht(par_y_suffix))
+        result = {str(r.locus): sorted(r.transcript_id) for r in ht.collect()}
+
+        assert result == {
+            "chr1:1100": ["T1"],
+            "chr1:1101": ["T1", "T2"],
+            "chr1:1102": ["T1", "T2"],
+            "chr1:1103": ["T2"],
+            "chr1:1200": ["T1"],
+            "chr1:1201": ["T1"],
+            "chrX:10100": ["T3"],
+            "chrX:10101": ["T3"],
+            "chrX:10102": ["T3"],
+        }
 
 
 class TestComputeCoverageMetrics:

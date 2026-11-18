@@ -31,6 +31,7 @@ from gnomad_constraint.resources.constants import (
     VEP_VERSION_MAP,
     VERSIONS,
 )
+from gnomad_constraint.utils.constraint import get_cds_transcripts_per_locus
 
 logging.basicConfig(
     format="%(asctime)s (%(name)s %(lineno)s): %(message)s",
@@ -152,12 +153,11 @@ def get_gencode_cds_ht(
 ) -> TableResource:
     """Build and checkpoint a per-locus GENCODE CDS transcript ID table.
 
-    Calls :func:`get_gencode_ht` to retrieve the GENCODE table, filters to
-    CDS features (dropping chrY PAR copies, which share the chrX copy's
-    transcript ID), explodes each CDS interval into individual locus positions,
-    and groups by locus to produce an array of transcript IDs per position.
-    The result is checkpointed (read if it already exists) and returned as a
-    :class:`TableResource`.
+    Calls :func:`get_gencode_ht` to retrieve the GENCODE table and
+    :func:`~gnomad_constraint.utils.constraint.get_cds_transcripts_per_locus` to get
+    the transcript IDs whose CDS covers each locus (dropping chrY PAR copies, which
+    share the chrX copy's transcript ID). The result is checkpointed (read if it
+    already exists) and returned as a :class:`TableResource`.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
@@ -169,28 +169,7 @@ def get_gencode_cds_ht(
     root = get_constraint_root(version=version, temp=True)
     path = f"{root}/gencode_cds_positions.no_y_par.ht"
 
-    gencode_ht = get_gencode_ht(version)
-    gencode_ht = gencode_ht.filter(
-        (gencode_ht.feature == "CDS")
-        & ~gencode_ht.transcript_id_version.endswith("Y_PAR")
-        & ~gencode_ht.transcript_id_version.endswith("PAR_Y")
-    ).select("transcript_id")
-    gencode_ht = gencode_ht.annotate(
-        positions=hl.range(
-            gencode_ht.interval.start.position,
-            gencode_ht.interval.end.position + 1,
-        )
-    ).explode("positions")
-    gencode_ht = gencode_ht.key_by(
-        locus=hl.locus(
-            gencode_ht.interval.start.contig,
-            gencode_ht.positions,
-            reference_genome="GRCh38",
-        )
-    ).select("transcript_id")
-    gencode_ht = gencode_ht.group_by("locus").aggregate(
-        transcript_id=hl.agg.collect(gencode_ht.transcript_id)
-    )
+    gencode_ht = get_cds_transcripts_per_locus(get_gencode_ht(version))
     gencode_ht.checkpoint(path, _read_if_exists=True)
 
     return TableResource(path)

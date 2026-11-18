@@ -1421,6 +1421,41 @@ def aggregate_by_constraint_groups(
     return ht
 
 
+def get_cds_transcripts_per_locus(ht: hl.Table) -> hl.Table:
+    """
+    Get the transcripts whose CDS covers each locus.
+
+    Filters a GENCODE Table to CDS features, drops the chrY PAR copies of chrX PAR
+    transcripts, explodes each CDS interval into its loci, and groups by locus. A
+    chrY PAR copy has the same ``transcript_id`` as its chrX copy (only
+    ``transcript_id_version`` ends in ``PAR_Y`` or ``Y_PAR``), so keeping it would
+    add its chrY loci, which have no exome allele number, to the chrX transcript.
+
+    :param ht: GENCODE Table keyed by ``interval`` with ``feature``,
+        ``transcript_id``, and ``transcript_id_version`` fields (output of
+        :func:`~gnomad_constraint.resources.resource_utils.get_gencode_ht`).
+    :return: Table keyed by ``locus`` with ``transcript_id``, an array of the IDs of
+        the transcripts whose CDS covers that locus.
+    """
+    ht = ht.filter(
+        (ht.feature == "CDS")
+        & ~ht.transcript_id_version.endswith("Y_PAR")
+        & ~ht.transcript_id_version.endswith("PAR_Y")
+    ).select("transcript_id")
+    ht = ht.annotate(
+        positions=hl.range(ht.interval.start.position, ht.interval.end.position + 1)
+    ).explode("positions")
+    ht = ht.key_by(
+        locus=hl.locus(
+            ht.interval.start.contig, ht.positions, reference_genome="GRCh38"
+        )
+    ).select("transcript_id")
+
+    return ht.group_by("locus").aggregate(
+        transcript_id=hl.agg.collect(ht.transcript_id)
+    )
+
+
 def _compute_coverage_metrics(
     ht: hl.Table,
     gencode_cds_ht: hl.Table,
