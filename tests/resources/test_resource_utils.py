@@ -647,6 +647,23 @@ class TestGetConstraintResources:
         assert list(inputs) == [step]
         assert [_path(r) for r in inputs[step]] == [path]
 
+    def test_aggregate_per_variant_expected_input(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """
+        Test that --aggregate-per-variant-expected requires only the Table it reads.
+
+        Regression test: it also listed the mutation rate and model outputs as
+        inputs, so after a ``--skip-coverage-model`` run it asked for a coverage
+        model it never reads unless ``constraint_metrics.py`` also took the flag.
+        """
+        step = "--apply-models-per-variant"
+        inputs = resources.aggregate_per_variant_expected.input_resources
+        assert list(inputs) == [step]
+        assert [_path(r) for r in inputs[step]] == [
+            get_per_variant_expected_dataset(version="4.1.1", test=True).path
+        ]
+
     def test_inputs_read_by_steps_are_declared(
         self, resources: PipelineResourceCollection
     ) -> None:

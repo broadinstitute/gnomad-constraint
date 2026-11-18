@@ -688,11 +688,7 @@ def get_constraint_resources(
                 **common_params, path_post_fix=path_post_fix
             )
         },
-        pipeline_input_steps=[
-            apply_models_per_variant,
-            calculate_mutation_rate,
-            build_models,
-        ],
+        pipeline_input_steps=[apply_models_per_variant],
     )
     apply_models_aggregated = PipelineStepResourceCollection(
         "--apply-models-aggregated",

@@ -118,23 +118,18 @@ def main(args: argparse.Namespace) -> None:
     directory_post_fix = args.directory_post_fix
     path_post_fix = args.path_post_fix
     overwrite = args.overwrite
-    skip_coverage_model = args.skip_coverage_model
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
 
-    # Generate both "plateau" and "coverage" models unless specified to skip the
-    # coverage model.
-    models = ["plateau", "coverage"] if not skip_coverage_model else ["plateau"]
-
     # Construct resources with paths for intermediate Tables generated in the pipeline.
+    # No step here reads the models, so they don't depend on --skip-coverage-model.
     resources = constraint_res.get_constraint_resources(
         version,
         overwrite,
         test,
-        models,
-        directory_post_fix,
-        path_post_fix,
+        directory_post_fix=directory_post_fix,
+        path_post_fix=path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
         use_aggregated_expected=args.use_aggregated_expected,
     )
@@ -346,11 +341,6 @@ if __name__ == "__main__":
             "Same as --test in this script; prepare_data.py --test-gene-list applies"
             " the six-gene filter."
         ),
-        action="store_true",
-    )
-    parser.add_argument(
-        "--skip-coverage-model",
-        help="Omit computing and applying the coverage model.",
         action="store_true",
     )
     aggregate_per_variant_expected_args = parser.add_argument_group(

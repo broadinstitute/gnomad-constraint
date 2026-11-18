@@ -294,9 +294,7 @@ class _StopRun(Exception):
 class TestSkipCoverageModelResources:
     """Test which models each script's resources expect."""
 
-    @pytest.mark.parametrize(
-        "script", ["expected_models", "expected_counts", "constraint_metrics"]
-    )
+    @pytest.mark.parametrize("script", ["expected_models", "expected_counts"])
     @pytest.mark.parametrize("skip_coverage_model", [False, True])
     def test_models(
         self, monkeypatch: pytest.MonkeyPatch, script: str, skip_coverage_model: bool
@@ -306,10 +304,8 @@ class TestSkipCoverageModelResources:
 
         Every script whose steps read the models passes ``models`` to
         ``get_constraint_resources``, so with ``--skip-coverage-model`` no step
-        requires a coverage model. Regression test: ``constraint_metrics.py`` had
-        no ``--skip-coverage-model``, so ``--aggregate-per-variant-expected``
-        always required a coverage model, which a ``--skip-coverage-model`` run
-        never writes.
+        requires a coverage model, which a ``--skip-coverage-model`` run never
+        writes. ``constraint_metrics.py`` has no step that reads the models.
         """
         calls = []
 
