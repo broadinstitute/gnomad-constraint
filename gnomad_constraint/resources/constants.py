@@ -174,7 +174,7 @@ RELEASE_GROUP_NAMES = ["syn", "mis", "lof_hc_lc", "lof"]
 """Constraint group names exposed in the release Table, in display order."""
 
 RELEASE_LOF_FIELDS = ["pLI", "pNull", "pRec"]
-"""LoF-specific fields appended to the ``lof`` constraint group in release format."""
+"""LoF-specific fields appended to the LoF groups in ``RELEASE_GROUPS_WITH_PLI`` in release format."""
 
 RELEASE_CI_FIELDS = ["lower", "upper"]
 """OE confidence interval sub-fields included in the release Table."""
