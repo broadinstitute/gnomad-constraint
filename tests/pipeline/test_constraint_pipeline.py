@@ -1,13 +1,15 @@
 """Tests for the helpers of the constraint pipeline scripts."""
 
+import argparse
 import ast
+import inspect
 import logging
 import os
 import runpy
 import sys
 from collections import defaultdict
 from types import SimpleNamespace
-from typing import Any, List
+from typing import Any, Dict, List
 from unittest import mock
 
 import hail as hl
@@ -16,6 +18,7 @@ from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
 import gnomad_constraint.pipeline as pipeline
 import gnomad_constraint.resources.resource_utils as constraint_res
+import gnomad_constraint.utils.constraint as constraint_utils
 from gnomad_constraint.pipeline.constraint_metrics import (
     check_constraint_group_input,
     check_regional_rr_input,
@@ -27,6 +30,7 @@ from gnomad_constraint.pipeline.expected_counts import (
 )
 from gnomad_constraint.pipeline.expected_models import check_skip_coverage_model
 from gnomad_constraint.pipeline.prepare_data import check_gerp_cutoffs_step
+from gnomad_constraint.resources.constants import CURRENT_VERSION
 
 
 class TestCheckSkipCoverageModel:
@@ -355,52 +359,201 @@ class TestGetCoverageModel:
             get_coverage_model(res, False, not log10_coverage, high_cov_cutoff)
 
 
+SCRIPTS = ["prepare_data", "expected_models", "expected_counts", "constraint_metrics"]
+"""The pipeline scripts, in the order they run."""
+
+GET_CONSTRAINT_RESOURCES = constraint_res.get_constraint_resources
+"""The real ``get_constraint_resources``, for its signature once a test replaces it."""
+
+COMMON_FLAGS = [
+    "--version",
+    "4.1.1",
+    "--overwrite",
+    "--test",
+    "--directory-post-fix",
+    "dir",
+    "--path-post-fix",
+    "path",
+]
+"""Flags every script takes, set to values other than their defaults."""
+
+COMMON_ARGS = {
+    "version": "4.1.1",
+    "overwrite": True,
+    "test": True,
+    "directory_post_fix": "dir",
+    "path_post_fix": "path",
+}
+"""The ``get_constraint_resources`` arguments ``COMMON_FLAGS`` should give."""
+
+
 class _StopRun(Exception):
-    """Raised by the stand-in for ``get_constraint_resources`` to end a script run."""
+    """Raised by a stand-in for a function a script calls, to end the script run."""
 
 
-class TestSkipCoverageModelResources:
-    """Test which models each script's resources expect."""
+def _script_path(script: str) -> str:
+    """
+    Return the path of a pipeline script.
+
+    :param script: Script name, without ``.py``.
+    :return: Path of the script.
+    """
+    return os.path.join(os.path.dirname(pipeline.__file__), f"{script}.py")
+
+
+def _run_script(monkeypatch: pytest.MonkeyPatch, script: str, flags: List[str]) -> None:
+    """
+    Run a pipeline script as ``__main__`` until a stand-in raises ``_StopRun``.
+
+    :param monkeypatch: pytest monkeypatch fixture.
+    :param script: Script name, without ``.py``.
+    :param flags: Command line flags.
+    :return: None.
+    """
+    monkeypatch.setattr(hl, "init", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hl, "copy_log", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", [f"{script}.py"] + flags)
+    with pytest.raises(_StopRun):
+        runpy.run_path(_script_path(script), run_name="__main__")
+
+
+class TestScriptResources:
+    """Test the resources each script asks for and the options it reads."""
 
     @pytest.mark.parametrize(
-        "script", ["expected_models", "expected_counts", "constraint_metrics"]
+        "script, flags, expected",
+        [
+            *[(script, [], {}) for script in SCRIPTS],
+            *[(script, COMMON_FLAGS, COMMON_ARGS) for script in SCRIPTS],
+            *[(script, ["--test-gene-list"], {"test": True}) for script in SCRIPTS],
+            # No prepare_data.py step reads the models, so it doesn't pass them.
+            ("prepare_data", ["--skip-coverage-model"], {}),
+            ("expected_models", ["--skip-coverage-model"], {"models": ["plateau"]}),
+            ("expected_counts", ["--skip-coverage-model"], {"models": ["plateau"]}),
+            (
+                "constraint_metrics",
+                ["--skip-pre-rank-metrics"],
+                {"skip_pre_rank_metrics": True},
+            ),
+            (
+                "constraint_metrics",
+                ["--use-aggregated-expected"],
+                {"use_aggregated_expected": True},
+            ),
+            (
+                "constraint_metrics",
+                ["--apply-regional-rr"],
+                {"apply_regional_rr": True},
+            ),
+        ],
     )
-    @pytest.mark.parametrize("skip_coverage_model", [False, True])
-    def test_models(
-        self, monkeypatch: pytest.MonkeyPatch, script: str, skip_coverage_model: bool
+    def test_get_constraint_resources_call(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        script: str,
+        flags: List[str],
+        expected: Dict[str, Any],
     ) -> None:
         """
-        Test that each script's resources expect only the models that are built.
+        Test the whole ``get_constraint_resources`` call each script makes.
 
-        Every script whose steps read the models passes ``models`` to
-        ``get_constraint_resources``, so with ``--skip-coverage-model`` no step
-        requires a coverage model. Regression test: ``constraint_metrics.py`` had
-        no ``--skip-coverage-model``, so ``--aggregate-per-variant-expected``
-        always required a coverage model, which a ``--skip-coverage-model`` run
-        never writes.
+        The resources decide which Tables each step reads and checks, so a flag
+        that doesn't reach the call makes a step check or read the wrong Tables.
+        Regression test: ``constraint_metrics.py`` had no ``--skip-coverage-model``,
+        and an earlier version of this test only checked ``models`` in three
+        scripts, so it passed with ``use_aggregated_expected`` dropped from the
+        ``constraint_metrics.py`` call.
         """
         calls = []
 
         def get_resources(*args: Any, **kwargs: Any) -> None:
-            calls.append((args, kwargs))
+            calls.append(
+                inspect.signature(GET_CONSTRAINT_RESOURCES).bind(*args, **kwargs)
+            )
             raise _StopRun
 
         monkeypatch.setattr(constraint_res, "get_constraint_resources", get_resources)
-        monkeypatch.setattr(hl, "init", lambda *args, **kwargs: None)
-        flags = ["--skip-coverage-model"] if skip_coverage_model else []
-        monkeypatch.setattr(sys, "argv", [f"{script}.py"] + flags)
-        path = os.path.join(os.path.dirname(pipeline.__file__), f"{script}.py")
-        with pytest.raises(_StopRun):
-            runpy.run_path(path, run_name="__main__")
+        _run_script(monkeypatch, script, flags)
 
-        args, kwargs = calls[0]
-        models = kwargs["models"] if "models" in kwargs else args[3]
-        expected = ["plateau"] if skip_coverage_model else ["plateau", "coverage"]
-        assert list(models) == expected
+        call = calls[0]
+        call.apply_defaults()
+        call.arguments["models"] = list(call.arguments["models"])
+        assert call.arguments == {
+            "version": CURRENT_VERSION,
+            "overwrite": False,
+            "test": False,
+            "models": ["plateau", "coverage"],
+            "directory_post_fix": None,
+            "path_post_fix": None,
+            "skip_pre_rank_metrics": False,
+            "use_aggregated_expected": False,
+            "apply_regional_rr": False,
+            **expected,
+        }
 
+    @pytest.mark.parametrize("skip_coverage_model", [False, True])
+    def test_preprocess_data_skip_coverage_model(
+        self, monkeypatch: pytest.MonkeyPatch, skip_coverage_model: bool
+    ) -> None:
+        """
+        Test that ``prepare_data.py --preprocess-data`` passes ``--skip-coverage-model`` on.
 
-SCRIPTS = ["prepare_data", "expected_models", "expected_counts", "constraint_metrics"]
-"""The pipeline scripts, in the order they run."""
+        ``prepare_data.py`` doesn't pass ``models`` to ``get_constraint_resources``,
+        so the flag reaches the rest of the pipeline only through the preprocessed
+        Table, which the later scripts check their own flag against.
+        """
+        calls = []
+
+        def prepare(*args: Any, **kwargs: Any) -> None:
+            calls.append(kwargs)
+            raise _StopRun
+
+        monkeypatch.setattr(
+            constraint_res,
+            "get_constraint_resources",
+            lambda *args, **kwargs: mock.MagicMock(),
+        )
+        monkeypatch.setattr(
+            constraint_utils, "prepare_ht_for_constraint_calculations", prepare
+        )
+        flags = ["--preprocess-data"]
+        if skip_coverage_model:
+            flags.append("--skip-coverage-model")
+        _run_script(monkeypatch, "prepare_data", flags)
+
+        assert calls[0]["skip_coverage_model"] == skip_coverage_model
+
+    @pytest.mark.parametrize("script", SCRIPTS)
+    def test_reads_only_its_own_options(
+        self, monkeypatch: pytest.MonkeyPatch, script: str
+    ) -> None:
+        """
+        Test that every ``args.<name>`` a script reads is one of its own options.
+
+        After the split, a step block left reading an option that went to another
+        script would only fail, with an AttributeError, when that step ran.
+        """
+        parsers = []
+
+        def parse_args(parser: argparse.ArgumentParser, *args: Any) -> None:
+            parsers.append(parser)
+            raise _StopRun
+
+        monkeypatch.setattr(argparse.ArgumentParser, "parse_args", parse_args)
+        _run_script(monkeypatch, script, [])
+        options = set(vars(parsers[0].parse_known_args([])[0]))
+
+        with open(_script_path(script)) as f:
+            tree = ast.parse(f.read())
+        read = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "args"
+        }
+        assert len(read) > 5
+        assert sorted(read - options) == []
 
 
 def _help_text(node: ast.expr) -> str:
