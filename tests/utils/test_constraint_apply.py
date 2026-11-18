@@ -74,8 +74,11 @@ CPG = {
     "mutation_type": "CpG",
     "mutation_type_model": "CpG",
 }
+CPG_METHYLATION_1 = {**CPG, "methylation_level": 1}
 MU_SNP = {False: 1e-8, True: 1e-7}
-"""Mutation rate of the non-CpG and CpG substitutions in the fixture."""
+"""Mutation rate of the non-CpG and CpG (methylation level 2) substitutions."""
+MU_SNP_CPG_METHYLATION_1 = 5e-8
+"""Mutation rate of the CpG substitution at methylation level 1."""
 
 PLATEAU_MODELS = {
     hl.Struct(cpg=False, genomic_region="autosome_or_par"): [[0.1, 2e7], [0.05, 1e7]],
@@ -115,12 +118,13 @@ def _csq(
     canonical: Optional[int] = 1,
     mane_select: Optional[str] = "NM_1",
     gene: str = "G1",
+    polyphen: Optional[str] = None,
 ) -> hl.Struct:
     """Return a VEP transcript consequence, for gene G1 by default."""
     return hl.Struct(
         most_severe_consequence=consequence,
         lof=lof,
-        polyphen_prediction=None,
+        polyphen_prediction=polyphen,
         gene_symbol=gene,
         gene_id=f"ENS{gene}",
         transcript_id=transcript,
@@ -171,13 +175,17 @@ def _variant(
 def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
     """Return a small Table shaped like ``prepare_ht_for_constraint_calculations``.
 
-    One gene with a MANE Select transcript (T1) and a second transcript (T2), and a
-    chrX non-PAR gene (G2, transcript TX). Synonymous variants are at high and low
-    coverage, so the coverage model changes their expected count. Three of the
-    synonymous variants share their substitution, coverage, transcript, and
+    One gene with a MANE Select transcript (T1) and two other transcripts (T2 and
+    T3), and a chrX non-PAR gene (G2, transcript TX). Synonymous variants are at high
+    and low coverage, so the coverage model changes their expected count. Three of
+    the synonymous variants share their substitution, coverage, transcript, and
     consequence, so the aggregated path sums them into one row with three possible
-    variants before applying the models. The last four rows are dropped before the
-    models are applied, or by the coding-consequence filter.
+    variants before applying the models. T1's missense variant has a PolyPhen
+    prediction, which becomes its modifier. T3 has six CpG missense variants at two
+    coverages and two methylation levels, so the aggregated path applies the models
+    to four rows with different mutation rates and coverage corrections. The last
+    four rows are dropped before the models are applied, or by the coding-consequence
+    filter.
 
     :param skip_coverage_model: Whether to give low coverage sites no apply model,
         as preprocessing does with ``--skip-coverage-model``. Default is False.
@@ -196,7 +204,14 @@ def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
             ],
         ),
         variant(2, NON_CPG, LOW_COV, [0, 0], 1, [_csq("synonymous_variant")]),
-        variant(3, CPG, HIGH_COV, [1, 1], 1, [_csq("missense_variant")]),
+        variant(
+            3,
+            CPG,
+            HIGH_COV,
+            [1, 1],
+            1,
+            [_csq("missense_variant", polyphen="probably_damaging")],
+        ),
         variant(4, CPG, LOW_COV, [0, 0], 1, [_csq("stop_gained", lof="HC")]),
         variant(5, NON_CPG, HIGH_COV, [1, 0], 1, [_csq("stop_gained", lof="LC")]),
         # Same substitution, coverage, transcript, and consequence as position 1.
@@ -212,6 +227,34 @@ def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
             contig="chrX",
             genomic_region="chrx_nonpar",
         ),
+        # One CpG group in T3: (methylation level, coverage) of (2, high) twice,
+        # (2, low), (1, high), and (1, low) twice.
+        *[
+            variant(
+                pos,
+                sub,
+                coverage,
+                observed,
+                1,
+                [
+                    _csq(
+                        "missense_variant",
+                        "T3",
+                        canonical=None,
+                        mane_select=None,
+                        polyphen="benign",
+                    )
+                ],
+            )
+            for pos, sub, coverage, observed in [
+                (20, CPG, HIGH_COV, [1, 1]),
+                (21, CPG, HIGH_COV, [1, 0]),
+                (22, CPG, LOW_COV, [1, 0]),
+                (23, CPG_METHYLATION_1, HIGH_COV, [0, 0]),
+                (24, CPG_METHYLATION_1, LOW_COV, [1, 1]),
+                (25, CPG_METHYLATION_1, LOW_COV, [1, 0]),
+            ]
+        ],
         # No apply model: outside both coverage models.
         variant(
             6,
@@ -233,11 +276,15 @@ def _preprocessed_ht(skip_coverage_model: bool = False) -> hl.Table:
 
 
 def _mutation_ht() -> hl.Table:
-    """Return a mutation rate Table for the two substitutions in the fixture."""
+    """Return a mutation rate Table for the substitutions in the fixture."""
     return hl.Table.parallelize(
         [
-            {**{k: sub[k] for k in MU_GROUPING}, "mu_snp": MU_SNP[sub["cpg"]]}
-            for sub in [NON_CPG, CPG]
+            {**{k: sub[k] for k in MU_GROUPING}, "mu_snp": mu_snp}
+            for sub, mu_snp in [
+                (NON_CPG, MU_SNP[False]),
+                (CPG, MU_SNP[True]),
+                (CPG_METHYLATION_1, MU_SNP_CPG_METHYLATION_1),
+            ]
         ],
         hl.tstruct(
             context=hl.tstr,
@@ -292,7 +339,11 @@ def _per_variant_expected(coverage_model: Optional[Tuple[float, float]]) -> Dict
 
 
 @functools.lru_cache(maxsize=None)
-def _path_sums(path: str, coverage_model: Optional[Tuple[float, float]]) -> Dict:
+def _path_sums(
+    path: str,
+    coverage_model: Optional[Tuple[float, float]],
+    log10_coverage: bool = False,
+) -> Dict:
     """Return the key, row type, globals, and rows of one path's per-group sums.
 
     ``path`` is "per_variant" (apply the models per variant, then aggregate) or
@@ -305,6 +356,7 @@ def _path_sums(path: str, coverage_model: Optional[Tuple[float, float]]) -> Dict
             _mutation_ht(),
             hl.literal(PLATEAU_MODELS),
             _coverage_model_expr(coverage_model),
+            log10_coverage=log10_coverage,
             use_mane_select=True,
         )
         ht = aggregate_per_variant_expected_ht(ht)
@@ -314,6 +366,7 @@ def _path_sums(path: str, coverage_model: Optional[Tuple[float, float]]) -> Dict
             _mutation_ht(),
             hl.literal(PLATEAU_MODELS),
             _coverage_model_expr(coverage_model),
+            log10_coverage=log10_coverage,
             use_mane_select=True,
         )
     return {
@@ -358,6 +411,7 @@ class TestPrepareHtForApplyModels:
             (9, "T1"),
             (10, "T1"),
             (11, "T1"),
+            *[(pos, "T3") for pos in range(20, 26)],
             (3_000_000, "TX"),
         ]
 
@@ -569,10 +623,11 @@ class TestAggregatePerVariantExpectedHt:
         rows = _path_sums("per_variant", COVERAGE_MODEL)["rows"]
         assert set(rows) == {
             ("T1", "synonymous_variant", "None"),
-            ("T1", "missense_variant", "None"),
+            ("T1", "missense_variant", "probably_damaging"),
             ("T1", "stop_gained", "HC"),
             ("T1", "stop_gained", "LC"),
             ("T2", "missense_variant", "None"),
+            ("T3", "missense_variant", "benign"),
             ("TX", "synonymous_variant", "None"),
         }
 
@@ -586,10 +641,43 @@ class TestAggregatePerVariantExpectedHt:
             [0.3 * (3 + LOW_COV_CORRECTION), 0.15 * (3 + LOW_COV_CORRECTION)]
         )
 
-    def test_unobserved_group_sums_to_zero(self) -> None:
-        """Test that a group whose only variant is unobserved sums to 0."""
+    def test_missense_modifier_is_polyphen(self) -> None:
+        """
+        Test that a missense variant's PolyPhen prediction becomes its modifier.
+
+        T1's missense variant is "probably_damaging", and T2's, with no prediction,
+        gets the modifier "None".
+        """
         rows = _path_sums("per_variant", COVERAGE_MODEL)["rows"]
-        assert rows[("T1", "stop_gained", "HC")].observed_variants == [0, 0]
+        mis = rows[("T1", "missense_variant", "probably_damaging")]
+        assert mis.observed_variants == [1, 1]
+        assert mis.expected_variants == pytest.approx([0.4, 0.2])
+        assert rows[("T2", "missense_variant", "None")].possible_variants == 1
+
+    def test_cpg_group_sums(self) -> None:
+        """
+        Test the sums of a CpG group at two coverages and two methylation levels.
+
+        T3 has three variants at methylation level 2 (CpG plateau ppo [0.4, 0.2])
+        and three at level 1 (ppo [0.3, 0.15]); at each level one or two are at low
+        coverage.
+        """
+        cpg = _path_sums("per_variant", COVERAGE_MODEL)["rows"][
+            ("T3", "missense_variant", "benign")
+        ]
+        assert cpg.observed_variants == [5, 2]
+        assert cpg.possible_variants == 6
+        assert cpg.mu_snp == pytest.approx(
+            3 * MU_SNP[True] + 3 * MU_SNP_CPG_METHYLATION_1
+        )
+        assert cpg.coverage_correction == pytest.approx(3 + 3 * LOW_COV_CORRECTION)
+        # Level 2: two high and one low. Level 1: one high and two low.
+        assert cpg.expected_variants == pytest.approx(
+            [
+                0.4 * (2 + LOW_COV_CORRECTION) + 0.3 * (1 + 2 * LOW_COV_CORRECTION),
+                0.2 * (2 + LOW_COV_CORRECTION) + 0.15 * (1 + 2 * LOW_COV_CORRECTION),
+            ]
+        )
 
     def test_include_mu_annotations_in_grouping(self) -> None:
         """Test that the mutation rate fields can be added to the grouping."""
@@ -604,7 +692,8 @@ class TestAggregatePerVariantExpectedHt:
             ht, include_mu_annotations_in_grouping=True
         )
         assert list(ht.key) == [*MU_GROUPING, *GROUPINGS]
-        assert ht.count() == 6
+        # The seven groups, with T3's split by methylation level.
+        assert ht.count() == 8
 
 
 class TestCreateAggregatedExpectedHt:
@@ -634,14 +723,21 @@ class TestPerVariantAndAggregatedPathsAgree:
     The two paths apply the models at different stages: per variant and then
     summed, or to summed counts. Every summed field should agree. The aggregated
     path multiplies by the summed possible count, which the three synonymous
-    variants that share a row test.
+    variants that share a row test. T3's CpG group sums rows with different
+    mutation rates and coverage corrections, and the observed counts differ between
+    the two frequency entries.
     """
 
-    @pytest.mark.parametrize("coverage_model", [COVERAGE_MODEL, None])
-    def test_same_sums(self, coverage_model: Optional[Tuple[float, float]]) -> None:
+    @pytest.mark.parametrize(
+        "coverage_model, log10_coverage",
+        [(COVERAGE_MODEL, False), (COVERAGE_MODEL, True), (None, False)],
+    )
+    def test_same_sums(
+        self, coverage_model: Optional[Tuple[float, float]], log10_coverage: bool
+    ) -> None:
         """Test every summed field for every transcript and consequence."""
-        per_variant = _path_sums("per_variant", coverage_model)["rows"]
-        aggregated = _path_sums("aggregated", coverage_model)["rows"]
+        per_variant = _path_sums("per_variant", coverage_model, log10_coverage)["rows"]
+        aggregated = _path_sums("aggregated", coverage_model, log10_coverage)["rows"]
         assert set(per_variant) == set(aggregated)
 
         for group, pv_row in per_variant.items():
@@ -659,9 +755,13 @@ def _constraint_groups() -> Dict:
     The input has per-transcript, per-consequence sums. T1 has every consequence
     type. T2 has only unobserved variants. T3 has no observed and no expected
     variants. T4 has expected but no observed variants. T5's only observed variant
-    is an LC pLoF.
+    is an LC pLoF. These describe the first (adj) frequency entry.
+
+    Every row except T3's has a second frequency entry with one more observed and
+    0.25 more expected variant than adj, so a sum that skips the second entry or
+    mixes up the entries gives different values.
     """
-    # (transcript, annotation, modifier, observed, expected)
+    # (transcript, annotation, modifier, adj observed, adj expected)
     groups = [
         ("T1", "synonymous_variant", "None", 2, 3.0),
         ("T1", "missense_variant", "probably_damaging", 3, 4.0),
@@ -687,11 +787,14 @@ def _constraint_groups() -> Dict:
                 modifier=m,
                 mu_snp=1e-8,
                 mu=1e-8,
-                observed_variants=[o, 0],
+                observed_variants=[o, o + 1 if t != "T3" else 0],
                 possible_variants=10,
-                predicted_proportion_observed=[e / 10, 0.0],
+                predicted_proportion_observed=[
+                    e / 10,
+                    (e + 0.25) / 10 if t != "T3" else 0.0,
+                ],
                 coverage_correction=1.0,
-                expected_variants=[e, 0.0],
+                expected_variants=[e, e + 0.25 if t != "T3" else 0.0],
             )
             for t, a, m, o, e in groups
         ],
@@ -742,24 +845,33 @@ class TestAggregateByConstraintGroups:
     @pytest.mark.parametrize(
         "group, observed, expected, n_variants",
         [
-            ("syn", 2, 3.0, 1),
-            ("mis", 5, 6.0, 2),
-            ("lof_classic", 2, 4.7, 4),
-            ("lof_hc_lc", 2, 4.0, 3),
-            ("lof_hc", 1, 3.5, 2),
+            # Observed and expected are per frequency entry: (adj, second entry).
+            ("syn", (2, 3), (3.0, 3.25), 1),
+            ("mis", (5, 7), (6.0, 6.5), 2),
+            ("lof_classic", (2, 6), (4.7, 5.7), 4),
+            ("lof_hc_lc", (2, 5), (4.0, 4.75), 3),
+            ("lof_hc", (1, 3), (3.5, 4.0), 2),
         ],
     )
     def test_group_sums(
-        self, group: str, observed: int, expected: float, n_variants: int
+        self,
+        group: str,
+        observed: Tuple[int, int],
+        expected: Tuple[float, float],
+        n_variants: int,
     ) -> None:
         """Test the observed, expected, and possible sums of each group.
 
         Classic LoF is by consequence only, so it includes the stop_gained with no
-        LOFTEE annotation. HC and HC+LC are by LOFTEE annotation.
+        LOFTEE annotation. HC and HC+LC are by LOFTEE annotation. Both frequency
+        entries are summed; the second feeds the released downsampling columns.
         """
         cg = self._group("T1", group)
-        assert cg.oe_info[0].observed_variants == observed
-        assert cg.oe_info[0].expected_variants == pytest.approx(expected)
+        assert [x.observed_variants for x in cg.oe_info] == list(observed)
+        assert [x.expected_variants for x in cg.oe_info] == pytest.approx(expected)
+        assert [x.predicted_proportion_observed for x in cg.oe_info] == pytest.approx(
+            [e / 10 for e in expected]
+        )
         assert cg.possible_variants == 10 * n_variants
 
     def test_oe_info_shape(self) -> None:

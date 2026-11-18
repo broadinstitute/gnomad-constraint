@@ -390,8 +390,10 @@ def get_exome_coverage_expr(
         - "AN": the expression returned is the exomes allele number (``ht.AN.exomes``).
         - "AN_percent": the expression returned is the percent of samples with a
           non-missing genotype, which is the exomes allele number (``ht.AN.exomes``)
-          divided by the total number of alleles in the exomes dataset (pulled from
-          ``ht.an_globals.exomes.strata_sample_count`` * 2) multiplied by 100.
+          divided by the number of alleles possible at the site, multiplied by 100
+          and truncated to an integer. The possible alleles come from
+          ``ht.an_globals.exomes.strata_sample_count``: 2 * XX + XY samples on chrX
+          non-PAR, XY samples on chrY non-PAR, and 2 * all samples elsewhere.
 
     :param ht: Input Table with exome coverage information.
     :param exome_coverage_metric: Metric to use for exome coverage. One of ["median",
@@ -565,7 +567,7 @@ def get_exomes_observed_and_possible(
         exomes_freq_meta=exomes_freq_meta,
         genetic_ancestry_groups=gen_ancs or hl.missing(hl.tarray(hl.tstr)),
         downsamplings=downsamplings or hl.missing(hl.tarray(hl.tstr)),
-        max_af=max_af,
+        max_af=hl.missing(hl.tfloat64) if max_af is None else max_af,
     )
 
     return obs_pos_expr, obs_pos_globals
@@ -1005,9 +1007,12 @@ def create_per_variant_expected_ht(
     expected number of variants using ``apply_models``. See the function
     ``apply_models`` for more information on the expected annotations.
 
-    The Table keeps every field of the input Table and every consequence, including
-    the non-coding ones that ``aggregate_per_variant_expected_ht`` drops, because
-    downstream analyses read the per-variant Table directly.
+    The Table keeps every field of the input Table except ``vep``, and every
+    consequence, including the non-coding ones that
+    ``aggregate_per_variant_expected_ht`` drops, because downstream analyses read the
+    per-variant Table directly. Of each transcript consequence, only the grouping
+    fields (``annotation``, ``modifier``, ``gene``, ``gene_id``, ``transcript``,
+    ``canonical``, and ``mane_select``) are kept.
 
     :param ht: Table prepared using ``prepare_ht_for_constraint_calculations``.
     :param mutation_ht: Mutation rate Table.
@@ -1519,9 +1524,13 @@ def _compute_site_quality_metrics(
     ht = ht.filter(hl.is_defined(ht.transcript_id)).explode("transcript_id")
 
     # Average AS_MQ across all SNV sites in each transcript's CDS.
-    # Used downstream to flag transcripts with low mapping quality.
+    # Used downstream to flag transcripts with low mapping quality. With no defined
+    # AS_MQ the mean would be NaN, which the low mapping quality check can't flag, so
+    # it is missing instead.
     return ht.group_by(transcript=ht.transcript_id).aggregate(
-        mean_AS_MQ=hl.agg.mean(ht.AS_MQ),
+        mean_AS_MQ=hl.or_missing(
+            hl.agg.count_where(hl.is_defined(ht.AS_MQ)) > 0, hl.agg.mean(ht.AS_MQ)
+        ),
     )
 
 
@@ -1619,16 +1628,15 @@ def compute_gene_quality_metrics(
             " --exome-coverage-metric AN_percent."
         )
 
-    # Compute three independent per-transcript metric tables, each keyed by
-    # transcript. These use different source data (preprocessed context HT
-    # for coverage, exomes sites HT for mapping quality, GENCODE CDS +
-    # interval tables for region overlap) so they can run in parallel.
+    # Compute three per-transcript metric tables, each keyed by transcript, from
+    # different source data: the preprocessed context HT for coverage, the exomes
+    # sites HT for mapping quality, and the GENCODE CDS and interval tables for
+    # region overlap. Each is read once, by the join below, so none is cached.
     an90_ht = _compute_coverage_metrics(ht, gencode_cds_ht, an_coverage_threshold)
-    an90_ht = an90_ht.cache()
-    sites_ht = _compute_site_quality_metrics(exomes_ht, gencode_cds_ht).cache()
+    sites_ht = _compute_site_quality_metrics(exomes_ht, gencode_cds_ht)
     region_ht = _compute_region_flag_metrics(
         gencode_cds_ht, seg_dup_intervals_ht, lcr_intervals_ht
-    ).cache()
+    )
 
     # Join the three metric tables on transcript into a single row per
     # transcript with all four metrics.
@@ -1640,8 +1648,8 @@ def compute_gene_quality_metrics(
     # Package all metrics into a single `gene_quality_metrics` struct,
     # prefixing each field with "exome_" for the release schema. Then
     # derive `gene_flags` — a set of string flags for transcripts that
-    # fail quality thresholds (mean AS_MQ < 50 or < 10% of CDS bases
-    # passing allele number 90th percentile).
+    # fail quality thresholds (mean AS_MQ < 50, or fewer than 10% of CDS bases
+    # with an exome AN percent of at least 90).
     ht = ht.select(
         gene_quality_metrics=hl.struct(**{f"exome_{f}": ht[f] for f in ht.row_value}),
         gene_flags=add_filters_expr(
@@ -2501,7 +2509,7 @@ def annotate_constraint_percentile_bins(
 
     Annotates ``constraint_bins.{granularity}.{metric}`` for each combination.
     Bin 0 is the most constrained (value below all thresholds); bin N equals
-    the number of boundaries the value exceeds.
+    the number of boundaries the value meets or exceeds.
 
     :param ht: Constraint metrics Table with a ``constraint_groups`` array field.
     :param thresholds: Mapping of ``(granularity, metric)`` to an ordered list

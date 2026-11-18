@@ -22,7 +22,11 @@ from gnomad.utils.constraint import calculate_gerp_cutoffs
 from gnomad.utils.reference_genome import get_reference_genome
 
 import gnomad_constraint.resources.resource_utils as constraint_res
-from gnomad_constraint.resources.constants import CURRENT_VERSION, VERSIONS
+from gnomad_constraint.resources.constants import (
+    COVERAGE_CUTOFF,
+    CURRENT_VERSION,
+    VERSIONS,
+)
 from gnomad_constraint.resources.resource_utils import filter_for_test
 from gnomad_constraint.utils.constraint import (
     compute_gene_quality_metrics,
@@ -175,7 +179,7 @@ def main(args: argparse.Namespace) -> None:
             res = resources.compute_gene_quality_metrics
             res.check_resource_existence()
 
-            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version).ht()
+            gencode_cds_ht = constraint_res.get_gencode_cds_ht(version, overwrite).ht()
             exomes_sites_ht = res.exomes_sites_ht.ht()
             if test:
                 gencode_cds_ht = filter_for_test(
@@ -292,7 +296,7 @@ if __name__ == "__main__":
         "--calculate-mutation-rate-min-cov",
         help=(
             "Minimum coverage required to keep a site when calculating the mutation"
-            " rate. Default is 15."
+            " rate. Default is 15. Applied at --preprocess-data."
         ),
         type=int,
         default=15,
@@ -301,7 +305,7 @@ if __name__ == "__main__":
         "--calculate-mutation-rate-max-cov",
         help=(
             "Maximum coverage required to keep a site when calculating the mutation"
-            " rate. Default is 60."
+            " rate. Default is 60. Applied at --preprocess-data."
         ),
         type=int,
         default=60,
@@ -311,7 +315,7 @@ if __name__ == "__main__":
         help=(
             "Minimum GERP score for variant to be included when calculating the"
             " mutation rate. Default is -3.9885 (precalculated on the GRCh37 context"
-            " Table to define the 5th percentile)."
+            " Table to define the 5th percentile). Applied at --preprocess-data."
         ),
         type=float,
         default=-3.9885,
@@ -321,7 +325,7 @@ if __name__ == "__main__":
         help=(
             "Maximum GERP score for variant to be included when calculating the"
             " mutation rate. Default is 2.6607 (precalculated on the GRCh37 context"
-            " Table to define the 95th percentile)."
+            " Table to define the 95th percentile). Applied at --preprocess-data."
         ),
         type=float,
         default=2.6607,
@@ -331,7 +335,8 @@ if __name__ == "__main__":
         help=(
             "Metric to use for exome coverage: 'median' (median depth), 'AN' (allele"
             " number), or 'AN_percent' (percent of samples with a genotype). Default is"
-            " 'AN_percent'."
+            " 'AN_percent'. The coverage cutoff defaults are AN percent values, and"
+            " --compute-gene-quality-metrics requires 'AN_percent'. Applied at --preprocess-data."
         ),
         type=str,
         default="AN_percent",
@@ -343,8 +348,8 @@ if __name__ == "__main__":
             "Lower exome coverage cutoff to use throughout the pipeline. Sites with"
             " coverage at or below this cutoff are excluded when creating the training"
             " set, building and applying models, and computing constraint metrics."
-            " Default is 19, as used for v4.1.x, which keeps sites with AN% of 20 or"
-            " more."
+            " Default is 19, as used for v4.1.x, which keeps sites with AN%% of 20 or"
+            " more. Applied at --preprocess-data."
         ),
         type=int,
         default=19,
@@ -354,7 +359,7 @@ if __name__ == "__main__":
         help=(
             "Maximum full-dataset adj allele frequency for a variant to count as "
             "observed or possible, in every frequency group, when training and "
-            "applying models."
+            "applying models. Default is 0.001. Applied at --preprocess-data."
         ),
         type=float,
         default=0.001,
@@ -363,15 +368,23 @@ if __name__ == "__main__":
         "--genetic-ancestry-groups",
         nargs="+",
         help=(
-            "Populations on which to build models, apply models, and or compute metrics "
-            "on. Default is None."
+            "Genetic ancestry groups whose adj frequencies, and downsamplings with "
+            "--include-downsamplings, get their own observed and expected counts. "
+            "Default is None. Applied at --preprocess-data."
         ),
         choices=["afr", "amr", "eas", "nfe", "sas"],
         default=None,
     )
     preprocess_args.add_argument(
         "--include-downsamplings",
-        help="Include downsamplings in the constraint pipeline.",
+        help=(
+            "Count observed and expected variants in the exome downsamplings too."
+            " Without --genetic-ancestry-groups, these are the global downsamplings in"
+            " gnomad_methods' DOWNSAMPLINGS['v4']; with them, every downsampling in the"
+            " exomes freq_meta for the global group and each given group. The v4.1.x"
+            " release's downsampling columns need --genetic-ancestry-groups afr amr eas"
+            " nfe sas --include-downsamplings. Applied at --preprocess-data."
+        ),
         action="store_true",
     )
     preprocess_args.add_argument(
@@ -384,7 +397,7 @@ if __name__ == "__main__":
         help=(
             "Upper exome coverage cutoff. Sites with coverage above this cutoff are"
             " excluded from the high coverage Table when building the models. Default"
-            " is None."
+            " is None. Applied at --preprocess-data."
         ),
         type=int,
         default=None,
@@ -394,20 +407,22 @@ if __name__ == "__main__":
         help=(
             "Lower exome coverage cutoff to use to define high coverage sites when "
             "building models. Sites with coverage below this cutoff are excluded from "
-            "the high coverage Table when building models. Default is 90."
+            "the high coverage Table when building models. Default is"
+            f" {COVERAGE_CUTOFF}. Applied at --preprocess-data."
         ),
         type=int,
-        default=90,
+        default=COVERAGE_CUTOFF,
     )
     preprocess_args.add_argument(
         "--apply-model-high-cov-definition",
         help=(
             "Lower exome coverage cutoff to use to define high coverage sites when "
             "applying models. Sites with coverage below this cutoff are excluded from "
-            "the high coverage Table when applying models. Default is 90."
+            "the high coverage Table when applying models. Default is"
+            f" {COVERAGE_CUTOFF}. Applied at --preprocess-data."
         ),
         type=int,
-        default=90,
+        default=COVERAGE_CUTOFF,
     )
 
     gene_quality_args = parser.add_argument_group(
