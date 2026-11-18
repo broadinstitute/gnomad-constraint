@@ -1,5 +1,6 @@
 """Tests for the resource utility module."""
 
+import os
 from typing import Any, Callable, Dict, List, Union
 
 import gnomad.resources.grch38.gnomad as gnomad_grch38
@@ -9,6 +10,7 @@ import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 from gnomad_qc.resource_utils import PipelineResourceCollection
 
+import gnomad_constraint.pipeline as pipeline
 import gnomad_constraint.resources.resource_utils as resource_utils
 from gnomad_constraint.resources.constants import (
     GENCODE_VERSION_MAP,
@@ -572,49 +574,59 @@ class TestGetConstraintResources:
         one's files already existed.
         """
         assert resources.export_release_tsv.output_resources == {
-            "--export-release-tsv": [
+            "constraint_metrics.py --export-release-tsv": [
                 get_release_constraint_tsv_path(version="4.1.1", test=True),
                 get_lof_threshold_tsv_path(version="4.1.1", test=True),
             ]
         }
         assert resources.export_release_downsampling_tsv.output_resources == {
-            "--export-release-downsampling-tsv": [
+            "constraint_metrics.py --export-release-downsampling-tsv": [
                 get_release_downsampling_tsv_path(version="4.1.1", test=True)
             ]
         }
 
     @pytest.mark.parametrize("skip_pre_rank_metrics", [False, True])
-    def test_inputs_are_keyed_by_the_flag_that_creates_them(
+    def test_steps_are_named_by_script_and_flag(
         self, skip_pre_rank_metrics: bool
     ) -> None:
         """
-        Test that every step's inputs are keyed by the flag that creates them.
+        Test that every step is named by a script and flags that script takes.
 
-        When an input is missing, gnomad_qc's error tells the user to add the key to
-        the command line, so the key has to be a pipeline flag. Regression test: the
-        preprocessing step was named "preprocess data for downstream steps", and
-        with ``--skip-pre-rank-metrics`` the pre-rank Table was keyed by
-        "pre-rank constraint metrics". The gnomAD inputs, the published files the
-        rr imports read, and the constraint metrics Table the rr site features take
-        gene flags from aren't created by the pipeline, so they are exempt.
+        gnomad_qc's errors tell the user to add a missing input's step to the command
+        line, or to rerun an existing output's step with ``--overwrite``, so each name
+        has to be a command that works. Regression tests: the preprocessing step was
+        named "preprocess data for downstream steps"; with ``--skip-pre-rank-metrics``
+        the pre-rank Table was keyed by "pre-rank constraint metrics"; and after the
+        pipeline was split into four scripts, the names had only the flag, so
+        ``expected_models.py --calculate-mutation-rate`` without a preprocessed Table
+        said to add ``--preprocess-data``, which ``expected_models.py`` doesn't take.
+        The gnomAD inputs, the published files the rr imports read, and the
+        constraint metrics Table the rr site features take gene flags from aren't
+        created by the pipeline, so they are exempt.
         """
         resources = self._get_resources(skip_pre_rank_metrics)
-        keys = {
-            key
+        names = {
+            name
             for step in resources.pipeline_steps.values()
-            for key in step.input_resources
-        }
-        assert "--preprocess-data" in keys
-        external = {
+            for step_resources in (step.input_resources, step.output_resources)
+            for name in step_resources
+        } - {
             "gnomAD resources",
             "published DNMs",
             "published genomic features",
             "constraint metrics with gene flags",
         }
-        assert all(key.startswith("--") for key in keys - external)
+        assert "prepare_data.py --preprocess-data" in names
+        for name in names:
+            script, *flags = name.split(" ")
+            path = os.path.join(os.path.dirname(pipeline.__file__), script)
+            assert os.path.isfile(path), name
+            with open(path) as f:
+                source = f.read()
+            assert flags and all(f'"{flag}"' in source for flag in flags), name
         if skip_pre_rank_metrics:
             assert list(resources.compute_constraint_metrics.input_resources) == [
-                "--compute-constraint-metrics"
+                "constraint_metrics.py --compute-constraint-metrics"
             ]
 
     def test_test_run_writes_only_under_the_test_root(
@@ -669,14 +681,31 @@ class TestGetConstraintResources:
             use_aggregated_expected=use_aggregated_expected,
         )
         if use_aggregated_expected:
-            step = "--apply-models-aggregated"
+            step = "expected_counts.py --apply-models-aggregated"
             path = get_aggregated_expected(version="4.1.1", test=True).path
         else:
-            step = "--aggregate-per-variant-expected"
+            step = "constraint_metrics.py --aggregate-per-variant-expected"
             path = get_aggregated_per_variant_expected(version="4.1.1", test=True).path
         inputs = resources.aggregate_by_constraint_groups.input_resources
         assert list(inputs) == [step]
         assert [_path(r) for r in inputs[step]] == [path]
+
+    def test_aggregate_per_variant_expected_input(
+        self, resources: PipelineResourceCollection
+    ) -> None:
+        """
+        Test that --aggregate-per-variant-expected requires only the Table it reads.
+
+        Regression test: it also listed the mutation rate and model outputs as
+        inputs, so after a ``--skip-coverage-model`` run it asked for a coverage
+        model it never reads unless ``constraint_metrics.py`` also took the flag.
+        """
+        step = "expected_counts.py --apply-models-per-variant"
+        inputs = resources.aggregate_per_variant_expected.input_resources
+        assert list(inputs) == [step]
+        assert [_path(r) for r in inputs[step]] == [
+            get_per_variant_expected_dataset(version="4.1.1", test=True).path
+        ]
 
     @pytest.mark.parametrize("apply_regional_rr", [False, True])
     def test_apply_regional_rr_input(self, apply_regional_rr: bool) -> None:
