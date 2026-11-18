@@ -816,7 +816,7 @@ def get_constraint_resources(
     # same run.
     rr_params = {**common_params, "path_post_fix": path_post_fix}
     create_rr_site_features = PipelineStepResourceCollection(
-        "--create-rr-site-features",
+        "expected_models.py --create-rr-site-features",
         output_resources={"rr_site_features_ht": get_rr_site_features_ht(**rr_params)},
         pipeline_input_steps=[import_dnms, import_genomic_features, prepare_context],
         add_input_resources={
@@ -826,24 +826,24 @@ def get_constraint_resources(
         },
     )
     create_rr_training_set = PipelineStepResourceCollection(
-        "--create-rr-training-set",
+        "expected_models.py --create-rr-training-set",
         output_resources={"rr_training_ht": get_rr_training_ht(**rr_params)},
         pipeline_input_steps=[create_rr_site_features],
     )
     tune_rr_penalty = PipelineStepResourceCollection(
-        "--tune-rr-penalty",
+        "expected_models.py --tune-rr-penalty",
         output_resources={
             "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**rr_params)
         },
         pipeline_input_steps=[create_rr_training_set],
     )
     train_rr_models = PipelineStepResourceCollection(
-        "--train-rr-models",
+        "expected_models.py --train-rr-models",
         output_resources={"rr_models_ht": get_rr_models_ht(**rr_params)},
         pipeline_input_steps=[create_rr_training_set, tune_rr_penalty],
     )
     compute_rr = PipelineStepResourceCollection(
-        "--compute-rr",
+        "expected_counts.py --compute-rr",
         output_resources={"regional_rr_ht": get_regional_rr_ht(**rr_params)},
         pipeline_input_steps=[
             import_genomic_features,
