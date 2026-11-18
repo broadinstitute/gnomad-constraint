@@ -7,8 +7,9 @@ missense, and predicted loss-of-function (pLoF) variants, plus the mutation rate
 table they are built on. Expected counts are computed per variant and then
 aggregated by transcript and constraint group.
 
-The current version is v4.1.1 (GRCh38). Version 2.1.1 (GRCh37) is no longer
-supported; commit 39928d1 is the last version of the pipeline that supports it.
+The latest release is v4.1.2 (GRCh38), and the pipeline's default version is
+4.1.3, the next one. Version 2.1.1 (GRCh37) is no longer supported; commit 39928d1
+is the last version of the pipeline that supports it.
 
 An overview of the pipeline and the functions it uses is in
 [gnomad_constraint/flowchart/constraint_pipeline_v4.pdf](./gnomad_constraint/flowchart/constraint_pipeline_v4.pdf).
@@ -57,10 +58,18 @@ Each runs one or more of its steps per invocation, each enabled by a flag:
 | | `--prepare-release-mutation-rate` | Format the mutation rate Table for release |
 | | `--export-release-tsv`, `--export-release-downsampling-tsv` | Export the release Table and its per-ancestry downsampling counts to TSV |
 
-`--version` selects the gnomAD version (default 4.1.1). Autosomes, chrX, and chrY
-are all computed; each site is labeled with a `genomic_region` of
-`autosome_or_par`, `chrx_nonpar`, or `chry_nonpar`. Run a script with `--help`
-for its options.
+`--version` selects the gnomAD version. The default, 4.1.3, is the next release, so a
+run that doesn't pass `--version` never writes to the paths of released tables
+(v4.1.1 and v4.1.2). Autosomes, chrX, and chrY are all computed; each site is
+labeled with a `genomic_region` of `autosome_or_par`, `chrx_nonpar`, or
+`chry_nonpar`. Run a script with `--help` for its options.
+
+The preprocessing flags (the coverage cutoffs, `--max-af`, the mutation-rate
+cutoffs, `--genetic-ancestry-groups`, and `--include-downsamplings`) only take
+effect at `--preprocess-data`, which records them in the preprocessed Table, so
+only `prepare_data.py` takes them. The v4.1.x release's
+per-ancestry downsampling columns need `--genetic-ancestry-groups afr amr eas nfe
+sas --include-downsamplings` at `--preprocess-data`.
 
 Outputs are written under `gs://gnomad/v{version}/constraint/`.
 [gnomad_constraint/resources/README.md](gnomad_constraint/resources/README.md)
@@ -111,7 +120,8 @@ python -m pytest
 The pipeline needs gnomad_methods at or after the per-base constraint changes
 (gnomad_methods #824, not yet on PyPI), installed from GitHub at the commit
 pinned in `requirements.txt`, and Hail 0.2.137 or later for the gamma
-confidence interval.
+confidence interval, except 0.2.139, which `requirements.txt` excludes for a
+driver memory regression.
 
 To change a development dependency, edit `requirements-dev.in` and regenerate
 the `.txt` with Python 3.11 (the version CI runs):

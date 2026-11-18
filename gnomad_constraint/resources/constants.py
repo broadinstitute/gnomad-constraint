@@ -7,17 +7,23 @@
 EXTENSIONS = ["ht", "tsv", "tsv.bgz", "he", "log"]
 """Valid file extensions for constraint pipeline resources."""
 
-VERSIONS = ["4.0", "4.1", "4.1.1", "4.1.2"]
+VERSIONS = ["4.0", "4.1", "4.1.1", "4.1.2", "4.1.3"]
 """Supported gnomAD constraint pipeline versions."""
 
-CURRENT_VERSION = "4.1.1"
-"""Current default gnomAD constraint pipeline version."""
+CURRENT_VERSION = "4.1.3"
+"""
+Default gnomAD constraint pipeline version: the next, unreleased version.
+
+Keep it ahead of the latest release, so a run that doesn't pass ``--version`` never
+writes to the paths of published tables.
+"""
 
 SITES_VERSION_MAP = {
     "4.0": "4.0",
     "4.1": "4.1",
     "4.1.1": "4.1",
     "4.1.2": "4.1",
+    "4.1.3": "4.1",
 }
 """Map from constraint pipeline version to gnomAD sites release version."""
 
@@ -26,6 +32,7 @@ VEP_VERSION_MAP = {
     "4.1": "105",
     "4.1.1": "105",
     "4.1.2": "105",
+    "4.1.3": "105",
 }
 """Map from constraint pipeline version to the VEP version of its context Table."""
 
@@ -53,11 +60,12 @@ Variants with missing frequency are assigned bin 0. Otherwise, each variant is
 assigned the index of the first cutoff its AF falls at or below.
 """
 
-COVERAGE_CUTOFF = 40
+COVERAGE_CUTOFF = 90
 """
-Minimum median exome coverage differentiating high coverage sites from low coverage sites.
+Exome AN percent at or above which a site counts as high coverage.
 
-Low coverage sites require an extra calibration when computing the proportion of expected variation.
+Low coverage sites require an extra calibration when computing the proportion of expected
+variation. The value is on the default ``AN_percent`` coverage metric.
 """
 
 CLASSIC_LOF_ANNOTATIONS = (
@@ -166,7 +174,7 @@ RELEASE_GROUP_NAMES = ["syn", "mis", "lof_hc_lc", "lof"]
 """Constraint group names exposed in the release Table, in display order."""
 
 RELEASE_LOF_FIELDS = ["pLI", "pNull", "pRec"]
-"""LoF-specific fields appended to the ``lof`` constraint group in release format."""
+"""LoF-specific fields appended to the LoF groups in ``RELEASE_GROUPS_WITH_PLI`` in release format."""
 
 RELEASE_CI_FIELDS = ["lower", "upper"]
 """OE confidence interval sub-fields included in the release Table."""
