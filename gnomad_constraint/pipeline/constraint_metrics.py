@@ -259,7 +259,7 @@ def main(args: argparse.Namespace) -> None:
                 ht = res.constraint_group_ht.ht()
                 compute_constraint_metrics(
                     ht=ht,
-                    gencode_ht=constraint_res.get_gencode_ht(version),
+                    gencode_ht=constraint_res.get_gencode_ht(version, overwrite),
                     gene_quality_metrics_ht=res.gene_quality_metrics_ht.ht(),
                     expected_values={
                         "Null": args.expectation_null,

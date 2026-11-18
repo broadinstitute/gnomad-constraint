@@ -109,8 +109,9 @@ Parameters passed to `calculate_mu_by_downsampling`.
 Parameters passed to the plateau/coverage model fit.
 - `synonymous_transcript_filter_field: str` — transcript filter used when
   selecting synonymous training variants (e.g. `canonical`).
-- `low_cov_cutoff: int32` — coverage below this is treated as the low-coverage
-  regime (19).
+- `low_cov_cutoff: int32` — sites at or below this coverage are left out of the
+  low-coverage model (19 for v4.1.x and the pipeline default; 0 when
+  `prepare_ht_for_constraint_calculations` is called with no low cutoff).
 - `high_cov_cutoff: int32` — coverage at or above this is the high-coverage
   regime that the plateau model is fit to (90).
 - `upper_cov_cutoff: int32` — upper bound for the coverage model fit (nullable).
@@ -119,9 +120,12 @@ Parameters passed to the plateau/coverage model fit.
 ### `apply_models_globals` — `struct`
 Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `low_cov_cutoff`, `high_cov_cutoff`, `skip_coverage_model` — as above.
+- `exome_coverage_metric: str` — the `--exome-coverage-metric` used for
+  `exomes_coverage` (`AN_percent`, `median`, or `AN`). The cutoffs are in its
+  units, and `--compute-gene-quality-metrics` requires `AN_percent`.
 - `plateau_models: dict<struct{cpg: bool, genomic_region: str}, array<array<float64>>>`
   — fitted plateau slope/intercept per (cpg, genomic_region). Each value is
-  an array parallel to `mutation_rate.mu` (one fit per downsampling).
+  an array parallel to `exomes_freq_meta` (one fit per frequency entry).
 - `coverage_model: array<float64>` — `[intercept, slope]` of the coverage
   correction regression.
 - `log10_coverage: bool` — whether the coverage model is in log10 space.
@@ -136,7 +140,8 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `genetic_ancestry_groups: array<str>` — copy of the gen-anc groups list.
 - `downsamplings: array<int32>` — ordered list of downsampling sizes the freq
   array covers (e.g. `[10, 20, ..., 1000, ...]`).
-- `max_af: float64` — AF cap for the "observed" variant filter.
+- `max_af: float64` — full-dataset adj AF cap for observed and possible
+  variants, applied to every freq entry.
 
 ---
 
@@ -152,7 +157,7 @@ and the **row fields** with sub-struct expansion. Producing function is the
 
 The fully annotated universe of all possible single-nucleotide substitutions
 in the genome, produced by `--prepare-context-ht` /
-[`prepare_ht_for_constraint_calculations`](../utils/constraint.py).
+[`prepare_context_ht`](../utils/constraint.py).
 
 - **Path:** `gs://gnomad/v{version}/constraint/preprocessed_data/gnomad.v{version}.annotated_context.ht`
 - **Resource fn:** [`get_annotated_context_ht`](resource_utils.py)
@@ -177,7 +182,7 @@ in the genome, produced by `--prepare-context-ht` /
 - `locus: locus<GRCh38>`
 - `alleles: array<str>` — `[ref, alt]` of one SNV.
 - `context: str` — trinucleotide context (ref-strand-collapsed via
-  [`collapse_strand`](../utils/constraint.py): rows with G/T ref are reverse-complemented and
+  gnomad_methods' `collapse_strand`: rows with G/T ref are reverse-complemented and
   `was_flipped` is set true).
 - `vep: struct` — minimal VEP output kept for constraint:
   - `most_severe_consequence: str`
@@ -209,8 +214,8 @@ in the genome, produced by `--prepare-context-ht` /
 - `adj_r: float64` — per-context regional depletion correction (see
   `adj_r.ht`).
 - `syn_adj_r: float64` — synonymous-DNM variant of `adj_r` (see `syn_adj_r.ht`).
-- `sfs_bin: int32` — site-frequency-spectrum bin assigned via
-  [`annotate_sfs_bin`](../utils/constraint.py) from `SFS_BIN_CUTOFFS` (0 if AF
+- `sfs_bin: int32` — site-frequency-spectrum bin assigned in
+  [`prepare_context_ht`](../utils/constraint.py) from `SFS_BIN_CUTOFFS` (0 if AF
   is missing; otherwise index of first cutoff `af_expr <= cutoff` is true).
 
 ---
@@ -219,8 +224,9 @@ in the genome, produced by `--prepare-context-ht` /
 
 Context joined with exomes/genomes frequency, coverage, AN, and the
 pre-computed mu inputs (`compute_mu`, `calibrate_mu` structs). Produced by the
-`preprocess_data` step / [`preprocess_data`](../utils/constraint.py) — the
-shared upstream input for nearly every downstream step.
+`--preprocess-data` step /
+[`prepare_ht_for_constraint_calculations`](../utils/constraint.py) — the shared
+upstream input for nearly every downstream step.
 
 - **Path:** `gs://gnomad/v{version}/constraint/preprocessed_data/gnomad.v{version}.context.preprocessed.ht`
 - **Resource fn:** [`get_preprocessed_ht`](resource_utils.py)
@@ -253,7 +259,10 @@ into `compute_mu.genomes_freq` / `calibrate_mu.exomes_freq`), plus:
     array (parallel to `exomes_freq_meta`), missing for variants that fail the
     exome filters. No later step reads it; it is kept for analyses that start
     from this Table.
-  - `observed_variants: array<int32>`
+  - `observed_variants: array<int32>` — 1 for each freq entry where the
+    variant has AC > 0, if its full-dataset adj AF is at most `max_af` (the
+    same rarity test for every entry, so small downsamplings can observe
+    variants).
   - `possible_variants: int32`
   - `build_model: struct{high_or_low_coverage: str, model_group: struct{cpg: bool, genomic_region: str}}`
     — which plateau model bucket this row was fit into.
@@ -320,8 +329,8 @@ A `tsv.bgz` mirror of this table is written to the same directory.
 
 ## 5. `plateau.he` and `coverage.he`
 
-Fitted Hail Expressions produced by `--build-models` /
-[`build_models`](gnomad.utils.constraint:build_models). These are *not* tables — they are
+Fitted Hail Expressions produced by `--build-models` / gnomad_methods'
+`build_models`. These are *not* tables — they are
 pickled Hail expressions reread by `apply_models_globals`.
 
 - **Paths:**
@@ -505,8 +514,11 @@ Pipeline-parameter globals (as §9) plus:
 - `sd_raw_z: array<float64>` — per-constraint-group standard deviation of the
   raw z-statistic across all transcripts (parallel to `constraint_group_meta`).
   Used to scale `z_raw → z_score`.
-- `percentile_thresholds: struct` — observed quantile cutoffs of the
-  `oe_ci.upper` distribution. One sub-struct per metric:
+- `percentile_thresholds: struct` — exact cutoffs of the adj
+  `oe_ci_gamma.upper` distribution over MANE Select transcripts with no
+  `constraint_flags`. With n values and K bins, cutoff k is the value at
+  0-based rank ⌈k·n/K⌉, so on that set the threshold bins match rank-based
+  bins apart from ties. One sub-struct per metric:
   - `syn`, `mis`, `lof: struct{percentile: array<float64>, decile: array<float64>, sextile: array<float64>}`
     — each granularity's boundary values (e.g.
     `percentile_thresholds.lof.decile[0]` = 10th-percentile of LOEUF upper).
@@ -523,7 +535,8 @@ Pipeline-parameter globals (as §9) plus:
     - `oe_ci_discretized_poisson: struct{lower: float64, upper: float64}` — OE
       CI using a discretized-Poisson estimator.
     - `oe_ci_gamma: struct{lower: float64, upper: float64}` — OE CI using a
-      Gamma estimator (the LOEUF estimator).
+      Gamma estimator (the LOEUF estimator). For both CIs, `lower` is 0 when
+      `observed_variants` is 0 and `expected_variants` is above 0.
     - `z_raw: float64` — `(expected - observed) / sqrt(expected)`, so it is
       positive when there are fewer variants than expected.
   - `flags: set<str>` — per-group QC flags: `no_exp_{syn,mis,lof}` when the
@@ -552,7 +565,7 @@ Pipeline-parameter globals (as §9) plus:
   per metric, where each is `struct{syn: int32, mis: int32, lof: int32}`.
 - `gene_quality_metrics: struct` — joined-in from §11:
   - `exome_prop_bp_AN90: float64` — fraction of transcript CDS bp with
-    exome AN ≥ 90% of max.
+    exome AN ≥ 90% of max. CDS bp with no exome AN count as not covered.
   - `exome_mean_AS_MQ: float64` — mean AS_MQ over the transcript.
   - `exome_prop_segdup: float64` — fraction of transcript CDS in segmental
     duplications.
@@ -612,14 +625,15 @@ Public-release flattened constraint table. One row per
 - `build_models_params: struct{low_cov_cutoff, high_cov_cutoff, upper_cov_cutoff}`
   — release-cleaned `build_models_globals` (drops
   `synonymous_transcript_filter_field`, `skip_coverage_model`).
-- `apply_models_params: struct{low_cov_cutoff, high_cov_cutoff, plateau_models, coverage_model, log10_coverage}`
+- `apply_models_params: struct{low_cov_cutoff, high_cov_cutoff, exome_coverage_metric, plateau_models, coverage_model, log10_coverage}`
   — release-cleaned `apply_models_globals` (drops `skip_coverage_model`,
   `groupings`).
 - `downsamplings: struct{global, afr, amr, eas, nfe, sas}` — each is
   `array<int32>` of downsampling sizes present for that gen-anc group
   (parallel to the per-row `gen_anc_obs.<group>` / `gen_anc_exp.<group>`
   arrays).
-- `max_af: float64` — AF cap for observed.
+- `max_af: float64` — full-dataset adj AF cap for observed and possible
+  variants, applied to every freq entry.
 - `sd_raw_z: struct{syn, mis, lof_hc_lc, lof}` — per-release-group `sd_raw_z`
   (re-keyed from positional array to named struct via `RELEASE_GROUP_RENAMES`,
   which maps internal `lof_hc → lof` for release).
@@ -923,8 +937,7 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
 # Constraint-specific input tables
 
 These are constraint-pipeline-owned input tables (not part of `gnomad_methods`)
-that are read by `prepare_ht_for_constraint_calculations` to annotate
-`annotated_context.ht`.
+that are read by `prepare_context_ht` to annotate `annotated_context.ht`.
 
 ## `adj_r_per_context_methyl_genome_1kb_autosome.agg.ht`
 
@@ -972,9 +985,7 @@ import hail as hl
 
 from gnomad_constraint.resources.resource_utils import get_constraint_metrics_dataset
 
-ht = get_constraint_metrics_dataset(
-    "transcript_consequences", version="4.1.1", test=True
-).ht()
+ht = get_constraint_metrics_dataset(version="4.1.3", test=True).ht()
 ht.describe()
 print(hl.eval(ht.globals))
 ```

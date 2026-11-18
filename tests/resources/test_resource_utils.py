@@ -9,6 +9,7 @@ import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 from gnomad_qc.resource_utils import PipelineResourceCollection
 
+import gnomad_constraint.resources.resource_utils as resource_utils
 from gnomad_constraint.resources.constants import (
     GENCODE_VERSION_MAP,
     VEP_VERSION_MAP,
@@ -28,6 +29,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_constraint_root,
     get_coverage_ht,
     get_dnm_ht,
+    get_gencode_cds_ht,
     get_gene_quality_metrics_ht,
     get_genomic_features_ht,
     get_lof_threshold_tsv_path,
@@ -84,6 +86,16 @@ class TestGetConstraintRoot:
     def test_root(self, kwargs: dict, expected: str) -> None:
         """Test the root for each combination of test, temp, post-fix, and sub_dir."""
         assert get_constraint_root(version="4.1.1", **kwargs) == expected
+
+    def test_default_version(self) -> None:
+        """
+        Test that the default version is the unreleased 4.1.3.
+
+        Regression test: the default was the released 4.1.1, so a run without
+        ``--version`` or ``--test`` wrote to the paths of the published tables, and
+        with ``--overwrite`` would replace them.
+        """
+        assert get_constraint_root() == "gs://gnomad/v4.1.3/constraint"
 
 
 class TestGetConstraintData:
@@ -237,6 +249,59 @@ class TestGencodeVersion:
         assert GENCODE_VERSION_MAP[vep_version] in ref_grch38.gencode.versions
 
 
+class TestGetGencodeCdsHt:
+    """Test the get_gencode_cds_ht function."""
+
+    @staticmethod
+    def _gencode_ht(transcript: str) -> hl.Table:
+        """Return a GENCODE Table with one single-base CDS for ``transcript``."""
+        locus = hl.Locus("chr1", 100, "GRCh38")
+        return hl.Table.parallelize(
+            [
+                dict(
+                    interval=hl.Interval(locus, locus, includes_end=True),
+                    feature="CDS",
+                    transcript_id=transcript,
+                    transcript_id_version=f"{transcript}.1",
+                )
+            ],
+            hl.tstruct(
+                interval=hl.tinterval(hl.tlocus("GRCh38")),
+                feature=hl.tstr,
+                transcript_id=hl.tstr,
+                transcript_id_version=hl.tstr,
+            ),
+            key="interval",
+        )
+
+    def test_overwrite_rebuilds_the_cache(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        Test that the cached CDS Table is reused, unless overwrite is set.
+
+        Regression test: the cache was always read if it existed, and the pipeline's
+        ``--overwrite`` didn't reach it, so a change to the code that builds it was
+        ignored without a warning.
+        """
+        gencode = {"ht": self._gencode_ht("T1")}
+        monkeypatch.setattr(
+            resource_utils, "get_constraint_root", lambda **kwargs: str(tmp_path)
+        )
+        monkeypatch.setattr(
+            resource_utils, "get_gencode_ht", lambda *args, **kwargs: gencode["ht"]
+        )
+
+        def _transcripts(**kwargs: Any) -> List[str]:
+            ht = get_gencode_cds_ht("4.1.3", **kwargs).ht()
+            return ht.aggregate(hl.agg.explode(hl.agg.collect, ht.transcript_id))
+
+        assert _transcripts() == ["T1"]
+        gencode["ht"] = self._gencode_ht("T2")
+        assert _transcripts() == ["T1"]
+        assert _transcripts(overwrite=True) == ["T2"]
+
+
 class TestGetSitesResource:
     """Test the get_sites_resource function."""
 
@@ -256,6 +321,16 @@ class TestGetSitesResource:
                 gnomad_grch38.public_release("exomes").versions["4.1"],
             ),
             (
+                "exomes",
+                "4.1.3",
+                gnomad_grch38.public_release("exomes").versions["4.1"],
+            ),
+            (
+                "genomes",
+                "4.1.3",
+                gnomad_grch38.public_release("genomes").versions["3.1.2"],
+            ),
+            (
                 "genomes",
                 "4.1.1",
                 gnomad_grch38.public_release("genomes").versions["3.1.2"],
@@ -272,8 +347,8 @@ class TestGetSitesResource:
     ) -> None:
         """Test the sites release used for each pipeline version.
 
-        v4.1.1 and v4.1.2 use the v4.1 exomes, and every v4 version uses the v3.1.2
-        genomes because the v4 genomes have no downsamplings.
+        v4.1.1, v4.1.2, and the default 4.1.3 use the v4.1 exomes, and every v4
+        version uses the v3.1.2 genomes because the v4 genomes have no downsamplings.
         """
         assert get_sites_resource(data_type, version).path == expected.path
 
@@ -291,6 +366,8 @@ class TestGetCoverageHt:
         [
             ("exomes", "4.1.1", gnomad_grch38.coverage("exomes")),
             ("genomes", "4.1.1", gnomad_grch38.coverage("genomes")),
+            ("exomes", "4.1.3", gnomad_grch38.coverage("exomes")),
+            ("genomes", "4.1.3", gnomad_grch38.coverage("genomes")),
         ],
     )
     def test_build_mapping(self, data_type: str, version: str, expected: Any) -> None:
@@ -559,6 +636,22 @@ class TestGetConstraintResources:
         ]
         assert paths
         assert [p for p in paths if not p.startswith(f"{TEST_ROOT}/")] == []
+
+    def test_production_run_writes_under_the_version_root(self) -> None:
+        """Test that every step's outputs in a production run are under its version."""
+        resources = get_constraint_resources(
+            version="4.1.3", overwrite=False, test=False
+        )
+        paths = [
+            _path(resource)
+            for step in resources.pipeline_steps.values()
+            for outputs in step.output_resources.values()
+            for resource in outputs
+        ]
+        assert paths
+        assert [
+            p for p in paths if not p.startswith("gs://gnomad/v4.1.3/constraint/")
+        ] == []
 
     @pytest.mark.parametrize("use_aggregated_expected", [False, True])
     def test_constraint_group_input(self, use_aggregated_expected: bool) -> None:
