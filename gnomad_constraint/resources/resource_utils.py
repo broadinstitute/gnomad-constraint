@@ -677,12 +677,12 @@ def get_constraint_resources(
 
     # The rr imports take neither post-fix.
     import_dnms = PipelineStepResourceCollection(
-        "--import-dnms",
+        "prepare_data.py --import-dnms",
         output_resources={"dnm_ht": get_dnm_ht(version=version, test=test)},
         input_resources={"published DNMs": get_dnm_paths()},
     )
     import_genomic_features = PipelineStepResourceCollection(
-        "--import-genomic-features",
+        "prepare_data.py --import-genomic-features",
         output_resources={
             "genomic_features_ht": get_genomic_features_ht(version=version, test=test)
         },
