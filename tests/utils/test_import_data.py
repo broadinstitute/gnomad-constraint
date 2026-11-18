@@ -1,14 +1,95 @@
 """Tests for the import functions in ``gnomad_constraint.utils.import_data``."""
 
+import gzip
 from pathlib import Path
+from typing import List
 
 import hail as hl
+import pytest
 
 from gnomad_constraint.resources.constants import (
     GENOMIC_FEATURE_COLUMNS,
     GENOMIC_FEATURE_MISSING,
 )
-from gnomad_constraint.utils.import_data import format_dnm_ht, format_genomic_features
+from gnomad_constraint.utils.import_data import (
+    check_unique_windows,
+    format_dnm_ht,
+    format_genomic_features,
+    get_dnm_import_args,
+    get_genomic_feature_import_args,
+    union_dnm_hts,
+)
+
+
+def _feature_ht(element_ids: List[str]) -> hl.Table:
+    """
+    Return a formatted feature Table with one window per element ID.
+
+    :param element_ids: BED windows, as "chr-start-end".
+    :return: Table from ``format_genomic_features``.
+    """
+    ht = hl.Table.parallelize(
+        [
+            {"element_id": e, **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, 1.0)}
+            for e in element_ids
+        ],
+        hl.tstruct(
+            element_id=hl.tstr, **dict.fromkeys(GENOMIC_FEATURE_COLUMNS, hl.tfloat64)
+        ),
+    )
+    return format_genomic_features(ht)
+
+
+class TestGetDnmImportArgs:
+    """Test the get_dnm_import_args function."""
+
+    def test_reads_published_format(self, tmp_path: Path) -> None:
+        """
+        Test that the arguments read a gzip compressed CSV with quoted commas.
+
+        The published DNM files are gzip, not bgzip, so Hail needs ``force``, and
+        some of their fields have commas inside quotes.
+        """
+        path = tmp_path / "dnms.csv.gz"
+        with gzip.open(path, "wt") as f:
+            f.write(
+                "Variant,Study,Role\n"
+                'chr1:100:A:G,"ASD, 2026",proband\n'
+                'chr2:5:C:T,DDD,"proband, affected"\n'
+            )
+        ht = hl.import_table(str(path), **get_dnm_import_args())
+        assert ht.collect() == [
+            hl.Struct(Variant="chr1:100:A:G", Study="ASD, 2026", Role="proband"),
+            hl.Struct(Variant="chr2:5:C:T", Study="DDD", Role="proband, affected"),
+        ]
+
+
+class TestUnionDnmHts:
+    """Test the union_dnm_hts function."""
+
+    def test_union(self) -> None:
+        """
+        Test that every file's DNMs are kept, with only their ``Variant`` field.
+
+        The files have different extra columns, so each is reduced to ``Variant``
+        before the union. A variant in both files is two rows until
+        ``format_dnm_ht``.
+        """
+        asd_ht = hl.Table.parallelize(
+            [{"Variant": "chr1:100:A:G", "Role": "proband"}],
+            hl.tstruct(Variant=hl.tstr, Role=hl.tstr),
+        )
+        ddd_ht = hl.Table.parallelize(
+            [{"Variant": v, "LCR": False} for v in ["chr1:100:A:G", "chr2:5:C:T"]],
+            hl.tstruct(Variant=hl.tstr, LCR=hl.tbool),
+        )
+        ht = union_dnm_hts([asd_ht, ddd_ht])
+        assert ht.row.dtype == hl.tstruct(Variant=hl.tstr)
+        assert sorted(ht.Variant.collect()) == [
+            "chr1:100:A:G",
+            "chr1:100:A:G",
+            "chr2:5:C:T",
+        ]
 
 
 class TestFormatDnmHt:
@@ -81,34 +162,47 @@ class TestFormatGenomicFeatures:
         }
 
 
-class TestGenomicFeatureMissing:
-    """Test the GENOMIC_FEATURE_MISSING constant used to import the feature matrix."""
+class TestGetGenomicFeatureImportArgs:
+    """Test the get_genomic_feature_import_args function."""
 
     def test_spellings_are_missing(self, tmp_path: Path) -> None:
         """
         Test that each missing-value spelling is imported as missing, not NaN.
 
-        ``prepare_data.py --import-genomic-features`` imports the matrix with float
-        types and ``missing=GENOMIC_FEATURE_MISSING``, so NaN never reaches the rr
-        models.
+        Regression test: this test called ``hl.import_table`` with its own
+        arguments, so it still passed with ``missing`` dropped from the import in
+        ``prepare_data.py --import-genomic-features``.
         """
-        columns = GENOMIC_FEATURE_COLUMNS[:4]
+        n = len(GENOMIC_FEATURE_COLUMNS)
+        spellings = (GENOMIC_FEATURE_MISSING * n)[:n]
         path = tmp_path / "features.tsv"
         path.write_text(
-            "\t".join(["element_id", *columns])
+            "\t".join(["element_id", *GENOMIC_FEATURE_COLUMNS])
             + "\n"
-            + "\t".join(["chr1-0-1000", "NA", "nan", "NaN", ""])
+            + "\t".join(["chr1-0-1000", *spellings])
             + "\n"
-            + "\t".join(["chr1-1000-2000", "0.5", "1", "2.5", "3"])
+            + "\t".join(["chr1-1000-2000", *[str(i / 2) for i in range(n)]])
             + "\n"
         )
-        ht = hl.import_table(
-            str(path),
-            types={c: hl.tfloat64 for c in columns},
-            missing=GENOMIC_FEATURE_MISSING,
-        )
-        rows = {r.element_id: [r[c] for c in columns] for r in ht.collect()}
-        assert rows == {
-            "chr1-0-1000": [None, None, None, None],
-            "chr1-1000-2000": [0.5, 1.0, 2.5, 3.0],
+        ht = hl.import_table(str(path), **get_genomic_feature_import_args())
+        rows = {
+            r.element_id: [r[c] for c in GENOMIC_FEATURE_COLUMNS] for r in ht.collect()
         }
+        assert rows == {
+            "chr1-0-1000": [None] * n,
+            "chr1-1000-2000": [i / 2 for i in range(n)],
+        }
+
+
+class TestCheckUniqueWindows:
+    """Test the check_unique_windows function."""
+
+    def test_unique(self) -> None:
+        """Test that a matrix with each window once passes."""
+        check_unique_windows(_feature_ht(["chr1-0-1000", "chr1-1000-2000"]))
+
+    def test_duplicated(self) -> None:
+        """Test that a window listed twice raises, with the number of extra rows."""
+        ht = _feature_ht(["chr1-0-1000", "chr1-1000-2000", "chr1-0-1000"])
+        with pytest.raises(ValueError, match="^1 windows are duplicated"):
+            check_unique_windows(ht)
