@@ -61,6 +61,13 @@ run that doesn't pass `--version` never writes to the paths of released tables
 labeled with a `genomic_region` of `autosome_or_par`, `chrx_nonpar`, or
 `chry_nonpar`. Run `constraint_pipeline.py --help` for every option.
 
+The preprocessing flags (the coverage cutoffs, `--max-af`, the mutation-rate
+cutoffs, `--genetic-ancestry-groups`, and `--include-downsamplings`) only take
+effect at `--preprocess-data`, which records them in the preprocessed Table; later
+steps raise an error if they're passed with different values. The v4.1.x release's
+per-ancestry downsampling columns need `--genetic-ancestry-groups afr amr eas nfe
+sas --include-downsamplings` at `--preprocess-data`.
+
 Outputs are written under `gs://gnomad/v{version}/constraint/`.
 [gnomad_constraint/resources/README.md](gnomad_constraint/resources/README.md)
 has the full layout and the schema of every output. With `--test` (chr20, chrX,

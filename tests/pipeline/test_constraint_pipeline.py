@@ -1,19 +1,23 @@
 """Tests for the constraint pipeline script."""
 
+import ast
 import logging
 import os
+from collections import defaultdict
 from types import SimpleNamespace
-from typing import List
+from typing import Any, List
 from unittest import mock
 
 import hail as hl
 import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
+import gnomad_constraint.pipeline.constraint_pipeline as constraint_pipeline
 from gnomad_constraint.pipeline.constraint_pipeline import (
     check_apply_models_resources,
     check_constraint_group_input,
     check_gerp_cutoffs_step,
+    check_preprocess_settings,
     check_skip_coverage_model,
     get_coverage_model,
     get_release_downsamplings,
@@ -277,3 +281,161 @@ class TestGetCoverageModel:
         res = self._res(tmp_path, hl.literal(coefficients))
         with pytest.raises(ValueError, match="look like it was built on"):
             get_coverage_model(res, False, not log10_coverage, high_cov_cutoff)
+
+
+def _help_text(node: ast.expr) -> str:
+    """
+    Return the text of a help argument, with each f-string field replaced by "x".
+
+    :param node: AST node of the ``help`` argument.
+    :return: Help text.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            v.value if isinstance(v, ast.Constant) else "x" for v in node.values
+        )
+    raise ValueError(f"Unexpected help argument: {ast.dump(node)}")
+
+
+class TestArgumentHelp:
+    """Test the help text of the pipeline's arguments."""
+
+    def test_help_formats(self) -> None:
+        """
+        Test that every flag's help formats the way argparse formats it.
+
+        argparse fills in each help string with ``%``, so a lone ``%`` must be
+        written ``%%``. Regression test: "AN% of 20" in the
+        ``--pipeline-low-coverage-filter`` help read as a ``%o`` conversion, so
+        ``constraint_pipeline.py --help`` raised a TypeError.
+        """
+        with open(constraint_pipeline.__file__) as f:
+            tree = ast.parse(f.read())
+        helps = [
+            _help_text(kw.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "attr", None) == "add_argument"
+            for kw in node.keywords
+            if kw.arg == "help"
+        ]
+        assert len(helps) > 40
+        for text in helps:
+            text % defaultdict(str)
+
+
+class TestCheckPreprocessSettings:
+    """Test the check_preprocess_settings function."""
+
+    ARGS = dict(
+        exome_coverage_metric="AN_percent",
+        pipeline_low_coverage_filter=19,
+        build_model_high_cov_definition=90,
+        build_model_upper_cov_cutoff=None,
+        apply_model_high_cov_definition=90,
+        max_af=0.001,
+        calculate_mutation_rate_min_cov=15,
+        calculate_mutation_rate_max_cov=60,
+        genetic_ancestry_groups=None,
+        include_downsamplings=False,
+    )
+    """Pipeline defaults for the preprocessing flags."""
+
+    @staticmethod
+    def _globals(
+        low: int = 19,
+        gen_ancs: Any = hl.missing(hl.tarray(hl.tstr)),
+        downsamplings: Any = hl.missing(hl.tarray(hl.tstr)),
+        apply_extra: Any = None,
+    ) -> hl.expr.StructExpression:
+        """Return preprocessed-Table globals recorded with the default flags."""
+        apply_extra = (
+            dict(exome_coverage_metric="AN_percent")
+            if apply_extra is None
+            else apply_extra
+        )
+        return hl.struct(
+            calculate_mu_globals=hl.struct(min_cov=15, max_cov=60),
+            build_models_globals=hl.struct(
+                low_cov_cutoff=low,
+                high_cov_cutoff=90,
+                upper_cov_cutoff=hl.missing(hl.tint32),
+            ),
+            apply_models_globals=hl.struct(
+                low_cov_cutoff=low, high_cov_cutoff=90, **apply_extra
+            ),
+            max_af=0.001,
+            genetic_ancestry_groups=gen_ancs,
+            downsamplings=downsamplings,
+        )
+
+    def test_matching_settings(self) -> None:
+        """Test that the flags preprocessing recorded pass."""
+        check_preprocess_settings(self._globals(), SimpleNamespace(**self.ARGS))
+
+    @pytest.mark.parametrize(
+        "field, value, flag",
+        [
+            ("exome_coverage_metric", "median", "--exome-coverage-metric"),
+            ("pipeline_low_coverage_filter", 9, "--pipeline-low-coverage-filter"),
+            (
+                "build_model_high_cov_definition",
+                80,
+                "--build-model-high-cov-definition",
+            ),
+            ("build_model_upper_cov_cutoff", 100, "--build-model-upper-cov-cutoff"),
+            (
+                "apply_model_high_cov_definition",
+                80,
+                "--apply-model-high-cov-definition",
+            ),
+            ("max_af", 0.0001, "--max-af"),
+            (
+                "calculate_mutation_rate_min_cov",
+                20,
+                "--calculate-mutation-rate-min-cov",
+            ),
+            (
+                "calculate_mutation_rate_max_cov",
+                50,
+                "--calculate-mutation-rate-max-cov",
+            ),
+            ("genetic_ancestry_groups", ["afr"], "--genetic-ancestry-groups"),
+            ("include_downsamplings", True, "--include-downsamplings"),
+        ],
+    )
+    def test_mismatched_setting(self, field: str, value: Any, flag: str) -> None:
+        """
+        Test that a flag differing from the value preprocessing recorded raises.
+
+        Regression test: these flags are only read by ``--preprocess-data``, so passing
+        a different value to a later step was ignored without a warning.
+        """
+        args = SimpleNamespace(**{**self.ARGS, field: value})
+        with pytest.raises(ValueError, match=flag):
+            check_preprocess_settings(self._globals(), args)
+
+    def test_unset_low_cutoff_matches_zero(self) -> None:
+        """Test that no low cutoff matches the 0 that preprocessing records for it."""
+        args = SimpleNamespace(**{**self.ARGS, "pipeline_low_coverage_filter": None})
+        check_preprocess_settings(self._globals(low=0), args)
+
+    def test_downsamplings_and_groups(self) -> None:
+        """Test that recorded genetic ancestry groups and downsamplings match."""
+        args = SimpleNamespace(
+            **{
+                **self.ARGS,
+                "genetic_ancestry_groups": ["afr", "nfe"],
+                "include_downsamplings": True,
+            }
+        )
+        check_preprocess_settings(
+            self._globals(gen_ancs=["afr", "nfe"], downsamplings=[10, 100]), args
+        )
+
+    def test_unrecorded_setting_is_skipped(self) -> None:
+        """Test that a Table predating a recorded setting isn't checked against it."""
+        args = SimpleNamespace(**{**self.ARGS, "exome_coverage_metric": "median"})
+        check_preprocess_settings(self._globals(apply_extra={}), args)

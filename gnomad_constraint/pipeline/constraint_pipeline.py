@@ -276,6 +276,95 @@ def check_constraint_group_input(
         )
 
 
+def check_preprocess_settings(
+    globals_expr: hl.expr.StructExpression, args: argparse.Namespace
+) -> None:
+    """
+    Check that the preprocessing flags match the values the preprocessed Table recorded.
+
+    These flags are only read by ``--preprocess-data``, which records them in the
+    preprocessed Table's globals, and the later steps use the recorded values. Without
+    this check, a different value passed to a later step would be ignored without a
+    warning. A setting the Table predates isn't checked. The GERP cutoffs aren't
+    checked either, because ``--calculate-gerp-cutoffs`` can replace them.
+
+    :param globals_expr: Globals of the preprocessed Table.
+    :param args: Parsed pipeline arguments.
+    :return: None.
+    """
+    g = hl.eval(globals_expr)
+    calc = g.get("calculate_mu_globals", {})
+    build = g.get("build_models_globals", {})
+    apply = g.get("apply_models_globals", {})
+    # Preprocessing records no low cutoff as 0.
+    low = args.pipeline_low_coverage_filter
+    low = 0 if low is None else low
+    gen_ancs = list(args.genetic_ancestry_groups or []) or None
+    checks = [
+        (
+            "--exome-coverage-metric",
+            args.exome_coverage_metric,
+            apply,
+            "exome_coverage_metric",
+        ),
+        ("--pipeline-low-coverage-filter", low, build, "low_cov_cutoff"),
+        ("--pipeline-low-coverage-filter", low, apply, "low_cov_cutoff"),
+        (
+            "--build-model-high-cov-definition",
+            args.build_model_high_cov_definition,
+            build,
+            "high_cov_cutoff",
+        ),
+        (
+            "--build-model-upper-cov-cutoff",
+            args.build_model_upper_cov_cutoff,
+            build,
+            "upper_cov_cutoff",
+        ),
+        (
+            "--apply-model-high-cov-definition",
+            args.apply_model_high_cov_definition,
+            apply,
+            "high_cov_cutoff",
+        ),
+        ("--max-af", args.max_af, g, "max_af"),
+        (
+            "--calculate-mutation-rate-min-cov",
+            args.calculate_mutation_rate_min_cov,
+            calc,
+            "min_cov",
+        ),
+        (
+            "--calculate-mutation-rate-max-cov",
+            args.calculate_mutation_rate_max_cov,
+            calc,
+            "max_cov",
+        ),
+        ("--genetic-ancestry-groups", gen_ancs, g, "genetic_ancestry_groups"),
+    ]
+    mismatches = [
+        f"{flag} is {value}, but the preprocessed Table recorded {recorded[field]}"
+        for flag, value, recorded, field in checks
+        if field in recorded and value != recorded[field]
+    ]
+    if "downsamplings" in g and args.include_downsamplings != (
+        g.downsamplings is not None
+    ):
+        made_with = "with" if g.downsamplings is not None else "without"
+        mismatches.append(
+            f"--include-downsamplings is {args.include_downsamplings}, but the"
+            f" preprocessed Table was made {made_with} downsamplings"
+        )
+    if mismatches:
+        raise ValueError(
+            "These flags only take effect at --preprocess-data, and they differ from"
+            " the values the preprocessed Table recorded: "
+            + "; ".join(sorted(set(mismatches)))
+            + ". Pass the recorded values, or rerun --preprocess-data with the new"
+            " ones (with --directory-post-fix to keep the runs apart)."
+        )
+
+
 def main(args: argparse.Namespace) -> None:
     """Execute the constraint pipeline."""
     hl.init(
@@ -312,6 +401,20 @@ def main(args: argparse.Namespace) -> None:
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
         use_aggregated_expected=args.use_aggregated_expected,
     )
+
+    # Steps after --preprocess-data use the settings it recorded, so check that the
+    # preprocessing flags passed now match them.
+    preprocessed_path = resources.preprocess_data.temp_preprocess_data_ht.path
+    later_steps = [
+        args.compute_gene_quality_metrics,
+        args.calculate_mutation_rate,
+        args.create_training_set,
+        args.build_models,
+        args.apply_models_per_variant,
+        args.apply_models_aggregated,
+    ]
+    if any(later_steps) and not args.preprocess_data and file_exists(preprocessed_path):
+        check_preprocess_settings(hl.read_table(preprocessed_path).globals, args)
 
     try:
         if args.prepare_context_ht:
@@ -789,7 +892,7 @@ if __name__ == "__main__":
         "--calculate-mutation-rate-min-cov",
         help=(
             "Minimum coverage required to keep a site when calculating the mutation"
-            " rate. Default is 15."
+            " rate. Default is 15. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=int,
         default=15,
@@ -798,7 +901,7 @@ if __name__ == "__main__":
         "--calculate-mutation-rate-max-cov",
         help=(
             "Maximum coverage required to keep a site when calculating the mutation"
-            " rate. Default is 60."
+            " rate. Default is 60. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=int,
         default=60,
@@ -808,7 +911,7 @@ if __name__ == "__main__":
         help=(
             "Minimum GERP score for variant to be included when calculating the"
             " mutation rate. Default is -3.9885 (precalculated on the GRCh37 context"
-            " Table to define the 5th percentile)."
+            " Table to define the 5th percentile). Applied at --preprocess-data."
         ),
         type=float,
         default=-3.9885,
@@ -818,7 +921,7 @@ if __name__ == "__main__":
         help=(
             "Maximum GERP score for variant to be included when calculating the"
             " mutation rate. Default is 2.6607 (precalculated on the GRCh37 context"
-            " Table to define the 95th percentile)."
+            " Table to define the 95th percentile). Applied at --preprocess-data."
         ),
         type=float,
         default=2.6607,
@@ -828,7 +931,8 @@ if __name__ == "__main__":
         help=(
             "Metric to use for exome coverage: 'median' (median depth), 'AN' (allele"
             " number), or 'AN_percent' (percent of samples with a genotype). Default is"
-            " 'AN_percent'."
+            " 'AN_percent'. The coverage cutoff defaults are AN percent values, and"
+            " --compute-gene-quality-metrics requires 'AN_percent'. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=str,
         default="AN_percent",
@@ -840,8 +944,8 @@ if __name__ == "__main__":
             "Lower exome coverage cutoff to use throughout the pipeline. Sites with"
             " coverage at or below this cutoff are excluded when creating the training"
             " set, building and applying models, and computing constraint metrics."
-            " Default is 19, as used for v4.1.x, which keeps sites with AN% of 20 or"
-            " more."
+            " Default is 19, as used for v4.1.x, which keeps sites with AN%% of 20 or"
+            " more. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=int,
         default=19,
@@ -851,7 +955,7 @@ if __name__ == "__main__":
         help=(
             "Maximum full-dataset adj allele frequency for a variant to count as "
             "observed or possible, in every frequency group, when training and "
-            "applying models."
+            "applying models. Default is 0.001. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=float,
         default=0.001,
@@ -860,15 +964,23 @@ if __name__ == "__main__":
         "--genetic-ancestry-groups",
         nargs="+",
         help=(
-            "Populations on which to build models, apply models, and or compute metrics "
-            "on. Default is None."
+            "Genetic ancestry groups whose adj frequencies, and downsamplings with "
+            "--include-downsamplings, get their own observed and expected counts. "
+            "Default is None. Applied at --preprocess-data; later steps check that it matches."
         ),
         choices=["afr", "amr", "eas", "nfe", "sas"],
         default=None,
     )
     preprocess_args.add_argument(
         "--include-downsamplings",
-        help="Include downsamplings in the constraint pipeline.",
+        help=(
+            "Count observed and expected variants in the exome downsamplings too."
+            " Without --genetic-ancestry-groups, these are the global downsamplings in"
+            " gnomad_methods' DOWNSAMPLINGS['v4']; with them, every downsampling in the"
+            " exomes freq_meta for the global group and each given group. The v4.1.x"
+            " release's downsampling columns need --genetic-ancestry-groups afr amr eas"
+            " nfe sas --include-downsamplings. Applied at --preprocess-data; later steps check that it matches."
+        ),
         action="store_true",
     )
     preprocess_args.add_argument(
@@ -881,7 +993,7 @@ if __name__ == "__main__":
         help=(
             "Upper exome coverage cutoff. Sites with coverage above this cutoff are"
             " excluded from the high coverage Table when building the models. Default"
-            " is None."
+            " is None. Applied at --preprocess-data; later steps check that it matches."
         ),
         type=int,
         default=None,
