@@ -455,8 +455,10 @@ def get_exomes_observed_and_possible(
           for analyses that start from the preprocessed or per-variant Table.
         - observed_variants: This annotation is an array, where each element corresponds
           to whether the variant is observed in the exomes dataset for the frequency
-          group at the corresponding index in the ``exomes_freq`` array and has an
-          AF <= ``max_af``. The boolean value is stored as an integer (0 or 1).
+          group at the corresponding index in the ``exomes_freq`` array and has a
+          full-dataset adj AF <= ``max_af``. Every group uses the full-dataset AF, as
+          in v2, so a small downsampling can still observe a variant. The boolean
+          value is stored as an integer (0 or 1).
         - possible_variants: Whether the variant is considered a possible variant in the
           exomes dataset. This includes variants not in the exomes dataset, variants
           that fail the exome filters, and variants in the observed variant set. The
@@ -498,8 +500,8 @@ def get_exomes_observed_and_possible(
         Default is None, which includes only the full exomes dataset.
     :param include_downsamplings: Whether to include downsamplings in the observed and
         possible variant annotations. Default is False.
-    :param max_af: Maximum allele frequency to consider a variant as observed. Default
-        is 0.001.
+    :param max_af: Maximum full-dataset adj allele frequency for a variant to count
+        as observed or possible, in every frequency group. Default is 0.001.
     :return: Tuple containing the observed and possible variant annotations and the
         globals.
     """
@@ -521,12 +523,14 @@ def get_exomes_observed_and_possible(
         downsampling_gen_ancs=gen_ancs if downsamplings is not None else None,
     )
 
-    # Whether the variant is rare enough to be possible, from its adj frequency before
-    # filtered variants lose theirs below, so a filtered variant above max_af is left
-    # out of both counts like a PASS variant at the same AF. A variant absent from the
-    # exomes has no frequency and counts as rare.
+    # Whether the variant is rare, from its full-dataset adj frequency, before filtered
+    # variants lose theirs below, so a filtered variant above max_af is left out of
+    # both counts like a PASS variant at the same AF. A variant absent from the exomes
+    # has no frequency and counts as rare. The same rarity applies to every frequency
+    # group, as in v2: comparing each group's own AF with max_af would mean a small
+    # downsampling could never observe a variant.
     adj_idx = exomes_freq_meta.index(ADJ_FREQ_META)
-    is_rare_expr = (
+    is_rare_expr = hl.int(
         hl.or_else(exomes_freq_expr[adj_idx].AF <= max_af, True)
         if max_af is not None
         else hl.bool(True)
@@ -537,9 +541,12 @@ def get_exomes_observed_and_possible(
     # exome coverage is undefined, set the observed and possible variant annotations to
     # missing.
     exomes_freq_expr = hl.or_missing(hl.len(exomes_filter_expr) == 0, exomes_freq_expr)
-    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr, max_af=max_af)
+    obs_pos_expr = variant_observed_and_possible_expr(exomes_freq_expr)
     obs_pos_expr = obs_pos_expr.annotate(
-        possible_variants=obs_pos_expr.possible_variants * hl.int(is_rare_expr)
+        observed_variants=obs_pos_expr.observed_variants.map(
+            lambda x: x * is_rare_expr
+        ),
+        possible_variants=obs_pos_expr.possible_variants * is_rare_expr,
     )
 
     # A missing frequency array gives a missing observed array, which aggregations
@@ -687,8 +694,8 @@ def prepare_ht_for_constraint_calculations(
         be included in the mutation rate calculation. Default is 2.6607.
     :param calculate_mutation_rate_ac_cutoff: Allele count cutoff for variant to be
         included in the mutation rate calculation. Default is 5.
-    :param max_af: Maximum allele frequency to consider a variant as observed. Default
-        is 0.001.
+    :param max_af: Maximum full-dataset adj allele frequency for a variant to count
+        as observed or possible, in every frequency group. Default is 0.001.
     :param build_model_low_cov_cutoff: Low coverage cutoff for the build models step.
         Sites at or below it are left out of the low coverage model. Default is None,
         which leaves out sites with coverage 0.

@@ -390,6 +390,15 @@ class TestGetExomesObservedAndPossible:
             ("no_coverage", "g4", None, None, None),
             ("filtered_rare", "g5", {"AS_VQSR"}, _freq(3, 1e-5), 30),
             ("filtered_common", "g5", {"InbreedingCoeff"}, _freq(500, 0.2), 30),
+            # Rare overall but above max_af in the afr group, and the reverse.
+            ("rare_overall", "g6", set(), [_freq(1, 1e-5)[0], _freq(1, 0.002)[0]], 30),
+            (
+                "common_overall",
+                "g7",
+                set(),
+                [_freq(500, 0.2)[0], _freq(1, 5e-4)[0]],
+                30,
+            ),
         ]
         ht = hl.Table.parallelize(
             [
@@ -420,6 +429,8 @@ class TestGetExomesObservedAndPossible:
             ("no_coverage", None, None),
             ("filtered_rare", [0, 0], 1),
             ("filtered_common", [0, 0], 0),
+            ("rare_overall", [1, 1], 1),
+            ("common_overall", [0, 0], 0),
         ],
     )
     def test_per_variant_counts(
@@ -431,6 +442,12 @@ class TestGetExomesObservedAndPossible:
         A filtered variant is never observed, and counts as possible only if it is
         rare, like a PASS variant. Regression test: a filtered variant above
         ``max_af`` counted as possible, while a PASS variant at the same AF didn't.
+
+        Whether a variant is rare comes from the full dataset's adj AF, for every
+        frequency group. Regression test: each group's own AF was compared with
+        ``max_af``, so a small group could never observe a variant (one allele in a
+        10-person downsampling is an AF of 0.05), and a variant common overall
+        counted as observed in a group where it looked rare.
         """
         row = {r.name: r for r in self._ht().collect()}[name]
         assert row.observed_variants == observed

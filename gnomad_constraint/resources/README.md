@@ -130,7 +130,8 @@ Carries the previous two plus the fitted models (after `--apply-models-*`).
 - `genetic_ancestry_groups: array<str>` — copy of the gen-anc groups list.
 - `downsamplings: array<int32>` — ordered list of downsampling sizes the freq
   array covers (e.g. `[10, 20, ..., 1000, ...]`).
-- `max_af: float64` — AF cap for the "observed" variant filter.
+- `max_af: float64` — full-dataset adj AF cap for observed and possible
+  variants, applied to every freq entry.
 
 ---
 
@@ -247,7 +248,10 @@ into `compute_mu.genomes_freq` / `calibrate_mu.exomes_freq`), plus:
     array (parallel to `exomes_freq_meta`), missing for variants that fail the
     exome filters. No later step reads it; it is kept for analyses that start
     from this Table.
-  - `observed_variants: array<int32>`
+  - `observed_variants: array<int32>` — 1 for each freq entry where the
+    variant has AC > 0, if its full-dataset adj AF is at most `max_af` (the
+    same rarity test for every entry, so small downsamplings can observe
+    variants).
   - `possible_variants: int32`
   - `build_model: struct{high_or_low_coverage: str, model_group: struct{cpg: bool, genomic_region: str}}`
     — which plateau model bucket this row was fit into.
@@ -608,7 +612,8 @@ Public-release flattened constraint table. One row per
   `array<int32>` of downsampling sizes present for that gen-anc group
   (parallel to the per-row `gen_anc_obs.<group>` / `gen_anc_exp.<group>`
   arrays).
-- `max_af: float64` — AF cap for observed.
+- `max_af: float64` — full-dataset adj AF cap for observed and possible
+  variants, applied to every freq entry.
 - `sd_raw_z: struct{syn, mis, lof_hc_lc, lof}` — per-release-group `sd_raw_z`
   (re-keyed from positional array to named struct via `RELEASE_GROUP_RENAMES`,
   which maps internal `lof_hc → lof` for release).

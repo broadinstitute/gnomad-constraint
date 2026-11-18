@@ -849,8 +849,9 @@ if __name__ == "__main__":
     preprocess_args.add_argument(
         "--max-af",
         help=(
-            "Maximum variant allele frequency to use when filtering variants for "
-            "training and applying models."
+            "Maximum full-dataset adj allele frequency for a variant to count as "
+            "observed or possible, in every frequency group, when training and "
+            "applying models."
         ),
         type=float,
         default=0.001,

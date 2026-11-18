@@ -52,7 +52,7 @@ Struct mapping each genetic ancestry group to an array of downsampling levels (a
 
 ### Other globals
 
-- `max_af`: Maximum alternate allele frequency cutoff used to define observed variants
+- `max_af`: Maximum alternate allele frequency cutoff used to define observed variants, applied to the full exomes dataset's adj allele frequency for every genetic ancestry group and downsampling
 - `sd_raw_z`: Struct of standard deviations of raw Z-scores used to normalize `z_raw` → `z_score` for each constraint group
   - `sd_raw_z.syn`: Standard deviation of raw Z-scores for synonymous variants
   - `sd_raw_z.mis`: Standard deviation of raw Z-scores for missense variants
