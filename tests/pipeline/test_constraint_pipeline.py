@@ -1,9 +1,11 @@
 """Tests for the helpers of the constraint pipeline scripts."""
 
+import ast
 import logging
 import os
 import runpy
 import sys
+from collections import defaultdict
 from types import SimpleNamespace
 from typing import Any, List
 from unittest import mock
@@ -327,3 +329,53 @@ class TestSkipCoverageModelResources:
         models = kwargs["models"] if "models" in kwargs else args[3]
         expected = ["plateau"] if skip_coverage_model else ["plateau", "coverage"]
         assert list(models) == expected
+
+
+SCRIPTS = ["prepare_data", "expected_models", "expected_counts", "constraint_metrics"]
+"""The pipeline scripts, in the order they run."""
+
+
+def _help_text(node: ast.expr) -> str:
+    """
+    Return the text of a help argument, with each f-string field replaced by "x".
+
+    :param node: AST node of the ``help`` argument.
+    :return: Help text.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            v.value if isinstance(v, ast.Constant) else "x" for v in node.values
+        )
+    raise ValueError(f"Unexpected help argument: {ast.dump(node)}")
+
+
+class TestArgumentHelp:
+    """Test the help text of the pipeline's arguments."""
+
+    def test_help_formats(self) -> None:
+        """
+        Test that every flag's help, in every script, formats the way argparse does.
+
+        argparse fills in each help string with ``%``, so a lone ``%`` must be
+        written ``%%``. Regression test: "AN% of 20" in the
+        ``--pipeline-low-coverage-filter`` help read as a ``%o`` conversion, so
+        ``--help`` raised a TypeError.
+        """
+        helps = []
+        for script in SCRIPTS:
+            path = os.path.join(os.path.dirname(pipeline.__file__), f"{script}.py")
+            with open(path) as f:
+                tree = ast.parse(f.read())
+            helps += [
+                _help_text(kw.value)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and getattr(node.func, "attr", None) == "add_argument"
+                for kw in node.keywords
+                if kw.arg == "help"
+            ]
+        assert len(helps) > 40
+        for text in helps:
+            text % defaultdict(str)

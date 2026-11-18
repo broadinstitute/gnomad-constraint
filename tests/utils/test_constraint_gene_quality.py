@@ -1,6 +1,6 @@
 """Tests for the gene quality metrics functions in the constraint utility module."""
 
-import math
+import logging
 from typing import Dict, List, Optional, Set, Tuple
 
 import hail as hl
@@ -260,16 +260,18 @@ class TestComputeSiteQualityMetrics:
         assert out["T2"].mean_AS_MQ == pytest.approx(30.0)
 
     def test_all_missing_as_mq(self) -> None:
-        """Test that a transcript whose only SNVs lack AS_MQ gets a NaN mean.
+        """
+        Test that a transcript whose only SNVs lack AS_MQ gets a missing mean.
 
-        This pins current behavior: ``hl.agg.mean`` over no defined values is NaN,
-        not missing, and NaN is never flagged as low mapping quality.
+        Regression test: ``hl.agg.mean`` over no defined values is NaN, and
+        ``NaN < 50`` is False, so the transcript was never flagged as low mapping
+        quality and NaN was released as its mean AS_MQ.
         """
         ht = _compute_site_quality_metrics(
             _sites_ht([("chr1:101", ["C", "T"], None)]),
             _cds_ht({"T1": ["chr1:101"]}),
         )
-        assert math.isnan(_by_transcript(ht)["T1"].mean_AS_MQ)
+        assert _by_transcript(ht)["T1"].mean_AS_MQ is None
 
 
 class TestComputeRegionFlagMetrics:
@@ -436,6 +438,30 @@ class TestComputeGeneQualityMetrics:
         )
         with pytest.raises(ValueError, match="AN_percent"):
             _run_gene_quality_metrics(context_ht=ht)
+
+    @pytest.mark.parametrize(
+        "apply_models_globals",
+        [None, hl.struct(skip_coverage_model=False)],
+        ids=["no_apply_models_globals", "no_exome_coverage_metric"],
+    )
+    def test_unrecorded_coverage_metric_warns(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        apply_models_globals: Optional[hl.expr.StructExpression],
+    ) -> None:
+        """
+        Test that a table that doesn't record its coverage metric is used, with a warning.
+
+        Tables preprocessed before ``exome_coverage_metric`` was recorded in
+        ``apply_models_globals`` are assumed to use AN_percent.
+        """
+        ht = _context_ht()
+        if apply_models_globals is not None:
+            ht = ht.annotate_globals(apply_models_globals=apply_models_globals)
+        with caplog.at_level(logging.WARNING, logger="constraint_utils"):
+            out = _run_gene_quality_metrics(context_ht=ht)
+        assert "doesn't record its exome coverage metric" in caplog.text
+        assert set(_by_transcript(out)) == {"T1", "T2", "T3", "T4"}
 
     def test_an_percent_metric_is_accepted(self) -> None:
         """Test that a table preprocessed with AN_percent is accepted."""

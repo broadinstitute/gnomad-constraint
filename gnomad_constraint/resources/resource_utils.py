@@ -127,7 +127,7 @@ def get_coverage_ht(
     return gnomad_grch38.coverage(data_type)
 
 
-def get_gencode_ht(version: str) -> hl.Table:
+def get_gencode_ht(version: str, overwrite: bool = False) -> hl.Table:
     """
     Retrieve GENCODE Table with transcript version annotations.
 
@@ -138,6 +138,8 @@ def get_gencode_ht(version: str) -> hl.Table:
     :param version: gnomAD version. The GENCODE version that the context Table's
         VEP version annotates with (v39 for VEP 105) is re-imported with version
         fields and checkpointed.
+    :param overwrite: Whether to rebuild the checkpoint even if it exists. Default is
+        False.
     :return: Table of GENCODE data with version annotations.
     """
     check_param_scope(version=version)
@@ -146,11 +148,14 @@ def get_gencode_ht(version: str) -> hl.Table:
     ht = import_gencode(**import_args, include_version=True)
     checkpoint_path = f"gs://gnomad-tmp/gencode_{gencode_version}_with_versions.ht"
 
-    return ht.checkpoint(checkpoint_path, _read_if_exists=True)
+    return ht.checkpoint(
+        checkpoint_path, overwrite=overwrite, _read_if_exists=not overwrite
+    )
 
 
 def get_gencode_cds_ht(
     version: str = CURRENT_VERSION,
+    overwrite: bool = False,
 ) -> TableResource:
     """Build and checkpoint a per-locus GENCODE CDS transcript ID table.
 
@@ -158,10 +163,13 @@ def get_gencode_cds_ht(
     :func:`~gnomad_constraint.utils.constraint.get_cds_transcripts_per_locus` to get
     the transcript IDs whose CDS covers each locus (dropping chrY PAR copies, which
     share the chrX copy's transcript ID). The result is checkpointed (read if it
-    already exists) and returned as a :class:`TableResource`.
+    already exists, unless ``overwrite`` is set) and returned as a
+    :class:`TableResource`.
 
     :param version: One of the release versions (`VERSIONS`). Default is
         `CURRENT_VERSION`.
+    :param overwrite: Whether to rebuild the checkpoint, and the GENCODE checkpoint it
+        is built from, even if they exist. Default is False.
     :return: TableResource of GENCODE CDS positions, keyed by locus with
         ``transcript_id`` (array of transcript IDs whose CDS covers that
         position).
@@ -170,8 +178,8 @@ def get_gencode_cds_ht(
     root = get_constraint_root(version=version, temp=True)
     path = f"{root}/gencode_cds_positions.no_y_par.ht"
 
-    gencode_ht = get_cds_transcripts_per_locus(get_gencode_ht(version))
-    gencode_ht.checkpoint(path, _read_if_exists=True)
+    gencode_ht = get_cds_transcripts_per_locus(get_gencode_ht(version, overwrite))
+    gencode_ht.checkpoint(path, overwrite=overwrite, _read_if_exists=not overwrite)
 
     return TableResource(path)
 
