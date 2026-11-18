@@ -615,21 +615,21 @@ def get_constraint_resources(
     }
 
     prepare_context = PipelineStepResourceCollection(
-        "--prepare-context-ht",
+        "prepare_data.py --prepare-context-ht",
         output_resources={
             "annotated_context_ht": get_annotated_context_ht(**common_params)
         },
         input_resources={"gnomAD resources": input_hts},
     )
     preprocess_data = PipelineStepResourceCollection(
-        "--preprocess-data",
+        "prepare_data.py --preprocess-data",
         output_resources={
             "temp_preprocess_data_ht": get_preprocessed_ht(**common_params),
         },
         pipeline_input_steps=[prepare_context],
     )
     compute_gene_quality_metrics_step = PipelineStepResourceCollection(
-        "--compute-gene-quality-metrics",
+        "prepare_data.py --compute-gene-quality-metrics",
         output_resources={
             "gene_quality_metrics_ht": get_gene_quality_metrics_ht(**common_params)
         },
@@ -643,17 +643,17 @@ def get_constraint_resources(
         pipeline_input_steps=[preprocess_data],
     )
     calculate_gerp_cutoffs = PipelineStepResourceCollection(
-        "--calculate-gerp-cutoffs",
+        "prepare_data.py --calculate-gerp-cutoffs",
         output_resources={},
         pipeline_input_steps=[prepare_context],
     )
     calculate_mutation_rate = PipelineStepResourceCollection(
-        "--calculate-mutation-rate",
+        "expected_models.py --calculate-mutation-rate",
         output_resources={"mutation_ht": get_mutation_ht(**common_params)},
         pipeline_input_steps=[preprocess_data],
     )
     create_training_set = PipelineStepResourceCollection(
-        "--create-training-set",
+        "expected_models.py --create-training-set",
         output_resources={
             "train_ht": get_training_dataset(
                 **common_params, path_post_fix=path_post_fix
@@ -665,7 +665,7 @@ def get_constraint_resources(
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
     )
     build_models = PipelineStepResourceCollection(
-        "--build-models",
+        "expected_models.py --build-models",
         output_resources={
             f"model_{m}": get_models(m, **common_params, path_post_fix=path_post_fix)
             for m in models
@@ -673,7 +673,7 @@ def get_constraint_resources(
         pipeline_input_steps=[create_training_set],
     )
     apply_models_per_variant = PipelineStepResourceCollection(
-        "--apply-models-per-variant",
+        "expected_counts.py --apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": get_per_variant_expected_dataset(
                 **common_params, path_post_fix=path_post_fix
@@ -682,7 +682,7 @@ def get_constraint_resources(
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
     aggregate_per_variant_expected = PipelineStepResourceCollection(
-        "--aggregate-per-variant-expected",
+        "constraint_metrics.py --aggregate-per-variant-expected",
         output_resources={
             "apply_ht": get_aggregated_per_variant_expected(
                 **common_params, path_post_fix=path_post_fix
@@ -691,7 +691,7 @@ def get_constraint_resources(
         pipeline_input_steps=[apply_models_per_variant],
     )
     apply_models_aggregated = PipelineStepResourceCollection(
-        "--apply-models-aggregated",
+        "expected_counts.py --apply-models-aggregated",
         output_resources={
             "aggregated_expected_ht": get_aggregated_expected(
                 **common_params, path_post_fix=path_post_fix
@@ -701,7 +701,7 @@ def get_constraint_resources(
     )
     if use_aggregated_expected:
         aggregate_by_constraint_groups = PipelineStepResourceCollection(
-            "--aggregate-by-constraint-groups --use-aggregated-expected",
+            "constraint_metrics.py --aggregate-by-constraint-groups --use-aggregated-expected",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
                     **common_params, path_post_fix=path_post_fix
@@ -711,7 +711,7 @@ def get_constraint_resources(
         )
     else:
         aggregate_by_constraint_groups = PipelineStepResourceCollection(
-            "--aggregate-by-constraint-groups",
+            "constraint_metrics.py --aggregate-by-constraint-groups",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
                     **common_params, path_post_fix=path_post_fix
@@ -724,9 +724,9 @@ def get_constraint_resources(
         # upstream metrics inputs are not read, and the pre-rank Table becomes
         # an input rather than an output.
         compute_constraint_metrics = PipelineStepResourceCollection(
-            "--compute-constraint-metrics --skip-pre-rank-metrics",
+            "constraint_metrics.py --compute-constraint-metrics --skip-pre-rank-metrics",
             input_resources={
-                "--compute-constraint-metrics": {
+                "constraint_metrics.py --compute-constraint-metrics": {
                     "pre_rank_constraint_metrics_ht": (
                         get_pre_rank_constraint_metrics_dataset(
                             **common_params,
@@ -743,7 +743,7 @@ def get_constraint_resources(
         )
     else:
         compute_constraint_metrics = PipelineStepResourceCollection(
-            "--compute-constraint-metrics",
+            "constraint_metrics.py --compute-constraint-metrics",
             output_resources={
                 "pre_rank_constraint_metrics_ht": (
                     get_pre_rank_constraint_metrics_dataset(
@@ -761,7 +761,7 @@ def get_constraint_resources(
             ],
         )
     prepare_release = PipelineStepResourceCollection(
-        "--prepare-release",
+        "constraint_metrics.py --prepare-release",
         output_resources={
             "release_ht": get_release_constraint_ht(
                 **common_params, path_post_fix=path_post_fix
@@ -770,7 +770,7 @@ def get_constraint_resources(
         pipeline_input_steps=[compute_constraint_metrics],
     )
     prepare_release_mutation_rate = PipelineStepResourceCollection(
-        "--prepare-release-mutation-rate",
+        "constraint_metrics.py --prepare-release-mutation-rate",
         output_resources={
             "release_mutation_ht": get_release_mutation_ht(**common_params),
             "release_mutation_tsv": get_release_mutation_tsv_path(**common_params),
@@ -778,7 +778,7 @@ def get_constraint_resources(
         pipeline_input_steps=[calculate_mutation_rate],
     )
     export_release_tsv = PipelineStepResourceCollection(
-        "--export-release-tsv",
+        "constraint_metrics.py --export-release-tsv",
         output_resources={
             "release_tsv": get_release_constraint_tsv_path(
                 **common_params, path_post_fix=path_post_fix
@@ -790,7 +790,7 @@ def get_constraint_resources(
         pipeline_input_steps=[prepare_release],
     )
     export_release_downsampling_tsv = PipelineStepResourceCollection(
-        "--export-release-downsampling-tsv",
+        "constraint_metrics.py --export-release-downsampling-tsv",
         output_resources={
             "release_downsampling_tsv": get_release_downsampling_tsv_path(
                 **common_params, path_post_fix=path_post_fix
