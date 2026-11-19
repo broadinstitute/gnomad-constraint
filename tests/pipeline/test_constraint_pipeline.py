@@ -17,6 +17,7 @@ import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
 import gnomad_constraint.pipeline as pipeline
+import gnomad_constraint.pipeline.constraint_metrics as constraint_metrics
 import gnomad_constraint.resources.resource_utils as constraint_res
 import gnomad_constraint.utils.constraint as constraint_utils
 from gnomad_constraint.pipeline.constraint_metrics import (
@@ -526,6 +527,57 @@ class TestScriptResources:
         _run_script(monkeypatch, "prepare_data", flags)
 
         assert calls[0]["skip_coverage_model"] == skip_coverage_model
+
+    @pytest.mark.parametrize("apply_regional_rr", [False, True])
+    def test_aggregate_per_variant_expected_rr(
+        self, monkeypatch: pytest.MonkeyPatch, apply_regional_rr: bool
+    ) -> None:
+        """
+        Test that ``--aggregate-per-variant-expected`` checks and applies rr with the flag.
+
+        Regression test: no test ran this part of ``main``, so the suite still passed
+        with the check removed and the rr Table no longer passed to
+        ``aggregate_per_variant_expected_ht``, which would write unscaled counts.
+        """
+        parse_args = argparse.ArgumentParser.parse_args
+        parsers = []
+
+        def get_parser(parser: argparse.ArgumentParser, *args: Any) -> None:
+            parsers.append(parser)
+            raise _StopRun
+
+        monkeypatch.setattr(argparse.ArgumentParser, "parse_args", get_parser)
+        _run_script(monkeypatch, "constraint_metrics", [])
+        flags = ["--aggregate-per-variant-expected"]
+        if apply_regional_rr:
+            flags.append("--apply-regional-rr")
+        args = parse_args(parsers[0], flags)
+
+        resources = mock.MagicMock()
+        checks = []
+        aggregates = []
+
+        def aggregate(ht: Any, **kwargs: Any) -> mock.MagicMock:
+            aggregates.append((ht, kwargs))
+            return mock.MagicMock()
+
+        monkeypatch.setattr(
+            constraint_res, "get_constraint_resources", lambda *a, **k: resources
+        )
+        monkeypatch.setattr(
+            constraint_metrics, "check_regional_rr_input", lambda *a: checks.append(a)
+        )
+        monkeypatch.setattr(
+            constraint_metrics, "aggregate_per_variant_expected_ht", aggregate
+        )
+        monkeypatch.setattr(hl, "_set_flags", lambda **kwargs: None)
+        constraint_metrics.main(args)
+
+        res = resources.aggregate_per_variant_expected
+        per_variant_ht = res.per_variant_apply_ht.ht.return_value
+        rr_ht = res.regional_rr_ht.ht.return_value if apply_regional_rr else None
+        assert checks == ([(per_variant_ht, rr_ht)] if apply_regional_rr else [])
+        assert aggregates == [(per_variant_ht, {"regional_rr_ht": rr_ht})]
 
     @pytest.mark.parametrize("script", SCRIPTS)
     def test_reads_only_its_own_options(
