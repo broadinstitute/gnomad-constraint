@@ -193,7 +193,7 @@ class TestCheckRegionalRrInput:
 
     @staticmethod
     def _no_rr_globals_ht() -> hl.Table:
-        """Return an empty rr Table with no ``rr_globals``, like Gnocchi's."""
+        """Return an empty rr Table with no ``rr_globals``."""
         return hl.utils.range_table(0)
 
     def test_matching_models(self) -> None:
@@ -212,14 +212,18 @@ class TestCheckRegionalRrInput:
         with pytest.raises(ValueError, match="Rerun expected_counts.py"):
             check_regional_rr_input(self._per_variant_ht([1.0, 0.6]), self._rr_ht(True))
 
-    def test_no_rr_globals(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Test that an rr Table with no ``rr_globals`` is only warned about."""
-        with caplog.at_level(logging.WARNING, logger="constraint_metrics"):
+    def test_no_rr_globals(self) -> None:
+        """
+        Test that an rr Table with no ``rr_globals`` is rejected.
+
+        Regression test: such a Table was applied with only a warning, and then the
+        release had no ``regional_rr_params``, as if rr hadn't been applied.
+        """
+        with pytest.raises(ValueError, match="doesn't record"):
             check_regional_rr_input(
                 self._per_variant_ht(self.MODELS.coverage_model),
                 self._no_rr_globals_ht(),
             )
-        assert caplog.records
 
     def test_rr_globals_without_the_record(self) -> None:
         """
@@ -229,7 +233,7 @@ class TestCheckRegionalRrInput:
         with a warning, and then ``--prepare-release`` raised a KeyError when it
         dropped ``per_variant_apply_models_globals`` from the release globals.
         """
-        with pytest.raises(ValueError, match="don't record"):
+        with pytest.raises(ValueError, match="doesn't record"):
             check_regional_rr_input(
                 self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(False)
             )
