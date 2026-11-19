@@ -724,6 +724,74 @@ class TestGetConstraintResources:
             == get_regional_rr_ht(version="4.1.1", **kwargs).path
         )
 
+    RR_STEPS = [
+        "aggregate_per_variant_expected",
+        "aggregate_by_constraint_groups",
+        "compute_constraint_metrics",
+        "prepare_release",
+        "export_release_tsv",
+        "export_release_downsampling_tsv",
+    ]
+    """Steps whose outputs get the ``rr`` path post-fix with --apply-regional-rr."""
+
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    @pytest.mark.parametrize("skip_pre_rank_metrics", [False, True])
+    def test_regional_rr_outputs_have_their_own_paths(
+        self, path_post_fix: str, skip_pre_rank_metrics: bool
+    ) -> None:
+        """
+        Test that with --apply-regional-rr the outputs from the aggregate step on are new.
+
+        Regression test: they kept the paths of the Tables without rr, so keeping both
+        meant rerunning the per-variant expected Table, which rr doesn't change, under
+        a new post-fix. Every other output, and the per-variant expected Table the
+        aggregate step reads, keep their paths.
+        """
+        kwargs = {
+            "version": "4.1.1",
+            "overwrite": False,
+            "test": True,
+            "path_post_fix": path_post_fix,
+            "skip_pre_rank_metrics": skip_pre_rank_metrics,
+        }
+        without_rr = get_constraint_resources(**kwargs).pipeline_steps
+        with_rr = get_constraint_resources(**kwargs, apply_regional_rr=True)
+        with_rr = with_rr.pipeline_steps
+
+        def paths(step: Any, resources: str) -> List[str]:
+            return [_path(r) for rs in getattr(step, resources).values() for r in rs]
+
+        assert set(without_rr) == set(with_rr)
+        for name in without_rr:
+            outputs = paths(with_rr[name], "output_resources")
+            if name in self.RR_STEPS:
+                assert outputs, name
+                assert all(".rr." in p for p in outputs), name
+                assert set(outputs).isdisjoint(
+                    paths(without_rr[name], "output_resources")
+                ), name
+            else:
+                assert outputs == paths(without_rr[name], "output_resources"), name
+        step = "expected_counts.py --apply-models-per-variant"
+        assert [
+            _path(r)
+            for r in with_rr["aggregate_per_variant_expected"].input_resources[step]
+        ] == [
+            _path(r)
+            for r in without_rr["aggregate_per_variant_expected"].input_resources[step]
+        ]
+
+    def test_regional_rr_with_aggregated_expected(self) -> None:
+        """Test that rr can't be used with the --apply-models-aggregated output."""
+        with pytest.raises(ValueError, match="no rr"):
+            get_constraint_resources(
+                version="4.1.1",
+                overwrite=False,
+                test=True,
+                use_aggregated_expected=True,
+                apply_regional_rr=True,
+            )
+
     def test_inputs_read_by_steps_are_declared(
         self, resources: PipelineResourceCollection
     ) -> None:

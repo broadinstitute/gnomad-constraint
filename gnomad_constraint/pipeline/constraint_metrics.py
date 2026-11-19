@@ -155,16 +155,6 @@ def main(args: argparse.Namespace) -> None:
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
-    if args.apply_regional_rr and not args.aggregate_per_variant_expected:
-        logger.warning(
-            "--apply-regional-rr only applies to --aggregate-per-variant-expected and"
-            " is ignored without it."
-        )
-    if args.apply_regional_rr and args.use_aggregated_expected:
-        logger.warning(
-            "--use-aggregated-expected makes --aggregate-by-constraint-groups read the"
-            " --apply-models-aggregated output, which has no rr."
-        )
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     # No step here reads the models, so they don't depend on --skip-coverage-model.
@@ -392,6 +382,19 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    parser.add_argument(
+        "--apply-regional-rr",
+        help=(
+            "Use the regional mutation rate (rr). --aggregate-per-variant-expected"
+            " multiplies each variant's expected counts by the rr of its 1kb window"
+            " and context, from the Table expected_counts.py --compute-rr writes with"
+            " the same --version, --test, --directory-post-fix, and --path-post-fix."
+            " The Tables from that step on get an rr path post-fix, so they sit beside"
+            " the ones without rr; pass it to every step of an rr run. Can't be"
+            " combined with --use-aggregated-expected."
+        ),
+        action="store_true",
+    )
     aggregate_per_variant_expected_args = parser.add_argument_group(
         "Aggregate per variant expected args",
         "Arguments used for applying aggregating the per variant expected values.",
@@ -402,22 +405,6 @@ if __name__ == "__main__":
             "Aggregate the per-variant expected variant counts to get the expected "
             "variant counts for each transcript by consequence annotation and "
             "modifier."
-        ),
-        action="store_true",
-    )
-
-    aggregate_per_variant_expected_args.add_argument(
-        "--apply-regional-rr",
-        help=(
-            "Multiply the per-variant expected counts by the regional mutation rate"
-            " (rr) of the variant's 1kb window and context before aggregating. Reads"
-            " the rr Table written by expected_counts.py --compute-rr with the"
-            " same --version, --test, --directory-post-fix, and --path-post-fix. The"
-            " output keeps the unadjusted Table's name. To keep both, use"
-            " --path-post-fix or --directory-post-fix; the per-variant expected and rr"
-            " Tables are read with the same post-fixes, so rerun"
-            " expected_models.py --create-training-set onward, including the rr steps,"
-            " with them."
         ),
         action="store_true",
     )

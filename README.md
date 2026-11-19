@@ -93,11 +93,12 @@ calibration: it multiplies each variant's expected count by the rr of its window
 context, or by 1 where there is none (chrX, chrY, and windows without features). It
 reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
 `--path-post-fix`, and stops with an error if that Table was normalized on a
-per-variant expected Table with other models, or doesn't record which. The output keeps the unadjusted
-Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
-replace the unadjusted ones unless you set `--path-post-fix` (rerun
-`expected_models.py --create-training-set` onward with it) or `--directory-post-fix`. The release Table
-records the rr settings in its `regional_rr_params` global.
+per-variant expected Table with other models, or doesn't record which. The Tables
+from that step on (the aggregated, constraint-group, metrics and release Tables and
+the release TSVs) get an `rr` path post-fix, so they sit beside the ones without rr.
+Pass `--apply-regional-rr` to every `constraint_metrics.py` step of an rr run; it
+can't be combined with `--use-aggregated-expected`. The release Table records the rr
+settings in its `regional_rr_params` global.
 
 `prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
 under `imported_data/` in the constraint output directory (with `--test`, in the
