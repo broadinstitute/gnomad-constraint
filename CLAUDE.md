@@ -214,6 +214,9 @@ fields or globals, update its description in `release_readme/` too.
   error if it doesn't match the preprocessed Table.
 - `--compute-constraint-metrics` needs Hail 0.2.137 or later (`hl.qgamma`, used
   for the gamma confidence interval).
+- Name each step in `get_constraint_resources` `<script>.py --<flag>`. gnomad_qc's
+  missing-input error tells the user to run the step's name, and a test checks that
+  the named script takes the flags.
 
 ## Maintaining CLAUDE.md
 
