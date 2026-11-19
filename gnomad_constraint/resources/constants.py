@@ -326,16 +326,17 @@ chromosomes and scored on even ones, and vice versa, summed over contexts. In th
 analysis behind the rr, this chose 0.3 from this range.
 
 Each of those models is fit on about half the training sites, and
-``--train-rr-models`` refits on all of them with the chosen per-site penalty, which
-shrinks the final fit about twice as much in absolute terms as the models that were
-scored. This is kept on purpose, to match how 0.3 was chosen and evaluated.
+``--train-rr-models`` refits on all of them with the chosen penalty. The penalty is
+per site (the fit minimizes the mean log loss plus the penalty term), so the final
+fit is shrunk about as much as the models that were scored.
 """
 
 RR_RIDGE_PENALTY = 0.3
 """
 Ridge penalty used when ``--tune-rr-penalty`` has no held-out sites to score.
 
-A ``--test`` run trains on chr20 only, so there is no other chromosome to hold out.
+In a ``--test`` run only chr20 has features (chrX and chrY have none), so there is
+no other chromosome to hold out.
 """
 
 RR_BACKGROUND_FRACTION = 0.05

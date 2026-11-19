@@ -875,8 +875,8 @@ chromosomes (odd or even) and scored on the fold's sites.
 ### Globals
 - `ridge_penalty: float64` — the penalty with the lowest held-out log loss summed
   over contexts and folds, or `RR_RIDGE_PENALTY` (0.3) if no held-out sites could be
-  scored (a `--test` run covers chr20 only); `--train-rr-models` uses it for every
-  context.
+  scored (in a `--test` run only chr20 has features); `--train-rr-models` uses it
+  for every context.
 - `rr_training_row_count: int64` — row count of the training Table the penalty was
   tuned on; `--train-rr-models` stops with an error if the training Table has
   another count, since it was then rewritten after the tuning.

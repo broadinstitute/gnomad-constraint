@@ -51,6 +51,11 @@ def create_rr_site_features_ht(
     background site, and the models would learn the features of poorly covered
     regions as a low mutation rate.
 
+    A site is synonymous if that is its most severe consequence in any transcript,
+    which keeps more DNMs for training than the Ensembl MANE Select synonymous sites
+    rr is normalized on (:func:`get_rr_normalization_sites_ht`), the transcripts the
+    constraint metrics rank.
+
     The DNM sites are those sites that are in ``dnm_ht``. The background is a
     random sample (``background_fraction``) of those sites absent from gnomAD
     exomes (``filters.exomes`` is missing) at the other loci, with one site kept per
