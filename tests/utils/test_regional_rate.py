@@ -456,12 +456,15 @@ class TestComputeRrHt:
         )
 
     @staticmethod
-    def _models_ht(context_feature: Optional[dict] = None) -> hl.Table:
+    def _models_ht(
+        context_feature: Optional[dict] = None, converged: bool = True
+    ) -> hl.Table:
         """
         Return models with rate ``expit(x - 1) / 0.5`` of one feature, penalty 0.3.
 
         :param context_feature: Each model's context and feature. Default is one AAA
             model of ``a``.
+        :param converged: Whether the models converged. Default is True.
         """
         ht = hl.Table.parallelize(
             [
@@ -475,7 +478,7 @@ class TestComputeRrHt:
                     "ave": 0.5,
                     "n_mutated": 10,
                     "n_background": 10,
-                    "converged": True,
+                    "converged": converged,
                 }
                 for context, feature in (context_feature or {"AAA": "a"}).items()
             ],
@@ -524,6 +527,24 @@ class TestComputeRrHt:
         assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")
         assert rr_globals.per_variant_row_count == 4
         assert rr_globals.training_sites == hl.Struct(background_seed=0)
+        assert rr_globals.non_converged_contexts == []
+
+    def test_non_converged_model_left_out(self) -> None:
+        """
+        Test that a context whose model didn't converge gets rr 1.0, and is recorded.
+
+        Regression test: a non-converged fit was applied as is, and nothing past the
+        models Table recorded which contexts it was.
+        """
+        ht = compute_rr_ht(
+            self._features_ht(),
+            self._models_ht(converged=False),
+            _per_variant_ht(
+                [(10, "ENST1", True, "synonymous_variant", "AAA", 1.0)],
+            ),
+        )
+        assert all(r.adj_r["AAA"] == 1.0 for r in ht.collect())
+        assert hl.eval(ht.rr_globals.non_converged_contexts) == ["AAA"]
 
     def test_window_missing_a_models_feature(self) -> None:
         """

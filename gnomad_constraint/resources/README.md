@@ -902,9 +902,10 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 ### Globals
 - `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
   §18, recorded by `fit_regional_mutation_rate_models`.
-- `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
-  converge (also logged as a warning).
 - `rr_training_sites: struct` — copied from the training set (§16).
+
+A context whose fit didn't converge has `converged` False; `--compute-rr` gives it
+rr 1 and logs a warning naming it.
 
 ### Rows
 - `context: str` — strand-collapsed trinucleotide context (one of `RR_CONTEXTS`).
@@ -948,6 +949,8 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
     of `per_variant_expected.ht` that have one; rr is divided by it.
   - `training_sites: struct` — the models' `rr_training_sites` (§16).
+  - `non_converged_contexts: array<str>` — contexts whose model didn't converge
+    and so get rr 1, as if they had no model.
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
     per-variant expected Table rr was normalized on (see §7).
   - `per_variant_row_count: int64` — that Table's row count (see §7).

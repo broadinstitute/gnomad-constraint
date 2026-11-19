@@ -45,6 +45,7 @@ Present only when the expected variant counts were multiplied by a regional muta
 
 - `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models
 - `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites with an rr in that context
+- `regional_rr_params.non_converged_contexts`: Contexts whose rr model didn't converge, which got an rr of 1 (no regional adjustment)
 - `regional_rr_params.training_sites`: How the rr training sites were chosen
 - `regional_rr_params.training_sites.background_fraction`: Fraction of the non-mutated synonymous sites sampled as the background
 - `regional_rr_params.training_sites.background_seed`: Seed of that sample

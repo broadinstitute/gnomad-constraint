@@ -216,7 +216,9 @@ def compute_rr_ht(
     Each window's rr in each of ``RR_CONTEXTS`` comes from that context's model, and
     windows no model covers are dropped. A window missing a feature of a context's
     model has no rr in that context, so its expected counts there aren't adjusted.
-    rr is then divided, per context, by its mean over the sites of
+    A context whose model didn't converge gets rr 1.0, as if it had no model,
+    rather than a fit that may be far from the best one. rr is then divided, per
+    context, by its mean over the sites of
     :func:`get_rr_normalization_sites_ht` that have one, weighted by their adj
     expected count, so it moves those sites' expected counts between windows without
     changing their total.
@@ -230,10 +232,22 @@ def compute_rr_ht(
     :return: Table keyed by ``interval`` with ``adj_r``, a dict of context to rr, and
         an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
         ``training_sites`` (the models' ``rr_training_sites``),
-        ``per_variant_apply_models_globals``, and ``per_variant_row_count``.
+        ``non_converged_contexts``, ``per_variant_apply_models_globals``, and
+        ``per_variant_row_count``.
     """
+    # The models Table has one small row per context.
+    non_converged = models_ht.aggregate(
+        hl.agg.filter(~models_ht.converged, hl.agg.collect(models_ht.context))
+    )
+    if non_converged:
+        logger.warning(
+            "The rr models of %s didn't converge, so those contexts get rr 1.",
+            sorted(non_converged),
+        )
     ht = features_ht.select(
-        adj_r=regional_mutation_rate_expr(features_ht.row, models_ht, RR_CONTEXTS)
+        adj_r=regional_mutation_rate_expr(
+            features_ht.row, models_ht, RR_CONTEXTS, skip_non_converged=True
+        )
     )
     ht = ht.filter(hl.is_defined(ht.adj_r))
     ht = ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
@@ -257,6 +271,9 @@ def compute_rr_ht(
             ridge_penalty=models_ht.index_globals().ridge_penalty,
             normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
             training_sites=models_ht.index_globals().rr_training_sites,
+            non_converged_contexts=hl.literal(
+                sorted(non_converged), hl.tarray(hl.tstr)
+            ),
             # --apply-regional-rr checks that the per-variant Table it aggregates
             # still has these models and this many rows.
             per_variant_apply_models_globals=(
