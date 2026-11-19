@@ -859,6 +859,8 @@ chromosomes (odd or even) and scored on the fold's sites.
   chromosome set, `odd` or `even`).
 - `n_test: int64` — held-out training sites with no missing label or feature.
 - `log_loss: float64` — log loss summed over those sites.
+- `converged: bool` — whether the model scored on them converged (fits that
+  didn't are still scored, and counted in a warning).
 
 ---
 
@@ -875,7 +877,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 
 ### Globals
 - `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
-  §18.
+  §18, recorded by `fit_regional_mutation_rate_models`.
 - `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
   converge (also logged as a warning).
 
