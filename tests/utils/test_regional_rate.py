@@ -112,6 +112,7 @@ class TestCreateRrSiteFeaturesHt:
                     upper_cov_cutoff is not None, hl.int32(upper_cov_cutoff or 0)
                 ),
             ),
+            apply_models_globals=hl.struct(exome_coverage_metric="AN_percent"),
         )
 
     def _preprocessed_ht(self, upper_cov_cutoff: Optional[int] = None) -> hl.Table:
@@ -210,6 +211,7 @@ class TestCreateRrSiteFeaturesHt:
             background_fraction,
             seed,
             gene_flags_ht=gene_flags_ht,
+            gene_flags_version="4.1.2",
         )
 
     def test_sites(self) -> None:
@@ -223,10 +225,21 @@ class TestCreateRrSiteFeaturesHt:
         (50), aren't in it, and neither is the second allele at the DNM locus 10.
         Sites below the plateau models' high coverage cutoff (the DNM at 80 and 90)
         or with no coverage (100) aren't in either set. Every site gets its window's
-        features, and the preprocessed Table's globals are dropped.
+        features, and the preprocessed Table's globals are replaced by the record of
+        how the sites were chosen.
         """
         ht = self._site_features_ht(1.0)
-        assert len(ht.globals.dtype) == 0
+        assert hl.eval(ht.globals) == hl.Struct(
+            rr_training_sites=hl.Struct(
+                background_fraction=1.0,
+                background_seed=0,
+                qc_flagged_gene_filter=False,
+                gene_flags_version=None,
+                exome_coverage_metric="AN_percent",
+                high_cov_cutoff=90,
+                upper_cov_cutoff=None,
+            )
+        )
         assert list(ht.key) == ["locus"]
         rows = ht.collect()
         assert sorted(
@@ -243,10 +256,12 @@ class TestCreateRrSiteFeaturesHt:
         """
         Test that sites above the plateau models' upper coverage cutoff are left out.
 
-        With an upper cutoff of 99, the background site at 110 (coverage 100) goes.
+        With an upper cutoff of 99, the background site at 110 (coverage 100) goes,
+        and the cutoff is recorded.
         """
-        rows = self._site_features_ht(1.0, upper_cov_cutoff=99).collect()
-        assert sorted(r.locus.position for r in rows) == [10, 20, 30, 70]
+        ht = self._site_features_ht(1.0, upper_cov_cutoff=99)
+        assert hl.eval(ht.rr_training_sites.upper_cov_cutoff) == 99
+        assert sorted(r.locus.position for r in ht.collect()) == [10, 20, 30, 70]
 
     def test_qc_flagged_genes_left_out(self) -> None:
         """
@@ -255,9 +270,11 @@ class TestCreateRrSiteFeaturesHt:
         The flagged gene spans 15-35, so the DNM at 20 and the background site at 30
         both go.
         """
-        rows = self._site_features_ht(
-            1.0, gene_flags_ht=_metrics_ht(span=(15, 35))
-        ).collect()
+        ht = self._site_features_ht(1.0, gene_flags_ht=_metrics_ht(span=(15, 35)))
+        rr_training_sites = hl.eval(ht.rr_training_sites)
+        assert rr_training_sites.qc_flagged_gene_filter
+        assert rr_training_sites.gene_flags_version == "4.1.2"
+        rows = ht.collect()
         assert sorted((r.locus.position, r.y) for r in rows) == [
             (10, 1),
             (70, 0),
@@ -465,7 +482,9 @@ class TestComputeRrHt:
             MODELS_HT_SCHEMA,
             key="context",
         )
-        return ht.annotate_globals(ridge_penalty=0.3)
+        return ht.annotate_globals(
+            ridge_penalty=0.3, rr_training_sites=hl.struct(background_seed=0)
+        )
 
     def test_rr(self) -> None:
         """
@@ -504,6 +523,7 @@ class TestComputeRrHt:
         )
         assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")
         assert rr_globals.per_variant_row_count == 4
+        assert rr_globals.training_sites == hl.Struct(background_seed=0)
 
     def test_window_missing_a_models_feature(self) -> None:
         """

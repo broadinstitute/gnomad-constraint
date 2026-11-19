@@ -344,10 +344,13 @@ RR_BACKGROUND_FRACTION = 0.05
 RR_BACKGROUND_SEED = 0
 """Seed used when sampling the non-mutated rr training background."""
 
+RR_GENE_FLAGS_VERSION = "4.1.2"
+"""Version of the constraint metrics Table whose gene flags pick the genes left out of rr training."""
+
 RR_TRAINING_N_PARTITIONS = 100
 """
 Number of partitions of the rr site features Table, and so of the training Table.
 
-The sampled sites keep the partitioning of the context Table (about 5,000 partitions
-for about 500,000 rows), so the Table is coalesced before it is written.
+The sampled sites keep the partitioning of the preprocessed Table (about 5,000
+partitions for about 500,000 rows), so the Table is coalesced before it is written.
 """

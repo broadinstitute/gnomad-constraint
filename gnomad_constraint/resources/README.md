@@ -419,6 +419,7 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`. With
 `--apply-regional-rr`, also `regional_rr_globals`, a copy of the rr Table's
 `rr_globals`: `ridge_penalty: float64` (ridge penalty of the rr models),
 `normalization_factors: dict<str, float64>` (per-context factor rr was divided by),
+`training_sites: struct` (how the rr training sites were chosen, §16),
 `per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
 per-variant expected Table rr was normalized on) and `per_variant_row_count: int64`
 (that Table's row count); `--apply-regional-rr` stops with an error if either differs
@@ -805,6 +806,20 @@ variant is one row, however many DNMs were reported there.
 - **Resource fn:** [`get_rr_site_features_ht`](resource_utils.py)
 - **Key:** `locus`
 
+### Globals
+- `rr_training_sites: struct` — how the sites were chosen, carried to the training
+  set (§17), the models (§19), the rr Table (§20, as `rr_globals.training_sites`),
+  and the release (`regional_rr_params.training_sites`):
+  - `background_fraction: float64`, `background_seed: int32` —
+    `RR_BACKGROUND_FRACTION` and `RR_BACKGROUND_SEED`.
+  - `qc_flagged_gene_filter: bool` — whether sites in QC-flagged genes were left
+    out (False with `--skip-qc-flagged-gene-filter`).
+  - `gene_flags_version: str` — version of the constraint metrics Table the gene
+    flags came from (`RR_GENE_FLAGS_VERSION`); missing without the filter.
+  - `exome_coverage_metric: str`, `high_cov_cutoff: int32`,
+    `upper_cov_cutoff: int32` — the coverage range of the sites, from the
+    preprocessed Table's globals.
+
 ### Rows
 - `locus: locus<GRCh38>` — key.
 - `alleles: array<str>`, `context: str` — the site's alleles and strand-collapsed
@@ -831,6 +846,7 @@ rr training set: the site features (§16) prepared for the models by
 ### Globals
 - `features: dict<str, array<str>>` — each context's feature columns, in the order
   of `x` (`RR_CONTEXT_FEATURES`).
+- `rr_training_sites: struct` — copied from the site features (§16).
 
 ### Rows
 - `locus: locus<GRCh38>` — key.
@@ -888,6 +904,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
   §18, recorded by `fit_regional_mutation_rate_models`.
 - `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
   converge (also logged as a warning).
+- `rr_training_sites: struct` — copied from the training set (§16).
 
 ### Rows
 - `context: str` — strand-collapsed trinucleotide context (one of `RR_CONTEXTS`).
@@ -930,6 +947,7 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
   - `normalization_factors: dict<str, float64>` — per-context expected-weighted
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
     of `per_variant_expected.ht` that have one; rr is divided by it.
+  - `training_sites: struct` — the models' `rr_training_sites` (§16).
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
     per-variant expected Table rr was normalized on (see §7).
   - `per_variant_row_count: int64` — that Table's row count (see §7).

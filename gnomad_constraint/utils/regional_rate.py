@@ -38,6 +38,7 @@ def create_rr_site_features_ht(
     background_fraction: float,
     seed: int,
     gene_flags_ht: Optional[hl.Table] = None,
+    gene_flags_version: Optional[str] = None,
 ) -> hl.Table:
     """
     Create the rr site features: synonymous DNM and non-mutated background sites.
@@ -57,7 +58,9 @@ def create_rr_site_features_ht(
     and background sites ``y`` = 0, and every site gets the features of the 1kb
     window containing it.
     With ``gene_flags_ht``, sites in genes with a QC gene flag are left out
-    (:func:`remove_qc_flagged_genes`). The Table has no globals.
+    (:func:`remove_qc_flagged_genes`). The settings that chose the sites are
+    recorded in an ``rr_training_sites`` global, which the later rr steps carry
+    to the rr Table and the release.
 
     Each DNM variant is one row, however many DNMs were reported there, since the DNM
     Table can't tell a recurrent DNM from one reported by two cohorts.
@@ -72,8 +75,13 @@ def create_rr_site_features_ht(
     :param gene_flags_ht: Constraint metrics Table with gene flags, whose flagged
         genes' sites are left out (see :func:`remove_qc_flagged_genes`), or None to
         keep every gene. Default is None.
+    :param gene_flags_version: Version of the constraint metrics release
+        ``gene_flags_ht`` comes from, recorded in the globals. Default is None.
     :return: Site features Table keyed by ``locus`` with ``alleles``, ``context``,
-        ``y``, and ``GENOMIC_FEATURE_COLUMNS``.
+        ``y``, and ``GENOMIC_FEATURE_COLUMNS``, and an ``rr_training_sites`` global
+        with ``background_fraction``, ``background_seed``,
+        ``qc_flagged_gene_filter``, ``gene_flags_version``, and the coverage range
+        (``exome_coverage_metric``, ``high_cov_cutoff``, ``upper_cov_cutoff``).
     """
     coverage = preprocessed_ht.exomes_coverage
     build_globals = preprocessed_ht.build_models_globals
@@ -106,8 +114,25 @@ def create_rr_site_features_ht(
         ht = remove_qc_flagged_genes(ht, gene_flags_ht)
 
     ht = ht.annotate(**features_ht.select(*GENOMIC_FEATURE_COLUMNS)[ht.locus])
+    preprocessed_globals = preprocessed_ht.index_globals()
 
-    return ht.select_globals()
+    return ht.select_globals(
+        rr_training_sites=hl.struct(
+            background_fraction=hl.float64(background_fraction),
+            background_seed=hl.int32(seed),
+            qc_flagged_gene_filter=gene_flags_ht is not None,
+            gene_flags_version=hl.or_missing(
+                gene_flags_ht is not None, hl.str(gene_flags_version or "")
+            ),
+            exome_coverage_metric=(
+                preprocessed_globals.apply_models_globals.exome_coverage_metric
+            ),
+            high_cov_cutoff=preprocessed_globals.build_models_globals.high_cov_cutoff,
+            upper_cov_cutoff=(
+                preprocessed_globals.build_models_globals.upper_cov_cutoff
+            ),
+        )
+    )
 
 
 def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
@@ -197,12 +222,14 @@ def compute_rr_ht(
     changing their total.
 
     :param features_ht: Genomic feature Table keyed by ``interval``.
-    :param models_ht: rr models Table with a ``ridge_penalty`` global.
+    :param models_ht: rr models Table with ``ridge_penalty`` and
+        ``rr_training_sites`` globals.
     :param per_variant_ht: Per-variant expected Table to normalize on, with an
         ``apply_models_globals`` global (see :func:`get_rr_normalization_sites_ht`),
         as read from disk, so counting its rows reads only metadata.
     :return: Table keyed by ``interval`` with ``adj_r``, a dict of context to rr, and
         an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
+        ``training_sites`` (the models' ``rr_training_sites``),
         ``per_variant_apply_models_globals``, and ``per_variant_row_count``.
     """
     ht = features_ht.select(
@@ -229,6 +256,7 @@ def compute_rr_ht(
         rr_globals=hl.struct(
             ridge_penalty=models_ht.index_globals().ridge_penalty,
             normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
+            training_sites=models_ht.index_globals().rr_training_sites,
             # --apply-regional-rr checks that the per-variant Table it aggregates
             # still has these models and this many rows.
             per_variant_apply_models_globals=(

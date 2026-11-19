@@ -43,6 +43,7 @@ from gnomad_constraint.resources.constants import (
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
     RR_CONTEXT_FEATURES,
+    RR_GENE_FLAGS_VERSION,
     RR_RIDGE_PENALTIES,
     RR_RIDGE_PENALTY,
     RR_TRAINING_N_PARTITIONS,
@@ -203,6 +204,7 @@ def main(args: argparse.Namespace) -> None:
                 gene_flags_ht=(
                     None if args.skip_qc_flagged_gene_filter else res.gene_flags_ht.ht()
                 ),
+                gene_flags_version=RR_GENE_FLAGS_VERSION,
             )
             # The sites are a few hundred thousand of the whole context
             # Table. naive_coalesce merges upstream partitions, so coalescing before
@@ -218,9 +220,14 @@ def main(args: argparse.Namespace) -> None:
             res = resources.create_rr_training_set
             res.check_resource_existence()
 
-            ht = res.rr_site_features_ht.ht()
+            site_ht = res.rr_site_features_ht.ht()
             ht = prepare_regional_mutation_rate_training_ht(
-                ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(ht.locus)
+                site_ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(site_ht.locus)
+            )
+            # gnomad_methods keeps only the features global, so carry the record of
+            # how the sites were chosen.
+            ht = ht.annotate_globals(
+                rr_training_sites=site_ht.index_globals().rr_training_sites
             )
             ht.write(res.rr_training_ht.path, overwrite=overwrite)
             logger.info("Done creating the rr training set.")
@@ -246,13 +253,15 @@ def main(args: argparse.Namespace) -> None:
             logger.info("Training the rr models (ridge penalty %s)...", penalty)
 
             # The fit records the penalty in a ridge_penalty global.
-            ht = fit_regional_mutation_rate_models(res.rr_training_ht.ht(), penalty)
+            training_ht = res.rr_training_ht.ht()
+            ht = fit_regional_mutation_rate_models(training_ht, penalty)
             # The models Table has one small row per context.
             non_converged = ht.aggregate(
                 hl.agg.filter(~ht.converged, hl.agg.collect(ht.context))
             )
             ht = ht.annotate_globals(
                 non_converged_contexts=hl.literal(non_converged, hl.tarray(hl.tstr)),
+                rr_training_sites=training_ht.index_globals().rr_training_sites,
             )
             ht.write(res.rr_models_ht.path, overwrite=overwrite)
             logger.info("Done training the rr models.")

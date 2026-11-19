@@ -26,6 +26,7 @@ from gnomad_constraint.resources.constants import (
     EXTENSIONS,
     GENCODE_VERSION_MAP,
     MODEL_TYPES,
+    RR_GENE_FLAGS_VERSION,
     SITES_VERSION_MAP,
     VEP_ANNOTATION,
     VEP_VERSION_MAP,
@@ -615,12 +616,12 @@ def get_rr_gene_flags_ht() -> TableResource:
     """
     Return the constraint metrics Table whose gene flags pick the genes left out of rr training.
 
-    This is pinned to the v4.1.2 constraint metrics Table, whatever version rr is
-    computed for.
+    This is pinned to the ``RR_GENE_FLAGS_VERSION`` (v4.1.2) constraint metrics
+    Table, whatever version rr is computed for.
 
     :return: Constraint metrics TableResource.
     """
-    return get_constraint_metrics_dataset(version="4.1.2")
+    return get_constraint_metrics_dataset(version=RR_GENE_FLAGS_VERSION)
 
 
 def get_rr_site_features_ht(**kwargs) -> TableResource:

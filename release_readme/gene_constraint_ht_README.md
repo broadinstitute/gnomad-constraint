@@ -45,6 +45,12 @@ Present only when the expected variant counts were multiplied by a regional muta
 
 - `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models
 - `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites with an rr in that context
+- `regional_rr_params.training_sites`: How the rr training sites were chosen
+- `regional_rr_params.training_sites.background_fraction`: Fraction of the non-mutated synonymous sites sampled as the background
+- `regional_rr_params.training_sites.background_seed`: Seed of that sample
+- `regional_rr_params.training_sites.qc_flagged_gene_filter`: Whether sites in genes with a QC gene flag were left out
+- `regional_rr_params.training_sites.gene_flags_version`: Version of the constraint metrics release the gene flags came from (missing without the filter)
+- `regional_rr_params.training_sites.exome_coverage_metric`, `regional_rr_params.training_sites.high_cov_cutoff`, `regional_rr_params.training_sites.upper_cov_cutoff`: The exome coverage range of the training sites, the same as for the plateau models
 
 ### `downsamplings`
 
