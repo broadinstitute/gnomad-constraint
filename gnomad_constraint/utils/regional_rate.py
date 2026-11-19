@@ -70,9 +70,14 @@ def create_rr_site_features_ht(
     Each DNM variant is one row, however many DNMs were reported there, since the DNM
     Table can't tell a recurrent DNM from one reported by two cohorts.
 
+    A preprocessed Table that doesn't record its exome coverage metric, written
+    before ``apply_models_globals`` had ``exome_coverage_metric``, raises an error,
+    since the coverage range of the sites couldn't be recorded.
+
     :param preprocessed_ht: Preprocessed Table with ``vep``, ``context``,
-        ``filters``, ``exomes_coverage``, and a ``build_models_globals`` global with
-        ``high_cov_cutoff`` and ``upper_cov_cutoff``.
+        ``filters``, ``exomes_coverage``, a ``build_models_globals`` global with
+        ``high_cov_cutoff`` and ``upper_cov_cutoff``, and an
+        ``apply_models_globals`` global with ``exome_coverage_metric``.
     :param dnm_ht: DNM Table keyed by ``locus`` and ``alleles``.
     :param features_ht: Genomic feature Table keyed by ``interval``.
     :param background_fraction: Fraction of non-mutated sites to sample.
@@ -88,6 +93,12 @@ def create_rr_site_features_ht(
         ``qc_flagged_gene_filter``, ``gene_flags_version``, and the coverage range
         (``exome_coverage_metric``, ``high_cov_cutoff``, ``upper_cov_cutoff``).
     """
+    if "exome_coverage_metric" not in preprocessed_ht.apply_models_globals:
+        raise ValueError(
+            "The preprocessed Table doesn't record its exome coverage metric in"
+            " apply_models_globals. Rerun prepare_data.py --preprocess-data."
+        )
+
     coverage = preprocessed_ht.exomes_coverage
     build_globals = preprocessed_ht.build_models_globals
     ht = preprocessed_ht.filter(
