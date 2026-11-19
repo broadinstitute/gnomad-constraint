@@ -910,8 +910,8 @@ NOTES = {
         },
         "create_rr_site_features": {
             "summary": (
-                "Synonymous DNM sites and a 5% sample of other synonymous sites, with"
-                " their window's features"
+                "Synonymous DNM sites and a 5% sample of other synonymous sites in the"
+                " plateau models' coverage range, with their window's features"
             ),
         },
         "create_rr_training_set": {
