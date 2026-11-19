@@ -183,10 +183,11 @@ def compute_rr_ht(
     :param features_ht: Genomic feature Table keyed by ``interval``.
     :param models_ht: rr models Table with a ``ridge_penalty`` global.
     :param per_variant_ht: Per-variant expected Table to normalize on, with an
-        ``apply_models_globals`` global (see :func:`get_rr_normalization_sites_ht`).
+        ``apply_models_globals`` global (see :func:`get_rr_normalization_sites_ht`),
+        as read from disk, so counting its rows reads only metadata.
     :return: Table keyed by ``interval`` with ``adj_r``, a dict of context to rr, and
         an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
-        and ``per_variant_apply_models_globals``.
+        ``per_variant_apply_models_globals``, and ``per_variant_row_count``.
     """
     ht = features_ht.select(
         adj_r=regional_mutation_rate_expr(features_ht.row, models_ht, RR_CONTEXTS)
@@ -213,9 +214,10 @@ def compute_rr_ht(
             ridge_penalty=models_ht.index_globals().ridge_penalty,
             normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
             # --apply-regional-rr checks that the per-variant Table it aggregates
-            # still has these models.
+            # still has these models and this many rows.
             per_variant_apply_models_globals=(
                 per_variant_ht.index_globals().apply_models_globals
             ),
+            per_variant_row_count=hl.int64(per_variant_ht.count()),
         )
     )

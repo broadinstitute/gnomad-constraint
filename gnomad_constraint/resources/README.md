@@ -924,6 +924,7 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
     of `per_variant_expected.ht` that have one; rr is divided by it.
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
     per-variant expected Table rr was normalized on (see §7).
+  - `per_variant_row_count: int64` — that Table's row count (see §7).
 
 ### Rows
 - `interval: interval<locus<GRCh38>>` — 1kb window, as in
