@@ -111,36 +111,42 @@ def check_regional_rr_input(per_variant_ht: hl.Table, regional_rr_ht: hl.Table) 
     Check that the rr Table was normalized on this per-variant expected Table.
 
     ``expected_counts.py --compute-rr`` records the ``apply_models_globals``
-    (the fitted plateau and coverage models) of the per-variant expected Table it
-    normalizes rr on. If the per-variant Table being aggregated has different models,
-    it was rewritten after rr was computed, and the rr normalization factors no
-    longer match it. An rr Table with no ``rr_globals``, like the Gnocchi
-    ``syn_adj_r`` Table, is used with a warning. One whose ``rr_globals`` lacks the
-    record was written by older code and is rejected, since the release step expects
-    the record.
+    (the fitted plateau and coverage models) and the row count of the per-variant
+    expected Table it normalizes rr on. If the per-variant Table being aggregated
+    differs in either, it was rewritten after rr was computed, and the rr
+    normalization factors no longer match it. An rr Table without that record, in
+    its ``rr_globals``, is rejected too: it can't be checked, and the release records
+    the rr settings from ``rr_globals``.
 
-    :param per_variant_ht: Per-variant expected Table to aggregate.
+    :param per_variant_ht: Per-variant expected Table to aggregate, as read from
+        disk, so counting its rows reads only metadata.
     :param regional_rr_ht: rr Table to apply.
     :return: None.
     """
-    if "rr_globals" not in regional_rr_ht.globals:
-        logger.warning(
-            "The rr Table doesn't record the per-variant expected Table it was"
-            " normalized on, so it can't be checked against this one."
-        )
-        return
-    if "per_variant_apply_models_globals" not in regional_rr_ht.rr_globals:
+    if "rr_globals" not in regional_rr_ht.globals or any(
+        f not in regional_rr_ht.rr_globals
+        for f in ["per_variant_apply_models_globals", "per_variant_row_count"]
+    ):
         raise ValueError(
-            "The rr Table's rr_globals don't record the per-variant expected Table it"
-            " was normalized on. Rerun expected_counts.py --compute-rr."
+            "The rr Table doesn't record the per-variant expected Table it was"
+            " normalized on. Rerun expected_counts.py --compute-rr."
         )
 
-    recorded = hl.eval(regional_rr_ht.rr_globals.per_variant_apply_models_globals)
-    if recorded != hl.eval(per_variant_ht.apply_models_globals):
+    rr_globals = hl.eval(regional_rr_ht.rr_globals)
+    if rr_globals.per_variant_apply_models_globals != hl.eval(
+        per_variant_ht.apply_models_globals
+    ):
         raise ValueError(
             "The rr Table was normalized on a per-variant expected Table with"
             " different models than the one being aggregated. Rerun"
             " expected_counts.py --compute-rr."
+        )
+    n_rows = per_variant_ht.count()
+    if rr_globals.per_variant_row_count != n_rows:
+        raise ValueError(
+            "The rr Table was normalized on a per-variant expected Table with"
+            f" {rr_globals.per_variant_row_count} rows, but the one being aggregated"
+            f" has {n_rows}. Rerun expected_counts.py --compute-rr."
         )
 
 
@@ -159,16 +165,6 @@ def main(args: argparse.Namespace) -> None:
 
     if version not in VERSIONS:
         raise ValueError("The requested version of resource Tables is not available.")
-    if args.apply_regional_rr and not args.aggregate_per_variant_expected:
-        logger.warning(
-            "--apply-regional-rr only applies to --aggregate-per-variant-expected and"
-            " is ignored without it."
-        )
-    if args.apply_regional_rr and args.use_aggregated_expected:
-        logger.warning(
-            "--use-aggregated-expected makes --aggregate-by-constraint-groups read the"
-            " --apply-models-aggregated output, which has no rr."
-        )
 
     # Construct resources with paths for intermediate Tables generated in the pipeline.
     # No step here reads the models, so they don't depend on --skip-coverage-model.
@@ -397,6 +393,19 @@ if __name__ == "__main__":
         ),
         action="store_true",
     )
+    parser.add_argument(
+        "--apply-regional-rr",
+        help=(
+            "Use the regional mutation rate (rr). --aggregate-per-variant-expected"
+            " multiplies each variant's expected counts by the rr of its 1kb window"
+            " and context, from the Table expected_counts.py --compute-rr writes with"
+            " the same --version, --test, --directory-post-fix, and --path-post-fix."
+            " The Tables from that step on get an rr path post-fix, so they sit beside"
+            " the ones without rr; pass it to every step of an rr run. Can't be"
+            " combined with --use-aggregated-expected."
+        ),
+        action="store_true",
+    )
     aggregate_per_variant_expected_args = parser.add_argument_group(
         "Aggregate per variant expected args",
         "Arguments used for applying aggregating the per variant expected values.",
@@ -407,22 +416,6 @@ if __name__ == "__main__":
             "Aggregate the per-variant expected variant counts to get the expected "
             "variant counts for each transcript by consequence annotation and "
             "modifier."
-        ),
-        action="store_true",
-    )
-
-    aggregate_per_variant_expected_args.add_argument(
-        "--apply-regional-rr",
-        help=(
-            "Multiply the per-variant expected counts by the regional mutation rate"
-            " (rr) of the variant's 1kb window and context before aggregating. Reads"
-            " the rr Table written by expected_counts.py --compute-rr with the"
-            " same --version, --test, --directory-post-fix, and --path-post-fix. The"
-            " output keeps the unadjusted Table's name. To keep both, use"
-            " --path-post-fix or --directory-post-fix; the per-variant expected and rr"
-            " Tables are read with the same post-fixes, so rerun"
-            " expected_models.py --create-training-set onward, including the rr steps,"
-            " with them."
         ),
         action="store_true",
     )
