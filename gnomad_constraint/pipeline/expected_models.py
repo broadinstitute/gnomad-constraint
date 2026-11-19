@@ -244,13 +244,13 @@ def main(args: argparse.Namespace) -> None:
             penalty = hl.eval(res.rr_penalty_tuning_ht.ht().ridge_penalty)
             logger.info("Training the rr models (ridge penalty %s)...", penalty)
 
+            # The fit records the penalty in a ridge_penalty global.
             ht = fit_regional_mutation_rate_models(res.rr_training_ht.ht(), penalty)
             # The models Table has one small row per context.
             non_converged = ht.aggregate(
                 hl.agg.filter(~ht.converged, hl.agg.collect(ht.context))
             )
             ht = ht.annotate_globals(
-                ridge_penalty=penalty,
                 non_converged_contexts=hl.literal(non_converged, hl.tarray(hl.tstr)),
             )
             ht.write(res.rr_models_ht.path, overwrite=overwrite)
