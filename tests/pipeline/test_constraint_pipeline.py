@@ -1,27 +1,35 @@
-"""Tests for the constraint pipeline script."""
+"""Tests for the helpers of the constraint pipeline scripts."""
 
+import argparse
 import ast
+import inspect
 import logging
 import os
+import runpy
+import sys
 from collections import defaultdict
 from types import SimpleNamespace
-from typing import Any, List
+from typing import Any, Dict, List
 from unittest import mock
 
 import hail as hl
 import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
-import gnomad_constraint.pipeline.constraint_pipeline as constraint_pipeline
-from gnomad_constraint.pipeline.constraint_pipeline import (
-    check_apply_models_resources,
+import gnomad_constraint.pipeline as pipeline
+import gnomad_constraint.resources.resource_utils as constraint_res
+import gnomad_constraint.utils.constraint as constraint_utils
+from gnomad_constraint.pipeline.constraint_metrics import (
     check_constraint_group_input,
-    check_gerp_cutoffs_step,
-    check_preprocess_settings,
-    check_skip_coverage_model,
-    get_coverage_model,
     get_release_downsamplings,
 )
+from gnomad_constraint.pipeline.expected_counts import (
+    check_apply_models_resources,
+    get_coverage_model,
+)
+from gnomad_constraint.pipeline.expected_models import check_skip_coverage_model
+from gnomad_constraint.pipeline.prepare_data import check_gerp_cutoffs_step
+from gnomad_constraint.resources.constants import CURRENT_VERSION
 
 
 class TestCheckSkipCoverageModel:
@@ -150,7 +158,7 @@ class TestCheckConstraintGroupInput:
         ``--aggregate-per-variant-expected`` output, maybe from an older run,
         rather than the Table just written.
         """
-        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+        with caplog.at_level(logging.WARNING, logger="constraint_metrics"):
             check_constraint_group_input(
                 aggregate_per_variant_expected=aggregate_per_variant_expected,
                 apply_models_aggregated=apply_models_aggregated,
@@ -233,7 +241,7 @@ class TestGetCoverageModel:
                 coefficients=self.COEFFICIENTS, log10_coverage=saved_log10_coverage
             ),
         )
-        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+        with caplog.at_level(logging.WARNING, logger="expected_counts"):
             coefficients, log10 = get_coverage_model(res, False, log10_coverage, 90)
         assert hl.eval(coefficients) == self.COEFFICIENTS
         assert log10 == saved_log10_coverage
@@ -252,7 +260,7 @@ class TestGetCoverageModel:
     ) -> None:
         """Test that a model saved as only its coefficients uses the flag, and warns."""
         res = self._res(tmp_path, hl.literal(coefficients))
-        with caplog.at_level(logging.WARNING, logger="constraint_pipeline"):
+        with caplog.at_level(logging.WARNING, logger="expected_counts"):
             result, log10 = get_coverage_model(
                 res, False, log10_coverage, high_cov_cutoff
             )
@@ -283,6 +291,197 @@ class TestGetCoverageModel:
             get_coverage_model(res, False, not log10_coverage, high_cov_cutoff)
 
 
+SCRIPTS = ["prepare_data", "expected_models", "expected_counts", "constraint_metrics"]
+"""The pipeline scripts, in the order they run."""
+
+GET_CONSTRAINT_RESOURCES = constraint_res.get_constraint_resources
+"""The real ``get_constraint_resources``, for its signature once a test replaces it."""
+
+COMMON_FLAGS = [
+    "--version",
+    "4.1.1",
+    "--overwrite",
+    "--test",
+    "--directory-post-fix",
+    "dir",
+    "--path-post-fix",
+    "path",
+]
+"""Flags every script takes, set to values other than their defaults."""
+
+COMMON_ARGS = {
+    "version": "4.1.1",
+    "overwrite": True,
+    "test": True,
+    "directory_post_fix": "dir",
+    "path_post_fix": "path",
+}
+"""The ``get_constraint_resources`` arguments ``COMMON_FLAGS`` should give."""
+
+
+class _StopRun(Exception):
+    """Raised by a stand-in for a function a script calls, to end the script run."""
+
+
+def _script_path(script: str) -> str:
+    """
+    Return the path of a pipeline script.
+
+    :param script: Script name, without ``.py``.
+    :return: Path of the script.
+    """
+    return os.path.join(os.path.dirname(pipeline.__file__), f"{script}.py")
+
+
+def _run_script(monkeypatch: pytest.MonkeyPatch, script: str, flags: List[str]) -> None:
+    """
+    Run a pipeline script as ``__main__`` until a stand-in raises ``_StopRun``.
+
+    :param monkeypatch: pytest monkeypatch fixture.
+    :param script: Script name, without ``.py``.
+    :param flags: Command line flags.
+    :return: None.
+    """
+    monkeypatch.setattr(hl, "init", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hl, "copy_log", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", [f"{script}.py"] + flags)
+    with pytest.raises(_StopRun):
+        runpy.run_path(_script_path(script), run_name="__main__")
+
+
+class TestScriptResources:
+    """Test the resources each script asks for and the options it reads."""
+
+    @pytest.mark.parametrize(
+        "script, flags, expected",
+        [
+            *[(script, [], {}) for script in SCRIPTS],
+            *[(script, COMMON_FLAGS, COMMON_ARGS) for script in SCRIPTS],
+            *[(script, ["--test-gene-list"], {"test": True}) for script in SCRIPTS],
+            # No prepare_data.py step reads the models, so it doesn't pass them.
+            ("prepare_data", ["--skip-coverage-model"], {}),
+            ("expected_models", ["--skip-coverage-model"], {"models": ["plateau"]}),
+            ("expected_counts", ["--skip-coverage-model"], {"models": ["plateau"]}),
+            (
+                "constraint_metrics",
+                ["--skip-pre-rank-metrics"],
+                {"skip_pre_rank_metrics": True},
+            ),
+            (
+                "constraint_metrics",
+                ["--use-aggregated-expected"],
+                {"use_aggregated_expected": True},
+            ),
+        ],
+    )
+    def test_get_constraint_resources_call(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        script: str,
+        flags: List[str],
+        expected: Dict[str, Any],
+    ) -> None:
+        """
+        Test the whole ``get_constraint_resources`` call each script makes.
+
+        The resources decide which Tables each step reads and checks, so a flag
+        that doesn't reach the call makes a step check or read the wrong Tables.
+        Regression test: ``constraint_metrics.py`` had no ``--skip-coverage-model``,
+        and an earlier version of this test only checked ``models`` in three
+        scripts, so it passed with ``use_aggregated_expected`` dropped from the
+        ``constraint_metrics.py`` call.
+        """
+        calls = []
+
+        def get_resources(*args: Any, **kwargs: Any) -> None:
+            calls.append(
+                inspect.signature(GET_CONSTRAINT_RESOURCES).bind(*args, **kwargs)
+            )
+            raise _StopRun
+
+        monkeypatch.setattr(constraint_res, "get_constraint_resources", get_resources)
+        _run_script(monkeypatch, script, flags)
+
+        call = calls[0]
+        call.apply_defaults()
+        call.arguments["models"] = list(call.arguments["models"])
+        assert call.arguments == {
+            "version": CURRENT_VERSION,
+            "overwrite": False,
+            "test": False,
+            "models": ["plateau", "coverage"],
+            "directory_post_fix": None,
+            "path_post_fix": None,
+            "skip_pre_rank_metrics": False,
+            "use_aggregated_expected": False,
+            **expected,
+        }
+
+    @pytest.mark.parametrize("skip_coverage_model", [False, True])
+    def test_preprocess_data_skip_coverage_model(
+        self, monkeypatch: pytest.MonkeyPatch, skip_coverage_model: bool
+    ) -> None:
+        """
+        Test that ``prepare_data.py --preprocess-data`` passes ``--skip-coverage-model`` on.
+
+        ``prepare_data.py`` doesn't pass ``models`` to ``get_constraint_resources``,
+        so the flag reaches the rest of the pipeline only through the preprocessed
+        Table, which the later scripts check their own flag against.
+        """
+        calls = []
+
+        def prepare(*args: Any, **kwargs: Any) -> None:
+            calls.append(kwargs)
+            raise _StopRun
+
+        monkeypatch.setattr(
+            constraint_res,
+            "get_constraint_resources",
+            lambda *args, **kwargs: mock.MagicMock(),
+        )
+        monkeypatch.setattr(
+            constraint_utils, "prepare_ht_for_constraint_calculations", prepare
+        )
+        flags = ["--preprocess-data"]
+        if skip_coverage_model:
+            flags.append("--skip-coverage-model")
+        _run_script(monkeypatch, "prepare_data", flags)
+
+        assert calls[0]["skip_coverage_model"] == skip_coverage_model
+
+    @pytest.mark.parametrize("script", SCRIPTS)
+    def test_reads_only_its_own_options(
+        self, monkeypatch: pytest.MonkeyPatch, script: str
+    ) -> None:
+        """
+        Test that every ``args.<name>`` a script reads is one of its own options.
+
+        After the split, a step block left reading an option that went to another
+        script would only fail, with an AttributeError, when that step ran.
+        """
+        parsers = []
+
+        def parse_args(parser: argparse.ArgumentParser, *args: Any) -> None:
+            parsers.append(parser)
+            raise _StopRun
+
+        monkeypatch.setattr(argparse.ArgumentParser, "parse_args", parse_args)
+        _run_script(monkeypatch, script, [])
+        options = set(vars(parsers[0].parse_known_args([])[0]))
+
+        with open(_script_path(script)) as f:
+            tree = ast.parse(f.read())
+        read = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "args"
+        }
+        assert len(read) > 5
+        assert sorted(read - options) == []
+
+
 def _help_text(node: ast.expr) -> str:
     """
     Return the text of a help argument, with each f-string field replaced by "x".
@@ -304,138 +503,26 @@ class TestArgumentHelp:
 
     def test_help_formats(self) -> None:
         """
-        Test that every flag's help formats the way argparse formats it.
+        Test that every flag's help, in every script, formats the way argparse does.
 
         argparse fills in each help string with ``%``, so a lone ``%`` must be
         written ``%%``. Regression test: "AN% of 20" in the
         ``--pipeline-low-coverage-filter`` help read as a ``%o`` conversion, so
-        ``constraint_pipeline.py --help`` raised a TypeError.
+        ``--help`` raised a TypeError.
         """
-        with open(constraint_pipeline.__file__) as f:
-            tree = ast.parse(f.read())
-        helps = [
-            _help_text(kw.value)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and getattr(node.func, "attr", None) == "add_argument"
-            for kw in node.keywords
-            if kw.arg == "help"
-        ]
+        helps = []
+        for script in SCRIPTS:
+            path = os.path.join(os.path.dirname(pipeline.__file__), f"{script}.py")
+            with open(path) as f:
+                tree = ast.parse(f.read())
+            helps += [
+                _help_text(kw.value)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and getattr(node.func, "attr", None) == "add_argument"
+                for kw in node.keywords
+                if kw.arg == "help"
+            ]
         assert len(helps) > 40
         for text in helps:
             text % defaultdict(str)
-
-
-class TestCheckPreprocessSettings:
-    """Test the check_preprocess_settings function."""
-
-    ARGS = dict(
-        exome_coverage_metric="AN_percent",
-        pipeline_low_coverage_filter=19,
-        build_model_high_cov_definition=90,
-        build_model_upper_cov_cutoff=None,
-        apply_model_high_cov_definition=90,
-        max_af=0.001,
-        calculate_mutation_rate_min_cov=15,
-        calculate_mutation_rate_max_cov=60,
-        genetic_ancestry_groups=None,
-        include_downsamplings=False,
-    )
-    """Pipeline defaults for the preprocessing flags."""
-
-    @staticmethod
-    def _globals(
-        low: int = 19,
-        gen_ancs: Any = hl.missing(hl.tarray(hl.tstr)),
-        downsamplings: Any = hl.missing(hl.tarray(hl.tstr)),
-        apply_extra: Any = None,
-    ) -> hl.expr.StructExpression:
-        """Return preprocessed-Table globals recorded with the default flags."""
-        apply_extra = (
-            dict(exome_coverage_metric="AN_percent")
-            if apply_extra is None
-            else apply_extra
-        )
-        return hl.struct(
-            calculate_mu_globals=hl.struct(min_cov=15, max_cov=60),
-            build_models_globals=hl.struct(
-                low_cov_cutoff=low,
-                high_cov_cutoff=90,
-                upper_cov_cutoff=hl.missing(hl.tint32),
-            ),
-            apply_models_globals=hl.struct(
-                low_cov_cutoff=low, high_cov_cutoff=90, **apply_extra
-            ),
-            max_af=0.001,
-            genetic_ancestry_groups=gen_ancs,
-            downsamplings=downsamplings,
-        )
-
-    def test_matching_settings(self) -> None:
-        """Test that the flags preprocessing recorded pass."""
-        check_preprocess_settings(self._globals(), SimpleNamespace(**self.ARGS))
-
-    @pytest.mark.parametrize(
-        "field, value, flag",
-        [
-            ("exome_coverage_metric", "median", "--exome-coverage-metric"),
-            ("pipeline_low_coverage_filter", 9, "--pipeline-low-coverage-filter"),
-            (
-                "build_model_high_cov_definition",
-                80,
-                "--build-model-high-cov-definition",
-            ),
-            ("build_model_upper_cov_cutoff", 100, "--build-model-upper-cov-cutoff"),
-            (
-                "apply_model_high_cov_definition",
-                80,
-                "--apply-model-high-cov-definition",
-            ),
-            ("max_af", 0.0001, "--max-af"),
-            (
-                "calculate_mutation_rate_min_cov",
-                20,
-                "--calculate-mutation-rate-min-cov",
-            ),
-            (
-                "calculate_mutation_rate_max_cov",
-                50,
-                "--calculate-mutation-rate-max-cov",
-            ),
-            ("genetic_ancestry_groups", ["afr"], "--genetic-ancestry-groups"),
-            ("include_downsamplings", True, "--include-downsamplings"),
-        ],
-    )
-    def test_mismatched_setting(self, field: str, value: Any, flag: str) -> None:
-        """
-        Test that a flag differing from the value preprocessing recorded raises.
-
-        Regression test: these flags are only read by ``--preprocess-data``, so passing
-        a different value to a later step was ignored without a warning.
-        """
-        args = SimpleNamespace(**{**self.ARGS, field: value})
-        with pytest.raises(ValueError, match=flag):
-            check_preprocess_settings(self._globals(), args)
-
-    def test_unset_low_cutoff_matches_zero(self) -> None:
-        """Test that no low cutoff matches the 0 that preprocessing records for it."""
-        args = SimpleNamespace(**{**self.ARGS, "pipeline_low_coverage_filter": None})
-        check_preprocess_settings(self._globals(low=0), args)
-
-    def test_downsamplings_and_groups(self) -> None:
-        """Test that recorded genetic ancestry groups and downsamplings match."""
-        args = SimpleNamespace(
-            **{
-                **self.ARGS,
-                "genetic_ancestry_groups": ["afr", "nfe"],
-                "include_downsamplings": True,
-            }
-        )
-        check_preprocess_settings(
-            self._globals(gen_ancs=["afr", "nfe"], downsamplings=[10, 100]), args
-        )
-
-    def test_unrecorded_setting_is_skipped(self) -> None:
-        """Test that a Table predating a recorded setting isn't checked against it."""
-        args = SimpleNamespace(**{**self.ARGS, "exome_coverage_metric": "median"})
-        check_preprocess_settings(self._globals(apply_extra={}), args)
