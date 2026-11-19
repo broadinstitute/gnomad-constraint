@@ -82,8 +82,8 @@ release files, goes to `gs://gnomad-tmp/gnomad_v{version}_testing/constraint/`
 instead, so a test run never touches production outputs. `--directory-post-fix`
 and `--path-post-fix` keep separate runs of the same version apart. The directory
 post-fix applies to every output except the rr imports; the path post-fix only to
-the outputs from `--create-training-set` onward, except the release mutation rate
-files.
+the outputs from `--create-training-set` onward, except the rr model Tables and the
+release mutation rate files.
 
 ### Regional mutation rate (rr)
 
@@ -135,7 +135,9 @@ order:
 `--compute-rr`, after `--apply-models-per-variant`, normalizes rr on the
 per-variant expected Table that `--apply-regional-rr` applies it to, so run both
 with the same `--version`, `--test`, `--directory-post-fix` and `--path-post-fix`.
-The rr outputs take both post-fixes.
+The rr Table takes both post-fixes; the rr model Tables (site features, training
+set, penalty tuning and models) take only the directory post-fix, like the Tables
+they are built from, so a `--path-post-fix` run reuses the models.
 
 ### Release constraint metrics Table
 

@@ -946,3 +946,44 @@ class TestGetConstraintResourcesRrSteps:
             resources.compute_rr.regional_rr_ht.path
             == get_regional_rr_ht(version="4.1.1", **kwargs).path
         )
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_rr_models_take_only_the_directory_post_fix(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that the rr model Tables ignore ``--path-post-fix``, unlike the rr Table.
+
+        Nothing they're built from takes the path post-fix, so a post-fixed run
+        reuses the models of the run without it. The rr Table is normalized on the
+        post-fixed per-variant expected Table, so it takes both. Regression test: the
+        rr model Tables took the path post-fix, so every post-fixed run had to rebuild
+        identical models, context scan included, before ``--compute-rr`` would run.
+        """
+        kwargs = {"version": "4.1.1", "test": test}
+        resources = get_constraint_resources(
+            overwrite=False,
+            directory_post_fix=directory_post_fix,
+            path_post_fix=path_post_fix,
+            **kwargs,
+        )
+        kwargs["directory_post_fix"] = directory_post_fix
+        assert [
+            resources.create_rr_site_features.rr_site_features_ht.path,
+            resources.create_rr_training_set.rr_training_ht.path,
+            resources.tune_rr_penalty.rr_penalty_tuning_ht.path,
+            resources.train_rr_models.rr_models_ht.path,
+            resources.compute_rr.rr_models_ht.path,
+        ] == [
+            get_rr_site_features_ht(**kwargs).path,
+            get_rr_training_ht(**kwargs).path,
+            get_rr_penalty_tuning_ht(**kwargs).path,
+            get_rr_models_ht(**kwargs).path,
+            get_rr_models_ht(**kwargs).path,
+        ]
+        assert (
+            resources.compute_rr.regional_rr_ht.path
+            == get_regional_rr_ht(path_post_fix=path_post_fix, **kwargs).path
+        )

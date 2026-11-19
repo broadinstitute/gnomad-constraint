@@ -826,13 +826,16 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
-    # The rr outputs take both post-fixes. The site features come from the
-    # preprocessed Table, and rr is normalized on the per-variant expected Table, of
-    # the same run.
+    # The rr model Tables take only the directory post-fix, like the preprocessed
+    # Table and the imports they are built from, so a --path-post-fix run reuses the
+    # models. The rr Table is normalized on the per-variant expected Table of the same
+    # run, so it takes both post-fixes.
     rr_params = {**common_params, "path_post_fix": path_post_fix}
     create_rr_site_features = PipelineStepResourceCollection(
         "expected_models.py --create-rr-site-features",
-        output_resources={"rr_site_features_ht": get_rr_site_features_ht(**rr_params)},
+        output_resources={
+            "rr_site_features_ht": get_rr_site_features_ht(**common_params)
+        },
         pipeline_input_steps=[import_dnms, import_genomic_features, preprocess_data],
         add_input_resources={
             "constraint metrics with gene flags": {
@@ -842,19 +845,19 @@ def get_constraint_resources(
     )
     create_rr_training_set = PipelineStepResourceCollection(
         "expected_models.py --create-rr-training-set",
-        output_resources={"rr_training_ht": get_rr_training_ht(**rr_params)},
+        output_resources={"rr_training_ht": get_rr_training_ht(**common_params)},
         pipeline_input_steps=[create_rr_site_features],
     )
     tune_rr_penalty = PipelineStepResourceCollection(
         "expected_models.py --tune-rr-penalty",
         output_resources={
-            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**rr_params)
+            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**common_params)
         },
         pipeline_input_steps=[create_rr_training_set],
     )
     train_rr_models = PipelineStepResourceCollection(
         "expected_models.py --train-rr-models",
-        output_resources={"rr_models_ht": get_rr_models_ht(**rr_params)},
+        output_resources={"rr_models_ht": get_rr_models_ht(**common_params)},
         pipeline_input_steps=[create_rr_training_set, tune_rr_penalty],
     )
     compute_rr = PipelineStepResourceCollection(

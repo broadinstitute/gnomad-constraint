@@ -73,7 +73,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
 apply-models, metrics, and constraint-metrics release outputs. The rr imports
-(§14-15) take neither post-fix, and the other rr outputs (§16-20) take both.
+(§14-15) take neither post-fix, the rr model Tables (§16-19) only the directory
+post-fix, and the rr Table (§20) both.
 `constraint_metrics.py --apply-regional-rr` adds `.rr` (after the path post-fix, if
 any) to its outputs from the aggregated per-variant expected Table (§7) on, so they
 sit beside the ones without rr.

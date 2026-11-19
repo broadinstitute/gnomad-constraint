@@ -286,11 +286,11 @@ if __name__ == "__main__":
         "--path-post-fix",
         help=(
             "Post-fix to append to output file names. Applies to the outputs from"
-            " --create-training-set onward (training set, models, rr Tables, expected"
+            " --create-training-set onward (training set, models, rr Table, expected"
             " counts, constraint groups, constraint metrics, and the release"
             " constraint metrics Table and TSVs), but not to the annotated context,"
-            " preprocessed, gene quality metrics, mutation rate, or release mutation"
-            " rate outputs."
+            " preprocessed, gene quality metrics, mutation rate, rr model, or release"
+            " mutation rate outputs."
         ),
         type=str,
         default=None,
