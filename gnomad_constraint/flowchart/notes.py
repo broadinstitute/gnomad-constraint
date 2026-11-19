@@ -956,6 +956,15 @@ NOTES = {
                     "text": "Keep coding consequences only (``CSQ_CODING``).",
                 },
                 {
+                    "tag": "rowexpr",
+                    "text": (
+                        "With ``--apply-regional-rr``, multiply every ``expected_variants``"
+                        " entry by the rr of the variant's window and context (1 where"
+                        " there is none), and keep the rr Table's ``rr_globals`` as"
+                        " ``regional_rr_globals``."
+                    ),
+                },
+                {
                     "tag": "ckpt",
                     "text": (
                         "Unkey, keep the groupings and ``AGGREGATE_SUM_FIELDS``, and checkpoint"
@@ -982,9 +991,10 @@ NOTES = {
             ],
             "notes": [
                 (
-                    "The step declares the mutation rate Table and the models as inputs but"
-                    " never reads them. ``check_resource_existence`` still requires them to"
-                    " exist."
+                    "With ``--apply-regional-rr``, this output and every later"
+                    " ``constraint_metrics.py`` output get an ``rr`` path post-fix, so"
+                    " they sit beside the ones without rr. rr scales the calibrated"
+                    " expected count, not the mutation rate inside the plateau model."
                 ),
                 (
                     "Summed ``mu_snp``, ``predicted_proportion_observed`` and"
