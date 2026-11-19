@@ -176,19 +176,28 @@ class TestCheckRegionalRrInput:
 
     @classmethod
     def _per_variant_ht(cls, coverage_model: List[float]) -> hl.Table:
-        """Return an empty per-variant Table with the given apply_models_globals."""
-        ht = hl.utils.range_table(0)
+        """Return a three-row per-variant Table with the given apply_models_globals."""
+        ht = hl.utils.range_table(3)
         return ht.annotate_globals(
             apply_models_globals=cls.MODELS.annotate(coverage_model=coverage_model)
         )
 
     @classmethod
-    def _rr_ht(cls, record: bool) -> hl.Table:
-        """Return an empty rr Table, recording the models it was normalized on."""
+    def _rr_ht(cls, record: bool, row_count: int = 3) -> hl.Table:
+        """
+        Return an empty rr Table, recording the per-variant Table it was normalized on.
+
+        :param record: Whether ``rr_globals`` records the per-variant Table's models
+            and row count.
+        :param row_count: Row count to record for the per-variant Table. Default
+            matches ``_per_variant_ht``.
+        :return: rr Table.
+        """
         rr_globals = hl.struct(ridge_penalty=0.3)
         if record:
             rr_globals = rr_globals.annotate(
-                per_variant_apply_models_globals=hl.literal(cls.MODELS)
+                per_variant_apply_models_globals=hl.literal(cls.MODELS),
+                per_variant_row_count=hl.int64(row_count),
             )
         return hl.utils.range_table(0).annotate_globals(rr_globals=rr_globals)
 
@@ -210,8 +219,22 @@ class TestCheckRegionalRrInput:
         This happens when ``--apply-models-per-variant --overwrite`` is rerun after
         ``--compute-rr``, which leaves the rr normalization factors stale.
         """
-        with pytest.raises(ValueError, match="Rerun expected_counts.py"):
+        with pytest.raises(ValueError, match="different models"):
             check_regional_rr_input(self._per_variant_ht([1.0, 0.6]), self._rr_ht(True))
+
+    def test_changed_row_count(self) -> None:
+        """
+        Test that rr normalized on a per-variant Table with other rows is rejected.
+
+        The models only change when the data they are fit on changes, so a
+        per-variant Table rebuilt from other data with the same models passed the
+        model check, although the rr normalization factors no longer matched it.
+        """
+        with pytest.raises(ValueError, match="2 rows"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model),
+                self._rr_ht(True, row_count=2),
+            )
 
     def test_no_rr_globals(self) -> None:
         """

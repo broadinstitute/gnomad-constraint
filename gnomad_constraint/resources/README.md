@@ -412,9 +412,10 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`. With
 `--apply-regional-rr`, also `regional_rr_globals`, a copy of the rr Table's
 `rr_globals`: `ridge_penalty: float64` (ridge penalty of the rr models),
 `normalization_factors: dict<str, float64>` (per-context factor rr was divided by),
-and `per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
-per-variant expected Table rr was normalized on; `--apply-regional-rr` stops with an
-error if they differ from this Table's).
+`per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
+per-variant expected Table rr was normalized on) and `per_variant_row_count: int64`
+(that Table's row count); `--apply-regional-rr` stops with an error if either differs
+from the per-variant expected Table being aggregated.
 
 ### Rows
 - `annotation, modifier, gene, gene_id, transcript, canonical, mane_select` — key.
@@ -638,7 +639,7 @@ Public-release flattened constraint table. One row per
   `percentile_thresholds.lof` in §10).
 - `regional_rr_params: struct{ridge_penalty, normalization_factors}` — only when the
   expected counts were adjusted with `--apply-regional-rr`; `regional_rr_globals`
-  (§7) without `per_variant_apply_models_globals`.
+  (§7) without `per_variant_apply_models_globals` and `per_variant_row_count`.
 
 ### Rows
 Key + GENCODE annotations + per-group structs:

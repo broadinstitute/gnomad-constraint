@@ -111,32 +111,42 @@ def check_regional_rr_input(per_variant_ht: hl.Table, regional_rr_ht: hl.Table) 
     Check that the rr Table was normalized on this per-variant expected Table.
 
     ``expected_counts.py --compute-rr`` records the ``apply_models_globals``
-    (the fitted plateau and coverage models) of the per-variant expected Table it
-    normalizes rr on. If the per-variant Table being aggregated has different models,
-    it was rewritten after rr was computed, and the rr normalization factors no
-    longer match it. An rr Table without that record, in its ``rr_globals``, is
-    rejected too: it can't be checked, and the release records the rr settings from
-    ``rr_globals``.
+    (the fitted plateau and coverage models) and the row count of the per-variant
+    expected Table it normalizes rr on. If the per-variant Table being aggregated
+    differs in either, it was rewritten after rr was computed, and the rr
+    normalization factors no longer match it. An rr Table without that record, in
+    its ``rr_globals``, is rejected too: it can't be checked, and the release records
+    the rr settings from ``rr_globals``.
 
-    :param per_variant_ht: Per-variant expected Table to aggregate.
+    :param per_variant_ht: Per-variant expected Table to aggregate, as read from
+        disk, so counting its rows reads only metadata.
     :param regional_rr_ht: rr Table to apply.
     :return: None.
     """
-    if (
-        "rr_globals" not in regional_rr_ht.globals
-        or "per_variant_apply_models_globals" not in regional_rr_ht.rr_globals
+    if "rr_globals" not in regional_rr_ht.globals or any(
+        f not in regional_rr_ht.rr_globals
+        for f in ["per_variant_apply_models_globals", "per_variant_row_count"]
     ):
         raise ValueError(
             "The rr Table doesn't record the per-variant expected Table it was"
             " normalized on. Rerun expected_counts.py --compute-rr."
         )
 
-    recorded = hl.eval(regional_rr_ht.rr_globals.per_variant_apply_models_globals)
-    if recorded != hl.eval(per_variant_ht.apply_models_globals):
+    rr_globals = hl.eval(regional_rr_ht.rr_globals)
+    if rr_globals.per_variant_apply_models_globals != hl.eval(
+        per_variant_ht.apply_models_globals
+    ):
         raise ValueError(
             "The rr Table was normalized on a per-variant expected Table with"
             " different models than the one being aggregated. Rerun"
             " expected_counts.py --compute-rr."
+        )
+    n_rows = per_variant_ht.count()
+    if rr_globals.per_variant_row_count != n_rows:
+        raise ValueError(
+            "The rr Table was normalized on a per-variant expected Table with"
+            f" {rr_globals.per_variant_row_count} rows, but the one being aggregated"
+            f" has {n_rows}. Rerun expected_counts.py --compute-rr."
         )
 
 

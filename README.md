@@ -98,12 +98,12 @@ scored that way; applying it to the mutation rate inside the plateau model inste
 tested weaker and slightly noisier
 ([report](https://github.com/broadinstitute/gnomad-constraint/blob/3c8597a70b55dddc884ec64f8427f5bada22bf44/gnomad_constraint/plots/adj_r_syn_oe/rr_syn_dnm_followup.md#L363-L373)).
 rr is normalized on the full dataset's expected counts, so the downsamplings'
-synonymous totals can shift slightly. It
-reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
-`--path-post-fix`, and stops with an error if that Table was normalized on a
-per-variant expected Table with other models, or doesn't record which. The Tables
-from that step on (the aggregated, constraint-group, metrics and release Tables and
-the release TSVs) get an `rr` path post-fix, so they sit beside the ones without rr.
+synonymous totals can shift slightly. It reads the rr Table with the same
+`--version`, `--test`, `--directory-post-fix` and `--path-post-fix`, and stops with
+an error if that Table was normalized on a per-variant expected Table with other
+models or another row count, or doesn't record which. The Tables from that step on
+(the aggregated, constraint-group, metrics and release Tables and the release TSVs)
+get an `rr` path post-fix, so they sit beside the ones without rr.
 Pass `--apply-regional-rr` to every `constraint_metrics.py` step of an rr run; it
 can't be combined with `--use-aggregated-expected`. The release Table records the rr
 settings in its `regional_rr_params` global.
