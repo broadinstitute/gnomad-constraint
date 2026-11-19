@@ -825,14 +825,14 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
-    # The rr outputs take both post-fixes. The site features come from the annotated
-    # context Table, and rr is normalized on the per-variant expected Table, of the
-    # same run.
+    # The rr outputs take both post-fixes. The site features come from the
+    # preprocessed Table, and rr is normalized on the per-variant expected Table, of
+    # the same run.
     rr_params = {**common_params, "path_post_fix": path_post_fix}
     create_rr_site_features = PipelineStepResourceCollection(
         "expected_models.py --create-rr-site-features",
         output_resources={"rr_site_features_ht": get_rr_site_features_ht(**rr_params)},
-        pipeline_input_steps=[import_dnms, import_genomic_features, prepare_context],
+        pipeline_input_steps=[import_dnms, import_genomic_features, preprocess_data],
         add_input_resources={
             "constraint metrics with gene flags": {
                 "gene_flags_ht": get_rr_gene_flags_ht()

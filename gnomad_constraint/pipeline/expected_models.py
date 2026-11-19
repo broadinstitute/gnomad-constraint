@@ -11,8 +11,9 @@ The steps, in order, after prepare_data.py:
 And the regional mutation rate (rr) model steps, which need only the
 prepare_data.py outputs:
     - --create-rr-site-features: create the synonymous de novo mutation (DNM) sites
-      and a sampled background of non-mutated synonymous sites, with their window's
-      genomic features, leaving out genes with a QC gene flag.
+      and a sampled background of non-mutated synonymous sites, in the plateau
+      models' high coverage range, with their window's genomic features, leaving out
+      genes with a QC gene flag.
     - --create-rr-training-set: prepare the sites for the models: each site's
       label, context, chromosome fold, and its context's features.
     - --tune-rr-penalty: choose the ridge penalty by the held-out log loss of
@@ -194,7 +195,7 @@ def main(args: argparse.Namespace) -> None:
             res.check_resource_existence()
 
             ht = create_rr_site_features_ht(
-                res.annotated_context_ht.ht(),
+                res.temp_preprocess_data_ht.ht(),
                 res.dnm_ht.ht(),
                 res.genomic_features_ht.ht(),
                 RR_BACKGROUND_FRACTION,

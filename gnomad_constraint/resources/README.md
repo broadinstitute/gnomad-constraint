@@ -787,8 +787,12 @@ The published Gnocchi 1kb regional genomic feature matrix
 
 rr site features: the training sites with their labels and window features,
 produced by `--create-rr-site-features` /
-[`create_rr_site_features_ht`](../utils/regional_rate.py). The DNM sites are the
-synonymous sites of `annotated_context.ht` in `dnm.ht`; the background is a
+[`create_rr_site_features_ht`](../utils/regional_rate.py). Only the synonymous
+sites of `context.preprocessed.ht` in the plateau models' high coverage range are
+used (`exomes_coverage` of at least `build_models_globals.high_cov_cutoff`, and at
+most `upper_cov_cutoff` if set), since elsewhere a DNM can't be called and a site
+can be absent from gnomAD only for lack of coverage. The DNM sites are those in
+`dnm.ht`; the background is a
 `RR_BACKGROUND_FRACTION` (5%) sample, with seed `RR_BACKGROUND_SEED`, of the
 synonymous sites absent from gnomAD exomes (`filters.exomes` is missing) at the
 other loci, one per locus, so no locus is both. Sites in the span of an Ensembl MANE

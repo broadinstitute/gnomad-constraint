@@ -120,13 +120,13 @@ testing bucket, and with neither post-fix):
 | `--import-dnms` | Import the Satterstrom 2026 ASD and DDD DNMs as a Table of DNM sites |
 | `--import-genomic-features` | Import the Gnocchi 1kb regional genomic feature matrix (chr1-22, so chrX and chrY get no rr) |
 
-The rr steps then read those Tables, the annotated context Table, and the
+The rr steps then read those Tables, the preprocessed Table, and the
 per-variant expected Table, and write under `regional_rate/`. Run them in this
 order:
 
 | Script | Flag | Step |
 |---|---|---|
-| `expected_models.py` | `--create-rr-site-features` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
+| `expected_models.py` | `--create-rr-site-features` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, both within the plateau models' high coverage range, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
 | | `--create-rr-training-set` | Prepare the site features for the models: each site's label, context, chromosome fold, and its context's features |
 | | `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
 | | `--train-rr-models` | Fit the per-context models with the chosen penalty |

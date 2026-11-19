@@ -922,7 +922,7 @@ class TestGetConstraintResourcesRrSteps:
         Test that the rr steps read the Tables of the same constraint pipeline run.
 
         For the same version, test flag, and post-fixes, the site features come from
-        the annotated context Table that ``--prepare-context-ht`` writes, and rr is
+        the preprocessed Table that ``--preprocess-data`` writes, and rr is
         normalized on the per-variant expected Table that
         ``--aggregate-per-variant-expected`` aggregates. ``--compute-rr`` writes the
         rr Table to its getter's path with the same settings, which
@@ -935,8 +935,8 @@ class TestGetConstraintResourcesRrSteps:
         }
         resources = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
         assert (
-            resources.create_rr_site_features.annotated_context_ht.path
-            == resources.prepare_context.annotated_context_ht.path
+            resources.create_rr_site_features.temp_preprocess_data_ht.path
+            == resources.preprocess_data.temp_preprocess_data_ht.path
         )
         assert (
             resources.compute_rr.per_variant_apply_ht.path

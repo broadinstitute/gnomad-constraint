@@ -32,7 +32,7 @@ logger.setLevel(logging.INFO)
 
 
 def create_rr_site_features_ht(
-    context_ht: hl.Table,
+    preprocessed_ht: hl.Table,
     dnm_ht: hl.Table,
     features_ht: hl.Table,
     background_fraction: float,
@@ -42,20 +42,29 @@ def create_rr_site_features_ht(
     """
     Create the rr site features: synonymous DNM and non-mutated background sites.
 
-    The DNM sites are the synonymous sites of ``context_ht`` that are in ``dnm_ht``.
-    The background is a random sample (``background_fraction``) of the synonymous
-    sites absent from gnomAD exomes (``filters.exomes`` is missing) at the other
-    loci, with one site kept per locus, so no locus is both a DNM and a background
-    site. DNM sites get ``y`` = 1 and background
-    sites ``y`` = 0, and every site gets the features of the 1kb window containing it.
+    Only synonymous sites in the plateau models' high coverage range are used:
+    ``exomes_coverage`` of at least ``build_models_globals.high_cov_cutoff`` (and at
+    most ``upper_cov_cutoff``, if set), as for the sites the plateau models are
+    trained on. Elsewhere a DNM can't be called in the exome cohorts and a site is
+    absent from gnomAD because it isn't covered, so a site there could only be a
+    background site, and the models would learn the features of poorly covered
+    regions as a low mutation rate.
+
+    The DNM sites are those sites that are in ``dnm_ht``. The background is a
+    random sample (``background_fraction``) of those sites absent from gnomAD
+    exomes (``filters.exomes`` is missing) at the other loci, with one site kept per
+    locus, so no locus is both a DNM and a background site. DNM sites get ``y`` = 1
+    and background sites ``y`` = 0, and every site gets the features of the 1kb
+    window containing it.
     With ``gene_flags_ht``, sites in genes with a QC gene flag are left out
     (:func:`remove_qc_flagged_genes`). The Table has no globals.
 
     Each DNM variant is one row, however many DNMs were reported there, since the DNM
     Table can't tell a recurrent DNM from one reported by two cohorts.
 
-    :param context_ht: Annotated context Table with ``vep``, ``context``, and
-        ``filters``.
+    :param preprocessed_ht: Preprocessed Table with ``vep``, ``context``,
+        ``filters``, ``exomes_coverage``, and a ``build_models_globals`` global with
+        ``high_cov_cutoff`` and ``upper_cov_cutoff``.
     :param dnm_ht: DNM Table keyed by ``locus`` and ``alleles``.
     :param features_ht: Genomic feature Table keyed by ``interval``.
     :param background_fraction: Fraction of non-mutated sites to sample.
@@ -66,8 +75,15 @@ def create_rr_site_features_ht(
     :return: Site features Table keyed by ``locus`` with ``alleles``, ``context``,
         ``y``, and ``GENOMIC_FEATURE_COLUMNS``.
     """
-    ht = context_ht.filter(
-        context_ht.vep.most_severe_consequence == "synonymous_variant"
+    coverage = preprocessed_ht.exomes_coverage
+    build_globals = preprocessed_ht.build_models_globals
+    ht = preprocessed_ht.filter(
+        (preprocessed_ht.vep.most_severe_consequence == "synonymous_variant")
+        & (coverage >= build_globals.high_cov_cutoff)
+        & (
+            hl.is_missing(build_globals.upper_cov_cutoff)
+            | (coverage <= build_globals.upper_cov_cutoff)
+        )
     )
     ht = ht.select("context", in_exomes=hl.is_defined(ht.filters.exomes))
     ht = ht.checkpoint(new_temp_file("rr_syn_sites", "ht"))
