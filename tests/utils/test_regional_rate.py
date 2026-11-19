@@ -97,29 +97,30 @@ class TestCreateRrSiteFeaturesHt:
         10 and 20 are synonymous DNMs, 20 also in exomes; 10 has a second
         synonymous allele absent from exomes. 30 has two synonymous alleles absent
         from exomes, 40 is in exomes and passes, 50 is in exomes as AC0, 60 is
-        missense, and 70 is absent from exomes.
+        missense, and 70 is absent from exomes. The sites have different contexts,
+        so a context mix-up shows.
         """
         rows = [
-            (10, ["A", "G"], "synonymous_variant", None),
-            (10, ["A", "C"], "synonymous_variant", None),
-            (20, ["C", "T"], "synonymous_variant", set()),
-            (30, ["A", "G"], "synonymous_variant", None),
-            (30, ["A", "C"], "synonymous_variant", None),
-            (40, ["A", "G"], "synonymous_variant", set()),
-            (50, ["A", "G"], "synonymous_variant", {"AC0"}),
-            (60, ["C", "T"], "missense_variant", None),
-            (70, ["A", "G"], "synonymous_variant", None),
+            (10, ["A", "G"], "AAA", "synonymous_variant", None),
+            (10, ["A", "C"], "AAA", "synonymous_variant", None),
+            (20, ["C", "T"], "ACG", "synonymous_variant", set()),
+            (30, ["A", "G"], "CAT", "synonymous_variant", None),
+            (30, ["A", "C"], "CAT", "synonymous_variant", None),
+            (40, ["A", "G"], "AAA", "synonymous_variant", set()),
+            (50, ["A", "G"], "AAA", "synonymous_variant", {"AC0"}),
+            (60, ["C", "T"], "ACG", "missense_variant", None),
+            (70, ["A", "G"], "TAC", "synonymous_variant", None),
         ]
         return hl.Table.parallelize(
             [
                 {
                     "locus": _locus(pos),
                     "alleles": alleles,
-                    "context": "AAA",
+                    "context": context,
                     "vep": {"most_severe_consequence": csq},
                     "filters": {"exomes": filters, "genomes": None},
                 }
-                for pos, alleles, csq, filters in rows
+                for pos, alleles, context, csq, filters in rows
             ],
             hl.tstruct(
                 locus=hl.tlocus("GRCh38"),
@@ -199,28 +200,28 @@ class TestCreateRrSiteFeaturesHt:
         """
         ht = self._site_features_ht(1.0)
         assert len(ht.globals.dtype) == 0
+        assert list(ht.key) == ["locus"]
         rows = ht.collect()
-        assert sorted((r.locus.position, r.y, r.dist2telo_1k) for r in rows) == [
-            (10, 1, 1.0),
-            (20, 1, 1.0),
-            (30, 0, 2.0),
-            (70, 0, 2.0),
+        assert sorted(
+            (r.locus.position, r.alleles, r.context, r.y, r.dist2telo_1k) for r in rows
+        ) == [
+            (10, ["A", "G"], "AAA", 1, 1.0),
+            (20, ["C", "T"], "ACG", 1, 1.0),
+            (30, ["A", "C"], "CAT", 0, 2.0),
+            (70, ["A", "G"], "TAC", 0, 2.0),
         ]
 
     def test_qc_flagged_genes_left_out(self) -> None:
         """
         Test that with gene flags, the sites in a flagged gene's span are left out.
 
-        The flagged gene spans 25-35, so the background site at 30 goes.
+        The flagged gene spans 15-35, so the DNM at 20 and the background site at 30
+        both go.
         """
         rows = self._site_features_ht(
-            1.0, gene_flags_ht=_metrics_ht(span=(25, 35))
+            1.0, gene_flags_ht=_metrics_ht(span=(15, 35))
         ).collect()
-        assert sorted((r.locus.position, r.y) for r in rows) == [
-            (10, 1),
-            (20, 1),
-            (70, 0),
-        ]
+        assert sorted((r.locus.position, r.y) for r in rows) == [(10, 1), (70, 0)]
 
     def test_no_background(self) -> None:
         """Test that a background fraction of 0 keeps only the DNM sites."""
