@@ -1049,11 +1049,13 @@ def aggregate_per_variant_expected_ht(
     The Table is aggregated by the groupings stored in
     ``apply_models_globals.groupings`` to get the observed and expected counts.
 
-    With ``regional_rr_ht``, each variant's expected counts are first multiplied by
-    the regional mutation rate (rr) of its window and context
-    (``regional_rr_ht[locus].adj_r[context]``), or by 1 if there is none. The models
-    are not re-fit or re-applied. The rr Table's ``rr_globals`` global, if it has
-    one, is kept as the ``regional_rr_globals`` global.
+    With ``regional_rr_ht``, every entry of each variant's expected counts is first
+    multiplied by the regional mutation rate (rr) of its window and context
+    (``regional_rr_ht[locus].adj_r[context]``), or by 1 if there is none. rr scales
+    the calibrated expected count, plateau intercept included, rather than the
+    mutation rate inside the plateau model, and the models are not re-fit or
+    re-applied. The rr Table's ``rr_globals`` global, if it has one, is kept as the
+    ``regional_rr_globals`` global.
 
     :param ht: Table returned by ``create_per_variant_expected_ht``.
     :param include_mu_annotations_in_grouping: Whether to include the mutation rate

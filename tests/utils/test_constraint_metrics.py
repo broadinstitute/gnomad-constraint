@@ -1400,12 +1400,13 @@ class TestPrepareReleaseHt:
         assert g.max_af == 0.001
 
     def test_regional_rr_globals(self, internal_ht: hl.Table) -> None:
-        """Test that the rr settings reach the release globals without the models."""
+        """Test that the rr settings reach the release globals without the record."""
         ht = internal_ht.annotate_globals(
             regional_rr_globals=hl.struct(
                 ridge_penalty=0.3,
                 normalization_factors={"ACG": 1.1},
                 per_variant_apply_models_globals=hl.struct(log10_coverage=False),
+                per_variant_row_count=hl.int64(3),
             )
         )
         g = hl.eval(prepare_release_ht(ht, "4.1.2").globals)

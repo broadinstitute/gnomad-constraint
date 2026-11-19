@@ -218,7 +218,7 @@ RELEASE_PIPELINE_PARAM_GLOBALS = [
     (
         "regional_rr_globals",
         "regional_rr_params",
-        ["per_variant_apply_models_globals"],
+        ["per_variant_apply_models_globals", "per_variant_row_count"],
     ),
 ]
 """Pipeline parameter globals: (internal name, release name, fields to drop)."""

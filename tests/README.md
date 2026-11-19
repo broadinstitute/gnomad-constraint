@@ -42,7 +42,7 @@ implementations against each other is named for the comparison.
 | `utils/test_import_data.py` | Reading the published DNM and genomic feature files (on files in `tmp_path`), combining and formatting the DNMs, the genomic feature windows, and the duplicate-window check |
 | `utils/test_regional_rate.py` | The rr model features per context, the rr training set, removing QC-flagged genes, and the tuning folds |
 | `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
-| `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, the whole `get_constraint_resources` call each script makes, `--skip-coverage-model` reaching preprocessing, each script reading only its own options, and the `--apply-regional-rr` input check |
+| `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, the whole `get_constraint_resources` call each script makes, `--skip-coverage-model` reaching preprocessing, each script reading only its own options, the `--apply-regional-rr` input check, and that `--aggregate-per-variant-expected` checks and applies rr only with the flag |
 
 ## How these tests are written
 

@@ -459,6 +459,7 @@ class TestComputeRrHt:
             {"AAA": factor, "ACG": 1.0}
         )
         assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")
+        assert rr_globals.per_variant_row_count == 4
 
     def test_window_missing_a_models_feature(self) -> None:
         """

@@ -95,15 +95,24 @@ context, modeled as in Gnocchi from synonymous de novo mutations (DNMs) and 13
 regional genomic features of each site's window at four flanking scales.
 
 `constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr` applies rr after model
-calibration: it multiplies each variant's expected count by the rr of its window and
-context, or by 1 where there is none (chrX, chrY, and windows without features). It
-reads the rr Table with the same `--version`, `--test`, `--directory-post-fix` and
-`--path-post-fix`, and stops with an error if that Table was normalized on a
-per-variant expected Table with other models, or doesn't record which. The output keeps the unadjusted
-Table's name, so the rr-adjusted aggregated, constraint-group and metrics Tables
-replace the unadjusted ones unless you set `--path-post-fix` (rerun
-`expected_models.py --create-training-set` onward with it) or `--directory-post-fix`. The release Table
-records the rr settings in its `regional_rr_params` global.
+calibration: it multiplies every entry of each variant's expected counts (the full
+dataset and each downsampling) by the rr of its window and context, or by 1 where
+there is none (chrX, chrY, windows without features, and contexts a window has no
+rr for). The plateau and coverage models aren't refit or reapplied. rr goes after
+calibration, as in Gnocchi, because its strength (the ridge penalty) was tuned and
+scored that way; applying it to the mutation rate inside the plateau model instead
+tested weaker and slightly noisier
+([report](https://github.com/broadinstitute/gnomad-constraint/blob/3c8597a70b55dddc884ec64f8427f5bada22bf44/gnomad_constraint/plots/adj_r_syn_oe/rr_syn_dnm_followup.md#L363-L373)).
+rr is normalized on the full dataset's expected counts, so the downsamplings'
+synonymous totals can shift slightly. It reads the rr Table with the same
+`--version`, `--test`, `--directory-post-fix` and `--path-post-fix`, and stops with
+an error if that Table was normalized on a per-variant expected Table with other
+models or another row count, or doesn't record which. The Tables from that step on
+(the aggregated, constraint-group, metrics and release Tables and the release TSVs)
+get an `rr` path post-fix, so they sit beside the ones without rr.
+Pass `--apply-regional-rr` to every `constraint_metrics.py` step of an rr run; it
+can't be combined with `--use-aggregated-expected`. The release Table records the rr
+settings in its `regional_rr_params` global.
 
 `prepare_data.py` imports the DNMs and genomic features rr is modeled from, writing
 under `imported_data/` in the constraint output directory (with `--test`, in the
