@@ -263,6 +263,22 @@ class TestCreateRrSiteFeaturesHt:
         assert hl.eval(ht.rr_training_sites.upper_cov_cutoff) == 99
         assert sorted(r.locus.position for r in ht.collect()) == [10, 20, 30, 70]
 
+    def test_no_coverage_metric_raises(self) -> None:
+        """
+        Test that a preprocessed Table without its exome coverage metric raises.
+
+        Guards against a preprocessed Table written before ``apply_models_globals``
+        had ``exome_coverage_metric`` failing with an AttributeError only after the
+        scan, as it did on a ``--test`` run.
+        """
+        preprocessed_ht = self._preprocessed_ht().annotate_globals(
+            apply_models_globals=hl.struct(skip_coverage_model=False)
+        )
+        with pytest.raises(ValueError, match="Rerun prepare_data.py --preprocess"):
+            create_rr_site_features_ht(
+                preprocessed_ht, self._dnm_ht(), self._features_ht(), 1.0, 0
+            )
+
     def test_qc_flagged_genes_left_out(self) -> None:
         """
         Test that with gene flags, the sites in a flagged gene's span are left out.
