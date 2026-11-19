@@ -90,6 +90,36 @@ def check_skip_coverage_model(
         )
 
 
+def get_rr_ridge_penalty(tuning_ht: hl.Table, training_ht: hl.Table) -> float:
+    """
+    Get the tuned ridge penalty, checking it was tuned on this rr training Table.
+
+    ``--tune-rr-penalty`` records the row count of the training Table it tunes on. If
+    the training Table has another count now, it was rewritten after the tuning, so
+    the penalty was chosen for other data.
+
+    :param tuning_ht: Penalty tuning Table with ``ridge_penalty`` and
+        ``rr_training_row_count`` globals.
+    :param training_ht: rr training Table, as read from disk, so counting its rows
+        reads only metadata.
+    :return: The tuned ridge penalty.
+    """
+    if "rr_training_row_count" not in tuning_ht.globals:
+        raise ValueError(
+            "The penalty tuning Table doesn't record the training Table it was tuned"
+            " on. Rerun --tune-rr-penalty."
+        )
+    recorded = hl.eval(tuning_ht.rr_training_row_count)
+    n_rows = training_ht.count()
+    if recorded != n_rows:
+        raise ValueError(
+            f"The ridge penalty was tuned on an rr training Table with {recorded} rows,"
+            f" but it has {n_rows} now. Rerun --tune-rr-penalty."
+        )
+
+    return hl.eval(tuning_ht.ridge_penalty)
+
+
 def main(args: argparse.Namespace) -> None:
     """Execute the expected models steps of the constraint pipeline."""
     hl.init(
@@ -237,23 +267,26 @@ def main(args: argparse.Namespace) -> None:
             res = resources.tune_rr_penalty
             res.check_resource_existence()
 
-            ht = tune_regional_mutation_rate_penalty(
-                res.rr_training_ht.ht(), args.rr_penalties
-            )
+            training_ht = res.rr_training_ht.ht()
+            ht = tune_regional_mutation_rate_penalty(training_ht, args.rr_penalties)
             penalty = choose_regional_mutation_rate_penalty(ht, RR_RIDGE_PENALTY)
             logger.info("Chosen ridge penalty: %s", penalty)
-            ht = ht.annotate_globals(ridge_penalty=penalty)
+            # --train-rr-models checks the penalty was tuned on its training Table.
+            ht = ht.annotate_globals(
+                ridge_penalty=penalty, rr_training_row_count=training_ht.count()
+            )
             ht.write(res.rr_penalty_tuning_ht.path, overwrite=overwrite)
             logger.info("Done tuning the rr ridge penalty.")
 
         if args.train_rr_models:
             res = resources.train_rr_models
             res.check_resource_existence()
-            penalty = hl.eval(res.rr_penalty_tuning_ht.ht().ridge_penalty)
+            tuning_ht = res.rr_penalty_tuning_ht.ht()
+            training_ht = res.rr_training_ht.ht()
+            penalty = get_rr_ridge_penalty(tuning_ht, training_ht)
             logger.info("Training the rr models (ridge penalty %s)...", penalty)
 
             # The fit records the penalty in a ridge_penalty global.
-            training_ht = res.rr_training_ht.ht()
             ht = fit_regional_mutation_rate_models(training_ht, penalty)
             ht = ht.annotate_globals(
                 rr_training_sites=training_ht.index_globals().rr_training_sites

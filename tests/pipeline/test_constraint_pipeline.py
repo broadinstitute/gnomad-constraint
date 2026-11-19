@@ -9,7 +9,7 @@ import runpy
 import sys
 from collections import defaultdict
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from unittest import mock
 
 import hail as hl
@@ -29,9 +29,43 @@ from gnomad_constraint.pipeline.expected_counts import (
     check_apply_models_resources,
     get_coverage_model,
 )
-from gnomad_constraint.pipeline.expected_models import check_skip_coverage_model
+from gnomad_constraint.pipeline.expected_models import (
+    check_skip_coverage_model,
+    get_rr_ridge_penalty,
+)
 from gnomad_constraint.pipeline.prepare_data import check_gerp_cutoffs_step
 from gnomad_constraint.resources.constants import CURRENT_VERSION
+
+
+class TestGetRrRidgePenalty:
+    """Test the get_rr_ridge_penalty function."""
+
+    @staticmethod
+    def _tuning_ht(row_count: Optional[int]) -> hl.Table:
+        """Return an empty tuning Table, recording the training row count if given."""
+        ht = hl.utils.range_table(0).annotate_globals(ridge_penalty=0.3)
+        if row_count is not None:
+            ht = ht.annotate_globals(rr_training_row_count=hl.int64(row_count))
+        return ht
+
+    def test_matching_training_table(self) -> None:
+        """Test that a penalty tuned on a training Table with the same rows is returned."""
+        assert get_rr_ridge_penalty(self._tuning_ht(5), hl.utils.range_table(5)) == 0.3
+
+    def test_changed_training_table(self) -> None:
+        """
+        Test that a penalty tuned on another training Table is rejected.
+
+        Regression test: rerunning ``--create-rr-training-set`` without
+        ``--tune-rr-penalty`` reused the old penalty without a warning.
+        """
+        with pytest.raises(ValueError, match="4 rows"):
+            get_rr_ridge_penalty(self._tuning_ht(4), hl.utils.range_table(5))
+
+    def test_no_record(self) -> None:
+        """Test that a tuning Table that doesn't record its training Table is rejected."""
+        with pytest.raises(ValueError, match="doesn't record"):
+            get_rr_ridge_penalty(self._tuning_ht(None), hl.utils.range_table(5))
 
 
 class TestCheckSkipCoverageModel:

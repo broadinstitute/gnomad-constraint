@@ -129,7 +129,7 @@ order:
 | `expected_models.py` | `--create-rr-site-features` | Take the synonymous DNM sites and a sampled background of synonymous sites absent from gnomAD exomes at the other loci, both within the plateau models' high coverage range, annotate them with their window's features, and leave out genes with a QC gene flag (unless `--skip-qc-flagged-gene-filter`) |
 | | `--create-rr-training-set` | Prepare the site features for the models: each site's label, context, chromosome fold, and its context's features |
 | | `--tune-rr-penalty` | Choose the ridge penalty: fit the models on odd chromosomes and score them on even ones, and vice versa, for each penalty in `--rr-penalties`, and keep the one with the lowest held-out log loss summed over contexts |
-| | `--train-rr-models` | Fit the per-context models with the chosen penalty |
+| | `--train-rr-models` | Fit the per-context models with the chosen penalty, after checking it was tuned on the current training set |
 | `expected_counts.py` | `--compute-rr` | Compute rr per window and context, divided by its mean, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in each context, so rr moves those sites' expected counts between regions without changing their total per context (other consequences' totals can shift) |
 
 `--compute-rr`, after `--apply-models-per-variant`, normalizes rr on the

@@ -877,6 +877,9 @@ chromosomes (odd or even) and scored on the fold's sites.
   over contexts and folds, or `RR_RIDGE_PENALTY` (0.3) if no held-out sites could be
   scored (a `--test` run covers chr20 only); `--train-rr-models` uses it for every
   context.
+- `rr_training_row_count: int64` — row count of the training Table the penalty was
+  tuned on; `--train-rr-models` stops with an error if the training Table has
+  another count, since it was then rewritten after the tuning.
 
 ### Rows
 - `penalty: float64`, `context: str`, `fold: str` — key (`fold` is the held-out
