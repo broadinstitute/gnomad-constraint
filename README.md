@@ -62,6 +62,13 @@ run that doesn't pass `--version` never writes to the paths of released tables
 labeled with a `genomic_region` of `autosome_or_par`, `chrx_nonpar`, or
 `chry_nonpar`. Run a script with `--help` for its options.
 
+Each stage of the pipeline also has its own versions (`STAGE_VERSIONS` in
+[gnomad_constraint/resources/constants.py](gnomad_constraint/resources/constants.py)),
+as in gnomad_qc. A release reads a stage it didn't change from the newest earlier
+version that ran it, so only the stages that changed are rerun, and the scripts
+refuse to run a stage's steps for a release that reuses it. To rerun a stage for a
+release, add the release to that stage's list and to every later stage's.
+
 The preprocessing flags (the coverage cutoffs, `--max-af`, the mutation-rate
 cutoffs, `--genetic-ancestry-groups`, and `--include-downsamplings`) only take
 effect at `--preprocess-data`, which records them in the preprocessed Table, so

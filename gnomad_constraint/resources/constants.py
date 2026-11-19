@@ -18,6 +18,38 @@ Keep it ahead of the latest release, so a run that doesn't pass ``--version`` ne
 writes to the paths of published tables.
 """
 
+STAGE_VERSIONS = {
+    "prepare_data": ["4.0", "4.1", "4.1.1", "4.1.3"],
+    "expected_models": ["4.0", "4.1", "4.1.1", "4.1.3"],
+    "expected_counts": ["4.0", "4.1", "4.1.1", "4.1.3"],
+    "pre_rank_metrics": ["4.0", "4.1", "4.1.1", "4.1.3"],
+}
+"""
+Versions in which each pipeline stage was run, in pipeline order.
+
+A release uses the newest version of each stage at or before it, so a stage the
+release didn't change is read from the version that last ran it instead of being
+recomputed. The stages are:
+
+    - ``prepare_data``: ``--prepare-context-ht``, ``--preprocess-data``, and
+      ``--compute-gene-quality-metrics``.
+    - ``expected_models``: ``--calculate-mutation-rate``, ``--create-training-set``,
+      and ``--build-models``.
+    - ``expected_counts``: ``--apply-models-per-variant``,
+      ``--apply-models-aggregated``, ``--aggregate-per-variant-expected``, and
+      ``--aggregate-by-constraint-groups``.
+    - ``pre_rank_metrics``: ``--compute-constraint-metrics`` up to the pre-rank
+      metrics Table.
+
+The ranked metrics and the release outputs (the ``release`` stage) are written for
+every version in ``VERSIONS``. A version listed for a stage must also be listed for
+every later stage, since those read its outputs.
+
+v4.1.2 only reran the LOEUF ranking, so it uses v4.1.1 for every stage. It predates
+this mechanism, though: it copied v4.1.1's constraint metrics Table to its own
+pre-rank metrics path.
+"""
+
 SITES_VERSION_MAP = {
     "4.0": "4.0",
     "4.1": "4.1",

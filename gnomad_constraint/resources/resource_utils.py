@@ -27,6 +27,7 @@ from gnomad_constraint.resources.constants import (
     GENCODE_VERSION_MAP,
     MODEL_TYPES,
     SITES_VERSION_MAP,
+    STAGE_VERSIONS,
     VEP_ANNOTATION,
     VEP_VERSION_MAP,
     VERSIONS,
@@ -218,30 +219,95 @@ def get_constraint_root(
     return f"gs://gnomad/v{version}/{constraint_dir}"
 
 
+def _version_key(version: str) -> Tuple[int, ...]:
+    """
+    Return a version string as a tuple of integers, for ordering versions.
+
+    :param version: Version string, such as "4.1.1".
+    :return: Tuple of the version's integer parts.
+    """
+    return tuple(int(x) for x in version.split("."))
+
+
+def get_stage_version(stage: str, version: str = CURRENT_VERSION) -> str:
+    """
+    Get the version of a pipeline stage's outputs that a release uses.
+
+    That is the newest version of the stage in ``STAGE_VERSIONS`` at or before
+    ``version``, so a stage the release didn't change is read from the version that
+    last ran it. The ``release`` stage (the ranked metrics and the release outputs)
+    always uses ``version``.
+
+    :param stage: "release" or one of the keys of ``STAGE_VERSIONS``.
+    :param version: Release version. Default is ``CURRENT_VERSION``.
+    :return: Version of the stage's outputs.
+    """
+    check_param_scope(version=version)
+    if stage == "release":
+        return version
+    if stage not in STAGE_VERSIONS:
+        raise ValueError(
+            f"stage must be 'release' or one of {list(STAGE_VERSIONS)}, not"
+            f" {stage!r}."
+        )
+
+    return max(
+        (v for v in STAGE_VERSIONS[stage] if _version_key(v) <= _version_key(version)),
+        key=_version_key,
+    )
+
+
+def check_stage_version(stage: str, version: str) -> None:
+    """
+    Check that ``version`` reruns ``stage`` rather than reusing an earlier version.
+
+    A release that reuses a stage reads its outputs from the earlier version's paths,
+    so running the stage's steps for that release would write over them.
+
+    :param stage: One of the keys of ``STAGE_VERSIONS``.
+    :param version: Release version the stage's steps would run for.
+    :return: None.
+    """
+    stage_version = get_stage_version(stage, version)
+    if stage_version != version:
+        raise ValueError(
+            f"Version {version} reuses the {stage} outputs of {stage_version}, so its"
+            f" {stage} steps would write to the {stage_version} paths. To rerun them"
+            f" for {version}, add {version} to STAGE_VERSIONS['{stage}'], and to"
+            " every later stage, in constants.py."
+        )
+
+
 def get_constraint_data(
     name: str,
-    version: str = CURRENT_VERSION,
+    version: Optional[str] = None,
     test: bool = False,
     directory_post_fix: Optional[str] = None,
     sub_dir: Optional[str] = None,
     extension: str = "ht",
     path_post_fix: Optional[str] = None,
     temp: bool = False,
+    stage: str = "release",
 ) -> Union[TableResource, str, ExpressionResource]:
     """
     Return path, TableResource, or ExpressionResource of requested constraint data.
 
     :param name: Name of the constraint data to retrieve.
-    :param version: One of the release versions (`VERSIONS`). Default is
-        `CURRENT_VERSION`.
+    :param version: One of the versions in ``VERSIONS``. Default is None, which uses
+        the version of ``stage`` that ``CURRENT_VERSION`` uses.
     :param test: Whether the Table is for testing purpose and only contains a subset of
         the data. Default is False.
     :param directory_post_fix: Postfix to append to the root path. Default is None.
     :param sub_dir: Subdirectory to append to the path. Default is None.
     :param extension: File extension. Default is "ht".
     :param path_post_fix: Postfix to append to the file name. Default is None.
+    :param temp: Whether to use the temporary bucket. Default is False.
+    :param stage: Pipeline stage that writes the data, used to pick the default
+        version (see :func:`get_stage_version`). Default is "release".
     :return: Path, TableResource, or ExpressionResource of the constraint data.
     """
+    if version is None:
+        version = get_stage_version(stage)
     check_param_scope(version, extension=extension)
 
     path_post_fix = path_post_fix or ""
@@ -271,7 +337,9 @@ def get_mutation_ht(**kwargs) -> TableResource:
 
     :return: Mutation rate Table.
     """
-    return get_constraint_data("mutation_rate", sub_dir="mutation_rate", **kwargs)
+    return get_constraint_data(
+        "mutation_rate", sub_dir="mutation_rate", stage="expected_models", **kwargs
+    )
 
 
 def get_release_mutation_ht(**kwargs) -> TableResource:
@@ -321,7 +389,10 @@ def get_annotated_context_ht(**kwargs) -> TableResource:
     :return: TableResource of annotated context Table.
     """
     return get_constraint_data(
-        "annotated_context", sub_dir="preprocessed_data", **kwargs
+        "annotated_context",
+        sub_dir="preprocessed_data",
+        stage="prepare_data",
+        **kwargs,
     )
 
 
@@ -332,7 +403,10 @@ def get_preprocessed_ht(**kwargs) -> TableResource:
     :return: TableResource of processed context Table.
     """
     return get_constraint_data(
-        "context.preprocessed", sub_dir="preprocessed_data", **kwargs
+        "context.preprocessed",
+        sub_dir="preprocessed_data",
+        stage="prepare_data",
+        **kwargs,
     )
 
 
@@ -342,7 +416,12 @@ def get_training_dataset(**kwargs) -> TableResource:
 
     :return: TableResource of training dataset.
     """
-    return get_constraint_data("constraint_training", sub_dir="training_data", **kwargs)
+    return get_constraint_data(
+        "constraint_training",
+        sub_dir="training_data",
+        stage="expected_models",
+        **kwargs,
+    )
 
 
 def get_training_tsv_path(**kwargs) -> str:
@@ -352,7 +431,11 @@ def get_training_tsv_path(**kwargs) -> str:
     :return: TSV path of training dataset.
     """
     return get_constraint_data(
-        "constraint_training", sub_dir="training_data", extension="tsv.bgz", **kwargs
+        "constraint_training",
+        sub_dir="training_data",
+        extension="tsv.bgz",
+        stage="expected_models",
+        **kwargs,
     )
 
 
@@ -364,7 +447,13 @@ def get_models(model_type: str, **kwargs) -> ExpressionResource:
     :return: Path to the specified model.
     """
     check_param_scope(model_type=model_type)
-    return get_constraint_data(model_type, sub_dir="models", extension="he", **kwargs)
+    return get_constraint_data(
+        model_type,
+        sub_dir="models",
+        extension="he",
+        stage="expected_models",
+        **kwargs,
+    )
 
 
 def get_per_variant_expected_dataset(**kwargs) -> TableResource:
@@ -376,6 +465,7 @@ def get_per_variant_expected_dataset(**kwargs) -> TableResource:
     return get_constraint_data(
         "per_variant_expected",
         sub_dir=f"apply_models/{VEP_ANNOTATION}",
+        stage="expected_counts",
         **kwargs,
     )
 
@@ -389,6 +479,7 @@ def get_aggregated_per_variant_expected(**kwargs) -> TableResource:
     return get_constraint_data(
         "per_variant_expected.aggregated",
         sub_dir=f"apply_models/{VEP_ANNOTATION}",
+        stage="expected_counts",
         **kwargs,
     )
 
@@ -405,6 +496,7 @@ def get_aggregated_expected(**kwargs) -> TableResource:
     return get_constraint_data(
         "aggregated_expected",
         sub_dir=f"apply_models/{VEP_ANNOTATION}",
+        stage="expected_counts",
         **kwargs,
     )
 
@@ -418,6 +510,7 @@ def get_constraint_group_ht(**kwargs) -> TableResource:
     return get_constraint_data(
         "constraint_group",
         sub_dir=f"apply_models/{VEP_ANNOTATION}",
+        stage="expected_counts",
         **kwargs,
     )
 
@@ -448,6 +541,7 @@ def get_pre_rank_constraint_metrics_dataset(**kwargs) -> TableResource:
     return get_constraint_data(
         "constraint_metrics_pre_rank",
         sub_dir=f"metrics/{VEP_ANNOTATION}",
+        stage="pre_rank_metrics",
         **kwargs,
     )
 
@@ -461,7 +555,9 @@ def get_gene_quality_metrics_ht(**kwargs) -> TableResource:
 
     :return: TableResource of gene quality metrics.
     """
-    return get_constraint_data("gene_quality_metrics", sub_dir="metrics", **kwargs)
+    return get_constraint_data(
+        "gene_quality_metrics", sub_dir="metrics", stage="prepare_data", **kwargs
+    )
 
 
 def get_lof_threshold_tsv_path(**kwargs) -> str:
@@ -575,7 +671,8 @@ def get_constraint_resources(
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
 
-    :param version: Version of constraint resources to use.
+    :param version: Release version. Each stage's resources use the version of that
+        stage the release uses (see :func:`get_stage_version`).
     :param overwrite: Whether to overwrite existing resources.
     :param test: Whether to use test resources.
     :param models: Models to use. Default is ("plateau", "coverage").
@@ -596,42 +693,50 @@ def get_constraint_resources(
         overwrite=overwrite,
     )
 
+    # Each stage's outputs use the version of that stage that the release uses, so a
+    # stage the release didn't change is read from the version that last ran it.
+    params = {
+        stage: {
+            "version": get_stage_version(stage, version),
+            "test": test,
+            "directory_post_fix": directory_post_fix,
+        }
+        for stage in [*STAGE_VERSIONS, "release"]
+    }
+    prepare_data_version = params["prepare_data"]["version"]
+
     # Make dictionary for prepare_context input Tables.
     input_hts = {
-        "context_ht": get_vep_context_ht(version),
+        "context_ht": get_vep_context_ht(prepare_data_version),
         "methylation_ht": ref_grch38.methylation_sites,
         "adj_r_ht": get_adj_r_ht(),
         "syn_adj_r_ht": get_syn_adj_r_ht(),
     }
     for d in ["exomes", "genomes"]:
-        input_hts[f"{d}_coverage_ht"] = get_coverage_ht(d, version)
-        input_hts[f"{d}_sites_ht"] = get_sites_resource(d, version)
+        input_hts[f"{d}_coverage_ht"] = get_coverage_ht(d, prepare_data_version)
+        input_hts[f"{d}_sites_ht"] = get_sites_resource(d, prepare_data_version)
         input_hts[f"{d}_an_ht"] = all_sites_an(d)
-
-    common_params = {
-        "version": version,
-        "test": test,
-        "directory_post_fix": directory_post_fix,
-    }
 
     prepare_context = PipelineStepResourceCollection(
         "prepare_data.py --prepare-context-ht",
         output_resources={
-            "annotated_context_ht": get_annotated_context_ht(**common_params)
+            "annotated_context_ht": get_annotated_context_ht(**params["prepare_data"])
         },
         input_resources={"gnomAD resources": input_hts},
     )
     preprocess_data = PipelineStepResourceCollection(
         "prepare_data.py --preprocess-data",
         output_resources={
-            "temp_preprocess_data_ht": get_preprocessed_ht(**common_params),
+            "temp_preprocess_data_ht": get_preprocessed_ht(**params["prepare_data"]),
         },
         pipeline_input_steps=[prepare_context],
     )
     compute_gene_quality_metrics_step = PipelineStepResourceCollection(
         "prepare_data.py --compute-gene-quality-metrics",
         output_resources={
-            "gene_quality_metrics_ht": get_gene_quality_metrics_ht(**common_params)
+            "gene_quality_metrics_ht": get_gene_quality_metrics_ht(
+                **params["prepare_data"]
+            )
         },
         add_input_resources={
             "gnomAD resources": {
@@ -649,17 +754,17 @@ def get_constraint_resources(
     )
     calculate_mutation_rate = PipelineStepResourceCollection(
         "expected_models.py --calculate-mutation-rate",
-        output_resources={"mutation_ht": get_mutation_ht(**common_params)},
+        output_resources={"mutation_ht": get_mutation_ht(**params["expected_models"])},
         pipeline_input_steps=[preprocess_data],
     )
     create_training_set = PipelineStepResourceCollection(
         "expected_models.py --create-training-set",
         output_resources={
             "train_ht": get_training_dataset(
-                **common_params, path_post_fix=path_post_fix
+                **params["expected_models"], path_post_fix=path_post_fix
             ),
             "train_tsv": get_training_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **params["expected_models"], path_post_fix=path_post_fix
             ),
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate],
@@ -667,7 +772,9 @@ def get_constraint_resources(
     build_models = PipelineStepResourceCollection(
         "expected_models.py --build-models",
         output_resources={
-            f"model_{m}": get_models(m, **common_params, path_post_fix=path_post_fix)
+            f"model_{m}": get_models(
+                m, **params["expected_models"], path_post_fix=path_post_fix
+            )
             for m in models
         },
         pipeline_input_steps=[create_training_set],
@@ -676,7 +783,7 @@ def get_constraint_resources(
         "expected_counts.py --apply-models-per-variant",
         output_resources={
             "per_variant_apply_ht": get_per_variant_expected_dataset(
-                **common_params, path_post_fix=path_post_fix
+                **params["expected_counts"], path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -685,7 +792,7 @@ def get_constraint_resources(
         "constraint_metrics.py --aggregate-per-variant-expected",
         output_resources={
             "apply_ht": get_aggregated_per_variant_expected(
-                **common_params, path_post_fix=path_post_fix
+                **params["expected_counts"], path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[apply_models_per_variant],
@@ -694,7 +801,7 @@ def get_constraint_resources(
         "expected_counts.py --apply-models-aggregated",
         output_resources={
             "aggregated_expected_ht": get_aggregated_expected(
-                **common_params, path_post_fix=path_post_fix
+                **params["expected_counts"], path_post_fix=path_post_fix
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
@@ -704,7 +811,7 @@ def get_constraint_resources(
             "constraint_metrics.py --aggregate-by-constraint-groups --use-aggregated-expected",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
-                    **common_params, path_post_fix=path_post_fix
+                    **params["expected_counts"], path_post_fix=path_post_fix
                 )
             },
             pipeline_input_steps=[apply_models_aggregated],
@@ -714,7 +821,7 @@ def get_constraint_resources(
             "constraint_metrics.py --aggregate-by-constraint-groups",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
-                    **common_params, path_post_fix=path_post_fix
+                    **params["expected_counts"], path_post_fix=path_post_fix
                 )
             },
             pipeline_input_steps=[aggregate_per_variant_expected],
@@ -729,7 +836,7 @@ def get_constraint_resources(
                 "constraint_metrics.py --compute-constraint-metrics": {
                     "pre_rank_constraint_metrics_ht": (
                         get_pre_rank_constraint_metrics_dataset(
-                            **common_params,
+                            **params["pre_rank_metrics"],
                             path_post_fix=path_post_fix,
                         )
                     )
@@ -737,7 +844,7 @@ def get_constraint_resources(
             },
             output_resources={
                 "constraint_metrics_ht": get_constraint_metrics_dataset(
-                    **common_params, path_post_fix=path_post_fix
+                    **params["release"], path_post_fix=path_post_fix
                 ),
             },
         )
@@ -747,12 +854,12 @@ def get_constraint_resources(
             output_resources={
                 "pre_rank_constraint_metrics_ht": (
                     get_pre_rank_constraint_metrics_dataset(
-                        **common_params,
+                        **params["pre_rank_metrics"],
                         path_post_fix=path_post_fix,
                     )
                 ),
                 "constraint_metrics_ht": get_constraint_metrics_dataset(
-                    **common_params, path_post_fix=path_post_fix
+                    **params["release"], path_post_fix=path_post_fix
                 ),
             },
             pipeline_input_steps=[
@@ -764,7 +871,7 @@ def get_constraint_resources(
         "constraint_metrics.py --prepare-release",
         output_resources={
             "release_ht": get_release_constraint_ht(
-                **common_params, path_post_fix=path_post_fix
+                **params["release"], path_post_fix=path_post_fix
             ),
         },
         pipeline_input_steps=[compute_constraint_metrics],
@@ -772,8 +879,8 @@ def get_constraint_resources(
     prepare_release_mutation_rate = PipelineStepResourceCollection(
         "constraint_metrics.py --prepare-release-mutation-rate",
         output_resources={
-            "release_mutation_ht": get_release_mutation_ht(**common_params),
-            "release_mutation_tsv": get_release_mutation_tsv_path(**common_params),
+            "release_mutation_ht": get_release_mutation_ht(**params["release"]),
+            "release_mutation_tsv": get_release_mutation_tsv_path(**params["release"]),
         },
         pipeline_input_steps=[calculate_mutation_rate],
     )
@@ -781,10 +888,10 @@ def get_constraint_resources(
         "constraint_metrics.py --export-release-tsv",
         output_resources={
             "release_tsv": get_release_constraint_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **params["release"], path_post_fix=path_post_fix
             ),
             "lof_threshold_tsv": get_lof_threshold_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **params["release"], path_post_fix=path_post_fix
             ),
         },
         pipeline_input_steps=[prepare_release],
@@ -793,7 +900,7 @@ def get_constraint_resources(
         "constraint_metrics.py --export-release-downsampling-tsv",
         output_resources={
             "release_downsampling_tsv": get_release_downsampling_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **params["release"], path_post_fix=path_post_fix
             ),
         },
         pipeline_input_steps=[prepare_release],
