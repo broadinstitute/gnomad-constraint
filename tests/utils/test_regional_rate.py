@@ -395,13 +395,18 @@ class TestComputeRrHt:
         )
 
     @staticmethod
-    def _models_ht() -> hl.Table:
-        """Return one AAA model with rate ``expit(a - 1) / 0.5``, penalty 0.3."""
+    def _models_ht(context_feature: Optional[dict] = None) -> hl.Table:
+        """
+        Return models with rate ``expit(x - 1) / 0.5`` of one feature, penalty 0.3.
+
+        :param context_feature: Each model's context and feature. Default is one AAA
+            model of ``a``.
+        """
         ht = hl.Table.parallelize(
             [
                 {
-                    "context": "AAA",
-                    "features": ["a"],
+                    "context": context,
+                    "features": [feature],
                     "mean": [1.0],
                     "sd": [1.0],
                     "coefs": [1.0],
@@ -411,6 +416,7 @@ class TestComputeRrHt:
                     "n_background": 10,
                     "converged": True,
                 }
+                for context, feature in (context_feature or {"AAA": "a"}).items()
             ],
             MODELS_HT_SCHEMA,
             key="context",
@@ -453,3 +459,40 @@ class TestComputeRrHt:
             {"AAA": factor, "ACG": 1.0}
         )
         assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")
+
+    def test_window_missing_a_models_feature(self) -> None:
+        """
+        Test that a window missing one model's feature has no rr in that context.
+
+        The second window has ``a`` but not ``b``, so it has an rr in AAA but not in
+        ACA, whose model uses ``b``. Its ACA rr stays missing after normalization, so
+        its expected counts in ACA aren't adjusted, and its ACA site is left out of
+        ACA's factor. It used to get the rate of the average window, 1.0, which
+        entered the factor and was then divided by it.
+        """
+        features_ht = hl.Table.parallelize(
+            [
+                {"interval": hl.Interval(_locus(s), _locus(e)), "a": a, "b": b}
+                for s, e, a, b in [(1, 1001, 0.5, 2.0), (1001, 2001, 1.5, None)]
+            ],
+            hl.tstruct(interval=INTERVAL_TYPE, a=hl.tfloat64, b=hl.tfloat64),
+            key="interval",
+        )
+        ht = compute_rr_ht(
+            features_ht,
+            self._models_ht({"AAA": "a", "ACA": "b"}),
+            _per_variant_ht(
+                [
+                    (10, "ENST1", True, "synonymous_variant", "ACA", 1.0),
+                    (1500, "ENST2", True, "synonymous_variant", "ACA", 3.0),
+                ]
+            ),
+        )
+        rr = {r.interval.start.position: r.adj_r for r in ht.collect()}
+        assert sorted(rr) == [1, 1001]
+        assert rr[1001]["AAA"] == pytest.approx(2 / (1 + np.exp(-0.5)))
+        assert rr[1001]["ACA"] is None
+        assert rr[1]["ACA"] == pytest.approx(1.0)
+        assert hl.eval(ht.rr_globals.normalization_factors)["ACA"] == pytest.approx(
+            2 / (1 + np.exp(-1.0))
+        )

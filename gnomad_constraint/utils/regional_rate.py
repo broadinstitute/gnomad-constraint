@@ -173,8 +173,10 @@ def compute_rr_ht(
     Compute rr per 1kb window and context, normalized on the per-variant Table's sites.
 
     Each window's rr in each of ``RR_CONTEXTS`` comes from that context's model, and
-    windows no model covers are dropped. rr is then divided, per context, by its mean
-    over the sites of :func:`get_rr_normalization_sites_ht`, weighted by their adj
+    windows no model covers are dropped. A window missing a feature of a context's
+    model has no rr in that context, so its expected counts there aren't adjusted.
+    rr is then divided, per context, by its mean over the sites of
+    :func:`get_rr_normalization_sites_ht` that have one, weighted by their adj
     expected count, so it moves those sites' expected counts between windows without
     changing their total.
 
@@ -186,11 +188,6 @@ def compute_rr_ht(
         an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
         and ``per_variant_apply_models_globals``.
     """
-    # TODO: Windows missing a context's features get 1.0 here, the model's rate for
-    #  the average window. Normalization then divides it by the context's factor, so
-    #  these windows end up at 1 / factor instead of 1, unlike sites without a
-    #  window. Consider missing_feature_rate=None, which leaves them missing, and
-    #  filling 1.0 after normalization.
     ht = features_ht.select(
         adj_r=regional_mutation_rate_expr(features_ht.row, models_ht, RR_CONTEXTS)
     )

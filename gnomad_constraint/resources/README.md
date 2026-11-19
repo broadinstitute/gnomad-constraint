@@ -919,7 +919,7 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
   - `ridge_penalty: float64` — ridge penalty the models were fit with (§18).
   - `normalization_factors: dict<str, float64>` — per-context expected-weighted
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
-    of `per_variant_expected.ht` that fall in an rr window; rr is divided by it.
+    of `per_variant_expected.ht` that have one; rr is divided by it.
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
     per-variant expected Table rr was normalized on (see §7).
 
@@ -928,9 +928,9 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
   `genomic_features13_1kb.ht`. Windows where no modeled context has an rr are
   removed.
 - `adj_r: dict<str, float64>` — rr for each of the 32 `RR_CONTEXTS`:
-  `sigmoid(linear predictor) / ave / normalization factor`. Before normalization,
-  rr is set to 1.0 in windows missing one of the context's model features, so those
-  windows get `1 / normalization factor`; contexts without a model are 1.0.
+  `sigmoid(linear predictor) / ave / normalization factor`. It is missing in
+  windows missing one of the context's model features, so expected counts there
+  aren't adjusted; contexts without a model are 1.0.
 
 ---
 
