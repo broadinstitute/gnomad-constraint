@@ -73,7 +73,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
 apply-models, metrics, and constraint-metrics release outputs. The rr imports
-(§14-15) take neither post-fix, and the other rr outputs (§16-20) take both.
+(§14-15) take neither post-fix, the rr model Tables (§16-19) only the directory
+post-fix, and the rr Table (§20) both.
 `constraint_metrics.py --apply-regional-rr` adds `.rr` (after the path post-fix, if
 any) to its outputs from the aggregated per-variant expected Table (§7) on, so they
 sit beside the ones without rr.
@@ -419,6 +420,7 @@ Identical pipeline-parameter globals as `per_variant_expected.ht`. With
 `--apply-regional-rr`, also `regional_rr_globals`, a copy of the rr Table's
 `rr_globals`: `ridge_penalty: float64` (ridge penalty of the rr models),
 `normalization_factors: dict<str, float64>` (per-context factor rr was divided by),
+`training_sites: struct` (how the rr training sites were chosen, §16),
 `per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
 per-variant expected Table rr was normalized on) and `per_variant_row_count: int64`
 (that Table's row count); `--apply-regional-rr` stops with an error if either differs
@@ -787,8 +789,12 @@ The published Gnocchi 1kb regional genomic feature matrix
 
 rr site features: the training sites with their labels and window features,
 produced by `--create-rr-site-features` /
-[`create_rr_site_features_ht`](../utils/regional_rate.py). The DNM sites are the
-synonymous sites of `annotated_context.ht` in `dnm.ht`; the background is a
+[`create_rr_site_features_ht`](../utils/regional_rate.py). Only the synonymous
+sites of `context.preprocessed.ht` in the plateau models' high coverage range are
+used (`exomes_coverage` of at least `build_models_globals.high_cov_cutoff`, and at
+most `upper_cov_cutoff` if set), since elsewhere a DNM can't be called and a site
+can be absent from gnomAD only for lack of coverage. The DNM sites are those in
+`dnm.ht`; the background is a
 `RR_BACKGROUND_FRACTION` (5%) sample, with seed `RR_BACKGROUND_SEED`, of the
 synonymous sites absent from gnomAD exomes (`filters.exomes` is missing) at the
 other loci, one per locus, so no locus is both. Sites in the span of an Ensembl MANE
@@ -800,6 +806,20 @@ variant is one row, however many DNMs were reported there.
 - **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_site_features.ht`
 - **Resource fn:** [`get_rr_site_features_ht`](resource_utils.py)
 - **Key:** `locus`
+
+### Globals
+- `rr_training_sites: struct` — how the sites were chosen, carried to the training
+  set (§17), the models (§19), the rr Table (§20, as `rr_globals.training_sites`),
+  and the release (`regional_rr_params.training_sites`):
+  - `background_fraction: float64`, `background_seed: int32` —
+    `RR_BACKGROUND_FRACTION` and `RR_BACKGROUND_SEED`.
+  - `qc_flagged_gene_filter: bool` — whether sites in QC-flagged genes were left
+    out (False with `--skip-qc-flagged-gene-filter`).
+  - `gene_flags_version: str` — version of the constraint metrics Table the gene
+    flags came from (`RR_GENE_FLAGS_VERSION`); missing without the filter.
+  - `exome_coverage_metric: str`, `high_cov_cutoff: int32`,
+    `upper_cov_cutoff: int32` — the coverage range of the sites, from the
+    preprocessed Table's globals.
 
 ### Rows
 - `locus: locus<GRCh38>` — key.
@@ -827,6 +847,7 @@ rr training set: the site features (§16) prepared for the models by
 ### Globals
 - `features: dict<str, array<str>>` — each context's feature columns, in the order
   of `x` (`RR_CONTEXT_FEATURES`).
+- `rr_training_sites: struct` — copied from the site features (§16).
 
 ### Rows
 - `locus: locus<GRCh38>` — key.
@@ -855,8 +876,11 @@ chromosomes (odd or even) and scored on the fold's sites.
 ### Globals
 - `ridge_penalty: float64` — the penalty with the lowest held-out log loss summed
   over contexts and folds, or `RR_RIDGE_PENALTY` (0.3) if no held-out sites could be
-  scored (a `--test` run covers chr20 only); `--train-rr-models` uses it for every
-  context.
+  scored (in a `--test` run only chr20 has features); `--train-rr-models` uses it
+  for every context.
+- `rr_training_row_count: int64` — row count of the training Table the penalty was
+  tuned on; `--train-rr-models` stops with an error if the training Table has
+  another count, since it was then rewritten after the tuning.
 
 ### Rows
 - `penalty: float64`, `context: str`, `fold: str` — key (`fold` is the held-out
@@ -882,8 +906,10 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 ### Globals
 - `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
   §18, recorded by `fit_regional_mutation_rate_models`.
-- `non_converged_contexts: array<str>` — contexts whose logistic fit didn't
-  converge (also logged as a warning).
+- `rr_training_sites: struct` — copied from the training set (§16).
+
+A context whose fit didn't converge has `converged` False; `--compute-rr` gives it
+rr 1 and logs a warning naming it.
 
 ### Rows
 - `context: str` — strand-collapsed trinucleotide context (one of `RR_CONTEXTS`).
@@ -926,6 +952,9 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
   - `normalization_factors: dict<str, float64>` — per-context expected-weighted
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
     of `per_variant_expected.ht` that have one; rr is divided by it.
+  - `training_sites: struct` — the models' `rr_training_sites` (§16).
+  - `non_converged_contexts: array<str>` — contexts whose model didn't converge
+    and so get rr 1, as if they had no model.
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
     per-variant expected Table rr was normalized on (see §7).
   - `per_variant_row_count: int64` — that Table's row count (see §7).

@@ -9,7 +9,7 @@ import runpy
 import sys
 from collections import defaultdict
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from unittest import mock
 
 import hail as hl
@@ -18,6 +18,8 @@ from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
 import gnomad_constraint.pipeline as pipeline
 import gnomad_constraint.pipeline.constraint_metrics as constraint_metrics
+import gnomad_constraint.pipeline.expected_counts as expected_counts
+import gnomad_constraint.pipeline.expected_models as expected_models
 import gnomad_constraint.resources.resource_utils as constraint_res
 import gnomad_constraint.utils.constraint as constraint_utils
 from gnomad_constraint.pipeline.constraint_metrics import (
@@ -29,9 +31,50 @@ from gnomad_constraint.pipeline.expected_counts import (
     check_apply_models_resources,
     get_coverage_model,
 )
-from gnomad_constraint.pipeline.expected_models import check_skip_coverage_model
+from gnomad_constraint.pipeline.expected_models import (
+    check_skip_coverage_model,
+    get_rr_ridge_penalty,
+)
 from gnomad_constraint.pipeline.prepare_data import check_gerp_cutoffs_step
-from gnomad_constraint.resources.constants import CURRENT_VERSION
+from gnomad_constraint.resources.constants import (
+    CURRENT_VERSION,
+    RR_BACKGROUND_FRACTION,
+    RR_BACKGROUND_SEED,
+    RR_CONTEXT_FEATURES,
+    RR_GENE_FLAGS_VERSION,
+    RR_RIDGE_PENALTY,
+)
+
+
+class TestGetRrRidgePenalty:
+    """Test the get_rr_ridge_penalty function."""
+
+    @staticmethod
+    def _tuning_ht(row_count: Optional[int]) -> hl.Table:
+        """Return an empty tuning Table, recording the training row count if given."""
+        ht = hl.utils.range_table(0).annotate_globals(ridge_penalty=0.3)
+        if row_count is not None:
+            ht = ht.annotate_globals(rr_training_row_count=hl.int64(row_count))
+        return ht
+
+    def test_matching_training_table(self) -> None:
+        """Test that a penalty tuned on a training Table with the same rows is returned."""
+        assert get_rr_ridge_penalty(self._tuning_ht(5), hl.utils.range_table(5)) == 0.3
+
+    def test_changed_training_table(self) -> None:
+        """
+        Test that a penalty tuned on another training Table is rejected.
+
+        Regression test: rerunning ``--create-rr-training-set`` without
+        ``--tune-rr-penalty`` reused the old penalty without a warning.
+        """
+        with pytest.raises(ValueError, match="4 rows"):
+            get_rr_ridge_penalty(self._tuning_ht(4), hl.utils.range_table(5))
+
+    def test_no_record(self) -> None:
+        """Test that a tuning Table that doesn't record its training Table is rejected."""
+        with pytest.raises(ValueError, match="doesn't record"):
+            get_rr_ridge_penalty(self._tuning_ht(None), hl.utils.range_table(5))
 
 
 class TestCheckSkipCoverageModel:
@@ -601,6 +644,215 @@ class TestScriptResources:
         rr_ht = res.regional_rr_ht.ht.return_value if apply_regional_rr else None
         assert checks == ([(per_variant_ht, rr_ht)] if apply_regional_rr else [])
         assert aggregates == [(per_variant_ht, {"regional_rr_ht": rr_ht})]
+
+    @staticmethod
+    def _run_main(
+        monkeypatch: pytest.MonkeyPatch,
+        module: Any,
+        flags: List[str],
+        stubs: Dict[str, Any],
+    ) -> mock.MagicMock:
+        """
+        Run a script's ``main`` with ``flags``, stand-in resources and stubbed functions.
+
+        :param monkeypatch: pytest monkeypatch fixture.
+        :param module: Imported pipeline script module.
+        :param flags: Command line flags.
+        :param stubs: Functions to replace in the module, by name.
+        :return: The stand-in resources ``main`` got.
+        """
+        parse_args = argparse.ArgumentParser.parse_args
+        parsers = []
+
+        def get_parser(parser: argparse.ArgumentParser, *args: Any) -> None:
+            parsers.append(parser)
+            raise _StopRun
+
+        monkeypatch.setattr(argparse.ArgumentParser, "parse_args", get_parser)
+        _run_script(monkeypatch, module.__name__.split(".")[-1], [])
+        args = parse_args(parsers[0], flags)
+
+        resources = mock.MagicMock()
+        monkeypatch.setattr(
+            constraint_res, "get_constraint_resources", lambda *a, **k: resources
+        )
+        for name, stub in stubs.items():
+            monkeypatch.setattr(module, name, stub)
+        module.main(args)
+        return resources
+
+    @staticmethod
+    def _recorder(calls: list, out: Any = None) -> Any:
+        """
+        Return a stand-in that records its arguments and returns ``out``.
+
+        :param calls: List to append each call's ``(args, kwargs)`` to.
+        :param out: Value to return. Default is a new MagicMock per call.
+        :return: The stand-in function.
+        """
+
+        def record(*args: Any, **kwargs: Any) -> Any:
+            calls.append((args, kwargs))
+            return mock.MagicMock() if out is None else out
+
+        return record
+
+    @pytest.mark.parametrize("skip_filter", [False, True])
+    def test_create_rr_site_features(
+        self, monkeypatch: pytest.MonkeyPatch, skip_filter: bool
+    ) -> None:
+        """
+        Test what ``--create-rr-site-features`` passes and writes.
+
+        Regression test: no test ran the rr steps in ``main``, so the suite still
+        passed with the background fraction and seed swapped or
+        ``--skip-qc-flagged-gene-filter`` ignored.
+        """
+        calls = []
+        flags = ["--create-rr-site-features"]
+        if skip_filter:
+            flags.append("--skip-qc-flagged-gene-filter")
+        resources = self._run_main(
+            monkeypatch,
+            expected_models,
+            flags,
+            {"create_rr_site_features_ht": self._recorder(calls)},
+        )
+        res = resources.create_rr_site_features
+        assert calls == [
+            (
+                (
+                    res.temp_preprocess_data_ht.ht.return_value,
+                    res.dnm_ht.ht.return_value,
+                    res.genomic_features_ht.ht.return_value,
+                    RR_BACKGROUND_FRACTION,
+                    RR_BACKGROUND_SEED,
+                ),
+                {
+                    "gene_flags_ht": (
+                        None if skip_filter else res.gene_flags_ht.ht.return_value
+                    ),
+                    "gene_flags_version": RR_GENE_FLAGS_VERSION,
+                },
+            )
+        ]
+
+    def test_create_rr_training_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """
+        Test that ``--create-rr-training-set`` passes the features and folds and keeps the record.
+
+        gnomad_methods' prepare keeps only the ``features`` global, so the step has
+        to carry the site features' ``rr_training_sites``.
+        """
+        calls = []
+        folds = []
+        training_ht = mock.MagicMock()
+        resources = self._run_main(
+            monkeypatch,
+            expected_models,
+            ["--create-rr-training-set"],
+            {
+                "prepare_regional_mutation_rate_training_ht": self._recorder(
+                    calls, training_ht
+                ),
+                "get_rr_fold_expr": self._recorder(folds, "fold"),
+            },
+        )
+        res = resources.create_rr_training_set
+        site_ht = res.rr_site_features_ht.ht.return_value
+        assert folds == [((site_ht.locus,), {})]
+        assert calls == [((site_ht, RR_CONTEXT_FEATURES), {"fold_expr": "fold"})]
+        training_ht.annotate_globals.assert_called_once_with(
+            rr_training_sites=site_ht.index_globals.return_value.rr_training_sites
+        )
+        training_ht.annotate_globals.return_value.write.assert_called_once_with(
+            res.rr_training_ht.path, overwrite=False
+        )
+
+    def test_tune_rr_penalty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """
+        Test that ``--tune-rr-penalty`` tunes the given penalties and records its choice.
+
+        The fallback penalty is ``RR_RIDGE_PENALTY``, and the training Table's row
+        count is recorded for ``--train-rr-models`` to check.
+        """
+        tunes = []
+        chooses = []
+        tuning_ht = mock.MagicMock()
+        resources = self._run_main(
+            monkeypatch,
+            expected_models,
+            ["--tune-rr-penalty", "--rr-penalties", "0.1", "0.2"],
+            {
+                "tune_regional_mutation_rate_penalty": self._recorder(tunes, tuning_ht),
+                "choose_regional_mutation_rate_penalty": self._recorder(chooses, 0.2),
+            },
+        )
+        training_ht = resources.tune_rr_penalty.rr_training_ht.ht.return_value
+        assert tunes == [((training_ht, [0.1, 0.2]), {})]
+        assert chooses == [((tuning_ht, RR_RIDGE_PENALTY), {})]
+        tuning_ht.annotate_globals.assert_called_once_with(
+            ridge_penalty=0.2, rr_training_row_count=training_ht.count.return_value
+        )
+
+    def test_train_rr_models(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """
+        Test that ``--train-rr-models`` fits with the checked, tuned penalty.
+
+        Regression test: the suite still passed with the penalty hard-coded instead
+        of read from the tuning Table.
+        """
+        penalties = []
+        fits = []
+        models_ht = mock.MagicMock()
+        resources = self._run_main(
+            monkeypatch,
+            expected_models,
+            ["--train-rr-models"],
+            {
+                "get_rr_ridge_penalty": self._recorder(penalties, 0.2),
+                "fit_regional_mutation_rate_models": self._recorder(fits, models_ht),
+            },
+        )
+        res = resources.train_rr_models
+        training_ht = res.rr_training_ht.ht.return_value
+        assert penalties == [
+            ((res.rr_penalty_tuning_ht.ht.return_value, training_ht), {})
+        ]
+        assert fits == [((training_ht, 0.2), {})]
+        models_ht.annotate_globals.assert_called_once_with(
+            rr_training_sites=training_ht.index_globals.return_value.rr_training_sites
+        )
+        models_ht.annotate_globals.return_value.write.assert_called_once_with(
+            res.rr_models_ht.path, overwrite=False
+        )
+
+    def test_compute_rr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """
+        Test that ``--compute-rr`` passes the features, models and per-variant Table in order.
+
+        Regression test: the suite still passed with the first two swapped.
+        """
+        calls = []
+        rr_ht = mock.MagicMock()
+        resources = self._run_main(
+            monkeypatch,
+            expected_counts,
+            ["--compute-rr"],
+            {"compute_rr_ht": self._recorder(calls, rr_ht)},
+        )
+        res = resources.compute_rr
+        assert calls == [
+            (
+                (
+                    res.genomic_features_ht.ht.return_value,
+                    res.rr_models_ht.ht.return_value,
+                    res.per_variant_apply_ht.ht.return_value,
+                ),
+                {},
+            )
+        ]
+        rr_ht.write.assert_called_once_with(res.regional_rr_ht.path, overwrite=False)
 
     @pytest.mark.parametrize("script", SCRIPTS)
     def test_reads_only_its_own_options(

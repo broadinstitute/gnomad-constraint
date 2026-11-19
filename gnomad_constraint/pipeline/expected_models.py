@@ -11,8 +11,9 @@ The steps, in order, after prepare_data.py:
 And the regional mutation rate (rr) model steps, which need only the
 prepare_data.py outputs:
     - --create-rr-site-features: create the synonymous de novo mutation (DNM) sites
-      and a sampled background of non-mutated synonymous sites, with their window's
-      genomic features, leaving out genes with a QC gene flag.
+      and a sampled background of non-mutated synonymous sites, in the plateau
+      models' high coverage range, with their window's genomic features, leaving out
+      genes with a QC gene flag.
     - --create-rr-training-set: prepare the sites for the models: each site's
       label, context, chromosome fold, and its context's features.
     - --tune-rr-penalty: choose the ridge penalty by the held-out log loss of
@@ -42,6 +43,7 @@ from gnomad_constraint.resources.constants import (
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
     RR_CONTEXT_FEATURES,
+    RR_GENE_FLAGS_VERSION,
     RR_RIDGE_PENALTIES,
     RR_RIDGE_PENALTY,
     RR_TRAINING_N_PARTITIONS,
@@ -86,6 +88,36 @@ def check_skip_coverage_model(
             f" preprocessed with skip_coverage_model={preprocess_skip}. Use the same"
             " setting as --preprocess-data."
         )
+
+
+def get_rr_ridge_penalty(tuning_ht: hl.Table, training_ht: hl.Table) -> float:
+    """
+    Get the tuned ridge penalty, checking it was tuned on this rr training Table.
+
+    ``--tune-rr-penalty`` records the row count of the training Table it tunes on. If
+    the training Table has another count now, it was rewritten after the tuning, so
+    the penalty was chosen for other data.
+
+    :param tuning_ht: Penalty tuning Table with ``ridge_penalty`` and
+        ``rr_training_row_count`` globals.
+    :param training_ht: rr training Table, as read from disk, so counting its rows
+        reads only metadata.
+    :return: The tuned ridge penalty.
+    """
+    if "rr_training_row_count" not in tuning_ht.globals:
+        raise ValueError(
+            "The penalty tuning Table doesn't record the training Table it was tuned"
+            " on. Rerun --tune-rr-penalty."
+        )
+    recorded = hl.eval(tuning_ht.rr_training_row_count)
+    n_rows = training_ht.count()
+    if recorded != n_rows:
+        raise ValueError(
+            f"The ridge penalty was tuned on an rr training Table with {recorded} rows,"
+            f" but it has {n_rows} now. Rerun --tune-rr-penalty."
+        )
+
+    return hl.eval(tuning_ht.ridge_penalty)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -194,7 +226,7 @@ def main(args: argparse.Namespace) -> None:
             res.check_resource_existence()
 
             ht = create_rr_site_features_ht(
-                res.annotated_context_ht.ht(),
+                res.temp_preprocess_data_ht.ht(),
                 res.dnm_ht.ht(),
                 res.genomic_features_ht.ht(),
                 RR_BACKGROUND_FRACTION,
@@ -202,6 +234,7 @@ def main(args: argparse.Namespace) -> None:
                 gene_flags_ht=(
                     None if args.skip_qc_flagged_gene_filter else res.gene_flags_ht.ht()
                 ),
+                gene_flags_version=RR_GENE_FLAGS_VERSION,
             )
             # The sites are a few hundred thousand of the whole context
             # Table. naive_coalesce merges upstream partitions, so coalescing before
@@ -217,9 +250,14 @@ def main(args: argparse.Namespace) -> None:
             res = resources.create_rr_training_set
             res.check_resource_existence()
 
-            ht = res.rr_site_features_ht.ht()
+            site_ht = res.rr_site_features_ht.ht()
             ht = prepare_regional_mutation_rate_training_ht(
-                ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(ht.locus)
+                site_ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(site_ht.locus)
+            )
+            # gnomad_methods keeps only the features global, so carry the record of
+            # how the sites were chosen.
+            ht = ht.annotate_globals(
+                rr_training_sites=site_ht.index_globals().rr_training_sites
             )
             ht.write(res.rr_training_ht.path, overwrite=overwrite)
             logger.info("Done creating the rr training set.")
@@ -229,29 +267,29 @@ def main(args: argparse.Namespace) -> None:
             res = resources.tune_rr_penalty
             res.check_resource_existence()
 
-            ht = tune_regional_mutation_rate_penalty(
-                res.rr_training_ht.ht(), args.rr_penalties
-            )
+            training_ht = res.rr_training_ht.ht()
+            ht = tune_regional_mutation_rate_penalty(training_ht, args.rr_penalties)
             penalty = choose_regional_mutation_rate_penalty(ht, RR_RIDGE_PENALTY)
             logger.info("Chosen ridge penalty: %s", penalty)
-            ht = ht.annotate_globals(ridge_penalty=penalty)
+            # --train-rr-models checks the penalty was tuned on its training Table.
+            ht = ht.annotate_globals(
+                ridge_penalty=penalty, rr_training_row_count=training_ht.count()
+            )
             ht.write(res.rr_penalty_tuning_ht.path, overwrite=overwrite)
             logger.info("Done tuning the rr ridge penalty.")
 
         if args.train_rr_models:
             res = resources.train_rr_models
             res.check_resource_existence()
-            penalty = hl.eval(res.rr_penalty_tuning_ht.ht().ridge_penalty)
+            tuning_ht = res.rr_penalty_tuning_ht.ht()
+            training_ht = res.rr_training_ht.ht()
+            penalty = get_rr_ridge_penalty(tuning_ht, training_ht)
             logger.info("Training the rr models (ridge penalty %s)...", penalty)
 
             # The fit records the penalty in a ridge_penalty global.
-            ht = fit_regional_mutation_rate_models(res.rr_training_ht.ht(), penalty)
-            # The models Table has one small row per context.
-            non_converged = ht.aggregate(
-                hl.agg.filter(~ht.converged, hl.agg.collect(ht.context))
-            )
+            ht = fit_regional_mutation_rate_models(training_ht, penalty)
             ht = ht.annotate_globals(
-                non_converged_contexts=hl.literal(non_converged, hl.tarray(hl.tstr)),
+                rr_training_sites=training_ht.index_globals().rr_training_sites
             )
             ht.write(res.rr_models_ht.path, overwrite=overwrite)
             logger.info("Done training the rr models.")
@@ -294,11 +332,11 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--path-post-fix",
         help=(
             "Post-fix to append to output file names. Applies to the outputs from"
-            " --create-training-set onward (training set, models, rr Tables, expected"
+            " --create-training-set onward (training set, models, rr Table, expected"
             " counts, constraint groups, constraint metrics, and the release"
             " constraint metrics Table and TSVs), but not to the annotated context,"
-            " preprocessed, gene quality metrics, mutation rate, or release mutation"
-            " rate outputs."
+            " preprocessed, gene quality metrics, mutation rate, rr model, or release"
+            " mutation rate outputs."
         ),
         type=str,
         default=None,

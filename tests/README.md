@@ -40,9 +40,9 @@ implementations against each other is named for the comparison.
 | `utils/test_constraint_metrics.py` | o/e, both CIs, z-scores and flags, transcript selection, ranks and percentile bins, pLI per LoF group, `compute_constraint_metrics`, and the release Tables (values, globals, and the published TSV columns) |
 | `utils/test_constraint_gene_quality.py` | Coverage, mapping quality, segdup/LCR, and flag thresholds in `compute_gene_quality_metrics` |
 | `utils/test_import_data.py` | Reading the published DNM and genomic feature files (on files in `tmp_path`), combining and formatting the DNMs, the genomic feature windows, and the duplicate-window check |
-| `utils/test_regional_rate.py` | The rr model features per context, the rr training set, removing QC-flagged genes, and the tuning folds |
+| `utils/test_regional_rate.py` | The rr model features per context; the rr site features (DNM and background sites, their coverage range, contexts and features, the QC gene filter, background sampling, and the settings record); removing QC-flagged genes; the tuning folds; the normalization sites; and `compute_rr_ht` (normalization, windows missing a feature, non-converged models, and `rr_globals`) |
 | `resources/test_resource_utils.py` | Parameter checks, resource version mapping, every pipeline path (production, test, and post-fixes), the step wiring in `get_constraint_resources`, and `filter_for_test` |
-| `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, the whole `get_constraint_resources` call each script makes, `--skip-coverage-model` reaching preprocessing, each script reading only its own options, the `--apply-regional-rr` input check, and that `--aggregate-per-variant-expected` checks and applies rr only with the flag |
+| `pipeline/test_constraint_pipeline.py` | The checks in the pipeline scripts: `--skip-coverage-model` consistency, `--calculate-gerp-cutoffs` without `--preprocess-data`, the coverage model scale, the constraint group input warning, the release downsamplings, the whole `get_constraint_resources` call each script makes, `--skip-coverage-model` reaching preprocessing, each script reading only its own options, the `--apply-regional-rr` input check, that `--aggregate-per-variant-expected` checks and applies rr only with the flag, what each rr step in `main` passes and writes, and that `--train-rr-models` uses a penalty tuned on its training set |
 
 ## How these tests are written
 
@@ -78,5 +78,6 @@ implementations against each other is named for the comparison.
 
 Anything that reads real inputs or outputs on GCS: `get_gencode_ht`,
 `get_gencode_cds_ht` (its CDS logic is tested through
-`get_cds_transcripts_per_locus`), `get_gerp_ht`, and the pipeline `main()`, whose
-argument parser is only built under `if __name__ == "__main__"`.
+`get_cds_transcripts_per_locus`), `get_gerp_ht`, and most of the pipeline `main()`
+blocks; only the rr steps and `--aggregate-per-variant-expected` are run, with
+stand-in resources.

@@ -26,6 +26,7 @@ from gnomad_constraint.resources.constants import (
     EXTENSIONS,
     GENCODE_VERSION_MAP,
     MODEL_TYPES,
+    RR_GENE_FLAGS_VERSION,
     SITES_VERSION_MAP,
     VEP_ANNOTATION,
     VEP_VERSION_MAP,
@@ -615,12 +616,12 @@ def get_rr_gene_flags_ht() -> TableResource:
     """
     Return the constraint metrics Table whose gene flags pick the genes left out of rr training.
 
-    This is pinned to the v4.1.2 constraint metrics Table, whatever version rr is
-    computed for.
+    This is pinned to the ``RR_GENE_FLAGS_VERSION`` (v4.1.2) constraint metrics
+    Table, whatever version rr is computed for.
 
     :return: Constraint metrics TableResource.
     """
-    return get_constraint_metrics_dataset(version="4.1.2")
+    return get_constraint_metrics_dataset(version=RR_GENE_FLAGS_VERSION)
 
 
 def get_rr_site_features_ht(**kwargs) -> TableResource:
@@ -825,14 +826,17 @@ def get_constraint_resources(
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
     )
-    # The rr outputs take both post-fixes. The site features come from the annotated
-    # context Table, and rr is normalized on the per-variant expected Table, of the
-    # same run.
+    # The rr model Tables take only the directory post-fix, like the preprocessed
+    # Table and the imports they are built from, so a --path-post-fix run reuses the
+    # models. The rr Table is normalized on the per-variant expected Table of the same
+    # run, so it takes both post-fixes.
     rr_params = {**common_params, "path_post_fix": path_post_fix}
     create_rr_site_features = PipelineStepResourceCollection(
         "expected_models.py --create-rr-site-features",
-        output_resources={"rr_site_features_ht": get_rr_site_features_ht(**rr_params)},
-        pipeline_input_steps=[import_dnms, import_genomic_features, prepare_context],
+        output_resources={
+            "rr_site_features_ht": get_rr_site_features_ht(**common_params)
+        },
+        pipeline_input_steps=[import_dnms, import_genomic_features, preprocess_data],
         add_input_resources={
             "constraint metrics with gene flags": {
                 "gene_flags_ht": get_rr_gene_flags_ht()
@@ -841,19 +845,19 @@ def get_constraint_resources(
     )
     create_rr_training_set = PipelineStepResourceCollection(
         "expected_models.py --create-rr-training-set",
-        output_resources={"rr_training_ht": get_rr_training_ht(**rr_params)},
+        output_resources={"rr_training_ht": get_rr_training_ht(**common_params)},
         pipeline_input_steps=[create_rr_site_features],
     )
     tune_rr_penalty = PipelineStepResourceCollection(
         "expected_models.py --tune-rr-penalty",
         output_resources={
-            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**rr_params)
+            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**common_params)
         },
         pipeline_input_steps=[create_rr_training_set],
     )
     train_rr_models = PipelineStepResourceCollection(
         "expected_models.py --train-rr-models",
-        output_resources={"rr_models_ht": get_rr_models_ht(**rr_params)},
+        output_resources={"rr_models_ht": get_rr_models_ht(**common_params)},
         pipeline_input_steps=[create_rr_training_set, tune_rr_penalty],
     )
     compute_rr = PipelineStepResourceCollection(

@@ -32,30 +32,47 @@ logger.setLevel(logging.INFO)
 
 
 def create_rr_site_features_ht(
-    context_ht: hl.Table,
+    preprocessed_ht: hl.Table,
     dnm_ht: hl.Table,
     features_ht: hl.Table,
     background_fraction: float,
     seed: int,
     gene_flags_ht: Optional[hl.Table] = None,
+    gene_flags_version: Optional[str] = None,
 ) -> hl.Table:
     """
     Create the rr site features: synonymous DNM and non-mutated background sites.
 
-    The DNM sites are the synonymous sites of ``context_ht`` that are in ``dnm_ht``.
-    The background is a random sample (``background_fraction``) of the synonymous
-    sites absent from gnomAD exomes (``filters.exomes`` is missing) at the other
-    loci, with one site kept per locus, so no locus is both a DNM and a background
-    site. DNM sites get ``y`` = 1 and background
-    sites ``y`` = 0, and every site gets the features of the 1kb window containing it.
+    Only synonymous sites in the plateau models' high coverage range are used:
+    ``exomes_coverage`` of at least ``build_models_globals.high_cov_cutoff`` (and at
+    most ``upper_cov_cutoff``, if set), as for the sites the plateau models are
+    trained on. Elsewhere a DNM can't be called in the exome cohorts and a site is
+    absent from gnomAD because it isn't covered, so a site there could only be a
+    background site, and the models would learn the features of poorly covered
+    regions as a low mutation rate.
+
+    A site is synonymous if that is its most severe consequence in any transcript,
+    which keeps more DNMs for training than the Ensembl MANE Select synonymous sites
+    rr is normalized on (:func:`get_rr_normalization_sites_ht`), the transcripts the
+    constraint metrics rank.
+
+    The DNM sites are those sites that are in ``dnm_ht``. The background is a
+    random sample (``background_fraction``) of those sites absent from gnomAD
+    exomes (``filters.exomes`` is missing) at the other loci, with one site kept per
+    locus, so no locus is both a DNM and a background site. DNM sites get ``y`` = 1
+    and background sites ``y`` = 0, and every site gets the features of the 1kb
+    window containing it.
     With ``gene_flags_ht``, sites in genes with a QC gene flag are left out
-    (:func:`remove_qc_flagged_genes`). The Table has no globals.
+    (:func:`remove_qc_flagged_genes`). The settings that chose the sites are
+    recorded in an ``rr_training_sites`` global, which the later rr steps carry
+    to the rr Table and the release.
 
     Each DNM variant is one row, however many DNMs were reported there, since the DNM
     Table can't tell a recurrent DNM from one reported by two cohorts.
 
-    :param context_ht: Annotated context Table with ``vep``, ``context``, and
-        ``filters``.
+    :param preprocessed_ht: Preprocessed Table with ``vep``, ``context``,
+        ``filters``, ``exomes_coverage``, and a ``build_models_globals`` global with
+        ``high_cov_cutoff`` and ``upper_cov_cutoff``.
     :param dnm_ht: DNM Table keyed by ``locus`` and ``alleles``.
     :param features_ht: Genomic feature Table keyed by ``interval``.
     :param background_fraction: Fraction of non-mutated sites to sample.
@@ -63,11 +80,23 @@ def create_rr_site_features_ht(
     :param gene_flags_ht: Constraint metrics Table with gene flags, whose flagged
         genes' sites are left out (see :func:`remove_qc_flagged_genes`), or None to
         keep every gene. Default is None.
+    :param gene_flags_version: Version of the constraint metrics release
+        ``gene_flags_ht`` comes from, recorded in the globals. Default is None.
     :return: Site features Table keyed by ``locus`` with ``alleles``, ``context``,
-        ``y``, and ``GENOMIC_FEATURE_COLUMNS``.
+        ``y``, and ``GENOMIC_FEATURE_COLUMNS``, and an ``rr_training_sites`` global
+        with ``background_fraction``, ``background_seed``,
+        ``qc_flagged_gene_filter``, ``gene_flags_version``, and the coverage range
+        (``exome_coverage_metric``, ``high_cov_cutoff``, ``upper_cov_cutoff``).
     """
-    ht = context_ht.filter(
-        context_ht.vep.most_severe_consequence == "synonymous_variant"
+    coverage = preprocessed_ht.exomes_coverage
+    build_globals = preprocessed_ht.build_models_globals
+    ht = preprocessed_ht.filter(
+        (preprocessed_ht.vep.most_severe_consequence == "synonymous_variant")
+        & (coverage >= build_globals.high_cov_cutoff)
+        & (
+            hl.is_missing(build_globals.upper_cov_cutoff)
+            | (coverage <= build_globals.upper_cov_cutoff)
+        )
     )
     ht = ht.select("context", in_exomes=hl.is_defined(ht.filters.exomes))
     ht = ht.checkpoint(new_temp_file("rr_syn_sites", "ht"))
@@ -90,8 +119,25 @@ def create_rr_site_features_ht(
         ht = remove_qc_flagged_genes(ht, gene_flags_ht)
 
     ht = ht.annotate(**features_ht.select(*GENOMIC_FEATURE_COLUMNS)[ht.locus])
+    preprocessed_globals = preprocessed_ht.index_globals()
 
-    return ht.select_globals()
+    return ht.select_globals(
+        rr_training_sites=hl.struct(
+            background_fraction=hl.float64(background_fraction),
+            background_seed=hl.int32(seed),
+            qc_flagged_gene_filter=gene_flags_ht is not None,
+            gene_flags_version=hl.or_missing(
+                gene_flags_ht is not None, hl.str(gene_flags_version or "")
+            ),
+            exome_coverage_metric=(
+                preprocessed_globals.apply_models_globals.exome_coverage_metric
+            ),
+            high_cov_cutoff=preprocessed_globals.build_models_globals.high_cov_cutoff,
+            upper_cov_cutoff=(
+                preprocessed_globals.build_models_globals.upper_cov_cutoff
+            ),
+        )
+    )
 
 
 def remove_qc_flagged_genes(ht: hl.Table, metrics_ht: hl.Table) -> hl.Table:
@@ -175,22 +221,38 @@ def compute_rr_ht(
     Each window's rr in each of ``RR_CONTEXTS`` comes from that context's model, and
     windows no model covers are dropped. A window missing a feature of a context's
     model has no rr in that context, so its expected counts there aren't adjusted.
-    rr is then divided, per context, by its mean over the sites of
+    A context whose model didn't converge gets rr 1.0, as if it had no model,
+    rather than a fit that may be far from the best one. rr is then divided, per
+    context, by its mean over the sites of
     :func:`get_rr_normalization_sites_ht` that have one, weighted by their adj
     expected count, so it moves those sites' expected counts between windows without
     changing their total.
 
     :param features_ht: Genomic feature Table keyed by ``interval``.
-    :param models_ht: rr models Table with a ``ridge_penalty`` global.
+    :param models_ht: rr models Table with ``ridge_penalty`` and
+        ``rr_training_sites`` globals.
     :param per_variant_ht: Per-variant expected Table to normalize on, with an
         ``apply_models_globals`` global (see :func:`get_rr_normalization_sites_ht`),
         as read from disk, so counting its rows reads only metadata.
     :return: Table keyed by ``interval`` with ``adj_r``, a dict of context to rr, and
         an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
-        ``per_variant_apply_models_globals``, and ``per_variant_row_count``.
+        ``training_sites`` (the models' ``rr_training_sites``),
+        ``non_converged_contexts``, ``per_variant_apply_models_globals``, and
+        ``per_variant_row_count``.
     """
+    # The models Table has one small row per context.
+    non_converged = models_ht.aggregate(
+        hl.agg.filter(~models_ht.converged, hl.agg.collect(models_ht.context))
+    )
+    if non_converged:
+        logger.warning(
+            "The rr models of %s didn't converge, so those contexts get rr 1.",
+            sorted(non_converged),
+        )
     ht = features_ht.select(
-        adj_r=regional_mutation_rate_expr(features_ht.row, models_ht, RR_CONTEXTS)
+        adj_r=regional_mutation_rate_expr(
+            features_ht.row, models_ht, RR_CONTEXTS, skip_non_converged=True
+        )
     )
     ht = ht.filter(hl.is_defined(ht.adj_r))
     ht = ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
@@ -213,6 +275,10 @@ def compute_rr_ht(
         rr_globals=hl.struct(
             ridge_penalty=models_ht.index_globals().ridge_penalty,
             normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
+            training_sites=models_ht.index_globals().rr_training_sites,
+            non_converged_contexts=hl.literal(
+                sorted(non_converged), hl.tarray(hl.tstr)
+            ),
             # --apply-regional-rr checks that the per-variant Table it aggregates
             # still has these models and this many rows.
             per_variant_apply_models_globals=(

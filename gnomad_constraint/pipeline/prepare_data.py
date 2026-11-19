@@ -286,12 +286,12 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         "--path-post-fix",
         help=(
             "Post-fix to append to output file names. Applies to the outputs from"
-            " --create-training-set onward (training set, models, rr Tables, expected"
+            " --create-training-set onward (training set, models, rr Table, expected"
             " counts, constraint groups, constraint metrics, and the release"
             " constraint metrics Table and TSVs), but not to the annotated context,"
-            " preprocessed, gene quality metrics, mutation rate, or release mutation"
-            " rate outputs. None of this script's outputs take it; here it only names"
-            " the log."
+            " preprocessed, gene quality metrics, mutation rate, rr model, or release"
+            " mutation rate outputs. None of this script's outputs take it; here it"
+            " only names the log."
         ),
         type=str,
         default=None,

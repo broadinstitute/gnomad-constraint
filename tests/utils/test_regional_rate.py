@@ -89,52 +89,78 @@ def _metrics_ht(flagged: bool = True, span: tuple = (150, 250)) -> hl.Table:
 class TestCreateRrSiteFeaturesHt:
     """Test the create_rr_site_features_ht function."""
 
+    PREPROCESSED_TYPE = hl.tstruct(
+        locus=hl.tlocus("GRCh38"),
+        alleles=hl.tarray(hl.tstr),
+        context=hl.tstr,
+        vep=hl.tstruct(most_severe_consequence=hl.tstr),
+        filters=hl.tstruct(exomes=hl.tset(hl.tstr), genomes=hl.tset(hl.tstr)),
+        exomes_coverage=hl.tint32,
+    )
+    """Fields of the preprocessed Table the function reads."""
+
     @staticmethod
-    def _context_ht() -> hl.Table:
+    def _globals(
+        upper_cov_cutoff: Optional[int] = None,
+    ) -> hl.expr.StructExpression:
+        """Return preprocessed globals with the plateau models' coverage range."""
+        return hl.struct(
+            version="test",
+            build_models_globals=hl.struct(
+                high_cov_cutoff=90,
+                upper_cov_cutoff=hl.or_missing(
+                    upper_cov_cutoff is not None, hl.int32(upper_cov_cutoff or 0)
+                ),
+            ),
+            apply_models_globals=hl.struct(exome_coverage_metric="AN_percent"),
+        )
+
+    def _preprocessed_ht(self, upper_cov_cutoff: Optional[int] = None) -> hl.Table:
         """
-        Return context Table rows at chr1 positions 10-70.
+        Return preprocessed Table rows at chr1 positions 10-110.
 
         10 and 20 are synonymous DNMs, 20 also in exomes; 10 has a second
         synonymous allele absent from exomes. 30 has two synonymous alleles absent
         from exomes, 40 is in exomes and passes, 50 is in exomes as AC0, 60 is
-        missense, and 70 is absent from exomes.
+        missense, and 70 is absent from exomes. The sites have different contexts,
+        so a context mix-up shows. 80 (a DNM) and 90 are below the high coverage
+        cutoff of 90, 100 has no coverage, and 110 has coverage 100.
         """
         rows = [
-            (10, ["A", "G"], "synonymous_variant", None),
-            (10, ["A", "C"], "synonymous_variant", None),
-            (20, ["C", "T"], "synonymous_variant", set()),
-            (30, ["A", "G"], "synonymous_variant", None),
-            (30, ["A", "C"], "synonymous_variant", None),
-            (40, ["A", "G"], "synonymous_variant", set()),
-            (50, ["A", "G"], "synonymous_variant", {"AC0"}),
-            (60, ["C", "T"], "missense_variant", None),
-            (70, ["A", "G"], "synonymous_variant", None),
+            (10, ["A", "G"], "AAA", "synonymous_variant", None, 95),
+            (10, ["A", "C"], "AAA", "synonymous_variant", None, 95),
+            (20, ["C", "T"], "ACG", "synonymous_variant", set(), 90),
+            (30, ["A", "G"], "CAT", "synonymous_variant", None, 95),
+            (30, ["A", "C"], "CAT", "synonymous_variant", None, 95),
+            (40, ["A", "G"], "AAA", "synonymous_variant", set(), 95),
+            (50, ["A", "G"], "AAA", "synonymous_variant", {"AC0"}, 95),
+            (60, ["C", "T"], "ACG", "missense_variant", None, 95),
+            (70, ["A", "G"], "TAC", "synonymous_variant", None, 95),
+            (80, ["A", "G"], "AAA", "synonymous_variant", None, 50),
+            (90, ["A", "G"], "AAA", "synonymous_variant", None, 89),
+            (100, ["A", "G"], "AAA", "synonymous_variant", None, None),
+            (110, ["A", "G"], "AAA", "synonymous_variant", None, 100),
         ]
         return hl.Table.parallelize(
             [
                 {
                     "locus": _locus(pos),
                     "alleles": alleles,
-                    "context": "AAA",
+                    "context": context,
                     "vep": {"most_severe_consequence": csq},
                     "filters": {"exomes": filters, "genomes": None},
+                    "exomes_coverage": coverage,
                 }
-                for pos, alleles, csq, filters in rows
+                for pos, alleles, context, csq, filters, coverage in rows
             ],
-            hl.tstruct(
-                locus=hl.tlocus("GRCh38"),
-                alleles=hl.tarray(hl.tstr),
-                context=hl.tstr,
-                vep=hl.tstruct(most_severe_consequence=hl.tstr),
-                filters=hl.tstruct(exomes=hl.tset(hl.tstr), genomes=hl.tset(hl.tstr)),
-            ),
+            self.PREPROCESSED_TYPE,
             key=["locus", "alleles"],
-            globals=hl.Struct(version="test"),
+            globals=self._globals(upper_cov_cutoff),
         )
 
     @staticmethod
     def _dnm_ht() -> hl.Table:
-        """Return DNMs at positions 10, 20, and 60, and an indel at 70."""
+        """Return DNMs at positions 10, 20, 60, and 80, and an indel at 70."""
         return hl.Table.parallelize(
             [
                 {"locus": _locus(pos), "alleles": alleles}
@@ -143,6 +169,7 @@ class TestCreateRrSiteFeaturesHt:
                     (20, ["C", "T"]),
                     (60, ["C", "T"]),
                     (70, ["A", "AT"]),
+                    (80, ["A", "G"]),
                 ]
             ],
             hl.tstruct(locus=hl.tlocus("GRCh38"), alleles=hl.tarray(hl.tstr)),
@@ -174,15 +201,17 @@ class TestCreateRrSiteFeaturesHt:
         background_fraction: float,
         seed: int = 0,
         gene_flags_ht: Optional[hl.Table] = None,
+        upper_cov_cutoff: Optional[int] = None,
     ) -> hl.Table:
         """Return the site features Table of the test rows."""
         return create_rr_site_features_ht(
-            self._context_ht(),
+            self._preprocessed_ht(upper_cov_cutoff),
             self._dnm_ht(),
             self._features_ht(),
             background_fraction,
             seed,
             gene_flags_ht=gene_flags_ht,
+            gene_flags_version="4.1.2",
         )
 
     def test_sites(self) -> None:
@@ -194,32 +223,62 @@ class TestCreateRrSiteFeaturesHt:
         it, with a fraction of 1) is the synonymous sites with no exomes filters at
         the other loci, one per locus (30, 70): sites in exomes, passing (40) or AC0
         (50), aren't in it, and neither is the second allele at the DNM locus 10.
-        Every site gets its window's features, and the context Table's globals are
-        dropped.
+        Sites below the plateau models' high coverage cutoff (the DNM at 80 and 90)
+        or with no coverage (100) aren't in either set. Every site gets its window's
+        features, and the preprocessed Table's globals are replaced by the record of
+        how the sites were chosen.
         """
         ht = self._site_features_ht(1.0)
-        assert len(ht.globals.dtype) == 0
+        assert hl.eval(ht.globals) == hl.Struct(
+            rr_training_sites=hl.Struct(
+                background_fraction=1.0,
+                background_seed=0,
+                qc_flagged_gene_filter=False,
+                gene_flags_version=None,
+                exome_coverage_metric="AN_percent",
+                high_cov_cutoff=90,
+                upper_cov_cutoff=None,
+            )
+        )
+        assert list(ht.key) == ["locus"]
         rows = ht.collect()
-        assert sorted((r.locus.position, r.y, r.dist2telo_1k) for r in rows) == [
-            (10, 1, 1.0),
-            (20, 1, 1.0),
-            (30, 0, 2.0),
-            (70, 0, 2.0),
+        assert sorted(
+            (r.locus.position, r.alleles, r.context, r.y, r.dist2telo_1k) for r in rows
+        ) == [
+            (10, ["A", "G"], "AAA", 1, 1.0),
+            (20, ["C", "T"], "ACG", 1, 1.0),
+            (30, ["A", "C"], "CAT", 0, 2.0),
+            (70, ["A", "G"], "TAC", 0, 2.0),
+            (110, ["A", "G"], "AAA", 0, 2.0),
         ]
+
+    def test_upper_coverage_cutoff(self) -> None:
+        """
+        Test that sites above the plateau models' upper coverage cutoff are left out.
+
+        With an upper cutoff of 99, the background site at 110 (coverage 100) goes,
+        and the cutoff is recorded.
+        """
+        ht = self._site_features_ht(1.0, upper_cov_cutoff=99)
+        assert hl.eval(ht.rr_training_sites.upper_cov_cutoff) == 99
+        assert sorted(r.locus.position for r in ht.collect()) == [10, 20, 30, 70]
 
     def test_qc_flagged_genes_left_out(self) -> None:
         """
         Test that with gene flags, the sites in a flagged gene's span are left out.
 
-        The flagged gene spans 25-35, so the background site at 30 goes.
+        The flagged gene spans 15-35, so the DNM at 20 and the background site at 30
+        both go.
         """
-        rows = self._site_features_ht(
-            1.0, gene_flags_ht=_metrics_ht(span=(25, 35))
-        ).collect()
+        ht = self._site_features_ht(1.0, gene_flags_ht=_metrics_ht(span=(15, 35)))
+        rr_training_sites = hl.eval(ht.rr_training_sites)
+        assert rr_training_sites.qc_flagged_gene_filter
+        assert rr_training_sites.gene_flags_version == "4.1.2"
+        rows = ht.collect()
         assert sorted((r.locus.position, r.y) for r in rows) == [
             (10, 1),
-            (20, 1),
             (70, 0),
+            (110, 0),
         ]
 
     def test_no_background(self) -> None:
@@ -244,12 +303,14 @@ class TestCreateRrSiteFeaturesHt:
                     "context": "AAA",
                     "vep": {"most_severe_consequence": "synonymous_variant"},
                     "filters": {"exomes": None, "genomes": None},
+                    "exomes_coverage": 95,
                 }
                 for i in range(n)
                 for alt in ["C", "G", "T"]
             ],
-            self._context_ht().row.dtype,
+            self.PREPROCESSED_TYPE,
             key=["locus", "alleles"],
+            globals=self._globals(),
         )
         dnm_ht = self._dnm_ht().filter(False)
 
@@ -395,12 +456,15 @@ class TestComputeRrHt:
         )
 
     @staticmethod
-    def _models_ht(context_feature: Optional[dict] = None) -> hl.Table:
+    def _models_ht(
+        context_feature: Optional[dict] = None, converged: bool = True
+    ) -> hl.Table:
         """
         Return models with rate ``expit(x - 1) / 0.5`` of one feature, penalty 0.3.
 
         :param context_feature: Each model's context and feature. Default is one AAA
             model of ``a``.
+        :param converged: Whether the models converged. Default is True.
         """
         ht = hl.Table.parallelize(
             [
@@ -414,14 +478,16 @@ class TestComputeRrHt:
                     "ave": 0.5,
                     "n_mutated": 10,
                     "n_background": 10,
-                    "converged": True,
+                    "converged": converged,
                 }
                 for context, feature in (context_feature or {"AAA": "a"}).items()
             ],
             MODELS_HT_SCHEMA,
             key="context",
         )
-        return ht.annotate_globals(ridge_penalty=0.3)
+        return ht.annotate_globals(
+            ridge_penalty=0.3, rr_training_sites=hl.struct(background_seed=0)
+        )
 
     def test_rr(self) -> None:
         """
@@ -460,6 +526,25 @@ class TestComputeRrHt:
         )
         assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")
         assert rr_globals.per_variant_row_count == 4
+        assert rr_globals.training_sites == hl.Struct(background_seed=0)
+        assert rr_globals.non_converged_contexts == []
+
+    def test_non_converged_model_left_out(self) -> None:
+        """
+        Test that a context whose model didn't converge gets rr 1.0, and is recorded.
+
+        Regression test: a non-converged fit was applied as is, and nothing past the
+        models Table recorded which contexts it was.
+        """
+        ht = compute_rr_ht(
+            self._features_ht(),
+            self._models_ht(converged=False),
+            _per_variant_ht(
+                [(10, "ENST1", True, "synonymous_variant", "AAA", 1.0)],
+            ),
+        )
+        assert all(r.adj_r["AAA"] == 1.0 for r in ht.collect())
+        assert hl.eval(ht.rr_globals.non_converged_contexts) == ["AAA"]
 
     def test_window_missing_a_models_feature(self) -> None:
         """
