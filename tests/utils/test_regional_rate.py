@@ -437,7 +437,8 @@ class TestSelectRrFeatures:
         """
         Return a feature screen of AAA, ACG (a CpG context), and CCC.
 
-        A missing p-value is a screen fit that didn't converge.
+        A missing p-value is a screen fit that didn't converge. The screen is of
+        ``RR_CONTEXT_FEATURES``, as its ``features`` global records.
         """
         rows = [
             ("AAA", "GC_content_1k", 1e-3),
@@ -454,7 +455,7 @@ class TestSelectRrFeatures:
             [{"context": c, "feature": f, "p_value": p} for c, f, p in rows],
             hl.tstruct(context=hl.tstr, feature=hl.tstr, p_value=hl.tfloat64),
             key=["context", "feature"],
-        )
+        ).annotate_globals(features=RR_CONTEXT_FEATURES)
 
     def test_bonferroni(self) -> None:
         """
@@ -478,6 +479,22 @@ class TestSelectRrFeatures:
             "AAA": ["GC_content_1k", "SINE_10k", "LCR_1M"],
             "ACG": ["LCR_1k"],
         }
+
+    def test_screen_of_other_features_raises(self) -> None:
+        """
+        Test that a screen of other features, or one that doesn't record them, raises.
+
+        Selecting from it would leave the features it didn't screen unselected
+        without an error.
+        """
+        ht = self._screen_ht()
+        other = {**RR_CONTEXT_FEATURES, "AAA": RR_CONTEXT_FEATURES["AAA"][:-1]}
+        for screen_ht in [
+            ht.annotate_globals(features=other),
+            ht.select_globals(),
+        ]:
+            with pytest.raises(ValueError, match="--screen-rr-features"):
+                select_rr_features(screen_ht, "bonferroni")
 
 
 class TestGetRrNormalizationSitesHt:

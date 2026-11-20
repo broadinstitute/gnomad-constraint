@@ -1004,6 +1004,11 @@ is defined.
 - **Resource fn:** [`get_rr_feature_screen_ht`](resource_utils.py)
 - **Key:** `context`, `feature`
 
+### Globals
+- `features: dict<str, array<str>>` — each context's features screened,
+  `RR_CONTEXT_FEATURES`; `--create-rr-training-set` raises an error if they
+  differ, rather than leave the features not screened unselected.
+
 ### Rows
 - `context: str`, `feature: str` — key. A feature with a single value in a
   context's sites has no row.
