@@ -5,7 +5,7 @@
 # stacked on it, jg/rr_ridge_penalty, with its feature screen, merged with the gamma
 # CI fix in #865; move this to a main commit once they merge). Move the pin when the
 # code is updated to a newer API.
-git+https://github.com/broadinstitute/gnomad_methods@1b90190a7a255d4a8401579a146d076785fe48bd
+git+https://github.com/broadinstitute/gnomad_methods@01a5430d8f2f3f20c6a3a8dd2c0f61e65cff725a
 git+https://github.com/broadinstitute/gnomad_qc@main
 # Hail 0.2.137 or later is needed for hl.qgamma, which newer gnomad_methods uses for
 # the gamma oe confidence interval. gnomad_methods excludes 0.2.139 for a memory

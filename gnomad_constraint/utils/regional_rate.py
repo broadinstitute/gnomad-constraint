@@ -216,14 +216,25 @@ def select_rr_features(screen_ht: hl.Table, cutoff: str) -> Dict[str, List[str]]
     or 8 in CpG contexts). Otherwise ``cutoff`` is the p-value cutoff itself. For each
     feature only the smallest selected scale is kept. A screen fit that didn't converge
     has no p-value, so it is never selected, and a context with no selected feature is
-    left out, so it gets no model.
+    left out, so it gets no model. The screen must be of ``RR_CONTEXT_FEATURES``, or a
+    feature it didn't screen would go unselected without an error, so a screen of other
+    features raises one.
 
     :param screen_ht: Feature screen Table keyed by ``context`` and ``feature``, with
-        ``p_value`` (``screen_regional_mutation_rate_features`` in gnomad_methods).
+        ``p_value`` and a ``features`` global of the features screened
+        (``screen_regional_mutation_rate_features`` in gnomad_methods).
     :param cutoff: ``RR_BONFERRONI_CUTOFF``, or a p-value cutoff such as ``"1e-2"``.
     :return: Dictionary of context to its selected features, in the order of its
         ``RR_CONTEXT_FEATURES``.
     """
+    if (
+        "features" not in screen_ht.globals
+        or hl.eval(screen_ht.features) != RR_CONTEXT_FEATURES
+    ):
+        raise ValueError(
+            "The feature screen isn't a screen of RR_CONTEXT_FEATURES. Rerun"
+            " expected_models.py --screen-rr-features."
+        )
     p_values = {
         (r.context, r.feature): r.p_value for r in screen_ht.select("p_value").collect()
     }
