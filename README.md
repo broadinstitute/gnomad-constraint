@@ -136,9 +136,9 @@ order:
 `--compute-rr`, after `--apply-models-per-variant`, normalizes rr on the
 per-variant expected Table that `--apply-regional-rr` applies it to, so run both
 with the same `--version`, `--test`, `--directory-post-fix` and `--path-post-fix`.
-The rr Table takes both post-fixes; the rr model Tables (site features, training
-set, penalty tuning and models) take only the directory post-fix, like the Tables
-they are built from, so a `--path-post-fix` run reuses the models.
+The rr Table takes both post-fixes; the rr model Tables (site features, feature
+screen, training set, penalty tuning and models) take only the directory post-fix,
+like the Tables they are built from, so a `--path-post-fix` run reuses the models.
 
 By default every context's model uses all its features, with the ridge penalty
 deciding how much each counts. Gnocchi instead picked features with a univariate
