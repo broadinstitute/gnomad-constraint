@@ -897,12 +897,24 @@ class TestScriptResources:
         with pytest.raises(argparse.ArgumentTypeError, match="p-value cutoff"):
             expected_models.rr_feature_selection_arg(value)
 
-    def test_tune_rr_penalty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(
+        "penalties,fallback", [(["0.1", "0.2"], RR_RIDGE_PENALTY), (["0"], 0.0)]
+    )
+    def test_tune_rr_penalty(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        penalties: List[str],
+        fallback: float,
+    ) -> None:
         """
         Test that ``--tune-rr-penalty`` tunes the given penalties and records its choice.
 
-        The fallback penalty is ``RR_RIDGE_PENALTY``, and the training Table's globals
+        The fallback penalty, used when no held-out sites can be scored, is
+        ``RR_RIDGE_PENALTY``, or the only penalty given. The training Table's globals
         and row count are recorded for ``--train-rr-models`` to check.
+
+        Regression test: with ``--rr-penalties 0``, a ``--test`` run, which has no
+        held-out sites, fit Gnocchi's recipe with a penalty of 0.3.
         """
         tunes = []
         chooses = []
@@ -910,15 +922,15 @@ class TestScriptResources:
         resources = self._run_main(
             monkeypatch,
             expected_models,
-            ["--tune-rr-penalty", "--rr-penalties", "0.1", "0.2"],
+            ["--tune-rr-penalty", "--rr-penalties"] + penalties,
             {
                 "tune_regional_mutation_rate_penalty": self._recorder(tunes, tuning_ht),
                 "choose_regional_mutation_rate_penalty": self._recorder(chooses, 0.2),
             },
         )
         training_ht = resources.tune_rr_penalty.rr_training_ht.ht.return_value
-        assert tunes == [((training_ht, [0.1, 0.2]), {})]
-        assert chooses == [((tuning_ht, RR_RIDGE_PENALTY), {})]
+        assert tunes == [((training_ht, [float(p) for p in penalties]), {})]
+        assert chooses == [((tuning_ht, fallback), {})]
         tuning_ht.annotate_globals.assert_called_once_with(
             ridge_penalty=0.2,
             rr_training_globals=training_ht.index_globals.return_value,

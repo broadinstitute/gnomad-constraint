@@ -364,7 +364,14 @@ def main(args: argparse.Namespace) -> None:
 
             training_ht = res.rr_training_ht.ht()
             ht = tune_regional_mutation_rate_penalty(training_ht, args.rr_penalties)
-            penalty = choose_regional_mutation_rate_penalty(ht, RR_RIDGE_PENALTY)
+            # With no held-out sites to score (as in --test), use RR_RIDGE_PENALTY,
+            # unless only one penalty was asked for.
+            default_penalty = (
+                args.rr_penalties[0]
+                if len(set(args.rr_penalties)) == 1
+                else RR_RIDGE_PENALTY
+            )
+            penalty = choose_regional_mutation_rate_penalty(ht, default_penalty)
             logger.info("Chosen ridge penalty: %s", penalty)
             # --train-rr-models checks the penalty was tuned on its training Table.
             ht = ht.annotate_globals(
@@ -598,7 +605,9 @@ if __name__ == "__main__":
     rr_model_args.add_argument(
         "--rr-penalties",
         help=(
-            "Per-site ridge penalties tried by --tune-rr-penalty. Default is"
+            "Per-site ridge penalties tried by --tune-rr-penalty. With one penalty,"
+            " that penalty is used even when no held-out sites can be scored (as in"
+            " --test), where several fall back to RR_RIDGE_PENALTY. Default is"
             f" {RR_RIDGE_PENALTIES}."
         ),
         type=float,
