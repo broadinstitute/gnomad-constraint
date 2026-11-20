@@ -853,7 +853,8 @@ rr training set: the site features (§16) prepared for the models by
   of `x`: its `RR_CONTEXT_FEATURES`, or, with `--rr-feature-selection` other than
   `all`, those selected from the feature screen (§21) by
   [`select_rr_features`](../utils/regional_rate.py). A context with no selected
-  feature isn't in it, and gets no model.
+  feature isn't in it, and gets no model; if no context has one, the step raises an
+  error.
 - `rr_training_sites: struct` — copied from the site features (§16).
 - `rr_feature_selection: str` — the `--rr-feature-selection` value: `all`,
   `bonferroni` (Gnocchi's cutoff, `RR_FEATURE_SELECTION_ALPHA / 4 / 13`, or `/ 8` in

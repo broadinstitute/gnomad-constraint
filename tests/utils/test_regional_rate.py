@@ -480,6 +480,16 @@ class TestSelectRrFeatures:
             "ACG": ["LCR_1k"],
         }
 
+    def test_nothing_selected_raises(self) -> None:
+        """
+        Test that a cutoff no context's feature passes raises an error.
+
+        Regression test: gnomad_methods' prepare then failed with an unrelated
+        ``or_missing`` error.
+        """
+        with pytest.raises(ValueError, match="No context has a feature selected"):
+            select_rr_features(self._screen_ht(), "1e-12")
+
     def test_screen_of_other_features_raises(self) -> None:
         """
         Test that a screen of other features, or one that doesn't record them, raises.

@@ -216,9 +216,10 @@ def select_rr_features(screen_ht: hl.Table, cutoff: str) -> Dict[str, List[str]]
     or 8 in CpG contexts). Otherwise ``cutoff`` is the p-value cutoff itself. For each
     feature only the smallest selected scale is kept. A screen fit that didn't converge
     has no p-value, so it is never selected, and a context with no selected feature is
-    left out, so it gets no model. The screen must be of ``RR_CONTEXT_FEATURES``, or a
-    feature it didn't screen would go unselected without an error, so a screen of other
-    features raises one.
+    left out, so it gets no model. If no context has a selected feature, there would
+    be no models at all, so an error is raised. The screen must be of
+    ``RR_CONTEXT_FEATURES``, or a feature it didn't screen would go unselected without
+    an error, so a screen of other features raises one too.
 
     :param screen_ht: Feature screen Table keyed by ``context`` and ``feature``, with
         ``p_value`` and a ``features`` global of the features screened
@@ -258,6 +259,11 @@ def select_rr_features(screen_ht: hl.Table, cutoff: str) -> Dict[str, List[str]]
             kept.append(column)
         if kept:
             selected[context] = kept
+    if not selected:
+        raise ValueError(
+            f"No context has a feature selected by the {cutoff} cutoff, so there would"
+            " be no rr models. Use a looser --rr-feature-selection."
+        )
 
     return selected
 
