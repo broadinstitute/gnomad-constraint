@@ -18,6 +18,7 @@ from gnomad_constraint.utils.regional_rate import (
     get_rr_fold_expr,
     get_rr_normalization_sites_ht,
     remove_qc_flagged_genes,
+    select_rr_features,
 )
 
 INTERVAL_TYPE = hl.tinterval(hl.tlocus("GRCh38"))
@@ -428,6 +429,57 @@ def _per_variant_ht(rows: list) -> hl.Table:
     )
 
 
+class TestSelectRrFeatures:
+    """Test the select_rr_features function."""
+
+    @staticmethod
+    def _screen_ht() -> hl.Table:
+        """
+        Return a feature screen of AAA, ACG (a CpG context), and CCC.
+
+        A missing p-value is a screen fit that didn't converge.
+        """
+        rows = [
+            ("AAA", "GC_content_1k", 1e-3),
+            ("AAA", "GC_content_10k", 5e-4),
+            ("AAA", "GC_content_100k", 1e-6),
+            ("AAA", "LCR_1M", 9e-4),
+            ("AAA", "SINE_1k", None),
+            ("AAA", "SINE_10k", 2e-3),
+            ("ACG", "LCR_1k", 1.2e-3),
+            ("ACG", "GC_content_1k", 1e-9),
+            ("CCC", "LINE_1k", 0.5),
+        ]
+        return hl.Table.parallelize(
+            [{"context": c, "feature": f, "p_value": p} for c, f, p in rows],
+            hl.tstruct(context=hl.tstr, feature=hl.tstr, p_value=hl.tfloat64),
+            key=["context", "feature"],
+        )
+
+    def test_bonferroni(self) -> None:
+        """
+        Test Gnocchi's Bonferroni selection: p <= 0.05 / 4 / 13, or / 8 in CpG contexts.
+
+        Only the smallest selected scale of a feature is kept (GC_content at 10k,
+        not 100k; 1k is just above the cutoff). ACG's LCR passes its CpG cutoff,
+        1.56e-3, which the non-CpG cutoff, 9.6e-4, would not. GC_content isn't one of
+        a CpG context's features, so ACG doesn't get it whatever its p-value, a fit
+        with no p-value is never selected, and CCC, with nothing selected, is left
+        out.
+        """
+        assert select_rr_features(self._screen_ht(), "bonferroni") == {
+            "AAA": ["GC_content_10k", "LCR_1M"],
+            "ACG": ["LCR_1k"],
+        }
+
+    def test_p_value_cutoff(self) -> None:
+        """Test that any other value is the p-value cutoff itself, for every context."""
+        assert select_rr_features(self._screen_ht(), "1e-2") == {
+            "AAA": ["GC_content_1k", "SINE_10k", "LCR_1M"],
+            "ACG": ["LCR_1k"],
+        }
+
+
 class TestGetRrNormalizationSitesHt:
     """Test the get_rr_normalization_sites_ht function."""
 
@@ -502,7 +554,9 @@ class TestComputeRrHt:
             key="context",
         )
         return ht.annotate_globals(
-            ridge_penalty=0.3, rr_training_sites=hl.struct(background_seed=0)
+            ridge_penalty=0.3,
+            rr_training_sites=hl.struct(background_seed=0),
+            rr_feature_selection="all",
         )
 
     def test_rr(self) -> None:
@@ -537,6 +591,8 @@ class TestComputeRrHt:
         assert rr[1]["ACG"] == 1.0
         rr_globals = hl.eval(ht.rr_globals)
         assert rr_globals.ridge_penalty == 0.3
+        assert rr_globals.feature_selection == "all"
+        assert rr_globals.normalized
         assert rr_globals.normalization_factors == pytest.approx(
             {"AAA": factor, "ACG": 1.0}
         )
@@ -544,6 +600,26 @@ class TestComputeRrHt:
         assert rr_globals.per_variant_row_count == 4
         assert rr_globals.training_sites == hl.Struct(background_seed=0)
         assert rr_globals.non_converged_contexts == []
+
+    def test_without_normalization(self) -> None:
+        """
+        Test that without ``normalize``, rr is the models' rate and the globals say so.
+
+        This is how Gnocchi's rr was used. No normalization factors are computed.
+        """
+        ht = compute_rr_ht(
+            self._features_ht(),
+            self._models_ht(),
+            _per_variant_ht([(10, "ENST1", True, "synonymous_variant", "AAA", 1.0)]),
+            normalize=False,
+        )
+        rr = {r.interval.start.position: r.adj_r for r in ht.collect()}
+        assert rr[1]["AAA"] == pytest.approx(2 / (1 + np.exp(0.5)))
+        assert rr[1001]["AAA"] == pytest.approx(2 / (1 + np.exp(-0.5)))
+        rr_globals = hl.eval(ht.rr_globals)
+        assert not rr_globals.normalized
+        assert rr_globals.normalization_factors == {}
+        assert rr_globals.per_variant_row_count == 1
 
     def test_non_converged_model_left_out(self) -> None:
         """

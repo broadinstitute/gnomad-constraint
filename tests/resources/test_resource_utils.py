@@ -47,6 +47,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_release_downsampling_tsv_path,
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
+    get_rr_feature_screen_ht,
     get_rr_gene_flags_ht,
     get_rr_models_ht,
     get_rr_penalty_tuning_ht,
@@ -444,6 +445,10 @@ class TestPipelineStepPaths:
             (
                 get_rr_site_features_ht,
                 "regional_rate/gnomad.v4.1.1.rr_site_features.ht",
+            ),
+            (
+                get_rr_feature_screen_ht,
+                "regional_rate/gnomad.v4.1.1.rr_feature_screen.ht",
             ),
             (get_rr_training_ht, "regional_rate/gnomad.v4.1.1.rr_training.ht"),
             (
@@ -900,6 +905,10 @@ class TestGetConstraintResourcesRrSteps:
         assert "/v4.1.2/" in get_rr_gene_flags_ht().path
         training = resources.create_rr_training_set
         assert training.rr_site_features_ht.path == sites.rr_site_features_ht.path
+        assert (
+            resources.screen_rr_features.rr_site_features_ht.path
+            == sites.rr_site_features_ht.path
+        )
         for step in [resources.tune_rr_penalty, resources.train_rr_models]:
             assert step.rr_training_ht.path == training.rr_training_ht.path
         train = resources.train_rr_models
@@ -910,6 +919,28 @@ class TestGetConstraintResourcesRrSteps:
         assert (
             resources.compute_rr.rr_models_ht.path
             == resources.train_rr_models.rr_models_ht.path
+        )
+
+    @pytest.mark.parametrize("rr_feature_screen", [False, True])
+    def test_training_set_reads_the_screen_only_to_select(
+        self, rr_feature_screen: bool
+    ) -> None:
+        """
+        Test that the screen is an input of the training set only with a selection.
+
+        With every feature, ``--create-rr-training-set`` doesn't need
+        ``--screen-rr-features`` to have run; with a selection from the screen, it
+        checks the screen exists.
+        """
+        resources = get_constraint_resources(
+            "4.1.1", overwrite=False, test=True, rr_feature_screen=rr_feature_screen
+        )
+        screen_inputs = resources.create_rr_training_set.input_resources.get(
+            "expected_models.py --screen-rr-features", []
+        )
+        screen = resources.screen_rr_features.rr_feature_screen_ht
+        assert [r.path for r in screen_inputs] == (
+            [screen.path] if rr_feature_screen else []
         )
 
     @pytest.mark.parametrize("test", [False, True])
@@ -972,12 +1003,14 @@ class TestGetConstraintResourcesRrSteps:
         kwargs["directory_post_fix"] = directory_post_fix
         assert [
             resources.create_rr_site_features.rr_site_features_ht.path,
+            resources.screen_rr_features.rr_feature_screen_ht.path,
             resources.create_rr_training_set.rr_training_ht.path,
             resources.tune_rr_penalty.rr_penalty_tuning_ht.path,
             resources.train_rr_models.rr_models_ht.path,
             resources.compute_rr.rr_models_ht.path,
         ] == [
             get_rr_site_features_ht(**kwargs).path,
+            get_rr_feature_screen_ht(**kwargs).path,
             get_rr_training_ht(**kwargs).path,
             get_rr_penalty_tuning_ht(**kwargs).path,
             get_rr_models_ht(**kwargs).path,

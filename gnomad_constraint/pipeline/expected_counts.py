@@ -7,7 +7,7 @@ The steps, after expected_models.py:
       from the expected_models.py rr models, normalized on the
       --apply-models-per-variant output that
       constraint_metrics.py --aggregate-per-variant-expected --apply-regional-rr
-      applies it to.
+      applies it to (or not normalized, with --skip-rr-normalization).
     - --apply-models-aggregated: an alternative to --apply-models-per-variant and
       constraint_metrics.py --aggregate-per-variant-expected: sum the observed and
       possible counts first, then apply the models.
@@ -216,6 +216,7 @@ def main(args: argparse.Namespace) -> None:
                 res.genomic_features_ht.ht(),
                 res.rr_models_ht.ht(),
                 res.per_variant_apply_ht.ht(),
+                normalize=not args.skip_rr_normalization,
             )
             ht.write(res.regional_rr_ht.path, overwrite=overwrite)
             logger.info("Done computing rr.")
@@ -346,6 +347,14 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
             " the expected_models.py rr models, normalized by its per-context"
             " expected-weighted mean over exome synonymous MANE Select sites in the"
             " --apply-models-per-variant output."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--skip-rr-normalization",
+        help=(
+            "With --compute-rr, leave rr as the models give it, as Gnocchi did,"
+            " rather than normalizing it per context. The rr Table records which."
         ),
         action="store_true",
     )

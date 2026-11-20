@@ -43,8 +43,10 @@ Parameters used when applying the models to compute expected variant counts.
 
 Present only when the expected variant counts were multiplied by a regional mutation rate (rr): a per-1kb-window, per-trinucleotide-context factor modeled from synonymous de novo mutations and regional genomic features.
 
-- `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models
-- `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites with an rr in that context
+- `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models (0 for none)
+- `regional_rr_params.feature_selection`: How each context's model features were chosen: `all` (every feature, shrunk by the ridge penalty), or Gnocchi's univariate screen, with `bonferroni` (its Bonferroni cutoff) or a p-value cutoff
+- `regional_rr_params.normalized`: Whether rr was normalized per context, as described in `normalization_factors`; Gnocchi's rr was not
+- `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites with an rr in that context; empty when rr wasn't normalized
 - `regional_rr_params.non_converged_contexts`: Contexts whose rr model didn't converge, which got an rr of 1 (no regional adjustment)
 - `regional_rr_params.training_sites`: How the rr training sites were chosen
 - `regional_rr_params.training_sites.background_fraction`: Fraction of the non-mutated synonymous sites sampled as the background

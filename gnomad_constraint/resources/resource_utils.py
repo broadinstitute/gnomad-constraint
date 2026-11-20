@@ -633,6 +633,15 @@ def get_rr_site_features_ht(**kwargs) -> TableResource:
     return get_constraint_data("rr_site_features", sub_dir="regional_rate", **kwargs)
 
 
+def get_rr_feature_screen_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the univariate screen of the rr features in each context.
+
+    :return: TableResource of the rr feature screen Table.
+    """
+    return get_constraint_data("rr_feature_screen", sub_dir="regional_rate", **kwargs)
+
+
 def get_rr_training_ht(**kwargs) -> TableResource:
     """
     Return TableResource of the rr training Table the models are fit and tuned on.
@@ -682,6 +691,7 @@ def get_constraint_resources(
     skip_pre_rank_metrics: bool = False,
     use_aggregated_expected: bool = False,
     apply_regional_rr: bool = False,
+    rr_feature_screen: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -703,6 +713,9 @@ def get_constraint_resources(
         becomes one of its inputs, and the outputs from that step on get an ``rr``
         path post-fix, so they don't replace the Tables without rr. Can't be combined
         with ``use_aggregated_expected``. Default is False.
+    :param rr_feature_screen: Whether ``--create-rr-training-set`` selects the rr
+        model features from the ``--screen-rr-features`` output, which then becomes one
+        of its inputs. Default is False.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -843,10 +856,18 @@ def get_constraint_resources(
             }
         },
     )
+    screen_rr_features = PipelineStepResourceCollection(
+        "expected_models.py --screen-rr-features",
+        output_resources={
+            "rr_feature_screen_ht": get_rr_feature_screen_ht(**common_params)
+        },
+        pipeline_input_steps=[create_rr_site_features],
+    )
     create_rr_training_set = PipelineStepResourceCollection(
         "expected_models.py --create-rr-training-set",
         output_resources={"rr_training_ht": get_rr_training_ht(**common_params)},
-        pipeline_input_steps=[create_rr_site_features],
+        pipeline_input_steps=[create_rr_site_features]
+        + ([screen_rr_features] if rr_feature_screen else []),
     )
     tune_rr_penalty = PipelineStepResourceCollection(
         "expected_models.py --tune-rr-penalty",
@@ -1011,6 +1032,7 @@ def get_constraint_resources(
             "create_training_set": create_training_set,
             "build_models": build_models,
             "create_rr_site_features": create_rr_site_features,
+            "screen_rr_features": screen_rr_features,
             "create_rr_training_set": create_rr_training_set,
             "tune_rr_penalty": tune_rr_penalty,
             "train_rr_models": train_rr_models,

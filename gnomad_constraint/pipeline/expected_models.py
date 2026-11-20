@@ -14,6 +14,8 @@ prepare_data.py outputs:
       and a sampled background of non-mutated synonymous sites, in the plateau
       models' high coverage range, with their window's genomic features, leaving out
       genes with a QC gene flag.
+    - --screen-rr-features: optionally, test each feature of each context on its
+      own, for Gnocchi's feature selection (--rr-feature-selection).
     - --create-rr-training-set: prepare the sites for the models: each site's
       label, context, chromosome fold, and its context's features.
     - --tune-rr-penalty: choose the ridge penalty by the held-out log loss of
@@ -32,6 +34,7 @@ from gnomad.utils.constraint import (
     choose_regional_mutation_rate_penalty,
     fit_regional_mutation_rate_models,
     prepare_regional_mutation_rate_training_ht,
+    screen_regional_mutation_rate_features,
     tune_regional_mutation_rate_penalty,
 )
 from gnomad.utils.file_utils import print_global_struct
@@ -42,7 +45,9 @@ from gnomad_constraint.resources.constants import (
     CURRENT_VERSION,
     RR_BACKGROUND_FRACTION,
     RR_BACKGROUND_SEED,
+    RR_BONFERRONI_CUTOFF,
     RR_CONTEXT_FEATURES,
+    RR_FEATURE_SELECTION_ALL,
     RR_GENE_FLAGS_VERSION,
     RR_RIDGE_PENALTIES,
     RR_RIDGE_PENALTY,
@@ -56,6 +61,7 @@ from gnomad_constraint.utils.constraint import (
 from gnomad_constraint.utils.regional_rate import (
     create_rr_site_features_ht,
     get_rr_fold_expr,
+    select_rr_features,
 )
 
 logging.basicConfig(
@@ -88,6 +94,28 @@ def check_skip_coverage_model(
             f" preprocessed with skip_coverage_model={preprocess_skip}. Use the same"
             " setting as --preprocess-data."
         )
+
+
+def rr_feature_selection_arg(value: str) -> str:
+    """
+    Check an ``--rr-feature-selection`` value.
+
+    :param value: ``RR_FEATURE_SELECTION_ALL``, ``RR_BONFERRONI_CUTOFF``, or a p-value
+        cutoff above 0 and at most 1.
+    :return: The value.
+    """
+    if value in (RR_FEATURE_SELECTION_ALL, RR_BONFERRONI_CUTOFF):
+        return value
+    try:
+        cutoff = float(value)
+    except ValueError:
+        cutoff = None
+    if cutoff is None or not 0 < cutoff <= 1:
+        raise argparse.ArgumentTypeError(
+            f"must be {RR_FEATURE_SELECTION_ALL!r}, {RR_BONFERRONI_CUTOFF!r}, or a"
+            f" p-value cutoff in (0, 1], not {value!r}"
+        )
+    return value
 
 
 def get_rr_ridge_penalty(tuning_ht: hl.Table, training_ht: hl.Table) -> float:
@@ -150,6 +178,7 @@ def main(args: argparse.Namespace) -> None:
         models,
         directory_post_fix,
         path_post_fix,
+        rr_feature_screen=args.rr_feature_selection != RR_FEATURE_SELECTION_ALL,
     )
 
     try:
@@ -245,19 +274,46 @@ def main(args: argparse.Namespace) -> None:
             ht.write(res.rr_site_features_ht.path, overwrite=overwrite)
             logger.info("Done creating the rr site features.")
 
+        if args.screen_rr_features:
+            logger.info("Screening the rr features one at a time...")
+            res = resources.screen_rr_features
+            res.check_resource_existence()
+
+            site_ht = res.rr_site_features_ht.ht()
+            ht = screen_regional_mutation_rate_features(
+                prepare_regional_mutation_rate_training_ht(site_ht, RR_CONTEXT_FEATURES)
+            )
+            ht.write(res.rr_feature_screen_ht.path, overwrite=overwrite)
+            logger.info("Done screening the rr features.")
+
         if args.create_rr_training_set:
             logger.info("Creating the rr training set...")
             res = resources.create_rr_training_set
             res.check_resource_existence()
 
             site_ht = res.rr_site_features_ht.ht()
+            features = RR_CONTEXT_FEATURES
+            if args.rr_feature_selection != RR_FEATURE_SELECTION_ALL:
+                features = select_rr_features(
+                    res.rr_feature_screen_ht.ht(), args.rr_feature_selection
+                )
+                logger.info(
+                    "Features selected by %s: %s", args.rr_feature_selection, features
+                )
+                no_features = sorted(set(RR_CONTEXT_FEATURES) - set(features))
+                if no_features:
+                    logger.warning(
+                        "No feature was selected for %s, so they get no rr model.",
+                        no_features,
+                    )
             ht = prepare_regional_mutation_rate_training_ht(
-                site_ht, RR_CONTEXT_FEATURES, fold_expr=get_rr_fold_expr(site_ht.locus)
+                site_ht, features, fold_expr=get_rr_fold_expr(site_ht.locus)
             )
             # gnomad_methods keeps only the features global, so carry the record of
-            # how the sites were chosen.
+            # how the sites and features were chosen.
             ht = ht.annotate_globals(
-                rr_training_sites=site_ht.index_globals().rr_training_sites
+                rr_training_sites=site_ht.index_globals().rr_training_sites,
+                rr_feature_selection=args.rr_feature_selection,
             )
             ht.write(res.rr_training_ht.path, overwrite=overwrite)
             logger.info("Done creating the rr training set.")
@@ -288,8 +344,10 @@ def main(args: argparse.Namespace) -> None:
 
             # The fit records the penalty in a ridge_penalty global.
             ht = fit_regional_mutation_rate_models(training_ht, penalty)
+            training_globals = training_ht.index_globals()
             ht = ht.annotate_globals(
-                rr_training_sites=training_ht.index_globals().rr_training_sites
+                rr_training_sites=training_globals.rr_training_sites,
+                rr_feature_selection=training_globals.rr_feature_selection,
             )
             ht.write(res.rr_models_ht.path, overwrite=overwrite)
             logger.info("Done training the rr models.")
@@ -457,12 +515,36 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
     )
     rr_model_args.add_argument(
+        "--screen-rr-features",
+        help=(
+            "Test each rr feature of each context on its own (an unpenalized"
+            " univariate logistic fit), for --rr-feature-selection."
+        ),
+        action="store_true",
+    )
+    rr_model_args.add_argument(
         "--create-rr-training-set",
         help=(
             "Prepare the rr site features for the models: each site's label, context,"
-            " chromosome fold, and its context's features in RR_CONTEXT_FEATURES."
+            " chromosome fold, and its context's features in RR_CONTEXT_FEATURES, or"
+            " those --rr-feature-selection selects."
         ),
         action="store_true",
+    )
+    rr_model_args.add_argument(
+        "--rr-feature-selection",
+        help=(
+            "Features each context's rr model uses, set at --create-rr-training-set:"
+            f" {RR_FEATURE_SELECTION_ALL!r} for every feature in RR_CONTEXT_FEATURES,"
+            f" or Gnocchi's selection from the --screen-rr-features output, with"
+            f" {RR_BONFERRONI_CUTOFF!r} for its Bonferroni cutoff or a p-value cutoff"
+            " such as 1e-2; only the smallest selected scale of each feature is kept."
+            " To fit the selected features without a penalty, as Gnocchi did, also"
+            " pass --rr-penalties 0. Default is"
+            f" {RR_FEATURE_SELECTION_ALL!r}."
+        ),
+        type=rr_feature_selection_arg,
+        default=RR_FEATURE_SELECTION_ALL,
     )
     rr_model_args.add_argument(
         "--tune-rr-penalty",
