@@ -281,3 +281,99 @@ GENOMIC_FEATURE_COLUMNS = [
 
 GENOMIC_FEATURE_MISSING = ["NA", "nan", "NaN", ""]
 """Spellings of a missing value in the published genomic feature matrix."""
+
+RR_CONTEXTS = sorted(f"{b1}{c}{b3}" for b1 in "ACGT" for c in "AC" for b3 in "ACGT")
+"""Strand-collapsed trinucleotide contexts (central base A or C) modeled for rr."""
+
+CPG_CONTEXTS = ["ACG", "CCG", "GCG", "TCG"]
+"""Strand-collapsed CpG trinucleotide contexts."""
+
+METHYLATION_CORRELATED_FEATURES = [
+    "GC_content",
+    "SINE",
+    "met_sperm",
+    "Nucleosome",
+    "CpG_island",
+]
+"""
+Features correlated with methylation that are left out of the CpG context rr models.
+
+The mutation rates already model methylation at CpG sites.
+"""
+
+RR_CONTEXT_FEATURES = {
+    context: [
+        f"{f}_{s}"
+        for s in GENOMIC_FEATURE_SCALES
+        for f in GENOMIC_FEATURES
+        if not (context in CPG_CONTEXTS and f in METHYLATION_CORRELATED_FEATURES)
+    ]
+    for context in RR_CONTEXTS
+}
+"""
+Features of each context's rr model.
+
+Every feature at every scale, without the methylation-correlated features for CpG
+contexts.
+"""
+
+RR_FEATURE_SELECTION_ALL = "all"
+"""
+``--rr-feature-selection`` value that models every feature in ``RR_CONTEXT_FEATURES``.
+
+This is the default, and the ridge penalty then decides how much each feature counts.
+"""
+
+RR_BONFERRONI_CUTOFF = "bonferroni"
+"""
+``--rr-feature-selection`` value for Gnocchi's Bonferroni feature selection.
+
+A context's feature is selected when its univariate p-value is at most
+``RR_FEATURE_SELECTION_ALPHA / len(GENOMIC_FEATURE_SCALES) / n``, where ``n`` is the
+number of features the context's model can use: 13, or 8 in CpG contexts, which leave
+out the methylation-correlated features. Only the smallest selected scale of each
+feature is kept.
+"""
+
+RR_FEATURE_SELECTION_ALPHA = 0.05
+"""Family-wise alpha of the Bonferroni rr feature selection."""
+
+RR_RIDGE_PENALTIES = [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
+"""
+Per-site ridge penalties tried by ``expected_models.py --tune-rr-penalty``.
+
+The step picks the penalty with the lowest held-out log loss of models fit on odd
+chromosomes and scored on even ones, and vice versa, summed over contexts. In the
+analysis behind the rr, this chose 0.3 from this range.
+
+Each of those models is fit on about half the training sites, and
+``--train-rr-models`` refits on all of them with the chosen penalty. The penalty is
+per site (the fit minimizes the mean log loss plus the penalty term), so the final
+fit is shrunk about as much as the models that were scored.
+"""
+
+RR_RIDGE_PENALTY = 0.3
+"""
+Ridge penalty used when ``--tune-rr-penalty`` has no held-out sites to score.
+
+In a ``--test`` run only chr20 has features (chrX and chrY have none), so there is
+no other chromosome to hold out. When ``--rr-penalties`` has a single value, such as
+0 for Gnocchi's unpenalized fit, that value is used instead.
+"""
+
+RR_BACKGROUND_FRACTION = 0.05
+"""Fraction of non-mutated synonymous sites sampled as the rr training background."""
+
+RR_BACKGROUND_SEED = 0
+"""Seed used when sampling the non-mutated rr training background."""
+
+RR_GENE_FLAGS_VERSION = "4.1.2"
+"""Version of the constraint metrics Table whose gene flags pick the genes left out of rr training."""
+
+RR_TRAINING_N_PARTITIONS = 100
+"""
+Number of partitions of the rr site features Table, and so of the training Table.
+
+The sampled sites keep the partitioning of the preprocessed Table (about 5,000
+partitions for about 500,000 rows), so the Table is coalesced before it is written.
+"""

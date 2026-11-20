@@ -47,6 +47,12 @@ from gnomad_constraint.resources.resource_utils import (
     get_release_downsampling_tsv_path,
     get_release_mutation_ht,
     get_release_mutation_tsv_path,
+    get_rr_feature_screen_ht,
+    get_rr_gene_flags_ht,
+    get_rr_models_ht,
+    get_rr_penalty_tuning_ht,
+    get_rr_site_features_ht,
+    get_rr_training_ht,
     get_sites_resource,
     get_syn_adj_r_ht,
     get_training_dataset,
@@ -436,6 +442,20 @@ class TestPipelineStepPaths:
                 "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
             ),
             (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
+            (
+                get_rr_site_features_ht,
+                "regional_rate/gnomad.v4.1.1.rr_site_features.ht",
+            ),
+            (
+                get_rr_feature_screen_ht,
+                "regional_rate/gnomad.v4.1.1.rr_feature_screen.ht",
+            ),
+            (get_rr_training_ht, "regional_rate/gnomad.v4.1.1.rr_training.ht"),
+            (
+                get_rr_penalty_tuning_ht,
+                "regional_rate/gnomad.v4.1.1.rr_penalty_tuning.ht",
+            ),
+            (get_rr_models_ht, "regional_rate/gnomad.v4.1.1.rr_models.ht"),
         ],
     )
     def test_path(self, func: Callable, path: str) -> None:
@@ -585,8 +605,9 @@ class TestGetConstraintResources:
         pipeline was split into four scripts, the names had only the flag, so
         ``expected_models.py --calculate-mutation-rate`` without a preprocessed Table
         said to add ``--preprocess-data``, which ``expected_models.py`` doesn't take.
-        The gnomAD inputs and the published files the rr imports read aren't created
-        by the pipeline, so they are exempt.
+        The gnomAD inputs, the published files the rr imports read, and the
+        constraint metrics Table the rr site features take gene flags from aren't
+        created by the pipeline, so they are exempt.
         """
         resources = self._get_resources(skip_pre_rank_metrics)
         names = {
@@ -594,7 +615,12 @@ class TestGetConstraintResources:
             for step in resources.pipeline_steps.values()
             for step_resources in (step.input_resources, step.output_resources)
             for name in step_resources
-        } - {"gnomAD resources", "published DNMs", "published genomic features"}
+        } - {
+            "gnomAD resources",
+            "published DNMs",
+            "published genomic features",
+            "constraint metrics with gene flags",
+        }
         assert "prepare_data.py --preprocess-data" in names
         for name in names:
             script, *flags = name.split(" ")
@@ -853,4 +879,144 @@ class TestGetConstraintResourcesImportSteps:
         )
         assert resources.import_genomic_features.published_features_path == (
             "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
+        )
+
+
+class TestGetConstraintResourcesRrSteps:
+    """Test the rr steps built by the get_constraint_resources function."""
+
+    def test_inputs(self) -> None:
+        """
+        Test that the rr steps read the imports, each other's outputs, and the flags.
+
+        The gene flags come from the v4.1.2 constraint metrics Table whatever the
+        version. The training set is made from the site features, and the tuning and
+        the fit read it.
+        """
+        resources = get_constraint_resources("4.1.1", overwrite=False, test=True)
+        sites = resources.create_rr_site_features
+        assert sites.dnm_ht.path == resources.import_dnms.dnm_ht.path
+        for step in [sites, resources.compute_rr]:
+            assert (
+                step.genomic_features_ht.path
+                == resources.import_genomic_features.genomic_features_ht.path
+            )
+        assert sites.gene_flags_ht.path == get_rr_gene_flags_ht().path
+        assert "/v4.1.2/" in get_rr_gene_flags_ht().path
+        training = resources.create_rr_training_set
+        assert training.rr_site_features_ht.path == sites.rr_site_features_ht.path
+        assert (
+            resources.screen_rr_features.rr_site_features_ht.path
+            == sites.rr_site_features_ht.path
+        )
+        for step in [resources.tune_rr_penalty, resources.train_rr_models]:
+            assert step.rr_training_ht.path == training.rr_training_ht.path
+        train = resources.train_rr_models
+        assert (
+            train.rr_penalty_tuning_ht.path
+            == resources.tune_rr_penalty.rr_penalty_tuning_ht.path
+        )
+        assert (
+            resources.compute_rr.rr_models_ht.path
+            == resources.train_rr_models.rr_models_ht.path
+        )
+
+    @pytest.mark.parametrize("rr_feature_screen", [False, True])
+    def test_training_set_reads_the_screen_only_to_select(
+        self, rr_feature_screen: bool
+    ) -> None:
+        """
+        Test that the screen is an input of the training set only with a selection.
+
+        With every feature, ``--create-rr-training-set`` doesn't need
+        ``--screen-rr-features`` to have run; with a selection from the screen, it
+        checks the screen exists.
+        """
+        resources = get_constraint_resources(
+            "4.1.1", overwrite=False, test=True, rr_feature_screen=rr_feature_screen
+        )
+        screen_inputs = resources.create_rr_training_set.input_resources.get(
+            "expected_models.py --screen-rr-features", []
+        )
+        screen = resources.screen_rr_features.rr_feature_screen_ht
+        assert [r.path for r in screen_inputs] == (
+            [screen.path] if rr_feature_screen else []
+        )
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_inputs_match_the_constraint_steps(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that the rr steps read the Tables of the same constraint pipeline run.
+
+        For the same version, test flag, and post-fixes, the site features come from
+        the preprocessed Table that ``--preprocess-data`` writes, and rr is
+        normalized on the per-variant expected Table that
+        ``--aggregate-per-variant-expected`` aggregates. ``--compute-rr`` writes the
+        rr Table to its getter's path with the same settings, which
+        ``--apply-regional-rr`` reads.
+        """
+        kwargs = {
+            "test": test,
+            "directory_post_fix": directory_post_fix,
+            "path_post_fix": path_post_fix,
+        }
+        resources = get_constraint_resources("4.1.1", overwrite=False, **kwargs)
+        assert (
+            resources.create_rr_site_features.temp_preprocess_data_ht.path
+            == resources.preprocess_data.temp_preprocess_data_ht.path
+        )
+        assert (
+            resources.compute_rr.per_variant_apply_ht.path
+            == resources.aggregate_per_variant_expected.per_variant_apply_ht.path
+        )
+        assert (
+            resources.compute_rr.regional_rr_ht.path
+            == get_regional_rr_ht(version="4.1.1", **kwargs).path
+        )
+
+    @pytest.mark.parametrize("test", [False, True])
+    @pytest.mark.parametrize("directory_post_fix", [None, "d"])
+    @pytest.mark.parametrize("path_post_fix", [None, "p"])
+    def test_rr_models_take_only_the_directory_post_fix(
+        self, test: bool, directory_post_fix: str, path_post_fix: str
+    ) -> None:
+        """
+        Test that the rr model Tables ignore ``--path-post-fix``, unlike the rr Table.
+
+        Nothing they're built from takes the path post-fix, so a post-fixed run
+        reuses the models of the run without it. The rr Table is normalized on the
+        post-fixed per-variant expected Table, so it takes both. Regression test: the
+        rr model Tables took the path post-fix, so every post-fixed run had to rebuild
+        identical models, context scan included, before ``--compute-rr`` would run.
+        """
+        kwargs = {"version": "4.1.1", "test": test}
+        resources = get_constraint_resources(
+            overwrite=False,
+            directory_post_fix=directory_post_fix,
+            path_post_fix=path_post_fix,
+            **kwargs,
+        )
+        kwargs["directory_post_fix"] = directory_post_fix
+        assert [
+            resources.create_rr_site_features.rr_site_features_ht.path,
+            resources.screen_rr_features.rr_feature_screen_ht.path,
+            resources.create_rr_training_set.rr_training_ht.path,
+            resources.tune_rr_penalty.rr_penalty_tuning_ht.path,
+            resources.train_rr_models.rr_models_ht.path,
+            resources.compute_rr.rr_models_ht.path,
+        ] == [
+            get_rr_site_features_ht(**kwargs).path,
+            get_rr_feature_screen_ht(**kwargs).path,
+            get_rr_training_ht(**kwargs).path,
+            get_rr_penalty_tuning_ht(**kwargs).path,
+            get_rr_models_ht(**kwargs).path,
+            get_rr_models_ht(**kwargs).path,
+        ]
+        assert (
+            resources.compute_rr.regional_rr_ht.path
+            == get_regional_rr_ht(path_post_fix=path_post_fix, **kwargs).path
         )

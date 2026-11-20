@@ -26,6 +26,7 @@ from gnomad_constraint.resources.constants import (
     EXTENSIONS,
     GENCODE_VERSION_MAP,
     MODEL_TYPES,
+    RR_GENE_FLAGS_VERSION,
     SITES_VERSION_MAP,
     VEP_ANNOTATION,
     VEP_VERSION_MAP,
@@ -611,6 +612,63 @@ def get_genomic_features_ht(**kwargs) -> TableResource:
     )
 
 
+def get_rr_gene_flags_ht() -> TableResource:
+    """
+    Return the constraint metrics Table whose gene flags pick the genes left out of rr training.
+
+    This is pinned to the ``RR_GENE_FLAGS_VERSION`` (v4.1.2) constraint metrics
+    Table, whatever version rr is computed for.
+
+    :return: Constraint metrics TableResource.
+    """
+    return get_constraint_metrics_dataset(version=RR_GENE_FLAGS_VERSION)
+
+
+def get_rr_site_features_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the rr site features (DNM and background sites).
+
+    :return: TableResource of the rr site features Table.
+    """
+    return get_constraint_data("rr_site_features", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_feature_screen_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the univariate screen of the rr features in each context.
+
+    :return: TableResource of the rr feature screen Table.
+    """
+    return get_constraint_data("rr_feature_screen", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_training_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the rr training Table the models are fit and tuned on.
+
+    :return: TableResource of the rr training Table.
+    """
+    return get_constraint_data("rr_training", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_penalty_tuning_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the held-out log loss of the rr models per ridge penalty.
+
+    :return: TableResource of the rr penalty tuning Table.
+    """
+    return get_constraint_data("rr_penalty_tuning", sub_dir="regional_rate", **kwargs)
+
+
+def get_rr_models_ht(**kwargs) -> TableResource:
+    """
+    Return TableResource of the per-context rr model parameters.
+
+    :return: TableResource of the rr model Table.
+    """
+    return get_constraint_data("rr_models", sub_dir="regional_rate", **kwargs)
+
+
 def get_regional_rr_ht(**kwargs) -> TableResource:
     """
     Return TableResource of the per-window, per-context regional rr Table.
@@ -633,6 +691,7 @@ def get_constraint_resources(
     skip_pre_rank_metrics: bool = False,
     use_aggregated_expected: bool = False,
     apply_regional_rr: bool = False,
+    rr_feature_screen: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -654,6 +713,9 @@ def get_constraint_resources(
         becomes one of its inputs, and the outputs from that step on get an ``rr``
         path post-fix, so they don't replace the Tables without rr. Can't be combined
         with ``use_aggregated_expected``. Default is False.
+    :param rr_feature_screen: Whether ``--create-rr-training-set`` selects the rr
+        model features from the ``--screen-rr-features`` output, which then becomes one
+        of its inputs. Default is False.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
@@ -776,6 +838,57 @@ def get_constraint_resources(
             )
         },
         pipeline_input_steps=[preprocess_data, calculate_mutation_rate, build_models],
+    )
+    # The rr model Tables take only the directory post-fix, like the preprocessed
+    # Table and the imports they are built from, so a --path-post-fix run reuses the
+    # models. The rr Table is normalized on the per-variant expected Table of the same
+    # run, so it takes both post-fixes.
+    rr_params = {**common_params, "path_post_fix": path_post_fix}
+    create_rr_site_features = PipelineStepResourceCollection(
+        "expected_models.py --create-rr-site-features",
+        output_resources={
+            "rr_site_features_ht": get_rr_site_features_ht(**common_params)
+        },
+        pipeline_input_steps=[import_dnms, import_genomic_features, preprocess_data],
+        add_input_resources={
+            "constraint metrics with gene flags": {
+                "gene_flags_ht": get_rr_gene_flags_ht()
+            }
+        },
+    )
+    screen_rr_features = PipelineStepResourceCollection(
+        "expected_models.py --screen-rr-features",
+        output_resources={
+            "rr_feature_screen_ht": get_rr_feature_screen_ht(**common_params)
+        },
+        pipeline_input_steps=[create_rr_site_features],
+    )
+    create_rr_training_set = PipelineStepResourceCollection(
+        "expected_models.py --create-rr-training-set",
+        output_resources={"rr_training_ht": get_rr_training_ht(**common_params)},
+        pipeline_input_steps=[create_rr_site_features]
+        + ([screen_rr_features] if rr_feature_screen else []),
+    )
+    tune_rr_penalty = PipelineStepResourceCollection(
+        "expected_models.py --tune-rr-penalty",
+        output_resources={
+            "rr_penalty_tuning_ht": get_rr_penalty_tuning_ht(**common_params)
+        },
+        pipeline_input_steps=[create_rr_training_set],
+    )
+    train_rr_models = PipelineStepResourceCollection(
+        "expected_models.py --train-rr-models",
+        output_resources={"rr_models_ht": get_rr_models_ht(**common_params)},
+        pipeline_input_steps=[create_rr_training_set, tune_rr_penalty],
+    )
+    compute_rr = PipelineStepResourceCollection(
+        "expected_counts.py --compute-rr",
+        output_resources={"regional_rr_ht": get_regional_rr_ht(**rr_params)},
+        pipeline_input_steps=[
+            import_genomic_features,
+            train_rr_models,
+            apply_models_per_variant,
+        ],
     )
     aggregate_per_variant_expected = PipelineStepResourceCollection(
         "constraint_metrics.py --aggregate-per-variant-expected",
@@ -918,7 +1031,13 @@ def get_constraint_resources(
             "calculate_mutation_rate": calculate_mutation_rate,
             "create_training_set": create_training_set,
             "build_models": build_models,
+            "create_rr_site_features": create_rr_site_features,
+            "screen_rr_features": screen_rr_features,
+            "create_rr_training_set": create_rr_training_set,
+            "tune_rr_penalty": tune_rr_penalty,
+            "train_rr_models": train_rr_models,
             "apply_models_per_variant": apply_models_per_variant,
+            "compute_rr": compute_rr,
             "aggregate_per_variant_expected": aggregate_per_variant_expected,
             "aggregate_by_constraint_groups": aggregate_by_constraint_groups,
             "apply_models_aggregated": apply_models_aggregated,
