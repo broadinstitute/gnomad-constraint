@@ -217,6 +217,13 @@ fields or globals, update its description in `release_readme/` too.
 - Name each step in `get_constraint_resources` `<script>.py --<flag>`. gnomad_qc's
   missing-input error tells the user to run the step's name, and a test checks that
   the named script takes the flags.
+- `gnomad_constraint/flowchart/constraint_pipeline.html` is generated from the
+  pipeline's steps, flags, resources, and function calls, and CI's `--check`
+  fails when it's stale. After changing any of those, or the docstring of a
+  function a step reaches, commit, then run
+  `python -m gnomad_constraint.flowchart.generate_flowchart --extract`. Its prose
+  lives in `gnomad_constraint/flowchart/notes.py`, keyed by step, function, flag,
+  and resource names, so renaming one of them means updating the notes too.
 
 ## Maintaining CLAUDE.md
 
