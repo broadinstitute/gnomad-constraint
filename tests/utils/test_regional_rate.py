@@ -626,6 +626,7 @@ class TestComputeRrHt:
         assert rr_globals.per_variant_apply_models_globals == hl.Struct(version="test")
         assert rr_globals.per_variant_row_count == 4
         assert rr_globals.training_sites == hl.Struct(background_seed=0)
+        assert rr_globals.no_model_contexts == [c for c in RR_CONTEXTS if c != "AAA"]
         assert rr_globals.non_converged_contexts == []
 
     def test_without_normalization(self) -> None:
@@ -647,6 +648,20 @@ class TestComputeRrHt:
         assert not rr_globals.normalized
         assert rr_globals.normalization_factors == {}
         assert rr_globals.per_variant_row_count == 1
+
+    def test_models_without_their_record_raise(self) -> None:
+        """
+        Test that a models Table without the training globals raises before any work.
+
+        Regression test: a models Table from before ``rr_feature_selection`` failed
+        only after the scan of the per-variant Table.
+        """
+        with pytest.raises(ValueError, match="no rr_feature_selection global"):
+            compute_rr_ht(
+                self._features_ht(),
+                self._models_ht().drop("rr_feature_selection"),
+                None,
+            )
 
     def test_non_converged_model_left_out(self) -> None:
         """

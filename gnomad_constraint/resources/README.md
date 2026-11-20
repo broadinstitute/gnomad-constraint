@@ -649,9 +649,9 @@ Public-release flattened constraint table. One row per
 - `loeuf_percentile_thresholds: struct{percentile, decile, sextile}` — LOEUF
   upper-bound thresholds at each granularity (copied from
   `percentile_thresholds.lof` in §10).
-- `regional_rr_params: struct{ridge_penalty, normalization_factors}` — only when the
-  expected counts were adjusted with `--apply-regional-rr`; `regional_rr_globals`
-  (§7) without `per_variant_apply_models_globals` and `per_variant_row_count`.
+- `regional_rr_params: struct` — only when the expected counts were adjusted with
+  `--apply-regional-rr`; `regional_rr_globals` (§7) without
+  `per_variant_apply_models_globals` and `per_variant_row_count`.
 
 ### Rows
 Key + GENCODE annotations + per-group structs:
@@ -976,6 +976,8 @@ passed, produced by `--compute-rr` with
     of `per_variant_expected.ht` that have one; rr is divided by it. Empty when rr
     wasn't normalized.
   - `training_sites: struct` — the models' `rr_training_sites` (§16).
+  - `no_model_contexts: array<str>` — contexts with no model (with feature
+    selection, those with no feature selected), which get rr 1.
   - `non_converged_contexts: array<str>` — contexts whose model didn't converge
     and so get rr 1, as if they had no model.
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the

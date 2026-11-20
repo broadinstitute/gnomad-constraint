@@ -299,8 +299,10 @@ def compute_rr_ht(
     """
     Compute rr per 1kb window and context, normalized on the per-variant Table's sites.
 
-    Each window's rr in each of ``RR_CONTEXTS`` comes from that context's model, and
-    windows no model covers are dropped. A window missing a feature of a context's
+    Each window's rr in each of ``RR_CONTEXTS`` comes from that context's model; a
+    context without one (with feature selection, one with no feature selected) gets
+    rr 1.0, and windows no model covers are dropped. A window missing a feature of a
+    context's
     model has no rr in that context, so its expected counts there aren't adjusted.
     A context whose model didn't converge gets rr 1.0, as if it had no model,
     rather than a fit that may be far from the best one. rr is then divided, per
@@ -321,13 +323,34 @@ def compute_rr_ht(
         an ``rr_globals`` global with ``ridge_penalty``, ``feature_selection`` (the
         models' ``rr_feature_selection``), ``normalized``, ``normalization_factors``
         (empty without ``normalize``), ``training_sites`` (the models'
-        ``rr_training_sites``), ``non_converged_contexts``,
+        ``rr_training_sites``), ``no_model_contexts``, ``non_converged_contexts``,
         ``per_variant_apply_models_globals``, and ``per_variant_row_count``.
     """
+    # Check now, rather than after the scan of the per-variant Table.
+    missing = [
+        g
+        for g in ["ridge_penalty", "rr_training_sites", "rr_feature_selection"]
+        if g not in models_ht.globals
+    ]
+    if missing:
+        raise ValueError(
+            f"The rr models Table has no {', '.join(missing)} global. Rerun"
+            " expected_models.py --train-rr-models."
+        )
+
     # The models Table has one small row per context.
-    non_converged = models_ht.aggregate(
-        hl.agg.filter(~models_ht.converged, hl.agg.collect(models_ht.context))
+    models = models_ht.aggregate(
+        hl.struct(
+            contexts=hl.agg.collect_as_set(models_ht.context),
+            non_converged=hl.agg.filter(
+                ~models_ht.converged, hl.agg.collect(models_ht.context)
+            ),
+        )
     )
+    no_model = sorted(set(RR_CONTEXTS) - models.contexts)
+    if no_model:
+        logger.info("%s have no rr model, so they get rr 1.", no_model)
+    non_converged = models.non_converged
     if non_converged:
         logger.warning(
             "The rr models of %s didn't converge, so those contexts get rr 1.",
@@ -364,6 +387,7 @@ def compute_rr_ht(
             normalized=normalize,
             normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
             training_sites=models_globals.rr_training_sites,
+            no_model_contexts=hl.literal(no_model, hl.tarray(hl.tstr)),
             non_converged_contexts=hl.literal(
                 sorted(non_converged), hl.tarray(hl.tstr)
             ),
