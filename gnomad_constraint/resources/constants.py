@@ -317,6 +317,27 @@ Every feature at every scale, without the methylation-correlated features for Cp
 contexts.
 """
 
+RR_FEATURE_SELECTION_ALL = "all"
+"""
+``--rr-feature-selection`` value that models every feature in ``RR_CONTEXT_FEATURES``.
+
+This is the default, and the ridge penalty then decides how much each feature counts.
+"""
+
+RR_BONFERRONI_CUTOFF = "bonferroni"
+"""
+``--rr-feature-selection`` value for Gnocchi's Bonferroni feature selection.
+
+A context's feature is selected when its univariate p-value is at most
+``RR_FEATURE_SELECTION_ALPHA / len(GENOMIC_FEATURE_SCALES) / n``, where ``n`` is the
+number of features the context's model can use: 13, or 8 in CpG contexts, which leave
+out the methylation-correlated features. Only the smallest selected scale of each
+feature is kept.
+"""
+
+RR_FEATURE_SELECTION_ALPHA = 0.05
+"""Family-wise alpha of the Bonferroni rr feature selection."""
+
 RR_RIDGE_PENALTIES = [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
 """
 Per-site ridge penalties tried by ``expected_models.py --tune-rr-penalty``.

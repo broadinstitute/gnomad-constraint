@@ -44,6 +44,7 @@ gs://gnomad/v{version}/constraint/
 │   └── gnomad.v{version}.genomic_features13_1kb.ht
 ├── regional_rate/
 │   ├── gnomad.v{version}.rr_site_features.ht
+│   ├── gnomad.v{version}.rr_feature_screen.ht
 │   ├── gnomad.v{version}.rr_training.ht
 │   ├── gnomad.v{version}.rr_penalty_tuning.ht
 │   ├── gnomad.v{version}.rr_models.ht
@@ -73,8 +74,8 @@ and intermediate checkpoints use `gs://gnomad-tmp/gnomad_v{version}/constraint/.
 `--directory-post-fix` changes `constraint/` to `constraint_{post_fix}/`, and
 `--path-post-fix` adds `.{post_fix}` before the file extension of training, model,
 apply-models, metrics, and constraint-metrics release outputs. The rr imports
-(§14-15) take neither post-fix, the rr model Tables (§16-19) only the directory
-post-fix, and the rr Table (§20) both.
+(§14-15) take neither post-fix, the rr model Tables (§16-19, 21) only the
+directory post-fix, and the rr Table (§20) both.
 `constraint_metrics.py --apply-regional-rr` adds `.rr` (after the path post-fix, if
 any) to its outputs from the aggregated per-variant expected Table (§7) on, so they
 sit beside the ones without rr.
@@ -419,7 +420,9 @@ tuple. Produced by `--aggregate-per-variant-expected`.
 Identical pipeline-parameter globals as `per_variant_expected.ht`. With
 `--apply-regional-rr`, also `regional_rr_globals`, a copy of the rr Table's
 `rr_globals`: `ridge_penalty: float64` (ridge penalty of the rr models),
-`normalization_factors: dict<str, float64>` (per-context factor rr was divided by),
+`feature_selection: str` (how their features were chosen, §17), `normalized: bool`
+(whether rr was normalized), `normalization_factors: dict<str, float64>`
+(per-context factor rr was divided by; empty when it wasn't normalized),
 `training_sites: struct` (how the rr training sites were chosen, §16),
 `per_variant_apply_models_globals: struct` (the `apply_models_globals` of the
 per-variant expected Table rr was normalized on) and `per_variant_row_count: int64`
@@ -734,8 +737,9 @@ from §3 by selecting/renaming.
 Tables used to compute the regional mutation rate (rr): the outputs of
 the `--import-dnms` and `--import-genomic-features` steps of
 [prepare_data.py](../pipeline/prepare_data.py) (§14-15), the rr model steps of
-[expected_models.py](../pipeline/expected_models.py) (§16-19), and `--compute-rr`
-in [expected_counts.py](../pipeline/expected_counts.py) (§20). Only the training,
+[expected_models.py](../pipeline/expected_models.py) (§16-19, and the optional
+feature screen, §21), and `--compute-rr` in
+[expected_counts.py](../pipeline/expected_counts.py) (§20). Only the training,
 penalty tuning, model, and rr Tables (§17-20) have globals.
 
 The genomic feature columns are named `{feature}_{scale}` for the 13 features in
@@ -846,8 +850,16 @@ rr training set: the site features (§16) prepared for the models by
 
 ### Globals
 - `features: dict<str, array<str>>` — each context's feature columns, in the order
-  of `x` (`RR_CONTEXT_FEATURES`).
+  of `x`: its `RR_CONTEXT_FEATURES`, or, with `--rr-feature-selection` other than
+  `all`, those selected from the feature screen (§21) by
+  [`select_rr_features`](../utils/regional_rate.py). A context with no selected
+  feature isn't in it, and gets no model.
 - `rr_training_sites: struct` — copied from the site features (§16).
+- `rr_feature_selection: str` — the `--rr-feature-selection` value: `all`,
+  `bonferroni` (Gnocchi's cutoff, `RR_FEATURE_SELECTION_ALPHA / 4 / 13`, or `/ 8` in
+  CpG contexts), or a p-value cutoff. Carried to the models (§19), the rr Table (§20,
+  as `rr_globals.feature_selection`), and the release
+  (`regional_rr_params.feature_selection`).
 
 ### Rows
 - `locus: locus<GRCh38>` — key.
@@ -894,7 +906,8 @@ chromosomes (odd or even) and scored on the fold's sites.
 
 ## 19. `regional_rate/rr_models.ht`
 
-Per-context ridge-penalized logistic rr models, produced by `--train-rr-models` with
+Per-context logistic rr models, ridge-penalized unless the penalty is 0, produced by
+`--train-rr-models` with
 `fit_regional_mutation_rate_models` from
 `gnomad.utils.constraint.regional_mutation_rate`. The models are fit on z-scored
 features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) / sd)`.
@@ -907,6 +920,7 @@ features, so a window's linear predictor is `intercept + sum(coefs * (x - mean) 
 - `ridge_penalty: float64` — per-site ridge penalty the models were fit with, from
   §18, recorded by `fit_regional_mutation_rate_models`.
 - `rr_training_sites: struct` — copied from the training set (§16).
+- `rr_feature_selection: str` — copied from the training set (§17).
 
 A context whose fit didn't converge has `converged` False; `--compute-rr` gives it
 rr 1 and logs a warning naming it.
@@ -916,8 +930,8 @@ rr 1 and logs a warning naming it.
   Contexts without DNM or background training sites, or where no feature varies,
   have no row.
 - `features: array<str>` — model features in coefficient order: the context's
-  `RR_CONTEXT_FEATURES`, without any feature that has a single value in the
-  context's training sites.
+  features in the training set (§17), without any feature that has a single value in
+  the context's training sites.
 - `mean: array<float64>`, `sd: array<float64>` — training mean and standard
   deviation (ddof=0) of each feature.
 - `coefs: array<float64>` — coefficient of each standardized feature.
@@ -936,7 +950,8 @@ rr 1 and logs a warning naming it.
 
 ## 20. `regional_rate/syn_dnm_rr_1kb.ht`
 
-Normalized rr per 1kb window and context, produced by `--compute-rr` with
+rr per 1kb window and context, normalized unless `--skip-rr-normalization` is
+passed, produced by `--compute-rr` with
 `compute_rr_ht` (in `utils/regional_rate.py`), which uses
 `regional_mutation_rate_expr` and `normalize_regional_mutation_rate_expr` from
 `gnomad.utils.constraint.regional_mutation_rate`. Read by
@@ -949,9 +964,13 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
 ### Globals
 - `rr_globals: struct`:
   - `ridge_penalty: float64` — ridge penalty the models were fit with (§18).
+  - `feature_selection: str` — the models' `rr_feature_selection` (§17).
+  - `normalized: bool` — whether rr was normalized (False with
+    `--skip-rr-normalization`).
   - `normalization_factors: dict<str, float64>` — per-context expected-weighted
     mean of the unnormalized rr over the exome synonymous Ensembl MANE Select sites
-    of `per_variant_expected.ht` that have one; rr is divided by it.
+    of `per_variant_expected.ht` that have one; rr is divided by it. Empty when rr
+    wasn't normalized.
   - `training_sites: struct` — the models' `rr_training_sites` (§16).
   - `non_converged_contexts: array<str>` — contexts whose model didn't converge
     and so get rr 1, as if they had no model.
@@ -964,9 +983,35 @@ Normalized rr per 1kb window and context, produced by `--compute-rr` with
   `genomic_features13_1kb.ht`. Windows where no modeled context has an rr are
   removed.
 - `adj_r: dict<str, float64>` — rr for each of the 32 `RR_CONTEXTS`:
-  `sigmoid(linear predictor) / ave / normalization factor`. It is missing in
+  `sigmoid(linear predictor) / ave`, divided by the normalization factor when rr
+  is normalized. It is missing in
   windows missing one of the context's model features, so expected counts there
   aren't adjusted; contexts without a model are 1.0.
+
+---
+
+## 21. `regional_rate/rr_feature_screen.ht`
+
+Univariate screen of each context's rr features, produced by the optional
+`--screen-rr-features` with `screen_regional_mutation_rate_features` from
+`gnomad.utils.constraint.regional_mutation_rate`, for Gnocchi's feature selection
+(`--rr-feature-selection`, §17). For each context and each of its
+`RR_CONTEXT_FEATURES`, an unpenalized logistic model of the label on that feature
+alone, standardized, is fit on the context's site features (§16) where the feature
+is defined.
+
+- **Path:** `gs://gnomad/v{version}/constraint/regional_rate/gnomad.v{version}.rr_feature_screen.ht`
+- **Resource fn:** [`get_rr_feature_screen_ht`](resource_utils.py)
+- **Key:** `context`, `feature`
+
+### Rows
+- `context: str`, `feature: str` — key. A feature with a single value in a
+  context's sites has no row.
+- `coef: float64` — coefficient per standard deviation of the feature.
+- `se: float64`, `p_value: float64` — its Wald standard error and two-sided
+  p-value; missing if the fit didn't converge, so it is never selected.
+- `n: int32`, `n_mutated: int32` — sites fit, and DNM sites among them.
+- `converged: bool` — whether the fit converged.
 
 ---
 

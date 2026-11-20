@@ -1,12 +1,12 @@
 """
-Functions to build the regional mutation rate (rr) site features and compute rr.
+Functions to build the regional mutation rate (rr) site features, select features, and compute rr.
 
 The models are fit, and rr is computed and normalized, with
 :mod:`gnomad.utils.constraint.regional_mutation_rate`.
 """
 
 import logging
-from typing import Optional
+from typing import Dict, List, Optional
 
 import hail as hl
 from gnomad.utils.constraint import (
@@ -19,7 +19,11 @@ from hail.utils.misc import new_temp_file
 from gnomad_constraint.resources.constants import (
     ADJ_FREQ_META,
     GENOMIC_FEATURE_COLUMNS,
+    GENOMIC_FEATURE_SCALES,
+    RR_BONFERRONI_CUTOFF,
+    RR_CONTEXT_FEATURES,
     RR_CONTEXTS,
+    RR_FEATURE_SELECTION_ALPHA,
 )
 from gnomad_constraint.utils.constraint import get_transcript_filter_expr
 
@@ -201,6 +205,52 @@ def get_rr_fold_expr(locus_expr: hl.expr.LocusExpression) -> hl.expr.StringExpre
     return hl.if_else(locus_expr.contig_idx % 2 == 0, "odd", "even")
 
 
+def select_rr_features(screen_ht: hl.Table, cutoff: str) -> Dict[str, List[str]]:
+    """
+    Select each context's rr model features from the univariate feature screen.
+
+    This is Gnocchi's feature selection. With ``RR_BONFERRONI_CUTOFF``, a context's
+    feature is selected when its p-value is at most
+    ``RR_FEATURE_SELECTION_ALPHA / len(GENOMIC_FEATURE_SCALES) / n``, where ``n`` is
+    the number of features in the context's ``RR_CONTEXT_FEATURES`` at one scale (13,
+    or 8 in CpG contexts). Otherwise ``cutoff`` is the p-value cutoff itself. For each
+    feature only the smallest selected scale is kept. A screen fit that didn't converge
+    has no p-value, so it is never selected, and a context with no selected feature is
+    left out, so it gets no model.
+
+    :param screen_ht: Feature screen Table keyed by ``context`` and ``feature``, with
+        ``p_value`` (``screen_regional_mutation_rate_features`` in gnomad_methods).
+    :param cutoff: ``RR_BONFERRONI_CUTOFF``, or a p-value cutoff such as ``"1e-2"``.
+    :return: Dictionary of context to its selected features, in the order of its
+        ``RR_CONTEXT_FEATURES``.
+    """
+    p_values = {
+        (r.context, r.feature): r.p_value for r in screen_ht.select("p_value").collect()
+    }
+    selected = {}
+    for context, features in RR_CONTEXT_FEATURES.items():
+        if cutoff == RR_BONFERRONI_CUTOFF:
+            n_features = len(features) // len(GENOMIC_FEATURE_SCALES)
+            threshold = RR_FEATURE_SELECTION_ALPHA / len(GENOMIC_FEATURE_SCALES)
+            threshold /= n_features
+        else:
+            threshold = float(cutoff)
+        # RR_CONTEXT_FEATURES lists every feature at one scale before the next, from
+        # the smallest, so the first selected column of a feature is its smallest.
+        kept, seen = [], set()
+        for column in features:
+            feature = column.rsplit("_", 1)[0]
+            p_value = p_values.get((context, column))
+            if feature in seen or p_value is None or p_value > threshold:
+                continue
+            seen.add(feature)
+            kept.append(column)
+        if kept:
+            selected[context] = kept
+
+    return selected
+
+
 def get_rr_normalization_sites_ht(per_variant_ht: hl.Table) -> hl.Table:
     """
     Get the sites rr is normalized on: the exome synonymous Ensembl MANE Select sites.
@@ -224,7 +274,10 @@ def get_rr_normalization_sites_ht(per_variant_ht: hl.Table) -> hl.Table:
 
 
 def compute_rr_ht(
-    features_ht: hl.Table, models_ht: hl.Table, per_variant_ht: hl.Table
+    features_ht: hl.Table,
+    models_ht: hl.Table,
+    per_variant_ht: hl.Table,
+    normalize: bool = True,
 ) -> hl.Table:
     """
     Compute rr per 1kb window and context, normalized on the per-variant Table's sites.
@@ -237,19 +290,22 @@ def compute_rr_ht(
     context, by its mean over the sites of
     :func:`get_rr_normalization_sites_ht` that have one, weighted by their adj
     expected count, so it moves those sites' expected counts between windows without
-    changing their total.
+    changing their total. Without ``normalize``, rr is left as the models give it, as
+    Gnocchi's was, and no normalization factors are computed.
 
     :param features_ht: Genomic feature Table keyed by ``interval``.
-    :param models_ht: rr models Table with ``ridge_penalty`` and
-        ``rr_training_sites`` globals.
+    :param models_ht: rr models Table with ``ridge_penalty``, ``rr_training_sites``,
+        and ``rr_feature_selection`` globals.
     :param per_variant_ht: Per-variant expected Table to normalize on, with an
         ``apply_models_globals`` global (see :func:`get_rr_normalization_sites_ht`),
         as read from disk, so counting its rows reads only metadata.
+    :param normalize: Whether to normalize rr per context. Default is True.
     :return: Table keyed by ``interval`` with ``adj_r``, a dict of context to rr, and
-        an ``rr_globals`` global with ``ridge_penalty``, ``normalization_factors``,
-        ``training_sites`` (the models' ``rr_training_sites``),
-        ``non_converged_contexts``, ``per_variant_apply_models_globals``, and
-        ``per_variant_row_count``.
+        an ``rr_globals`` global with ``ridge_penalty``, ``feature_selection`` (the
+        models' ``rr_feature_selection``), ``normalized``, ``normalization_factors``
+        (empty without ``normalize``), ``training_sites`` (the models'
+        ``rr_training_sites``), ``non_converged_contexts``,
+        ``per_variant_apply_models_globals``, and ``per_variant_row_count``.
     """
     # The models Table has one small row per context.
     non_converged = models_ht.aggregate(
@@ -268,25 +324,29 @@ def compute_rr_ht(
     ht = ht.filter(hl.is_defined(ht.adj_r))
     ht = ht.checkpoint(new_temp_file("rr_unnormalized", "ht"))
 
-    sites_ht = get_rr_normalization_sites_ht(per_variant_ht)
-    sites_ht = sites_ht.checkpoint(new_temp_file("rr_normalization_sites", "ht"))
-    sites_ht = sites_ht.naive_coalesce(200)
-    factors = sites_ht.aggregate(
-        regional_mutation_rate_normalization_factors_agg_expr(
-            sites_ht.context,
-            ht[sites_ht.locus].adj_r.get(sites_ht.context),
-            sites_ht.exp,
+    factors = {}
+    if normalize:
+        sites_ht = get_rr_normalization_sites_ht(per_variant_ht)
+        sites_ht = sites_ht.checkpoint(new_temp_file("rr_normalization_sites", "ht"))
+        sites_ht = sites_ht.naive_coalesce(200)
+        factors = sites_ht.aggregate(
+            regional_mutation_rate_normalization_factors_agg_expr(
+                sites_ht.context,
+                ht[sites_ht.locus].adj_r.get(sites_ht.context),
+                sites_ht.exp,
+            )
         )
-    )
-    logger.info("rr normalization factors: %s", factors)
+        logger.info("rr normalization factors: %s", factors)
+        ht = ht.annotate(adj_r=normalize_regional_mutation_rate_expr(ht.adj_r, factors))
 
-    ht = ht.annotate(adj_r=normalize_regional_mutation_rate_expr(ht.adj_r, factors))
-
+    models_globals = models_ht.index_globals()
     return ht.annotate_globals(
         rr_globals=hl.struct(
-            ridge_penalty=models_ht.index_globals().ridge_penalty,
+            ridge_penalty=models_globals.ridge_penalty,
+            feature_selection=models_globals.rr_feature_selection,
+            normalized=normalize,
             normalization_factors=hl.literal(factors, hl.tdict(hl.tstr, hl.tfloat64)),
-            training_sites=models_ht.index_globals().rr_training_sites,
+            training_sites=models_globals.rr_training_sites,
             non_converged_contexts=hl.literal(
                 sorted(non_converged), hl.tarray(hl.tstr)
             ),

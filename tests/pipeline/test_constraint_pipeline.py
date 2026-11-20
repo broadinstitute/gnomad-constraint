@@ -516,6 +516,18 @@ class TestScriptResources:
                 ["--apply-regional-rr"],
                 {"apply_regional_rr": True},
             ),
+            # Only a selection from the screen makes it an input of the training set.
+            ("expected_models", ["--rr-feature-selection", "all"], {}),
+            (
+                "expected_models",
+                ["--rr-feature-selection", "bonferroni"],
+                {"rr_feature_screen": True},
+            ),
+            (
+                "expected_models",
+                ["--rr-feature-selection", "1e-2"],
+                {"rr_feature_screen": True},
+            ),
         ],
     )
     def test_get_constraint_resources_call(
@@ -559,6 +571,7 @@ class TestScriptResources:
             "skip_pre_rank_metrics": False,
             "use_aggregated_expected": False,
             "apply_regional_rr": False,
+            "rr_feature_screen": False,
             **expected,
         }
 
@@ -737,37 +750,94 @@ class TestScriptResources:
             )
         ]
 
-    def test_create_rr_training_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize("selection", [None, "all", "bonferroni", "1e-2"])
+    def test_create_rr_training_set(
+        self, monkeypatch: pytest.MonkeyPatch, selection: Optional[str]
+    ) -> None:
         """
         Test that ``--create-rr-training-set`` passes the features and folds and keeps the record.
 
         gnomad_methods' prepare keeps only the ``features`` global, so the step has
-        to carry the site features' ``rr_training_sites``.
+        to carry the site features' ``rr_training_sites`` and the feature selection.
+        With a cutoff, the features are those selected from the screen; by default,
+        every feature in ``RR_CONTEXT_FEATURES``.
         """
         calls = []
         folds = []
+        selects = []
+        selected = {"AAA": ["GC_content_1k"]}
         training_ht = mock.MagicMock()
         resources = self._run_main(
             monkeypatch,
             expected_models,
-            ["--create-rr-training-set"],
+            ["--create-rr-training-set"]
+            + (["--rr-feature-selection", selection] if selection else []),
             {
                 "prepare_regional_mutation_rate_training_ht": self._recorder(
                     calls, training_ht
                 ),
                 "get_rr_fold_expr": self._recorder(folds, "fold"),
+                "select_rr_features": self._recorder(selects, selected),
             },
         )
         res = resources.create_rr_training_set
         site_ht = res.rr_site_features_ht.ht.return_value
+        selected_all = selection in (None, "all")
         assert folds == [((site_ht.locus,), {})]
-        assert calls == [((site_ht, RR_CONTEXT_FEATURES), {"fold_expr": "fold"})]
+        assert selects == (
+            []
+            if selected_all
+            else [((res.rr_feature_screen_ht.ht.return_value, selection), {})]
+        )
+        features = RR_CONTEXT_FEATURES if selected_all else selected
+        assert calls == [((site_ht, features), {"fold_expr": "fold"})]
         training_ht.annotate_globals.assert_called_once_with(
-            rr_training_sites=site_ht.index_globals.return_value.rr_training_sites
+            rr_training_sites=site_ht.index_globals.return_value.rr_training_sites,
+            rr_feature_selection=selection or "all",
         )
         training_ht.annotate_globals.return_value.write.assert_called_once_with(
             res.rr_training_ht.path, overwrite=False
         )
+
+    def test_screen_rr_features(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """
+        Test that ``--screen-rr-features`` screens every feature of the site features.
+
+        The screen runs on the site features prepared with ``RR_CONTEXT_FEATURES``,
+        so every feature a model could use is tested.
+        """
+        prepares = []
+        screens = []
+        screen_ht = mock.MagicMock()
+        resources = self._run_main(
+            monkeypatch,
+            expected_models,
+            ["--screen-rr-features"],
+            {
+                "prepare_regional_mutation_rate_training_ht": self._recorder(
+                    prepares, "prepared"
+                ),
+                "screen_regional_mutation_rate_features": self._recorder(
+                    screens, screen_ht
+                ),
+            },
+        )
+        res = resources.screen_rr_features
+        assert prepares == [
+            ((res.rr_site_features_ht.ht.return_value, RR_CONTEXT_FEATURES), {})
+        ]
+        assert screens == [(("prepared",), {})]
+        screen_ht.write.assert_called_once_with(
+            res.rr_feature_screen_ht.path, overwrite=False
+        )
+
+    @pytest.mark.parametrize("value", ["none", "0", "1.5", "-1e-3"])
+    def test_rr_feature_selection_must_be_valid(self, value: str) -> None:
+        """Test that --rr-feature-selection takes only "all", "bonferroni", or a cutoff in (0, 1]."""
+        for ok in ["all", "bonferroni", "1e-2", "1"]:
+            assert expected_models.rr_feature_selection_arg(ok) == ok
+        with pytest.raises(argparse.ArgumentTypeError, match="p-value cutoff"):
+            expected_models.rr_feature_selection_arg(value)
 
     def test_tune_rr_penalty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """
@@ -820,25 +890,32 @@ class TestScriptResources:
             ((res.rr_penalty_tuning_ht.ht.return_value, training_ht), {})
         ]
         assert fits == [((training_ht, 0.2), {})]
+        training_globals = training_ht.index_globals.return_value
         models_ht.annotate_globals.assert_called_once_with(
-            rr_training_sites=training_ht.index_globals.return_value.rr_training_sites
+            rr_training_sites=training_globals.rr_training_sites,
+            rr_feature_selection=training_globals.rr_feature_selection,
         )
         models_ht.annotate_globals.return_value.write.assert_called_once_with(
             res.rr_models_ht.path, overwrite=False
         )
 
-    def test_compute_rr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize("skip_normalization", [False, True])
+    def test_compute_rr(
+        self, monkeypatch: pytest.MonkeyPatch, skip_normalization: bool
+    ) -> None:
         """
         Test that ``--compute-rr`` passes the features, models and per-variant Table in order.
 
-        Regression test: the suite still passed with the first two swapped.
+        Regression test: the suite still passed with the first two swapped. rr is
+        normalized unless ``--skip-rr-normalization`` is given.
         """
         calls = []
         rr_ht = mock.MagicMock()
         resources = self._run_main(
             monkeypatch,
             expected_counts,
-            ["--compute-rr"],
+            ["--compute-rr"]
+            + (["--skip-rr-normalization"] if skip_normalization else []),
             {"compute_rr_ht": self._recorder(calls, rr_ht)},
         )
         res = resources.compute_rr
@@ -849,7 +926,7 @@ class TestScriptResources:
                     res.rr_models_ht.ht.return_value,
                     res.per_variant_apply_ht.ht.return_value,
                 ),
-                {},
+                {"normalize": not skip_normalization},
             )
         ]
         rr_ht.write.assert_called_once_with(res.regional_rr_ht.path, overwrite=False)
