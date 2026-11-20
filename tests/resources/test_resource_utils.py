@@ -30,8 +30,10 @@ from gnomad_constraint.resources.resource_utils import (
     get_constraint_resources,
     get_constraint_root,
     get_coverage_ht,
+    get_dnm_ht,
     get_gencode_cds_ht,
     get_gene_quality_metrics_ht,
+    get_genomic_features_ht,
     get_lof_threshold_tsv_path,
     get_logging_path,
     get_models,
@@ -39,6 +41,7 @@ from gnomad_constraint.resources.resource_utils import (
     get_per_variant_expected_dataset,
     get_pre_rank_constraint_metrics_dataset,
     get_preprocessed_ht,
+    get_regional_rr_ht,
     get_release_constraint_ht,
     get_release_constraint_tsv_path,
     get_release_downsampling_tsv_path,
@@ -427,6 +430,12 @@ class TestPipelineStepPaths:
                 get_training_tsv_path,
                 "training_data/gnomad.v4.1.1.constraint_training.tsv.bgz",
             ),
+            (get_dnm_ht, "imported_data/gnomad.v4.1.1.dnm.ht"),
+            (
+                get_genomic_features_ht,
+                "imported_data/gnomad.v4.1.1.genomic_features13_1kb.ht",
+            ),
+            (get_regional_rr_ht, "regional_rate/gnomad.v4.1.1.syn_dnm_rr_1kb.ht"),
         ],
     )
     def test_path(self, func: Callable, path: str) -> None:
@@ -576,7 +585,8 @@ class TestGetConstraintResources:
         pipeline was split into four scripts, the names had only the flag, so
         ``expected_models.py --calculate-mutation-rate`` without a preprocessed Table
         said to add ``--preprocess-data``, which ``expected_models.py`` doesn't take.
-        The gnomAD inputs aren't created by the pipeline, so they are exempt.
+        The gnomAD inputs and the published files the rr imports read aren't created
+        by the pipeline, so they are exempt.
         """
         resources = self._get_resources(skip_pre_rank_metrics)
         names = {
@@ -584,7 +594,7 @@ class TestGetConstraintResources:
             for step in resources.pipeline_steps.values()
             for step_resources in (step.input_resources, step.output_resources)
             for name in step_resources
-        } - {"gnomAD resources"}
+        } - {"gnomAD resources", "published DNMs", "published genomic features"}
         assert "prepare_data.py --preprocess-data" in names
         for name in names:
             script, *flags = name.split(" ")
@@ -698,3 +708,43 @@ class TestGetConstraintResources:
             ref_grch38.seg_dup_intervals.path,
             ref_grch38.lcr_intervals.path,
         } <= _input_paths(resources.compute_gene_quality_metrics)
+
+
+class TestGetConstraintResourcesImportSteps:
+    """Test the rr import steps built by the get_constraint_resources function."""
+
+    @pytest.mark.parametrize("test", [False, True])
+    def test_outputs(self, test: bool) -> None:
+        """
+        Test that each step writes its Table, under the test root in a test run.
+
+        The import outputs take neither post-fix.
+        """
+        resources = get_constraint_resources(
+            "4.1.1",
+            overwrite=False,
+            test=test,
+            directory_post_fix="d",
+            path_post_fix="p",
+        )
+        assert (
+            resources.import_dnms.dnm_ht.path
+            == get_dnm_ht(version="4.1.1", test=test).path
+        )
+        assert resources.import_genomic_features.genomic_features_ht.path == (
+            get_genomic_features_ht(version="4.1.1", test=test).path
+        )
+
+    def test_inputs(self) -> None:
+        """Test that the inputs the import steps read are the published files."""
+        resources = get_constraint_resources("4.1.1", overwrite=False, test=True)
+        dnm_dir = "gs://regional_missense_constraint/resources/GRCh38/reference_data"
+        assert resources.import_dnms.asd_dnm_path == (
+            f"{dnm_dir}/Satterstrom_2026_ASD_dnv_SNV_indel.txt.gz"
+        )
+        assert resources.import_dnms.ddd_dnm_path == (
+            f"{dnm_dir}/Satterstrom_2026_DDD_dnv_SNV_indel.txt.gz"
+        )
+        assert resources.import_genomic_features.published_features_path == (
+            "gs://gnomad-nc-constraint-v31-paper/misc/genomic_features13_genome_1kb.txt"
+        )
