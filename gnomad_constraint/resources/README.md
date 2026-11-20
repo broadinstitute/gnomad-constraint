@@ -649,9 +649,9 @@ Public-release flattened constraint table. One row per
 - `loeuf_percentile_thresholds: struct{percentile, decile, sextile}` — LOEUF
   upper-bound thresholds at each granularity (copied from
   `percentile_thresholds.lof` in §10).
-- `regional_rr_params: struct{ridge_penalty, normalization_factors}` — only when the
-  expected counts were adjusted with `--apply-regional-rr`; `regional_rr_globals`
-  (§7) without `per_variant_apply_models_globals` and `per_variant_row_count`.
+- `regional_rr_params: struct` — only when the expected counts were adjusted with
+  `--apply-regional-rr`; `regional_rr_globals` (§7) without
+  `per_variant_apply_models_globals` and `per_variant_row_count`.
 
 ### Rows
 Key + GENCODE annotations + per-group structs:
@@ -853,7 +853,8 @@ rr training set: the site features (§16) prepared for the models by
   of `x`: its `RR_CONTEXT_FEATURES`, or, with `--rr-feature-selection` other than
   `all`, those selected from the feature screen (§21) by
   [`select_rr_features`](../utils/regional_rate.py). A context with no selected
-  feature isn't in it, and gets no model.
+  feature isn't in it, and gets no model; if no context has one, the step raises an
+  error.
 - `rr_training_sites: struct` — copied from the site features (§16).
 - `rr_feature_selection: str` — the `--rr-feature-selection` value: `all`,
   `bonferroni` (Gnocchi's cutoff, `RR_FEATURE_SELECTION_ALPHA / 4 / 13`, or `/ 8` in
@@ -887,12 +888,15 @@ chromosomes (odd or even) and scored on the fold's sites.
 
 ### Globals
 - `ridge_penalty: float64` — the penalty with the lowest held-out log loss summed
-  over contexts and folds, or `RR_RIDGE_PENALTY` (0.3) if no held-out sites could be
-  scored (in a `--test` run only chr20 has features); `--train-rr-models` uses it
-  for every context.
-- `rr_training_row_count: int64` — row count of the training Table the penalty was
-  tuned on; `--train-rr-models` stops with an error if the training Table has
-  another count, since it was then rewritten after the tuning.
+  over contexts and folds. If no held-out sites could be scored (in a `--test` run
+  only chr20 has features), it is the `--rr-penalties` value when there is one, or
+  `RR_RIDGE_PENALTY` (0.3). `--train-rr-models` uses it for every context.
+- `rr_training_globals: struct` — the globals of the training Table the penalty
+  was tuned on (§17: `features`, `rr_training_sites`, `rr_feature_selection`).
+- `rr_training_row_count: int32` — its row count. `--train-rr-models` stops with
+  an error if the training Table has other globals or another count, since it was
+  then rewritten after the tuning (rebuilding it with another
+  `--rr-feature-selection` changes only its globals).
 
 ### Rows
 - `penalty: float64`, `context: str`, `fold: str` — key (`fold` is the held-out
@@ -972,6 +976,8 @@ passed, produced by `--compute-rr` with
     of `per_variant_expected.ht` that have one; rr is divided by it. Empty when rr
     wasn't normalized.
   - `training_sites: struct` — the models' `rr_training_sites` (§16).
+  - `no_model_contexts: array<str>` — contexts with no model (with feature
+    selection, those with no feature selected), which get rr 1.
   - `non_converged_contexts: array<str>` — contexts whose model didn't converge
     and so get rr 1, as if they had no model.
   - `per_variant_apply_models_globals: struct` — the `apply_models_globals` of the
@@ -1008,6 +1014,10 @@ is defined.
 - `features: dict<str, array<str>>` — each context's features screened,
   `RR_CONTEXT_FEATURES`; `--create-rr-training-set` raises an error if they
   differ, rather than leave the features not screened unselected.
+- `rr_site_features_globals: struct`, `rr_site_features_row_count: int32` — the
+  globals (`rr_training_sites`) and row count of the site features (§16) screened;
+  `--create-rr-training-set` raises an error if the site features differ, since
+  they were then rebuilt after the screen.
 
 ### Rows
 - `context: str`, `feature: str` — key. A feature with a single value in a

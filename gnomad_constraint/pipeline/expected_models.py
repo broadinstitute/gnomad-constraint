@@ -118,32 +118,64 @@ def rr_feature_selection_arg(value: str) -> str:
     return value
 
 
+def check_rr_input_record(
+    ht: hl.Table, input_ht: hl.Table, name: str, step: str
+) -> None:
+    """
+    Check that an rr step's output was made from its input Table as it is now.
+
+    The step that wrote ``ht`` records its input's globals and row count as the
+    ``{name}_globals`` and ``{name}_row_count`` globals. If the input has other
+    globals or another row count now, it was rewritten after the step ran, so ``ht``
+    describes other data. The globals record how the input was made (for the
+    training Table, its features and feature selection, which don't change its row
+    count).
+
+    :param ht: Output of ``step``, with the record of its input.
+    :param input_ht: The input Table, as read from disk, so counting its rows reads
+        only metadata.
+    :param name: Prefix of the record's globals.
+    :param step: Flag of the step that wrote ``ht``, for the error message.
+    :return: None.
+    """
+    if f"{name}_globals" not in ht.globals or f"{name}_row_count" not in ht.globals:
+        raise ValueError(
+            f"The {step} output doesn't record the Table it was made from. Rerun"
+            f" {step}."
+        )
+    recorded = hl.eval(ht[f"{name}_row_count"])
+    n_rows = input_ht.count()
+    if recorded != n_rows:
+        raise ValueError(
+            f"{step} ran on a Table with {recorded} rows, but it has {n_rows} now."
+            f" Rerun {step}."
+        )
+    recorded = dict(hl.eval(ht[f"{name}_globals"]))
+    now = dict(hl.eval(input_ht.globals))
+    changed = sorted(
+        k for k in recorded.keys() | now.keys() if recorded.get(k) != now.get(k)
+    )
+    if changed:
+        raise ValueError(
+            f"{step} ran on a Table with other {', '.join(changed)} globals. Rerun"
+            f" {step}."
+        )
+
+
 def get_rr_ridge_penalty(tuning_ht: hl.Table, training_ht: hl.Table) -> float:
     """
     Get the tuned ridge penalty, checking it was tuned on this rr training Table.
 
-    ``--tune-rr-penalty`` records the row count of the training Table it tunes on. If
-    the training Table has another count now, it was rewritten after the tuning, so
-    the penalty was chosen for other data.
+    ``--tune-rr-penalty`` records the training Table's globals and row count
+    (:func:`check_rr_input_record`), so a training Table rebuilt since, with other
+    sites or another ``--rr-feature-selection``, is caught.
 
-    :param tuning_ht: Penalty tuning Table with ``ridge_penalty`` and
-        ``rr_training_row_count`` globals.
-    :param training_ht: rr training Table, as read from disk, so counting its rows
-        reads only metadata.
+    :param tuning_ht: Penalty tuning Table with ``ridge_penalty``,
+        ``rr_training_globals``, and ``rr_training_row_count`` globals.
+    :param training_ht: rr training Table, as read from disk.
     :return: The tuned ridge penalty.
     """
-    if "rr_training_row_count" not in tuning_ht.globals:
-        raise ValueError(
-            "The penalty tuning Table doesn't record the training Table it was tuned"
-            " on. Rerun --tune-rr-penalty."
-        )
-    recorded = hl.eval(tuning_ht.rr_training_row_count)
-    n_rows = training_ht.count()
-    if recorded != n_rows:
-        raise ValueError(
-            f"The ridge penalty was tuned on an rr training Table with {recorded} rows,"
-            f" but it has {n_rows} now. Rerun --tune-rr-penalty."
-        )
+    check_rr_input_record(tuning_ht, training_ht, "rr_training", "--tune-rr-penalty")
 
     return hl.eval(tuning_ht.ridge_penalty)
 
@@ -283,6 +315,11 @@ def main(args: argparse.Namespace) -> None:
             ht = screen_regional_mutation_rate_features(
                 prepare_regional_mutation_rate_training_ht(site_ht, RR_CONTEXT_FEATURES)
             )
+            # --create-rr-training-set checks the screen is of its site features.
+            ht = ht.annotate_globals(
+                rr_site_features_globals=site_ht.index_globals(),
+                rr_site_features_row_count=site_ht.count(),
+            )
             ht.write(res.rr_feature_screen_ht.path, overwrite=overwrite)
             logger.info("Done screening the rr features.")
 
@@ -294,9 +331,11 @@ def main(args: argparse.Namespace) -> None:
             site_ht = res.rr_site_features_ht.ht()
             features = RR_CONTEXT_FEATURES
             if args.rr_feature_selection != RR_FEATURE_SELECTION_ALL:
-                features = select_rr_features(
-                    res.rr_feature_screen_ht.ht(), args.rr_feature_selection
+                screen_ht = res.rr_feature_screen_ht.ht()
+                check_rr_input_record(
+                    screen_ht, site_ht, "rr_site_features", "--screen-rr-features"
                 )
+                features = select_rr_features(screen_ht, args.rr_feature_selection)
                 logger.info(
                     "Features selected by %s: %s", args.rr_feature_selection, features
                 )
@@ -325,11 +364,20 @@ def main(args: argparse.Namespace) -> None:
 
             training_ht = res.rr_training_ht.ht()
             ht = tune_regional_mutation_rate_penalty(training_ht, args.rr_penalties)
-            penalty = choose_regional_mutation_rate_penalty(ht, RR_RIDGE_PENALTY)
+            # With no held-out sites to score (as in --test), use RR_RIDGE_PENALTY,
+            # unless only one penalty was asked for.
+            default_penalty = (
+                args.rr_penalties[0]
+                if len(set(args.rr_penalties)) == 1
+                else RR_RIDGE_PENALTY
+            )
+            penalty = choose_regional_mutation_rate_penalty(ht, default_penalty)
             logger.info("Chosen ridge penalty: %s", penalty)
             # --train-rr-models checks the penalty was tuned on its training Table.
             ht = ht.annotate_globals(
-                ridge_penalty=penalty, rr_training_row_count=training_ht.count()
+                ridge_penalty=penalty,
+                rr_training_globals=training_ht.index_globals(),
+                rr_training_row_count=training_ht.count(),
             )
             ht.write(res.rr_penalty_tuning_ht.path, overwrite=overwrite)
             logger.info("Done tuning the rr ridge penalty.")
@@ -558,7 +606,9 @@ def get_script_argument_parser() -> argparse.ArgumentParser:
     rr_model_args.add_argument(
         "--rr-penalties",
         help=(
-            "Per-site ridge penalties tried by --tune-rr-penalty. Default is"
+            "Per-site ridge penalties tried by --tune-rr-penalty. With one penalty,"
+            " that penalty is used even when no held-out sites can be scored (as in"
+            " --test), where several fall back to RR_RIDGE_PENALTY. Default is"
             f" {RR_RIDGE_PENALTIES}."
         ),
         type=float,

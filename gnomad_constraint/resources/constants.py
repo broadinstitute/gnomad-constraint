@@ -357,7 +357,8 @@ RR_RIDGE_PENALTY = 0.3
 Ridge penalty used when ``--tune-rr-penalty`` has no held-out sites to score.
 
 In a ``--test`` run only chr20 has features (chrX and chrY have none), so there is
-no other chromosome to hold out.
+no other chromosome to hold out. When ``--rr-penalties`` has a single value, such as
+0 for Gnocchi's unpenalized fit, that value is used instead.
 """
 
 RR_BACKGROUND_FRACTION = 0.05
