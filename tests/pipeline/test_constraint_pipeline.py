@@ -32,6 +32,7 @@ from gnomad_constraint.pipeline.expected_counts import (
     get_coverage_model,
 )
 from gnomad_constraint.pipeline.expected_models import (
+    check_rr_input_record,
     check_skip_coverage_model,
     get_rr_ridge_penalty,
 )
@@ -46,35 +47,76 @@ from gnomad_constraint.resources.constants import (
 )
 
 
-class TestGetRrRidgePenalty:
-    """Test the get_rr_ridge_penalty function."""
+class TestCheckRrInputRecord:
+    """Test the check_rr_input_record function."""
 
     @staticmethod
-    def _tuning_ht(row_count: Optional[int]) -> hl.Table:
-        """Return an empty tuning Table, recording the training row count if given."""
+    def _input_ht(n_rows: int = 5, selection: str = "all") -> hl.Table:
+        """Return a stand-in training Table with ``n_rows`` rows."""
+        return hl.utils.range_table(n_rows).annotate_globals(
+            features={"AAA": ["a", "b"]}, rr_feature_selection=selection
+        )
+
+    @staticmethod
+    def _output_ht(input_ht: Optional[hl.Table]) -> hl.Table:
+        """Return an empty step output, recording ``input_ht`` if given."""
         ht = hl.utils.range_table(0).annotate_globals(ridge_penalty=0.3)
-        if row_count is not None:
-            ht = ht.annotate_globals(rr_training_row_count=hl.int64(row_count))
+        if input_ht is not None:
+            ht = ht.annotate_globals(
+                rr_training_globals=input_ht.index_globals(),
+                rr_training_row_count=input_ht.count(),
+            )
         return ht
 
-    def test_matching_training_table(self) -> None:
-        """Test that a penalty tuned on a training Table with the same rows is returned."""
-        assert get_rr_ridge_penalty(self._tuning_ht(5), hl.utils.range_table(5)) == 0.3
+    def _check(self, output_ht: hl.Table, input_ht: hl.Table) -> None:
+        """Check ``output_ht``'s record of ``input_ht``."""
+        check_rr_input_record(output_ht, input_ht, "rr_training", "--tune-rr-penalty")
 
-    def test_changed_training_table(self) -> None:
+    def test_matching_input(self) -> None:
+        """Test that an output made from the input as it is now passes."""
+        self._check(self._output_ht(self._input_ht()), self._input_ht())
+
+    def test_changed_rows(self) -> None:
         """
-        Test that a penalty tuned on another training Table is rejected.
+        Test that an input with another row count is rejected.
 
         Regression test: rerunning ``--create-rr-training-set`` without
         ``--tune-rr-penalty`` reused the old penalty without a warning.
         """
-        with pytest.raises(ValueError, match="4 rows"):
-            get_rr_ridge_penalty(self._tuning_ht(4), hl.utils.range_table(5))
+        with pytest.raises(ValueError, match="4 rows, but it has 5"):
+            self._check(self._output_ht(self._input_ht(4)), self._input_ht())
+
+    def test_changed_globals(self) -> None:
+        """
+        Test that an input with the same rows but other globals is rejected.
+
+        Regression test: a training Table rebuilt with another
+        ``--rr-feature-selection`` has the same rows, so the row count alone
+        passed, and the penalty tuned for other features was used.
+        """
+        with pytest.raises(ValueError, match="other rr_feature_selection globals"):
+            self._check(
+                self._output_ht(self._input_ht()), self._input_ht(selection="1e-2")
+            )
 
     def test_no_record(self) -> None:
-        """Test that a tuning Table that doesn't record its training Table is rejected."""
+        """Test that an output that doesn't record its input is rejected."""
         with pytest.raises(ValueError, match="doesn't record"):
-            get_rr_ridge_penalty(self._tuning_ht(None), hl.utils.range_table(5))
+            self._check(self._output_ht(None), self._input_ht())
+
+
+class TestGetRrRidgePenalty:
+    """Test the get_rr_ridge_penalty function."""
+
+    def test_checked_penalty(self) -> None:
+        """Test that the penalty is returned only for the training Table it was tuned on."""
+        training_ht = TestCheckRrInputRecord._input_ht()
+        tuning_ht = TestCheckRrInputRecord._output_ht(training_ht)
+        assert get_rr_ridge_penalty(tuning_ht, training_ht) == 0.3
+        with pytest.raises(ValueError, match="Rerun --tune-rr-penalty"):
+            get_rr_ridge_penalty(
+                tuning_ht, TestCheckRrInputRecord._input_ht(selection="bonferroni")
+            )
 
 
 class TestCheckSkipCoverageModel:
@@ -759,11 +801,13 @@ class TestScriptResources:
 
         gnomad_methods' prepare keeps only the ``features`` global, so the step has
         to carry the site features' ``rr_training_sites`` and the feature selection.
-        With a cutoff, the features are those selected from the screen; by default,
-        every feature in ``RR_CONTEXT_FEATURES``.
+        With a cutoff, the features are those selected from the screen, after checking
+        the screen is of these site features; by default, every feature in
+        ``RR_CONTEXT_FEATURES``.
         """
         calls = []
         folds = []
+        checks = []
         selects = []
         selected = {"AAA": ["GC_content_1k"]}
         training_ht = mock.MagicMock()
@@ -777,18 +821,26 @@ class TestScriptResources:
                     calls, training_ht
                 ),
                 "get_rr_fold_expr": self._recorder(folds, "fold"),
+                "check_rr_input_record": self._recorder(checks),
                 "select_rr_features": self._recorder(selects, selected),
             },
         )
         res = resources.create_rr_training_set
         site_ht = res.rr_site_features_ht.ht.return_value
         selected_all = selection in (None, "all")
+        screen_ht = res.rr_feature_screen_ht.ht.return_value
         assert folds == [((site_ht.locus,), {})]
-        assert selects == (
+        assert checks == (
             []
             if selected_all
-            else [((res.rr_feature_screen_ht.ht.return_value, selection), {})]
+            else [
+                (
+                    (screen_ht, site_ht, "rr_site_features", "--screen-rr-features"),
+                    {},
+                )
+            ]
         )
+        assert selects == ([] if selected_all else [((screen_ht, selection), {})])
         features = RR_CONTEXT_FEATURES if selected_all else selected
         assert calls == [((site_ht, features), {"fold_expr": "fold"})]
         training_ht.annotate_globals.assert_called_once_with(
@@ -804,7 +856,8 @@ class TestScriptResources:
         Test that ``--screen-rr-features`` screens every feature of the site features.
 
         The screen runs on the site features prepared with ``RR_CONTEXT_FEATURES``,
-        so every feature a model could use is tested.
+        so every feature a model could use is tested, and records the site features'
+        globals and row count for ``--create-rr-training-set`` to check.
         """
         prepares = []
         screens = []
@@ -827,7 +880,12 @@ class TestScriptResources:
             ((res.rr_site_features_ht.ht.return_value, RR_CONTEXT_FEATURES), {})
         ]
         assert screens == [(("prepared",), {})]
-        screen_ht.write.assert_called_once_with(
+        site_ht = res.rr_site_features_ht.ht.return_value
+        screen_ht.annotate_globals.assert_called_once_with(
+            rr_site_features_globals=site_ht.index_globals.return_value,
+            rr_site_features_row_count=site_ht.count.return_value,
+        )
+        screen_ht.annotate_globals.return_value.write.assert_called_once_with(
             res.rr_feature_screen_ht.path, overwrite=False
         )
 
@@ -843,8 +901,8 @@ class TestScriptResources:
         """
         Test that ``--tune-rr-penalty`` tunes the given penalties and records its choice.
 
-        The fallback penalty is ``RR_RIDGE_PENALTY``, and the training Table's row
-        count is recorded for ``--train-rr-models`` to check.
+        The fallback penalty is ``RR_RIDGE_PENALTY``, and the training Table's globals
+        and row count are recorded for ``--train-rr-models`` to check.
         """
         tunes = []
         chooses = []
@@ -862,7 +920,9 @@ class TestScriptResources:
         assert tunes == [((training_ht, [0.1, 0.2]), {})]
         assert chooses == [((tuning_ht, RR_RIDGE_PENALTY), {})]
         tuning_ht.annotate_globals.assert_called_once_with(
-            ridge_penalty=0.2, rr_training_row_count=training_ht.count.return_value
+            ridge_penalty=0.2,
+            rr_training_globals=training_ht.index_globals.return_value,
+            rr_training_row_count=training_ht.count.return_value,
         )
 
     def test_train_rr_models(self, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -890,9 +890,12 @@ chromosomes (odd or even) and scored on the fold's sites.
   over contexts and folds, or `RR_RIDGE_PENALTY` (0.3) if no held-out sites could be
   scored (in a `--test` run only chr20 has features); `--train-rr-models` uses it
   for every context.
-- `rr_training_row_count: int64` — row count of the training Table the penalty was
-  tuned on; `--train-rr-models` stops with an error if the training Table has
-  another count, since it was then rewritten after the tuning.
+- `rr_training_globals: struct` — the globals of the training Table the penalty
+  was tuned on (§17: `features`, `rr_training_sites`, `rr_feature_selection`).
+- `rr_training_row_count: int32` — its row count. `--train-rr-models` stops with
+  an error if the training Table has other globals or another count, since it was
+  then rewritten after the tuning (rebuilding it with another
+  `--rr-feature-selection` changes only its globals).
 
 ### Rows
 - `penalty: float64`, `context: str`, `fold: str` — key (`fold` is the held-out
@@ -1008,6 +1011,10 @@ is defined.
 - `features: dict<str, array<str>>` — each context's features screened,
   `RR_CONTEXT_FEATURES`; `--create-rr-training-set` raises an error if they
   differ, rather than leave the features not screened unselected.
+- `rr_site_features_globals: struct`, `rr_site_features_row_count: int32` — the
+  globals (`rr_training_sites`) and row count of the site features (§16) screened;
+  `--create-rr-training-set` raises an error if the site features differ, since
+  they were then rebuilt after the screen.
 
 ### Rows
 - `context: str`, `feature: str` — key. A feature with a single value in a
