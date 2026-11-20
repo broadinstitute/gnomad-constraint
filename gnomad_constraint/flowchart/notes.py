@@ -123,11 +123,16 @@ NOTES = {
                 " synonymous DNM sites from a sample of other synonymous sites by their"
                 " 1kb window's features. ``--compute-rr`` turns the models into a rate"
                 " per window, and ``--apply-regional-rr`` scales expected counts by it."
+                " To fit rr as Gnocchi did, ``--screen-rr-features`` tests each feature"
+                " on its own, ``--rr-feature-selection`` keeps those that pass a"
+                " cutoff, ``--rr-penalties 0`` drops the penalty, and"
+                " ``--skip-rr-normalization`` leaves rr unnormalized."
             ),
             "steps": [
                 "import_dnms",
                 "import_genomic_features",
                 "create_rr_site_features",
+                "screen_rr_features",
                 "create_rr_training_set",
                 "tune_rr_penalty",
                 "train_rr_models",
@@ -914,9 +919,16 @@ NOTES = {
                 " plateau models' coverage range, with their window's features"
             ),
         },
+        "screen_rr_features": {
+            "summary": (
+                "Optional: each context's features tested one at a time, for"
+                " Gnocchi's feature selection"
+            ),
+        },
         "create_rr_training_set": {
             "summary": (
-                "Each site's label, context, chromosome fold, and its context's features"
+                "Each site's label, context, chromosome fold, and its context's"
+                " features, all of them or those selected from the screen"
             ),
         },
         "tune_rr_penalty": {
@@ -926,12 +938,12 @@ NOTES = {
             ),
         },
         "train_rr_models": {
-            "summary": "One ridge-penalized logistic model per context",
+            "summary": "One logistic model per context, ridge-penalized by default",
         },
         "compute_rr": {
             "summary": (
                 "rr per 1kb window and context, normalized on the per-variant expected"
-                " counts"
+                " counts unless --skip-rr-normalization"
             ),
         },
         "aggregate_per_variant_expected": {
