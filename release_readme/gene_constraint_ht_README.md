@@ -39,6 +39,13 @@ Parameters used when applying the models to compute expected variant counts.
 - `apply_models_params.log10_coverage`: Boolean indicating whether log10 transformation was applied to coverage values in the coverage correction model
 - `apply_models_params.exome_coverage_metric`: Exome coverage measure the coverage cutoffs and models use (`AN_percent`: allele number as a percent of the total possible)
 
+### `regional_rr_params`
+
+Present only when the expected variant counts were multiplied by a regional mutation rate (rr): a per-1kb-window, per-trinucleotide-context factor modeled from synonymous de novo mutations and regional genomic features.
+
+- `regional_rr_params.ridge_penalty`: Per-site ridge penalty of the rr logistic models
+- `regional_rr_params.normalization_factors`: Dictionary mapping each trinucleotide context to the factor rr was divided by, so that rr averages 1, weighted by the adj expected count, over the exome synonymous Ensembl MANE Select sites in rr windows in each context
+
 ### `downsamplings`
 
 Struct mapping each genetic ancestry group to an array of downsampling levels (as integers) corresponding to the indices in `gen_anc_obs` and `gen_anc_exp` arrays in the row fields.

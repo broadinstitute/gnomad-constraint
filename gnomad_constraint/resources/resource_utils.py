@@ -632,6 +632,7 @@ def get_constraint_resources(
     path_post_fix: Optional[str] = None,
     skip_pre_rank_metrics: bool = False,
     use_aggregated_expected: bool = False,
+    apply_regional_rr: bool = False,
 ) -> PipelineResourceCollection:
     """
     Get PipelineResourceCollection for all resources needed in the constraint pipeline.
@@ -648,9 +649,20 @@ def get_constraint_resources(
     :param use_aggregated_expected: Whether ``--aggregate-by-constraint-groups``
         reads the ``--apply-models-aggregated`` output instead of the
         ``--aggregate-per-variant-expected`` output. Default is False.
+    :param apply_regional_rr: Whether the constraint metrics steps use the regional
+        rr. ``--aggregate-per-variant-expected`` then applies the rr Table, which
+        becomes one of its inputs, and the outputs from that step on get an ``rr``
+        path post-fix, so they don't replace the Tables without rr. Can't be combined
+        with ``use_aggregated_expected``. Default is False.
     :return: PipelineResourceCollection containing resources for all steps of the
         constraint pipeline.
     """
+    if apply_regional_rr and use_aggregated_expected:
+        raise ValueError(
+            "--apply-regional-rr can't be combined with --use-aggregated-expected:"
+            " the --apply-models-aggregated output has no rr."
+        )
+
     # Initialize constraint pipeline resource collection.
     constraint_pipeline = PipelineResourceCollection(
         pipeline_name="constraint",
@@ -674,6 +686,12 @@ def get_constraint_resources(
         "test": test,
         "directory_post_fix": directory_post_fix,
     }
+
+    # With rr, the outputs from --aggregate-per-variant-expected on get an "rr" path
+    # post-fix, so they sit beside the Tables without rr instead of replacing them.
+    metrics_post_fix = path_post_fix
+    if apply_regional_rr:
+        metrics_post_fix = f"{path_post_fix}.rr" if path_post_fix else "rr"
 
     # The rr imports take neither post-fix.
     import_dnms = PipelineStepResourceCollection(
@@ -763,10 +781,21 @@ def get_constraint_resources(
         "constraint_metrics.py --aggregate-per-variant-expected",
         output_resources={
             "apply_ht": get_aggregated_per_variant_expected(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=metrics_post_fix
             )
         },
         pipeline_input_steps=[apply_models_per_variant],
+        add_input_resources=(
+            {
+                "expected_counts.py --compute-rr": {
+                    "regional_rr_ht": get_regional_rr_ht(
+                        **common_params, path_post_fix=path_post_fix
+                    )
+                }
+            }
+            if apply_regional_rr
+            else None
+        ),
     )
     apply_models_aggregated = PipelineStepResourceCollection(
         "expected_counts.py --apply-models-aggregated",
@@ -782,7 +811,7 @@ def get_constraint_resources(
             "constraint_metrics.py --aggregate-by-constraint-groups --use-aggregated-expected",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
-                    **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=metrics_post_fix
                 )
             },
             pipeline_input_steps=[apply_models_aggregated],
@@ -792,7 +821,7 @@ def get_constraint_resources(
             "constraint_metrics.py --aggregate-by-constraint-groups",
             output_resources={
                 "constraint_group_ht": get_constraint_group_ht(
-                    **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=metrics_post_fix
                 )
             },
             pipeline_input_steps=[aggregate_per_variant_expected],
@@ -808,14 +837,14 @@ def get_constraint_resources(
                     "pre_rank_constraint_metrics_ht": (
                         get_pre_rank_constraint_metrics_dataset(
                             **common_params,
-                            path_post_fix=path_post_fix,
+                            path_post_fix=metrics_post_fix,
                         )
                     )
                 }
             },
             output_resources={
                 "constraint_metrics_ht": get_constraint_metrics_dataset(
-                    **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=metrics_post_fix
                 ),
             },
         )
@@ -826,11 +855,11 @@ def get_constraint_resources(
                 "pre_rank_constraint_metrics_ht": (
                     get_pre_rank_constraint_metrics_dataset(
                         **common_params,
-                        path_post_fix=path_post_fix,
+                        path_post_fix=metrics_post_fix,
                     )
                 ),
                 "constraint_metrics_ht": get_constraint_metrics_dataset(
-                    **common_params, path_post_fix=path_post_fix
+                    **common_params, path_post_fix=metrics_post_fix
                 ),
             },
             pipeline_input_steps=[
@@ -842,7 +871,7 @@ def get_constraint_resources(
         "constraint_metrics.py --prepare-release",
         output_resources={
             "release_ht": get_release_constraint_ht(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=metrics_post_fix
             ),
         },
         pipeline_input_steps=[compute_constraint_metrics],
@@ -859,10 +888,10 @@ def get_constraint_resources(
         "constraint_metrics.py --export-release-tsv",
         output_resources={
             "release_tsv": get_release_constraint_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=metrics_post_fix
             ),
             "lof_threshold_tsv": get_lof_threshold_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=metrics_post_fix
             ),
         },
         pipeline_input_steps=[prepare_release],
@@ -871,7 +900,7 @@ def get_constraint_resources(
         "constraint_metrics.py --export-release-downsampling-tsv",
         output_resources={
             "release_downsampling_tsv": get_release_downsampling_tsv_path(
-                **common_params, path_post_fix=path_post_fix
+                **common_params, path_post_fix=metrics_post_fix
             ),
         },
         pipeline_input_steps=[prepare_release],

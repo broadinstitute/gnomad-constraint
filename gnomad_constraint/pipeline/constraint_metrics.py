@@ -106,6 +106,50 @@ def check_constraint_group_input(
         )
 
 
+def check_regional_rr_input(per_variant_ht: hl.Table, regional_rr_ht: hl.Table) -> None:
+    """
+    Check that the rr Table was normalized on this per-variant expected Table.
+
+    ``expected_counts.py --compute-rr`` records the ``apply_models_globals``
+    (the fitted plateau and coverage models) and the row count of the per-variant
+    expected Table it normalizes rr on. If the per-variant Table being aggregated
+    differs in either, it was rewritten after rr was computed, and the rr
+    normalization factors no longer match it. An rr Table without that record, in
+    its ``rr_globals``, is rejected too: it can't be checked, and the release records
+    the rr settings from ``rr_globals``.
+
+    :param per_variant_ht: Per-variant expected Table to aggregate, as read from
+        disk, so counting its rows reads only metadata.
+    :param regional_rr_ht: rr Table to apply.
+    :return: None.
+    """
+    if "rr_globals" not in regional_rr_ht.globals or any(
+        f not in regional_rr_ht.rr_globals
+        for f in ["per_variant_apply_models_globals", "per_variant_row_count"]
+    ):
+        raise ValueError(
+            "The rr Table doesn't record the per-variant expected Table it was"
+            " normalized on. Rerun expected_counts.py --compute-rr."
+        )
+
+    rr_globals = hl.eval(regional_rr_ht.rr_globals)
+    if rr_globals.per_variant_apply_models_globals != hl.eval(
+        per_variant_ht.apply_models_globals
+    ):
+        raise ValueError(
+            "The rr Table was normalized on a per-variant expected Table with"
+            " different models than the one being aggregated. Rerun"
+            " expected_counts.py --compute-rr."
+        )
+    n_rows = per_variant_ht.count()
+    if rr_globals.per_variant_row_count != n_rows:
+        raise ValueError(
+            "The rr Table was normalized on a per-variant expected Table with"
+            f" {rr_globals.per_variant_row_count} rows, but the one being aggregated"
+            f" has {n_rows}. Rerun expected_counts.py --compute-rr."
+        )
+
+
 def main(args: argparse.Namespace) -> None:
     """Execute the constraint metrics steps of the constraint pipeline."""
     hl.init(
@@ -132,6 +176,7 @@ def main(args: argparse.Namespace) -> None:
         path_post_fix=path_post_fix,
         skip_pre_rank_metrics=args.skip_pre_rank_metrics,
         use_aggregated_expected=args.use_aggregated_expected,
+        apply_regional_rr=args.apply_regional_rr,
     )
 
     try:
@@ -147,7 +192,11 @@ def main(args: argparse.Namespace) -> None:
             hl._set_flags(use_new_shuffle="1")
 
             ht = res.per_variant_apply_ht.ht()
-            ht = aggregate_per_variant_expected_ht(ht)
+            regional_rr_ht = None
+            if args.apply_regional_rr:
+                regional_rr_ht = res.regional_rr_ht.ht()
+                check_regional_rr_input(ht, regional_rr_ht)
+            ht = aggregate_per_variant_expected_ht(ht, regional_rr_ht=regional_rr_ht)
             ht.write(res.apply_ht.path, overwrite=overwrite)
             hl._set_flags(use_new_shuffle=None)
 
@@ -340,6 +389,19 @@ if __name__ == "__main__":
         help=(
             "Same as --test in this script; prepare_data.py --test-gene-list applies"
             " the six-gene filter."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--apply-regional-rr",
+        help=(
+            "Use the regional mutation rate (rr). --aggregate-per-variant-expected"
+            " multiplies each variant's expected counts by the rr of its 1kb window"
+            " and context, from the Table expected_counts.py --compute-rr writes with"
+            " the same --version, --test, --directory-post-fix, and --path-post-fix."
+            " The Tables from that step on get an rr path post-fix, so they sit beside"
+            " the ones without rr; pass it to every step of an rr run. Can't be"
+            " combined with --use-aggregated-expected."
         ),
         action="store_true",
     )

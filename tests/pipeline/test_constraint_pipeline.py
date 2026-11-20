@@ -17,10 +17,12 @@ import pytest
 from gnomad.resources.resource_utils import ExpressionResource, TableResource
 
 import gnomad_constraint.pipeline as pipeline
+import gnomad_constraint.pipeline.constraint_metrics as constraint_metrics
 import gnomad_constraint.resources.resource_utils as constraint_res
 import gnomad_constraint.utils.constraint as constraint_utils
 from gnomad_constraint.pipeline.constraint_metrics import (
     check_constraint_group_input,
+    check_regional_rr_input,
     get_release_downsamplings,
 )
 from gnomad_constraint.pipeline.expected_counts import (
@@ -165,6 +167,100 @@ class TestCheckConstraintGroupInput:
                 use_aggregated_expected=use_aggregated_expected,
             )
         assert bool(caplog.records) == warned
+
+
+class TestCheckRegionalRrInput:
+    """Test the check_regional_rr_input function."""
+
+    MODELS = hl.Struct(coverage_model=[1.0, 0.5], log10_coverage=False)
+
+    @classmethod
+    def _per_variant_ht(cls, coverage_model: List[float]) -> hl.Table:
+        """Return a three-row per-variant Table with the given apply_models_globals."""
+        ht = hl.utils.range_table(3)
+        return ht.annotate_globals(
+            apply_models_globals=cls.MODELS.annotate(coverage_model=coverage_model)
+        )
+
+    @classmethod
+    def _rr_ht(cls, record: bool, row_count: int = 3) -> hl.Table:
+        """
+        Return an empty rr Table, recording the per-variant Table it was normalized on.
+
+        :param record: Whether ``rr_globals`` records the per-variant Table's models
+            and row count.
+        :param row_count: Row count to record for the per-variant Table. Default
+            matches ``_per_variant_ht``.
+        :return: rr Table.
+        """
+        rr_globals = hl.struct(ridge_penalty=0.3)
+        if record:
+            rr_globals = rr_globals.annotate(
+                per_variant_apply_models_globals=hl.literal(cls.MODELS),
+                per_variant_row_count=hl.int64(row_count),
+            )
+        return hl.utils.range_table(0).annotate_globals(rr_globals=rr_globals)
+
+    @staticmethod
+    def _no_rr_globals_ht() -> hl.Table:
+        """Return an empty rr Table with no ``rr_globals``."""
+        return hl.utils.range_table(0)
+
+    def test_matching_models(self) -> None:
+        """Test that an rr Table normalized on the same models passes."""
+        check_regional_rr_input(
+            self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(True)
+        )
+
+    def test_changed_models(self) -> None:
+        """
+        Test that rr normalized on a per-variant Table with other models is rejected.
+
+        This happens when ``--apply-models-per-variant --overwrite`` is rerun after
+        ``--compute-rr``, which leaves the rr normalization factors stale.
+        """
+        with pytest.raises(ValueError, match="different models"):
+            check_regional_rr_input(self._per_variant_ht([1.0, 0.6]), self._rr_ht(True))
+
+    def test_changed_row_count(self) -> None:
+        """
+        Test that rr normalized on a per-variant Table with other rows is rejected.
+
+        The models only change when the data they are fit on changes, so a
+        per-variant Table rebuilt from other data with the same models passed the
+        model check, although the rr normalization factors no longer matched it.
+        """
+        with pytest.raises(ValueError, match="2 rows"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model),
+                self._rr_ht(True, row_count=2),
+            )
+
+    def test_no_rr_globals(self) -> None:
+        """
+        Test that an rr Table with no ``rr_globals`` is rejected.
+
+        Regression test: such a Table was applied with only a warning, and then the
+        release had no ``regional_rr_params``, as if rr hadn't been applied.
+        """
+        with pytest.raises(ValueError, match="doesn't record"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model),
+                self._no_rr_globals_ht(),
+            )
+
+    def test_rr_globals_without_the_record(self) -> None:
+        """
+        Test that ``rr_globals`` without the recorded models is rejected.
+
+        Regression test: such a Table, from rr code older than the record, passed
+        with a warning, and then ``--prepare-release`` raised a KeyError when it
+        dropped ``per_variant_apply_models_globals`` from the release globals.
+        """
+        with pytest.raises(ValueError, match="doesn't record"):
+            check_regional_rr_input(
+                self._per_variant_ht(self.MODELS.coverage_model), self._rr_ht(False)
+            )
 
 
 class TestGetReleaseDownsamplings:
@@ -372,6 +468,11 @@ class TestScriptResources:
                 ["--use-aggregated-expected"],
                 {"use_aggregated_expected": True},
             ),
+            (
+                "constraint_metrics",
+                ["--apply-regional-rr"],
+                {"apply_regional_rr": True},
+            ),
         ],
     )
     def test_get_constraint_resources_call(
@@ -414,6 +515,7 @@ class TestScriptResources:
             "path_post_fix": None,
             "skip_pre_rank_metrics": False,
             "use_aggregated_expected": False,
+            "apply_regional_rr": False,
             **expected,
         }
 
@@ -448,6 +550,57 @@ class TestScriptResources:
         _run_script(monkeypatch, "prepare_data", flags)
 
         assert calls[0]["skip_coverage_model"] == skip_coverage_model
+
+    @pytest.mark.parametrize("apply_regional_rr", [False, True])
+    def test_aggregate_per_variant_expected_rr(
+        self, monkeypatch: pytest.MonkeyPatch, apply_regional_rr: bool
+    ) -> None:
+        """
+        Test that ``--aggregate-per-variant-expected`` checks and applies rr with the flag.
+
+        Regression test: no test ran this part of ``main``, so the suite still passed
+        with the check removed and the rr Table no longer passed to
+        ``aggregate_per_variant_expected_ht``, which would write unscaled counts.
+        """
+        parse_args = argparse.ArgumentParser.parse_args
+        parsers = []
+
+        def get_parser(parser: argparse.ArgumentParser, *args: Any) -> None:
+            parsers.append(parser)
+            raise _StopRun
+
+        monkeypatch.setattr(argparse.ArgumentParser, "parse_args", get_parser)
+        _run_script(monkeypatch, "constraint_metrics", [])
+        flags = ["--aggregate-per-variant-expected"]
+        if apply_regional_rr:
+            flags.append("--apply-regional-rr")
+        args = parse_args(parsers[0], flags)
+
+        resources = mock.MagicMock()
+        checks = []
+        aggregates = []
+
+        def aggregate(ht: Any, **kwargs: Any) -> mock.MagicMock:
+            aggregates.append((ht, kwargs))
+            return mock.MagicMock()
+
+        monkeypatch.setattr(
+            constraint_res, "get_constraint_resources", lambda *a, **k: resources
+        )
+        monkeypatch.setattr(
+            constraint_metrics, "check_regional_rr_input", lambda *a: checks.append(a)
+        )
+        monkeypatch.setattr(
+            constraint_metrics, "aggregate_per_variant_expected_ht", aggregate
+        )
+        monkeypatch.setattr(hl, "_set_flags", lambda **kwargs: None)
+        constraint_metrics.main(args)
+
+        res = resources.aggregate_per_variant_expected
+        per_variant_ht = res.per_variant_apply_ht.ht.return_value
+        rr_ht = res.regional_rr_ht.ht.return_value if apply_regional_rr else None
+        assert checks == ([(per_variant_ht, rr_ht)] if apply_regional_rr else [])
+        assert aggregates == [(per_variant_ht, {"regional_rr_ht": rr_ht})]
 
     @pytest.mark.parametrize("script", SCRIPTS)
     def test_reads_only_its_own_options(
