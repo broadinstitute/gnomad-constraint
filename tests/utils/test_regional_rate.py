@@ -1,6 +1,6 @@
 """Tests for the regional mutation rate (rr) functions in ``gnomad_constraint.utils.regional_rate``."""
 
-from typing import Optional
+from typing import Optional, Sequence
 
 import hail as hl
 import numpy as np
@@ -552,14 +552,14 @@ class TestComputeRrHt:
 
     @staticmethod
     def _models_ht(
-        context_feature: Optional[dict] = None, converged: bool = True
+        context_feature: Optional[dict] = None, non_converged: Sequence[str] = ()
     ) -> hl.Table:
         """
         Return models with rate ``expit(x - 1) / 0.5`` of one feature, penalty 0.3.
 
         :param context_feature: Each model's context and feature. Default is one AAA
             model of ``a``.
-        :param converged: Whether the models converged. Default is True.
+        :param non_converged: Contexts whose model didn't converge. Default is none.
         """
         ht = hl.Table.parallelize(
             [
@@ -573,7 +573,7 @@ class TestComputeRrHt:
                     "ave": 0.5,
                     "n_mutated": 10,
                     "n_background": 10,
-                    "converged": converged,
+                    "converged": context not in non_converged,
                 }
                 for context, feature in (context_feature or {"AAA": "a"}).items()
             ],
@@ -667,18 +667,27 @@ class TestComputeRrHt:
         """
         Test that a context whose model didn't converge gets rr 1.0, and is recorded.
 
+        AAA's model converged and ACA's didn't, so AAA keeps its rate and ACA gets
+        1.0 in every window, as if it had no model. With only a non-converged model,
+        no window would have an rr, so nothing would be checked.
+
         Regression test: a non-converged fit was applied as is, and nothing past the
         models Table recorded which contexts it was.
         """
         ht = compute_rr_ht(
             self._features_ht(),
-            self._models_ht(converged=False),
+            self._models_ht({"AAA": "a", "ACA": "a"}, non_converged=["ACA"]),
             _per_variant_ht(
                 [(10, "ENST1", True, "synonymous_variant", "AAA", 1.0)],
             ),
+            normalize=False,
         )
-        assert all(r.adj_r["AAA"] == 1.0 for r in ht.collect())
-        assert hl.eval(ht.rr_globals.non_converged_contexts) == ["AAA"]
+        rr = {r.interval.start.position: r.adj_r for r in ht.collect()}
+        assert sorted(rr) == [1, 1001]
+        assert rr[1]["AAA"] == pytest.approx(2 / (1 + np.exp(0.5)))
+        assert rr[1001]["AAA"] == pytest.approx(2 / (1 + np.exp(-0.5)))
+        assert rr[1]["ACA"] == rr[1001]["ACA"] == 1.0
+        assert hl.eval(ht.rr_globals.non_converged_contexts) == ["ACA"]
 
     def test_window_missing_a_models_feature(self) -> None:
         """

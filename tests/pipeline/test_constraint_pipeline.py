@@ -44,6 +44,7 @@ from gnomad_constraint.resources.constants import (
     RR_CONTEXT_FEATURES,
     RR_GENE_FLAGS_VERSION,
     RR_RIDGE_PENALTY,
+    RR_TRAINING_N_PARTITIONS,
 )
 
 
@@ -764,6 +765,7 @@ class TestScriptResources:
         ``--skip-qc-flagged-gene-filter`` ignored.
         """
         calls = []
+        site_ht = mock.MagicMock()
         flags = ["--create-rr-site-features"]
         if skip_filter:
             flags.append("--skip-qc-flagged-gene-filter")
@@ -771,7 +773,7 @@ class TestScriptResources:
             monkeypatch,
             expected_models,
             flags,
-            {"create_rr_site_features_ht": self._recorder(calls)},
+            {"create_rr_site_features_ht": self._recorder(calls, site_ht)},
         )
         res = resources.create_rr_site_features
         assert calls == [
@@ -791,6 +793,11 @@ class TestScriptResources:
                 },
             )
         ]
+        coalesced = site_ht.checkpoint.return_value.naive_coalesce
+        coalesced.assert_called_once_with(RR_TRAINING_N_PARTITIONS)
+        coalesced.return_value.write.assert_called_once_with(
+            res.rr_site_features_ht.path, overwrite=False
+        )
 
     @pytest.mark.parametrize("selection", [None, "all", "bonferroni", "1e-2"])
     def test_create_rr_training_set(
